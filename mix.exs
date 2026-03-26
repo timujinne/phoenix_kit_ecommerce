@@ -25,9 +25,8 @@ defmodule PhoenixKitEcommerce.MixProject do
 
   defp deps do
     [
-      {:phoenix_kit, "~> 1.7", path: "/app", override: true},
-      {:phoenix_kit_billing, "~> 0.1",
-       path: "/root/projects/phoenix_kit_billing", override: true},
+      {:phoenix_kit, "~> 1.7"},
+      {:phoenix_kit_billing, "~> 0.1"},
       {:phoenix_live_view, "~> 1.1"},
       {:phoenix, "~> 1.7"},
       {:ecto_sql, "~> 3.12"},
