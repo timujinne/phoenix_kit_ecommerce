@@ -1,9 +1,0 @@
-{application,ueberauth_facebook,
-             [{modules,['Elixir.Ueberauth.Strategy.Facebook',
-                        'Elixir.Ueberauth.Strategy.Facebook.OAuth',
-                        'Elixir.UeberauthFacebook']},
-              {optional_applications,[]},
-              {applications,[kernel,stdlib,elixir,logger,oauth2,ueberauth]},
-              {description,"ueberauth_facebook"},
-              {registered,[]},
-              {vsn,"0.10.0"}]}.
