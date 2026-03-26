@@ -1,0 +1,10 @@
+{application,ex_aws_sts,
+             [{modules,['Elixir.ExAws.STS',
+                        'Elixir.ExAws.STS.AuthCache.AssumeRoleCredentialsAdapter',
+                        'Elixir.ExAws.STS.AuthCache.AssumeRoleWebIdentityAdapter',
+                        'Elixir.ExAws.STS.Parsers']},
+              {optional_applications,[]},
+              {applications,[kernel,stdlib,elixir,logger,ex_aws]},
+              {description,"ex_aws_sts"},
+              {registered,[]},
+              {vsn,"2.3.0"}]}.

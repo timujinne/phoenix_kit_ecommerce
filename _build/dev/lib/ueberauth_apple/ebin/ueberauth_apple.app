@@ -1,0 +1,11 @@
+{application,ueberauth_apple,
+             [{modules,['Elixir.Ueberauth.Strategy.Apple',
+                        'Elixir.Ueberauth.Strategy.Apple.OAuth',
+                        'Elixir.Ueberauth.Strategy.Apple.Token',
+                        'Elixir.UeberauthApple']},
+              {optional_applications,[]},
+              {applications,[kernel,stdlib,elixir,httpoison,jose,logger,
+                             oauth2,ueberauth]},
+              {description,"An Ueberauth strategy for Apple authentication."},
+              {registered,[]},
+              {vsn,"0.6.1"}]}.
