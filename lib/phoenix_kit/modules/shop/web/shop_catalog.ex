@@ -177,7 +177,7 @@ defmodule PhoenixKit.Modules.Shop.Web.ShopCatalog do
 
     ~H"""
     <ShopLayouts.shop_layout {assigns} show_sidebar={true}>
-      <div class="container mx-auto px-4 py-6 max-w-7xl">
+      <div>
         <%!-- Hero Section --%>
         <header class="w-full relative mb-6">
           <div class="text-center">
@@ -222,7 +222,9 @@ defmodule PhoenixKit.Modules.Shop.Web.ShopCatalog do
         <% end %>
 
         <%!-- Main layout: sidebar + content --%>
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <%!-- For authenticated users: no grid (sidebar is in dashboard layout) --%>
+        <%!-- For guests: 4-column grid with sidebar --%>
+        <div class={unless @authenticated, do: "grid grid-cols-1 lg:grid-cols-4 gap-8", else: ""}>
           <%!-- Sidebar: filters + optional categories --%>
           <%= if !@authenticated do %>
             <aside class="lg:col-span-1 hidden lg:block">
@@ -244,7 +246,7 @@ defmodule PhoenixKit.Modules.Shop.Web.ShopCatalog do
             </aside>
           <% end %>
 
-          <div class={if @authenticated, do: "lg:col-span-4", else: "lg:col-span-3"}>
+          <div class={unless @authenticated, do: "lg:col-span-3", else: ""}>
             <%!-- Category Grid (controlled by setting) --%>
             <%= if @show_categories_grid && @categories != [] do %>
               <div class="mb-8">
