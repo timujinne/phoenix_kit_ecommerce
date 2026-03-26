@@ -219,7 +219,7 @@ defmodule PhoenixKit.Modules.Shop.Web.CartPage do
   def render(assigns) do
     ~H"""
     <ShopLayouts.shop_layout {assigns}>
-      <div class="container mx-auto px-4 py-6 max-w-6xl">
+      <div>
         <%!-- Header --%>
         <header class="mb-6">
           <div class="flex items-start gap-4">

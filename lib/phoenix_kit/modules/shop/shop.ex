@@ -294,7 +294,7 @@ defmodule PhoenixKit.Modules.Shop do
   end
 
   @impl PhoenixKit.Module
-  def route_module, do: PhoenixKitWeb.Routes.ShopRoutes
+  def route_module, do: PhoenixKit.Modules.Shop.Web.Routes
 
   # ============================================
   # PRODUCTS
