@@ -826,10 +826,6 @@ defmodule PhoenixKit.Modules.Shop.Web.ProductDetail do
     Currency.format_amount(value, currency)
   end
 
-  defp format_modifier(value, _type, _currency) do
-    "$#{Decimal.round(value, 2)}"
-  end
-
   # Get available languages for preview switcher
   defp get_available_languages do
     case Languages.get_enabled_languages() do

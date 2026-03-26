@@ -59,8 +59,8 @@ defmodule PhoenixKit.Modules.Shop.Web.Components.ShopLayouts do
       <%!-- Flash messages --%>
       <.flash_group flash={@flash} />
 
-      <%!-- Wide content area --%>
-      <main class="py-6">
+      <%!-- Wide content area with container --%>
+      <main class="container mx-auto px-4 py-6 max-w-7xl">
         {render_slot(@inner_block)}
       </main>
     </div>
