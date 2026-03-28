@@ -381,13 +381,6 @@ defmodule PhoenixKit.Modules.Shop.Web.Products do
   @impl true
   def render(assigns) do
     ~H"""
-    <PhoenixKitWeb.Components.LayoutWrapper.app_layout
-      flash={@flash}
-      phoenix_kit_current_scope={@phoenix_kit_current_scope}
-      current_path={@url_path}
-      current_locale={@current_locale}
-      page_title={@page_title}
-    >
       <div class="container flex-col mx-auto px-4 py-6 max-w-7xl">
         <.admin_page_header back={Routes.path("/admin/shop")}>
           <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">Products</h1>
@@ -803,7 +796,6 @@ defmodule PhoenixKit.Modules.Shop.Web.Products do
           <div class="modal-backdrop" phx-click="cancel_delete"></div>
         </div>
       <% end %>
-    </PhoenixKitWeb.Components.LayoutWrapper.app_layout>
     """
   end
 
