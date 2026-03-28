@@ -7,3 +7,4 @@ erl_crash.dump
 *.beam
 /tmp/
 .env
+CLAUDE.local.md
