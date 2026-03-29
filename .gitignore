@@ -1,0 +1,10 @@
+/_build/
+/deps/
+/doc/
+/.fetch
+erl_crash.dump
+*.ez
+*.beam
+/tmp/
+.env
+CLAUDE.local.md
