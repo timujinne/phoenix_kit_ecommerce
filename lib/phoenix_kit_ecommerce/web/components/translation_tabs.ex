@@ -352,19 +352,8 @@ defmodule PhoenixKitEcommerce.Web.Components.TranslationTabs do
       end)
       |> Enum.uniq()
 
-    # Build translations map: lang => {field => value}
     Enum.reduce(all_languages, %{}, fn lang, acc ->
-      field_values =
-        Enum.reduce(fields, %{}, fn field, field_acc ->
-          field_map = Map.get(entity, field) || %{}
-          value = Map.get(field_map, lang)
-
-          if value do
-            Map.put(field_acc, to_string(field), value)
-          else
-            field_acc
-          end
-        end)
+      field_values = collect_field_values(entity, fields, lang)
 
       if field_values != %{} do
         Map.put(acc, lang, field_values)
@@ -375,6 +364,17 @@ defmodule PhoenixKitEcommerce.Web.Components.TranslationTabs do
   end
 
   def build_translations_map(_, _), do: %{}
+
+  defp collect_field_values(entity, fields, lang) do
+    Enum.reduce(fields, %{}, fn field, field_acc ->
+      field_map = Map.get(entity, field) || %{}
+
+      case Map.get(field_map, lang) do
+        nil -> field_acc
+        value -> Map.put(field_acc, to_string(field), value)
+      end
+    end)
+  end
 
   @doc """
   Merges translations map back into localized field attrs for changeset.

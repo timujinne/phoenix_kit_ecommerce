@@ -7,14 +7,14 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Modules.Storage.URLSigner
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.OptionTypes
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Components.TranslationTabs
-  alias PhoenixKit.Modules.Storage.URLSigner
-  alias PhoenixKit.Utils.Routes
 
   import TranslationTabs
 
@@ -245,35 +245,10 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     current = socket.assigns.category_options
     editing = socket.assigns.editing_opt
 
-    updated_opts =
-      if editing do
-        Enum.map(current, fn o ->
-          if o["key"] == editing["key"], do: Map.merge(o, opt), else: o
-        end)
-      else
-        opt = Map.put(opt, "position", length(current))
-        current ++ [opt]
-      end
+    updated_opts = apply_option_change(current, editing, opt)
 
-    # Save to category
     try do
-      case Options.update_category_options(socket.assigns.category, updated_opts) do
-        {:ok, updated_category} ->
-          merged = Options.merge_schemas(socket.assigns.global_options, updated_opts)
-
-          {:noreply,
-           socket
-           |> assign(:category, updated_category)
-           |> assign(:category_options, updated_opts)
-           |> assign(:merged_preview, merged)
-           |> assign(:show_opt_modal, false)
-           |> assign(:editing_opt, nil)
-           |> assign(:opt_form_data, initial_opt_form_data())
-           |> put_flash(:info, if(editing, do: "Option updated", else: "Option added"))}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Error: #{inspect(reason)}")}
-      end
+      do_save_category_options(socket, updated_opts, editing)
     rescue
       e ->
         require Logger
@@ -343,6 +318,37 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     index = String.to_integer(idx)
     updated = %{form_data | options: List.delete_at(form_data.options, index)}
     {:noreply, assign(socket, :opt_form_data, updated)}
+  end
+
+  defp apply_option_change(current, nil, opt) do
+    opt = Map.put(opt, "position", length(current))
+    current ++ [opt]
+  end
+
+  defp apply_option_change(current, editing, opt) do
+    Enum.map(current, fn o ->
+      if o["key"] == editing["key"], do: Map.merge(o, opt), else: o
+    end)
+  end
+
+  defp do_save_category_options(socket, updated_opts, editing) do
+    case Options.update_category_options(socket.assigns.category, updated_opts) do
+      {:ok, updated_category} ->
+        merged = Options.merge_schemas(socket.assigns.global_options, updated_opts)
+
+        {:noreply,
+         socket
+         |> assign(:category, updated_category)
+         |> assign(:category_options, updated_opts)
+         |> assign(:merged_preview, merged)
+         |> assign(:show_opt_modal, false)
+         |> assign(:editing_opt, nil)
+         |> assign(:opt_form_data, initial_opt_form_data())
+         |> put_flash(:info, if(editing, do: "Option updated", else: "Option added"))}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Error: #{inspect(reason)}")}
+    end
   end
 
   # Media Picker Info Handlers

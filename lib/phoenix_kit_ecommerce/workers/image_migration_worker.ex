@@ -265,22 +265,23 @@ defmodule PhoenixKitEcommerce.Workers.ImageMigrationWorker do
         metadata
 
       mappings when is_map(mappings) ->
-        updated_mappings =
-          Enum.reduce(mappings, %{}, fn {option_key, value_map}, acc ->
-            updated_value_map =
-              Enum.reduce(value_map, %{}, fn {value, image_ref}, inner_acc ->
-                new_ref = convert_url_to_file_uuid(image_ref, url_to_file_uuid)
-                Map.put(inner_acc, value, new_ref)
-              end)
-
-            Map.put(acc, option_key, updated_value_map)
-          end)
-
+        updated_mappings = convert_image_mappings(mappings, url_to_file_uuid)
         Map.put(metadata, "_image_mappings", updated_mappings)
     end
   end
 
   defp update_image_mappings(metadata, _url_to_file_uuid), do: metadata
+
+  defp convert_image_mappings(mappings, url_to_file_uuid) do
+    Map.new(mappings, fn {option_key, value_map} ->
+      updated_value_map =
+        Map.new(value_map, fn {value, image_ref} ->
+          {value, convert_url_to_file_uuid(image_ref, url_to_file_uuid)}
+        end)
+
+      {option_key, updated_value_map}
+    end)
+  end
 
   defp convert_url_to_file_uuid(image_ref, url_to_file_uuid)
        when is_binary(image_ref) do

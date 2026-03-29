@@ -8,13 +8,13 @@ defmodule PhoenixKitEcommerce.Web.TestShop do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Modules.Storage
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.CartItem
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.OptionTypes
   alias PhoenixKitEcommerce.Translations
-  alias PhoenixKit.Modules.Storage
-  alias PhoenixKit.Utils.Routes
 
   @impl true
   def mount(_params, _session, socket) do
@@ -52,33 +52,35 @@ defmodule PhoenixKitEcommerce.Web.TestShop do
     product = Shop.get_product(id, preload: [:category])
 
     if product do
-      price_specs = Shop.get_price_affecting_specs(product)
-
-      # Build test selections from first options
-      test_selections =
-        Enum.reduce(price_specs, %{}, fn opt, acc ->
-          case opt["options"] do
-            [first | _] -> Map.put(acc, opt["key"], first)
-            _ -> acc
-          end
-        end)
-
-      calculated_price = Shop.calculate_product_price(product, test_selections)
-      {min_price, max_price} = Shop.get_price_range(product)
-
-      product_title = Translations.get(product, :title, Translations.default_language())
-
-      result = %{
-        name: "Price Test: #{product_title}",
-        status: :ok,
-        details:
-          "Base: $#{product.price}, Calculated: $#{calculated_price}, Range: $#{min_price} - $#{max_price}"
-      }
-
-      {:noreply, assign(socket, :test_results, socket.assigns.test_results ++ [result])}
+      {:noreply, run_price_test(socket, product)}
     else
       {:noreply, put_flash(socket, :error, "Product not found")}
     end
+  end
+
+  defp run_price_test(socket, product) do
+    price_specs = Shop.get_price_affecting_specs(product)
+
+    test_selections =
+      Enum.reduce(price_specs, %{}, fn opt, acc ->
+        case opt["options"] do
+          [first | _] -> Map.put(acc, opt["key"], first)
+          _ -> acc
+        end
+      end)
+
+    calculated_price = Shop.calculate_product_price(product, test_selections)
+    {min_price, max_price} = Shop.get_price_range(product)
+    product_title = Translations.get(product, :title, Translations.default_language())
+
+    result = %{
+      name: "Price Test: #{product_title}",
+      status: :ok,
+      details:
+        "Base: $#{product.price}, Calculated: $#{calculated_price}, Range: $#{min_price} - $#{max_price}"
+    }
+
+    assign(socket, :test_results, socket.assigns.test_results ++ [result])
   end
 
   @impl true

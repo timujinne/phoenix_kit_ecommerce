@@ -63,8 +63,8 @@ defmodule PhoenixKitEcommerce.Events do
       end
   """
 
-  alias PhoenixKitEcommerce.Cart
   alias PhoenixKit.PubSub.Manager
+  alias PhoenixKitEcommerce.Cart
 
   # ============================================
   # TOPIC CONSTANTS

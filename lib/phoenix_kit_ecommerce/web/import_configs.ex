@@ -8,8 +8,8 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
 
   use PhoenixKitEcommerce.Web, :live_view
 
-  alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitEcommerce, as: Shop
 
   @impl true
   def mount(_params, _session, socket) do
@@ -45,24 +45,11 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
     config = Enum.find(socket.assigns.configs, &(to_string(&1.uuid) == uuid))
 
     if config do
-      form_data = %{
-        name: config.name || "",
-        skip_filter: config.skip_filter || false,
-        include_keywords_text: Enum.join(config.include_keywords || [], ", "),
-        exclude_keywords_text: Enum.join(config.exclude_keywords || [], ", "),
-        exclude_phrases_text: Enum.join(config.exclude_phrases || [], ", "),
-        category_rules: config.category_rules || [],
-        default_category_slug: config.default_category_slug || "",
-        download_images: config.download_images || false,
-        is_default: config.is_default || false,
-        active: config.active
-      }
-
       {:noreply,
        socket
        |> assign(:show_modal, true)
        |> assign(:editing_config, config)
-       |> assign(:form_data, form_data)}
+       |> assign(:form_data, config_to_form_data(config))}
     else
       {:noreply, socket}
     end
@@ -79,37 +66,13 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
 
   @impl true
   def handle_event("validate_form", %{"config" => params}, socket) do
-    form_data = %{
-      name: params["name"] || "",
-      skip_filter: params["skip_filter"] == "true",
-      include_keywords_text: params["include_keywords_text"] || "",
-      exclude_keywords_text: params["exclude_keywords_text"] || "",
-      exclude_phrases_text: params["exclude_phrases_text"] || "",
-      category_rules: socket.assigns.form_data.category_rules,
-      default_category_slug: params["default_category_slug"] || "",
-      download_images: params["download_images"] == "true",
-      is_default: params["is_default"] == "true",
-      active: params["active"] == "true"
-    }
-
+    form_data = params_to_form_data(params, socket.assigns.form_data.category_rules)
     {:noreply, assign(socket, :form_data, form_data)}
   end
 
   @impl true
   def handle_event("save_config", %{"config" => params}, socket) do
-    form_data = %{
-      name: params["name"] || "",
-      skip_filter: params["skip_filter"] == "true",
-      include_keywords_text: params["include_keywords_text"] || "",
-      exclude_keywords_text: params["exclude_keywords_text"] || "",
-      exclude_phrases_text: params["exclude_phrases_text"] || "",
-      category_rules: socket.assigns.form_data.category_rules,
-      default_category_slug: params["default_category_slug"] || "",
-      download_images: params["download_images"] == "true",
-      is_default: params["is_default"] == "true",
-      active: params["active"] == "true"
-    }
-
+    form_data = params_to_form_data(params, socket.assigns.form_data.category_rules)
     attrs = build_attrs(form_data)
     editing = socket.assigns.editing_config
 
@@ -648,6 +611,47 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
   end
 
   # Private helpers
+
+  defp config_to_form_data(config) do
+    config
+    |> config_base_form_data()
+    |> Map.merge(config_keyword_form_data(config))
+  end
+
+  defp config_base_form_data(config) do
+    %{
+      name: config.name || "",
+      skip_filter: config.skip_filter || false,
+      category_rules: config.category_rules || [],
+      default_category_slug: config.default_category_slug || "",
+      download_images: config.download_images || false,
+      is_default: config.is_default || false,
+      active: config.active
+    }
+  end
+
+  defp config_keyword_form_data(config) do
+    %{
+      include_keywords_text: Enum.join(config.include_keywords || [], ", "),
+      exclude_keywords_text: Enum.join(config.exclude_keywords || [], ", "),
+      exclude_phrases_text: Enum.join(config.exclude_phrases || [], ", ")
+    }
+  end
+
+  defp params_to_form_data(params, category_rules) do
+    %{
+      name: params["name"] || "",
+      skip_filter: params["skip_filter"] == "true",
+      include_keywords_text: params["include_keywords_text"] || "",
+      exclude_keywords_text: params["exclude_keywords_text"] || "",
+      exclude_phrases_text: params["exclude_phrases_text"] || "",
+      category_rules: category_rules,
+      default_category_slug: params["default_category_slug"] || "",
+      download_images: params["download_images"] == "true",
+      is_default: params["is_default"] == "true",
+      active: params["active"] == "true"
+    }
+  end
 
   defp initial_form_data do
     %{

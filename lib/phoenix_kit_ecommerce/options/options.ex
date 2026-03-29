@@ -794,27 +794,25 @@ defmodule PhoenixKitEcommerce.Options do
     metadata = product.metadata || %{}
     option_values = Map.get(metadata, "_option_values", %{})
 
-    # Only filter if product has _option_values (imported products)
     if option_values != %{} do
       image_mappings = Map.get(metadata, "_image_mappings", %{})
-
-      Enum.filter(specs, fn spec ->
-        key = spec["key"]
-
-        case Map.get(option_values, key) do
-          values when is_list(values) and values != [] ->
-            true
-
-          _ ->
-            # Keep schema specs that have their own defined options or image mappings
-            has_image_mappings = is_map(image_mappings[key]) and image_mappings[key] != %{}
-            has_own_options = is_list(spec["options"]) and spec["options"] != []
-            has_own_options or has_image_mappings
-        end
-      end)
+      Enum.filter(specs, &spec_has_product_values?(&1, option_values, image_mappings))
     else
-      # No _option_values - return all options (backward compatibility)
       specs
+    end
+  end
+
+  defp spec_has_product_values?(spec, option_values, image_mappings) do
+    key = spec["key"]
+
+    case Map.get(option_values, key) do
+      values when is_list(values) and values != [] ->
+        true
+
+      _ ->
+        has_image_mappings = is_map(image_mappings[key]) and image_mappings[key] != %{}
+        has_own_options = is_list(spec["options"]) and spec["options"] != []
+        has_own_options or has_image_mappings
     end
   end
 
@@ -995,26 +993,26 @@ defmodule PhoenixKitEcommerce.Options do
   defp get_override_info(metadata, option_key, option_value) do
     case metadata do
       %{"_price_modifiers" => %{^option_key => modifiers}} when is_map(modifiers) ->
-        case Map.get(modifiers, option_value) do
-          # New format: %{"type" => "percent", "value" => "15"}
-          %{"type" => type, "value" => value} when is_binary(value) and value != "" ->
-            {:ok, type, value}
-
-          %{"value" => value} when is_binary(value) and value != "" ->
-            {:ok, nil, value}
-
-          # Legacy format: just a string value
-          value when is_binary(value) and value != "" ->
-            {:ok, nil, value}
-
-          _ ->
-            :not_found
-        end
+        modifiers |> Map.get(option_value) |> parse_modifier_value()
 
       _ ->
         :not_found
     end
   end
+
+  defp parse_modifier_value(%{"type" => type, "value" => value})
+       when is_binary(value) and value != "",
+       do: {:ok, type, value}
+
+  defp parse_modifier_value(%{"value" => value})
+       when is_binary(value) and value != "",
+       do: {:ok, nil, value}
+
+  defp parse_modifier_value(value)
+       when is_binary(value) and value != "",
+       do: {:ok, nil, value}
+
+  defp parse_modifier_value(_), do: :not_found
 
   # Legacy function - kept for backward compatibility
   def get_effective_modifier(opt, selected_value, metadata) do
@@ -1295,18 +1293,7 @@ defmodule PhoenixKitEcommerce.Options do
 
       # Get modifiers: check for overrides first, then fall back to defaults
       modifiers =
-        if allow_override do
-          case metadata do
-            %{"_price_modifiers" => %{^option_key => mods}} when is_map(mods) ->
-              # Merge: override values take precedence
-              Map.merge(default_modifiers, mods)
-
-            _ ->
-              default_modifiers
-          end
-        else
-          default_modifiers
-        end
+        resolve_modifiers(allow_override, metadata, option_key, default_modifiers)
 
       values = Map.values(modifiers) |> Enum.map(&parse_decimal/1)
 
@@ -1326,6 +1313,15 @@ defmodule PhoenixKitEcommerce.Options do
   end
 
   def get_effective_modifier_range(_, _), do: {Decimal.new("0"), Decimal.new("0")}
+
+  defp resolve_modifiers(true, %{"_price_modifiers" => %{} = pm}, option_key, default_modifiers) do
+    case Map.get(pm, option_key) do
+      mods when is_map(mods) -> Map.merge(default_modifiers, mods)
+      _ -> default_modifiers
+    end
+  end
+
+  defp resolve_modifiers(_, _metadata, _option_key, default_modifiers), do: default_modifiers
 
   defp parse_decimal(value) when is_binary(value) do
     case Decimal.parse(value) do

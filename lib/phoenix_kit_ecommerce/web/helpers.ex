@@ -6,13 +6,13 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   catalog_category, catalog_product, cart_page, checkout_page, and checkout_complete.
   """
 
-  alias PhoenixKitBilling.Currency
   alias PhoenixKit.Modules.Languages
   alias PhoenixKit.Modules.Languages.DialectMapper
-  alias PhoenixKitEcommerce.Translations
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitBilling.Currency
+  alias PhoenixKitEcommerce.Translations
 
   # ---------------------------------------------------------------------------
   # Price formatting
@@ -139,19 +139,23 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   def get_storage_image_url(file_uuid, variant) do
     case Storage.get_file(file_uuid) do
       %{uuid: uuid} ->
-        case Storage.get_file_instance_by_name(uuid, variant) do
-          nil ->
-            case Storage.get_file_instance_by_name(uuid, "original") do
-              nil -> nil
-              _instance -> URLSigner.signed_url(file_uuid, "original")
-            end
-
-          _instance ->
-            URLSigner.signed_url(file_uuid, variant)
-        end
+        resolve_storage_variant(file_uuid, uuid, variant)
 
       nil ->
         nil
+    end
+  end
+
+  defp resolve_storage_variant(file_uuid, uuid, variant) do
+    case Storage.get_file_instance_by_name(uuid, variant) do
+      nil ->
+        case Storage.get_file_instance_by_name(uuid, "original") do
+          nil -> nil
+          _instance -> URLSigner.signed_url(file_uuid, "original")
+        end
+
+      _instance ->
+        URLSigner.signed_url(file_uuid, variant)
     end
   end
 

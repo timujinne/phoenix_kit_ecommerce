@@ -29,17 +29,12 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
 
   @impl true
   def mount(%{"slug" => slug} = params, session, socket) do
-    # Determine language: use URL locale param if present, otherwise default
-    # This ensures /shop/... always uses default language, not session
     current_language = get_language_from_params_or_default(params)
 
-    # Try localized slug lookup first
     case Shop.get_product_by_slug_localized(slug, current_language, preload: [:category]) do
       {:error, :not_found} ->
-        # Slug not found in current language - try cross-language lookup
         handle_cross_language_redirect(slug, current_language, params, socket)
 
-      # Hide product if its category is hidden
       {:ok, %{category: %{status: "hidden"}}} ->
         {:ok,
          socket
@@ -47,98 +42,75 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
          |> push_navigate(to: Shop.catalog_url(current_language))}
 
       {:ok, product} ->
-        # Get session_id for guest cart
-        session_id = session["shop_session_id"] || generate_session_id()
-        user = Helpers.get_current_user(socket)
-        user_uuid = if user, do: user.uuid, else: nil
-
-        currency = Shop.get_default_currency()
-
-        # Check if user is authenticated
-        authenticated = not is_nil(socket.assigns[:phoenix_kit_current_user])
-
-        # Build specifications from options (non-price-affecting for display)
-        specifications = build_specifications(product)
-
-        # Load price-affecting specs for dynamic pricing
-        price_affecting_specs = Shop.get_price_affecting_specs(product)
-
-        # Load ALL selectable specs for UI display (includes non-price-affecting like Color)
-        selectable_specs = Shop.get_selectable_specs(product)
-
-        # Initialize selected specs with defaults from product metadata
-        # Use selectable_specs to include all options, not just price-affecting
-        selected_specs = build_default_specs(selectable_specs, product.metadata || %{})
-
-        # Calculate initial price
-        calculated_price = Shop.calculate_product_price(product, selected_specs)
-
-        # Check if product is already in cart
-        cart_item = find_cart_item_with_specs(user_uuid, session_id, product.uuid, selected_specs)
-
-        # Calculate missing required specs for UI (check all selectable specs, not just price-affecting)
-        missing_required_specs = get_missing_required_specs(selected_specs, selectable_specs)
-
-        all_categories = Shop.list_active_categories(preload: [:featured_product])
-
-        # Parse filter context from URL for navigation back-links
-        category_uuid = if product.category, do: product.category.uuid, else: nil
-        {enabled_filters, _fv} = FilterHelpers.load_filter_data(category_uuid: category_uuid)
-        active_filters = FilterHelpers.parse_filter_params(params, enabled_filters)
-        filter_qs = FilterHelpers.build_query_string(active_filters, enabled_filters)
-
-        # Get localized content
-        localized_title = Translations.get(product, :title, current_language)
-        localized_description = Translations.get(product, :description, current_language)
-        localized_body = Translations.get(product, :body_html, current_language)
-
-        # Get current path for language switcher
-        current_path = socket.assigns[:url_path] || Shop.product_url(product, current_language)
-
-        # Subscribe to product updates if connected
-        if connected?(socket) do
-          Events.subscribe_product(product.uuid)
-          Events.subscribe_inventory()
-        end
-
-        socket =
-          socket
-          |> assign(:page_title, localized_title)
-          |> assign(:product, product)
-          |> assign(:current_language, current_language)
-          |> assign(:localized_title, localized_title)
-          |> assign(:localized_description, localized_description)
-          |> assign(:localized_body, localized_body)
-          |> assign(:currency, currency)
-          |> assign(:quantity, 1)
-          |> assign(:session_id, session_id)
-          |> assign(:user_uuid, user_uuid)
-          |> assign(:selected_image, first_image(product))
-          |> assign(:adding_to_cart, false)
-          |> assign(:authenticated, authenticated)
-          |> assign(:cart_item, cart_item)
-          |> assign(:specifications, specifications)
-          |> assign(:price_affecting_specs, price_affecting_specs)
-          |> assign(:selectable_specs, selectable_specs)
-          |> assign(:selected_specs, selected_specs)
-          |> assign(:calculated_price, calculated_price)
-          |> assign(:missing_required_specs, missing_required_specs)
-          |> assign(:current_path, current_path)
-          |> assign(:categories, all_categories)
-          |> assign(:filter_qs, filter_qs)
-          |> assign(
-            :category_name_wrap,
-            Settings.get_setting_cached("shop_category_name_display", "truncate") == "wrap"
-          )
-          |> assign(
-            :category_icon_mode,
-            Settings.get_setting_cached("shop_category_icon_mode", "none")
-          )
-          |> assign(:admin_edit_url, Routes.path("/admin/shop/products/#{product.uuid}/edit"))
-          |> assign(:admin_edit_label, "Edit Product")
-
-        {:ok, socket}
+        mount_product(product, params, session, socket, current_language)
     end
+  end
+
+  defp mount_product(product, params, session, socket, current_language) do
+    session_id = session["shop_session_id"] || generate_session_id()
+    user = Helpers.get_current_user(socket)
+    user_uuid = if user, do: user.uuid, else: nil
+
+    selectable_specs = Shop.get_selectable_specs(product)
+    selected_specs = build_default_specs(selectable_specs, product.metadata || %{})
+
+    category_uuid = if product.category, do: product.category.uuid, else: nil
+    {enabled_filters, _fv} = FilterHelpers.load_filter_data(category_uuid: category_uuid)
+    active_filters = FilterHelpers.parse_filter_params(params, enabled_filters)
+
+    localized_title = Translations.get(product, :title, current_language)
+
+    if connected?(socket) do
+      Events.subscribe_product(product.uuid)
+      Events.subscribe_inventory()
+    end
+
+    socket =
+      socket
+      |> assign(:page_title, localized_title)
+      |> assign(:product, product)
+      |> assign(:current_language, current_language)
+      |> assign(:localized_title, localized_title)
+      |> assign(:localized_description, Translations.get(product, :description, current_language))
+      |> assign(:localized_body, Translations.get(product, :body_html, current_language))
+      |> assign(:currency, Shop.get_default_currency())
+      |> assign(:quantity, 1)
+      |> assign(:session_id, session_id)
+      |> assign(:user_uuid, user_uuid)
+      |> assign(:selected_image, first_image(product))
+      |> assign(:adding_to_cart, false)
+      |> assign(:authenticated, not is_nil(socket.assigns[:phoenix_kit_current_user]))
+      |> assign(
+        :cart_item,
+        find_cart_item_with_specs(user_uuid, session_id, product.uuid, selected_specs)
+      )
+      |> assign(:specifications, build_specifications(product))
+      |> assign(:price_affecting_specs, Shop.get_price_affecting_specs(product))
+      |> assign(:selectable_specs, selectable_specs)
+      |> assign(:selected_specs, selected_specs)
+      |> assign(:calculated_price, Shop.calculate_product_price(product, selected_specs))
+      |> assign(
+        :missing_required_specs,
+        get_missing_required_specs(selected_specs, selectable_specs)
+      )
+      |> assign(
+        :current_path,
+        socket.assigns[:url_path] || Shop.product_url(product, current_language)
+      )
+      |> assign(:categories, Shop.list_active_categories(preload: [:featured_product]))
+      |> assign(:filter_qs, FilterHelpers.build_query_string(active_filters, enabled_filters))
+      |> assign(
+        :category_name_wrap,
+        Settings.get_setting_cached("shop_category_name_display", "truncate") == "wrap"
+      )
+      |> assign(
+        :category_icon_mode,
+        Settings.get_setting_cached("shop_category_icon_mode", "none")
+      )
+      |> assign(:admin_edit_url, Routes.path("/admin/shop/products/#{product.uuid}/edit"))
+      |> assign(:admin_edit_label, "Edit Product")
+
+    {:ok, socket}
   end
 
   # Handle cross-language slug redirect
@@ -470,30 +442,31 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     end
   end
 
-  defp get_user_friendly_error_message(code, detail) do
-    case code do
-      :unknown_option_key ->
-        option_name = detail[:key] || "option"
-        "Option \"#{option_name}\" does not exist.\nProduct was updated - please reload the page."
+  defp get_user_friendly_error_message(:unknown_option_key, detail) do
+    option_name = detail[:key] || "option"
+    "Option \"#{option_name}\" does not exist.\nProduct was updated - please reload the page."
+  end
 
-      :missing_required_option ->
-        missing_option = if is_binary(detail), do: detail, else: "required option"
-        "Missing required option: #{missing_option}.\nPlease select all required parameters."
+  defp get_user_friendly_error_message(:missing_required_option, detail) do
+    missing_option = if is_binary(detail), do: detail, else: "required option"
+    "Missing required option: #{missing_option}.\nPlease select all required parameters."
+  end
 
-      :out_of_stock ->
-        "Product is out of stock.\nPlease try again later or choose another product."
+  defp get_user_friendly_error_message(:out_of_stock, _detail) do
+    "Product is out of stock.\nPlease try again later or choose another product."
+  end
 
-      :insufficient_stock ->
-        available = detail[:available] || 0
-        "Insufficient stock (only #{available} available).\nPlease reduce quantity."
+  defp get_user_friendly_error_message(:insufficient_stock, detail) do
+    available = detail[:available] || 0
+    "Insufficient stock (only #{available} available).\nPlease reduce quantity."
+  end
 
-      :price_changed ->
-        "Product price has changed.\nPlease refresh to see current price."
+  defp get_user_friendly_error_message(:price_changed, _detail) do
+    "Product price has changed.\nPlease refresh to see current price."
+  end
 
-      _ ->
-        # Generic fallback message
-        "Unable to add to cart.\nPlease try again or contact support."
-    end
+  defp get_user_friendly_error_message(_code, _detail) do
+    "Unable to add to cart.\nPlease try again or contact support."
   end
 
   # Log cart errors for admin monitoring and debugging
@@ -1023,7 +996,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
       # If it's a URL (starts with http), use directly
       "http" <> _ = url -> url
       # Otherwise it's a Storage ID
-      image_uuid -> get_storage_image_url(image_uuid, "large") || current_image
+      image_uuid -> get_storage_image_url(image_uuid, "large")
     end
   end
 
@@ -1080,24 +1053,25 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   defp get_storage_image_url(nil, _variant), do: placeholder_image_url()
 
   defp get_storage_image_url(file_uuid, variant) do
-    # Storage.get_file/1 returns %File{} struct or nil (not {:ok, file} tuple)
     case Storage.get_file(file_uuid) do
-      %{uuid: uuid} = _file ->
-        # Check if requested variant exists, fall back to original if not
-        case Storage.get_file_instance_by_name(uuid, variant) do
-          nil ->
-            # Variant doesn't exist - try original
-            case Storage.get_file_instance_by_name(uuid, "original") do
-              nil -> placeholder_image_url()
-              _instance -> URLSigner.signed_url(file_uuid, "original")
-            end
-
-          _instance ->
-            URLSigner.signed_url(file_uuid, variant)
-        end
+      %{uuid: uuid} ->
+        resolve_image_variant(file_uuid, uuid, variant)
 
       nil ->
         placeholder_image_url()
+    end
+  end
+
+  defp resolve_image_variant(file_uuid, uuid, variant) do
+    case Storage.get_file_instance_by_name(uuid, variant) do
+      nil ->
+        case Storage.get_file_instance_by_name(uuid, "original") do
+          nil -> placeholder_image_url()
+          _instance -> URLSigner.signed_url(file_uuid, "original")
+        end
+
+      _instance ->
+        URLSigner.signed_url(file_uuid, variant)
     end
   end
 
@@ -1257,22 +1231,23 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     # Fill in defaults for other required options that aren't selected
     temp_specs =
       Enum.reduce(price_affecting_specs, temp_specs, fn attr, acc ->
-        key = attr["key"]
-
-        if Map.has_key?(acc, key) and Map.get(acc, key) != nil and Map.get(acc, key) != "" do
-          acc
-        else
-          # Use first option as default for calculation
-          options = attr["options"] || []
-
-          case options do
-            [first | _] -> Map.put(acc, key, first)
-            _ -> acc
-          end
-        end
+        fill_default_spec(acc, attr)
       end)
 
     Shop.calculate_product_price(product, temp_specs)
+  end
+
+  defp fill_default_spec(acc, attr) do
+    key = attr["key"]
+
+    if Map.has_key?(acc, key) and Map.get(acc, key) != nil and Map.get(acc, key) != "" do
+      acc
+    else
+      case attr["options"] || [] do
+        [first | _] -> Map.put(acc, key, first)
+        _ -> acc
+      end
+    end
   end
 
   # Determine language from URL params - use locale param if present, otherwise default

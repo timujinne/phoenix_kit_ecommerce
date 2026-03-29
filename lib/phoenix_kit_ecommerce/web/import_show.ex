@@ -10,9 +10,9 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
   """
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Translations
-  alias PhoenixKit.Utils.Routes
 
   @impl true
   def mount(%{"uuid" => uuid}, _session, socket) do

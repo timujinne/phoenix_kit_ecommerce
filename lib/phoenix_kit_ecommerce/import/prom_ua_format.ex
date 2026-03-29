@@ -277,35 +277,33 @@ defmodule PhoenixKitEcommerce.Import.PromUaFormat do
 
   defp calculate_compare_at_price(price, discount_str) do
     if String.ends_with?(discount_str, "%") do
-      # Percentage discount: "10%", "15%", "20%"
-      percent_str = String.trim_trailing(discount_str, "%")
-
-      case Decimal.parse(percent_str) do
-        {percent, _} ->
-          divisor = Decimal.sub(Decimal.new(1), Decimal.div(percent, Decimal.new(100)))
-
-          if Decimal.gt?(divisor, Decimal.new(0)) do
-            Decimal.div(price, divisor) |> Decimal.round(2)
-          else
-            nil
-          end
-
-        :error ->
-          nil
-      end
+      calculate_percentage_compare_price(price, String.trim_trailing(discount_str, "%"))
     else
-      # Absolute discount: "1550.00", "360.00"
-      case Decimal.parse(discount_str) do
-        {absolute_discount, _} ->
-          if Decimal.gt?(absolute_discount, Decimal.new(0)) do
-            Decimal.add(price, absolute_discount)
-          else
-            nil
-          end
+      calculate_absolute_compare_price(price, discount_str)
+    end
+  end
 
-        :error ->
-          nil
-      end
+  defp calculate_percentage_compare_price(price, percent_str) do
+    case Decimal.parse(percent_str) do
+      {percent, _} ->
+        divisor = Decimal.sub(Decimal.new(1), Decimal.div(percent, Decimal.new(100)))
+
+        if Decimal.gt?(divisor, Decimal.new(0)),
+          do: Decimal.div(price, divisor) |> Decimal.round(2)
+
+      :error ->
+        nil
+    end
+  end
+
+  defp calculate_absolute_compare_price(price, discount_str) do
+    case Decimal.parse(discount_str) do
+      {absolute_discount, _} ->
+        if Decimal.gt?(absolute_discount, Decimal.new(0)),
+          do: Decimal.add(price, absolute_discount)
+
+      :error ->
+        nil
     end
   end
 

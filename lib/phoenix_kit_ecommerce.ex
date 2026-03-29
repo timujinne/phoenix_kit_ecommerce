@@ -34,10 +34,15 @@ defmodule PhoenixKitEcommerce do
   require Logger
 
   alias PhoenixKit.Dashboard.Tab
-  alias PhoenixKitBilling, as: Billing
-  alias PhoenixKitBilling.Currency
   alias PhoenixKit.Modules.Languages
   alias PhoenixKit.Modules.Languages.DialectMapper
+  alias PhoenixKit.Settings
+  alias PhoenixKit.Users.Auth
+  alias PhoenixKit.Utils.Date, as: UtilsDate
+  alias PhoenixKit.Utils.Routes
+  alias PhoenixKit.Utils.UUID, as: UUIDUtils
+  alias PhoenixKitBilling, as: Billing
+  alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce.Cart
   alias PhoenixKitEcommerce.CartItem
   alias PhoenixKitEcommerce.Category
@@ -50,11 +55,6 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.ShopConfig
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
-  alias PhoenixKit.Settings
-  alias PhoenixKit.Users.Auth
-  alias PhoenixKit.Utils.Date, as: UtilsDate
-  alias PhoenixKit.Utils.Routes
-  alias PhoenixKit.Utils.UUID, as: UUIDUtils
 
   # ============================================
   # SYSTEM ENABLE/DISABLE
@@ -1260,18 +1260,18 @@ defmodule PhoenixKitEcommerce do
       query
       |> repo().all()
       |> Enum.map(fn {title_map, uuid} ->
-        name =
-          case title_map do
-            %{} = map -> map[default_lang] || map |> Map.values() |> List.first()
-            _ -> "Product #{uuid}"
-          end
-
-        {name, uuid}
+        {extract_product_name(title_map, uuid, default_lang), uuid}
       end)
     else
       []
     end
   end
+
+  defp extract_product_name(%{} = map, _uuid, default_lang) do
+    map[default_lang] || map |> Map.values() |> List.first()
+  end
+
+  defp extract_product_name(_, uuid, _default_lang), do: "Product #{uuid}"
 
   defp category_product_options_query(category_uuid) when is_binary(category_uuid) do
     if match?({:ok, _}, Ecto.UUID.cast(category_uuid)) do
@@ -2715,25 +2715,25 @@ defmodule PhoenixKitEcommerce do
 
   defp calculate_shipping(cart, subtotal, total_weight) do
     if cart.shipping_method_uuid do
-      shipping_method = repo().get_by(ShippingMethod, uuid: cart.shipping_method_uuid)
-
-      case shipping_method do
-        nil ->
-          Decimal.new("0")
-
-        method ->
-          if ShippingMethod.available_for?(method, %{
-               weight_grams: total_weight,
-               subtotal: subtotal,
-               country: cart.shipping_country
-             }) do
-            ShippingMethod.calculate_cost(method, subtotal)
-          else
-            Decimal.new("0")
-          end
-      end
+      cart.shipping_method_uuid
+      |> then(&repo().get_by(ShippingMethod, uuid: &1))
+      |> calculate_method_shipping(subtotal, total_weight, cart.shipping_country)
     else
       cart.shipping_amount || Decimal.new("0")
+    end
+  end
+
+  defp calculate_method_shipping(nil, _subtotal, _weight, _country), do: Decimal.new("0")
+
+  defp calculate_method_shipping(method, subtotal, total_weight, country) do
+    if ShippingMethod.available_for?(method, %{
+         weight_grams: total_weight,
+         subtotal: subtotal,
+         country: country
+       }) do
+      ShippingMethod.calculate_cost(method, subtotal)
+    else
+      Decimal.new("0")
     end
   end
 

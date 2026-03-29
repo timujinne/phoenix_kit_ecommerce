@@ -6,6 +6,8 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Settings
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
@@ -14,8 +16,6 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
   alias PhoenixKitEcommerce.Web.Components.ShopCards
   alias PhoenixKitEcommerce.Web.Components.ShopLayouts
   alias PhoenixKitEcommerce.Web.Helpers
-  alias PhoenixKit.Settings
-  alias PhoenixKit.Utils.Routes
 
   @impl true
   def mount(%{"slug" => slug} = params, _session, socket) do

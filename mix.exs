@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.1"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_ecommerce"
 
   def project do
@@ -19,7 +19,7 @@ defmodule PhoenixKitEcommerce.MixProject do
       package: package(),
 
       # Dialyzer
-      dialyzer: [plt_add_apps: [:phoenix_kit, :phoenix_kit_billing]],
+      dialyzer: [plt_add_apps: [:phoenix_kit, :phoenix_kit_billing, :mix]],
 
       # Docs
       name: "PhoenixKitEcommerce",

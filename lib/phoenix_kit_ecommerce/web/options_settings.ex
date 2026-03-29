@@ -8,9 +8,9 @@ defmodule PhoenixKitEcommerce.Web.OptionsSettings do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.OptionTypes
-  alias PhoenixKit.Utils.Routes
 
   @impl true
   def mount(_params, _session, socket) do
@@ -143,18 +143,7 @@ defmodule PhoenixKitEcommerce.Web.OptionsSettings do
     current = socket.assigns.options
     editing = socket.assigns.editing_option
 
-    result =
-      if editing do
-        updated =
-          Enum.map(current, fn o ->
-            if o["key"] == editing["key"], do: Map.merge(o, opt), else: o
-          end)
-
-        Options.update_global_options(updated)
-      else
-        opt = Map.put(opt, "position", length(current))
-        Options.add_global_option(opt)
-      end
+    result = save_option_change(editing, current, opt)
 
     case result do
       {:ok, _} ->
@@ -250,6 +239,20 @@ defmodule PhoenixKitEcommerce.Web.OptionsSettings do
     index = String.to_integer(idx)
     updated = %{form_data | options: List.delete_at(form_data.options, index)}
     {:noreply, assign(socket, :form_data, updated)}
+  end
+
+  defp save_option_change(nil, current, opt) do
+    opt = Map.put(opt, "position", length(current))
+    Options.add_global_option(opt)
+  end
+
+  defp save_option_change(editing, current, opt) do
+    updated =
+      Enum.map(current, fn o ->
+        if o["key"] == editing["key"], do: Map.merge(o, opt), else: o
+      end)
+
+    Options.update_global_options(updated)
   end
 
   @impl true

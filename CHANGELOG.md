@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.1] - 2026-03-29
+
+### Changed
+
+- Restructure from `lib/phoenix_kit/modules/shop/` to `lib/phoenix_kit_ecommerce/` matching standard extracted-repo convention
+- Rename all modules from `PhoenixKit.Modules.Shop.*` to `PhoenixKitEcommerce.*`
+- Update billing references from `PhoenixKit.Modules.Billing.*` to `PhoenixKitBilling.*`
+- Move mix tasks to `lib/phoenix_kit_ecommerce/mix_tasks/`
+- Add `:mix` to dialyzer PLT apps for clean dialyzer runs
+
+### Fixed
+
+- Fix 33 nesting depth violations (max depth 2) by extracting helper functions and using `with` chains
+- Fix 11 cyclomatic complexity violations (max 9) by splitting large functions into multi-clause helpers
+- Fix 25 alias ordering issues across all modules
+- Fix dead code in `get_mapped_image/4` where `|| current_image` could never trigger
+- Add `elixirc_paths/1`, `aliases/0` (quality/precommit) to mix.exs matching sibling conventions
+
+### Added
+
+- Comprehensive README with features, installation, usage examples, architecture, and troubleshooting
+- AGENTS.md for AI agent guidance
+- CHANGELOG.md for release tracking
+- MIT LICENSE file
+
 ## [0.1.0] - 2026-03-29
 
 ### Added

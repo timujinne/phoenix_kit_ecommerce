@@ -67,34 +67,37 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpers do
   """
   def build_query_opts(active_filters, filters) do
     Enum.reduce(filters, [], fn filter, opts ->
-      case Map.get(active_filters, filter["key"]) do
-        nil ->
-          opts
-
-        %{min: min_val, max: max_val} ->
-          opts
-          |> maybe_add_opt(:price_min, min_val)
-          |> maybe_add_opt(:price_max, max_val)
-
-        values when is_list(values) and values != [] ->
-          case filter["type"] do
-            "vendor" ->
-              Keyword.put(opts, :vendors, values)
-
-            "metadata_option" ->
-              existing = Keyword.get(opts, :metadata_filters, [])
-              meta = %{key: filter["option_key"] || filter["key"], values: values}
-              Keyword.put(opts, :metadata_filters, existing ++ [meta])
-
-            _ ->
-              opts
-          end
-
-        _ ->
-          opts
-      end
+      active_filters
+      |> Map.get(filter["key"])
+      |> apply_filter_to_opts(filter, opts)
     end)
   end
+
+  defp apply_filter_to_opts(nil, _filter, opts), do: opts
+
+  defp apply_filter_to_opts(%{min: min_val, max: max_val}, _filter, opts) do
+    opts
+    |> maybe_add_opt(:price_min, min_val)
+    |> maybe_add_opt(:price_max, max_val)
+  end
+
+  defp apply_filter_to_opts(values, filter, opts) when is_list(values) and values != [] do
+    apply_list_filter(filter["type"], filter, values, opts)
+  end
+
+  defp apply_filter_to_opts(_, _filter, opts), do: opts
+
+  defp apply_list_filter("vendor", _filter, values, opts) do
+    Keyword.put(opts, :vendors, values)
+  end
+
+  defp apply_list_filter("metadata_option", filter, values, opts) do
+    existing = Keyword.get(opts, :metadata_filters, [])
+    meta = %{key: filter["option_key"] || filter["key"], values: values}
+    Keyword.put(opts, :metadata_filters, existing ++ [meta])
+  end
+
+  defp apply_list_filter(_, _filter, _values, opts), do: opts
 
   @doc """
   Builds a query string from active filter state (e.g. `"?price_min=10&price_max=100"` or `""`).

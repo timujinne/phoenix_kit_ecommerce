@@ -17,6 +17,8 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.PubSub.Manager
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Import.{CSVAnalyzer, FormatDetector}
   alias PhoenixKitEcommerce.ImportLog
@@ -24,8 +26,6 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   alias PhoenixKitEcommerce.Services.ImageMigration
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Workers.CSVImportWorker
-  alias PhoenixKit.PubSub.Manager
-  alias PhoenixKit.Utils.Routes
 
   require Logger
 
@@ -117,25 +117,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
            {:ok, {dest_path, entry.client_name}}
          end) do
       [{dest_path, filename}] ->
-        # Detect format from file headers
-        case FormatDetector.detect(dest_path) do
-          {:ok, format_mod} ->
-            if format_mod.requires_option_mapping?() do
-              # Shopify path: analyze CSV, show mapping UI
-              handle_mapping_format(socket, dest_path, filename, format_mod)
-            else
-              # Prom.ua path: skip configure, go to confirm
-              handle_direct_format(socket, dest_path, filename, format_mod)
-            end
-
-          {:error, :unknown_format} ->
-            File.rm(dest_path)
-            {:noreply, put_flash(socket, :error, "Unrecognized CSV format")}
-
-          {:error, _reason} ->
-            File.rm(dest_path)
-            {:noreply, put_flash(socket, :error, "Failed to read CSV file headers")}
-        end
+        handle_detected_format(socket, dest_path, filename)
 
       [] ->
         {:noreply, put_flash(socket, :error, "Please select a CSV file first")}
@@ -144,7 +126,6 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
   @impl true
   def handle_event("confirm_import", _params, socket) do
-    # Direct import from confirm step (no option mappings)
     run_import_with_mappings(socket, [])
   end
 
@@ -312,6 +293,25 @@ defmodule PhoenixKitEcommerce.Web.Imports do
     {:noreply, socket}
   end
 
+  defp handle_detected_format(socket, dest_path, filename) do
+    case FormatDetector.detect(dest_path) do
+      {:ok, format_mod} ->
+        if format_mod.requires_option_mapping?() do
+          handle_mapping_format(socket, dest_path, filename, format_mod)
+        else
+          handle_direct_format(socket, dest_path, filename, format_mod)
+        end
+
+      {:error, :unknown_format} ->
+        File.rm(dest_path)
+        {:noreply, put_flash(socket, :error, "Unrecognized CSV format")}
+
+      {:error, _reason} ->
+        File.rm(dest_path)
+        {:noreply, put_flash(socket, :error, "Failed to read CSV file headers")}
+    end
+  end
+
   # Handle PubSub messages
   @impl true
   def handle_info({:import_started, %{total: total}}, socket) do
@@ -449,49 +449,48 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         {:noreply, put_flash(socket, :error, "Import not found")}
 
       import_log ->
-        if import_log.status == "failed" && import_log.file_path &&
-             File.exists?(import_log.file_path) do
-          # Reset import log status
-          {:ok, updated_log} =
-            Shop.update_import_log(import_log, %{status: "pending", error_details: []})
-
-          # Re-enqueue job with language and config_uuid
-          language = socket.assigns.current_language
-
-          config_uuid =
-            get_in(import_log.options, ["config_uuid"]) ||
-              get_in(import_log.options, ["config_id"])
-
-          worker_args = %{
-            import_log_uuid: updated_log.uuid,
-            path: import_log.file_path,
-            language: language
-          }
-
-          worker_args =
-            if config_uuid,
-              do: Map.put(worker_args, :config_uuid, config_uuid),
-              else: worker_args
-
-          worker_args
-          |> CSVImportWorker.new()
-          |> Oban.insert()
-
-          # Subscribe to updates
-          Manager.subscribe("shop:import:#{updated_log.uuid}")
-
-          socket =
-            socket
-            |> assign(:current_import, updated_log)
-            |> assign(:import_progress, %{percent: 0, current: 0, total: 0})
-            |> assign(:imports, list_imports())
-            |> put_flash(:info, "Retrying import: #{import_log.filename}")
-
-          {:noreply, socket}
+        if retryable?(import_log) do
+          enqueue_retry(import_log, socket)
         else
           {:noreply, put_flash(socket, :error, "Cannot retry: file no longer exists")}
         end
     end
+  end
+
+  defp retryable?(import_log) do
+    import_log.status == "failed" && import_log.file_path && File.exists?(import_log.file_path)
+  end
+
+  defp enqueue_retry(import_log, socket) do
+    {:ok, updated_log} =
+      Shop.update_import_log(import_log, %{status: "pending", error_details: []})
+
+    config_uuid =
+      get_in(import_log.options, ["config_uuid"]) ||
+        get_in(import_log.options, ["config_id"])
+
+    worker_args = %{
+      import_log_uuid: updated_log.uuid,
+      path: import_log.file_path,
+      language: socket.assigns.current_language
+    }
+
+    worker_args =
+      if config_uuid,
+        do: Map.put(worker_args, :config_uuid, config_uuid),
+        else: worker_args
+
+    worker_args |> CSVImportWorker.new() |> Oban.insert()
+    Manager.subscribe("shop:import:#{updated_log.uuid}")
+
+    socket =
+      socket
+      |> assign(:current_import, updated_log)
+      |> assign(:import_progress, %{percent: 0, current: 0, total: 0})
+      |> assign(:imports, list_imports())
+      |> put_flash(:info, "Retrying import: #{import_log.filename}")
+
+    {:noreply, socket}
   end
 
   defp do_delete_import(import_uuid, socket) do

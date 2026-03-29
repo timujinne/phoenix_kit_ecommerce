@@ -5,10 +5,10 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.ShippingMethod
-  alias PhoenixKit.Utils.Routes
 
   @impl true
   def mount(_params, _session, socket) do

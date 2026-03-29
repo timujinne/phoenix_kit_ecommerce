@@ -217,22 +217,26 @@ defmodule PhoenixKitEcommerce.Product do
   # Remove empty string values from map fields
   defp normalize_map_fields(changeset, fields) do
     Enum.reduce(fields, changeset, fn field, acc ->
-      case get_change(acc, field) do
-        nil ->
-          acc
-
-        map when is_map(map) ->
-          cleaned =
-            map
-            |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
-            |> Map.new()
-
-          put_change(acc, field, cleaned)
-
-        _ ->
-          acc
-      end
+      normalize_single_map_field(acc, field)
     end)
+  end
+
+  defp normalize_single_map_field(changeset, field) do
+    case get_change(changeset, field) do
+      nil ->
+        changeset
+
+      map when is_map(map) ->
+        cleaned =
+          map
+          |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
+          |> Map.new()
+
+        put_change(changeset, field, cleaned)
+
+      _ ->
+        changeset
+    end
   end
 
   # Validate that localized field has value for default language

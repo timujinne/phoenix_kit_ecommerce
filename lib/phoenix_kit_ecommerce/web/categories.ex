@@ -8,12 +8,12 @@ defmodule PhoenixKitEcommerce.Web.Categories do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Users.Auth.Scope
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Translations
-  alias PhoenixKit.Users.Auth.Scope
-  alias PhoenixKit.Utils.Routes
 
   @per_page 25
 

@@ -7,8 +7,8 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
 
   use PhoenixKitEcommerce.Web, :live_view
 
-  alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitEcommerce, as: Shop
 
   @impl true
   def mount(_params, _session, socket) do

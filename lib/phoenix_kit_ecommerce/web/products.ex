@@ -5,13 +5,13 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Modules.Storage
+  alias PhoenixKit.Modules.Storage.URLSigner
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Translations
-  alias PhoenixKit.Modules.Storage
-  alias PhoenixKit.Modules.Storage.URLSigner
-  alias PhoenixKit.Utils.Routes
 
   @per_page 25
 
@@ -856,19 +856,23 @@ defmodule PhoenixKitEcommerce.Web.Products do
   defp get_storage_image_url(file_uuid, variant) do
     case Storage.get_file(file_uuid) do
       %{uuid: uuid} ->
-        case Storage.get_file_instance_by_name(uuid, variant) do
-          nil ->
-            case Storage.get_file_instance_by_name(uuid, "original") do
-              nil -> nil
-              _instance -> URLSigner.signed_url(file_uuid, "original")
-            end
-
-          _instance ->
-            URLSigner.signed_url(file_uuid, variant)
-        end
+        resolve_file_variant(file_uuid, uuid, variant)
 
       nil ->
         nil
+    end
+  end
+
+  defp resolve_file_variant(file_uuid, uuid, variant) do
+    case Storage.get_file_instance_by_name(uuid, variant) do
+      nil ->
+        case Storage.get_file_instance_by_name(uuid, "original") do
+          nil -> nil
+          _instance -> URLSigner.signed_url(file_uuid, "original")
+        end
+
+      _instance ->
+        URLSigner.signed_url(file_uuid, variant)
     end
   end
 end

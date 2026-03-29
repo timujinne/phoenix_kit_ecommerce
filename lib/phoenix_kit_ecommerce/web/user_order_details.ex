@@ -12,38 +12,42 @@ defmodule PhoenixKitEcommerce.Web.UserOrderDetails do
   """
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
-  alias PhoenixKit.Utils.Routes
 
   @impl true
   def mount(%{"uuid" => uuid}, _session, socket) do
     if Billing.enabled?() do
-      current_user = socket.assigns[:phoenix_kit_current_user]
-
-      case Billing.get_order_by_uuid(uuid) do
-        nil ->
-          {:ok,
-           socket
-           |> put_flash(:error, gettext("Order not found"))
-           |> push_navigate(to: Routes.path("/dashboard/orders"))}
-
-        order ->
-          if order.user_uuid != current_user.uuid do
-            {:ok,
-             socket
-             |> put_flash(:error, gettext("Access denied"))
-             |> push_navigate(to: Routes.path("/dashboard/orders"))}
-          else
-            {:ok, setup_order_assigns(socket, order, current_user)}
-          end
-      end
+      mount_with_billing(uuid, socket)
     else
       {:ok,
        socket
        |> put_flash(:error, gettext("Billing module is not enabled"))
        |> push_navigate(to: Routes.path("/dashboard"))}
+    end
+  end
+
+  defp mount_with_billing(uuid, socket) do
+    current_user = socket.assigns[:phoenix_kit_current_user]
+
+    case Billing.get_order_by_uuid(uuid) do
+      nil ->
+        {:ok,
+         socket
+         |> put_flash(:error, gettext("Order not found"))
+         |> push_navigate(to: Routes.path("/dashboard/orders"))}
+
+      order ->
+        if order.user_uuid != current_user.uuid do
+          {:ok,
+           socket
+           |> put_flash(:error, gettext("Access denied"))
+           |> push_navigate(to: Routes.path("/dashboard/orders"))}
+        else
+          {:ok, setup_order_assigns(socket, order, current_user)}
+        end
     end
   end
 

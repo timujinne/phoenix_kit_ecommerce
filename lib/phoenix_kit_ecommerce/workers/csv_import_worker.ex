@@ -35,13 +35,13 @@ defmodule PhoenixKitEcommerce.Workers.CSVImportWorker do
     max_attempts: 3,
     unique: [period: :infinity, keys: [:import_log_uuid], states: :incomplete]
 
+  alias PhoenixKit.PubSub.Manager
+  alias PhoenixKit.Utils.Date, as: UtilsDate
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Import.{CSVValidator, FormatDetector}
   alias PhoenixKitEcommerce.ImportConfig
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Workers.ImageMigrationWorker
-  alias PhoenixKit.PubSub.Manager
-  alias PhoenixKit.Utils.Date, as: UtilsDate
 
   require Logger
 

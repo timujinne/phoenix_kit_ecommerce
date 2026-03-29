@@ -5,9 +5,9 @@ defmodule PhoenixKitEcommerce.Web.Carts do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
-  alias PhoenixKit.Utils.Routes
 
   @per_page 25
 

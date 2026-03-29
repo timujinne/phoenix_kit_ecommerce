@@ -282,21 +282,21 @@ defmodule PhoenixKitEcommerce.Services.ImageMigration do
   end
 
   defp do_migrate_product(product, user_uuid) do
-    # Check if already migrated
-    if has_storage_images?(product) do
-      {:error, :already_migrated}
-    else
-      # Validate product has required fields
-      with :ok <- validate_product_for_migration(product) do
-        # Collect image URLs
-        image_urls = collect_image_urls(product)
+    with :ok <- check_not_already_migrated(product),
+         :ok <- validate_product_for_migration(product),
+         {:ok, image_urls} <- collect_nonempty_image_urls(product) do
+      migrate_images_for_product(product, image_urls, user_uuid)
+    end
+  end
 
-        if Enum.empty?(image_urls) do
-          {:error, :no_images}
-        else
-          migrate_images_for_product(product, image_urls, user_uuid)
-        end
-      end
+  defp check_not_already_migrated(product) do
+    if has_storage_images?(product), do: {:error, :already_migrated}, else: :ok
+  end
+
+  defp collect_nonempty_image_urls(product) do
+    case collect_image_urls(product) do
+      [] -> {:error, :no_images}
+      urls -> {:ok, urls}
     end
   end
 
@@ -432,22 +432,23 @@ defmodule PhoenixKitEcommerce.Services.ImageMigration do
         metadata
 
       mappings when is_map(mappings) ->
-        updated_mappings =
-          Enum.reduce(mappings, %{}, fn {option_key, value_map}, acc ->
-            updated_value_map =
-              Enum.reduce(value_map, %{}, fn {value, image_ref}, inner_acc ->
-                new_ref = convert_url_to_file_uuid(image_ref, url_to_file_uuid)
-                Map.put(inner_acc, value, new_ref)
-              end)
-
-            Map.put(acc, option_key, updated_value_map)
-          end)
-
+        updated_mappings = convert_mappings(mappings, url_to_file_uuid)
         Map.put(metadata, "_image_mappings", updated_mappings)
     end
   end
 
   defp update_image_mappings(metadata, _url_to_file_uuid), do: metadata
+
+  defp convert_mappings(mappings, url_to_file_uuid) do
+    Map.new(mappings, fn {option_key, value_map} ->
+      updated_value_map =
+        Map.new(value_map, fn {value, image_ref} ->
+          {value, convert_url_to_file_uuid(image_ref, url_to_file_uuid)}
+        end)
+
+      {option_key, updated_value_map}
+    end)
+  end
 
   defp convert_url_to_file_uuid(image_ref, url_to_file_uuid)
        when is_binary(image_ref) do

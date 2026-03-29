@@ -5,15 +5,15 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
 
   use PhoenixKitEcommerce.Web, :live_view
 
-  alias PhoenixKitBilling.Currency
   alias PhoenixKit.Modules.Languages
   alias PhoenixKit.Modules.Languages.DialectMapper
-  alias PhoenixKitEcommerce, as: Shop
-  alias PhoenixKitEcommerce.Options
-  alias PhoenixKitEcommerce.Translations
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitBilling.Currency
+  alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Options
+  alias PhoenixKitEcommerce.Translations
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -708,19 +708,23 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
   defp get_storage_image_url(file_uuid, variant) do
     case Storage.get_file(file_uuid) do
       %{uuid: uuid} ->
-        case Storage.get_file_instance_by_name(uuid, variant) do
-          nil ->
-            case Storage.get_file_instance_by_name(uuid, "original") do
-              nil -> nil
-              _instance -> URLSigner.signed_url(file_uuid, "original")
-            end
-
-          _instance ->
-            URLSigner.signed_url(file_uuid, variant)
-        end
+        resolve_file_variant(file_uuid, uuid, variant)
 
       nil ->
         nil
+    end
+  end
+
+  defp resolve_file_variant(file_uuid, uuid, variant) do
+    case Storage.get_file_instance_by_name(uuid, variant) do
+      nil ->
+        case Storage.get_file_instance_by_name(uuid, "original") do
+          nil -> nil
+          _instance -> URLSigner.signed_url(file_uuid, "original")
+        end
+
+      _instance ->
+        URLSigner.signed_url(file_uuid, variant)
     end
   end
 

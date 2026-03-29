@@ -138,28 +138,17 @@ defmodule PhoenixKitEcommerce.OptionTypes do
   def get_label(label, _language) when is_binary(label), do: label
 
   def get_label(label, language) when is_map(label) do
-    # Try exact language match
-    case Map.get(label, language) do
-      nil ->
-        # Try "en" as fallback
-        case Map.get(label, "en") do
-          nil ->
-            # Use first available value
-            case Map.values(label) do
-              [first | _] -> first
-              [] -> ""
-            end
-
-          en_label ->
-            en_label
-        end
-
-      lang_label ->
-        lang_label
-    end
+    Map.get(label, language) || Map.get(label, "en") || first_map_value(label)
   end
 
   def get_label(_, _), do: ""
+
+  defp first_map_value(map) do
+    case Map.values(map) do
+      [first | _] -> first
+      [] -> ""
+    end
+  end
 
   @doc """
   Checks if option allows multiple slots.

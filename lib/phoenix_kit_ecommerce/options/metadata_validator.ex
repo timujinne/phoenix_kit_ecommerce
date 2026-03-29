@@ -196,19 +196,7 @@ defmodule PhoenixKitEcommerce.Options.MetadataValidator do
         metadata
 
       price_modifiers when is_map(price_modifiers) ->
-        normalized =
-          Enum.map(price_modifiers, fn {option_key, values} ->
-            normalized_values =
-              Enum.map(values, fn {value, modifier} ->
-                {value, normalize_modifier_value(modifier, base_price)}
-              end)
-              |> Enum.reject(fn {_k, v} -> is_nil(v) end)
-              |> Map.new()
-
-            {option_key, normalized_values}
-          end)
-          |> Enum.reject(fn {_k, v} -> v == %{} end)
-          |> Map.new()
+        normalized = normalize_all_modifiers(price_modifiers, base_price)
 
         if normalized == %{} do
           Map.delete(metadata, "_price_modifiers")
@@ -222,6 +210,23 @@ defmodule PhoenixKitEcommerce.Options.MetadataValidator do
   end
 
   def normalize_price_modifiers(metadata, _base_price), do: metadata
+
+  defp normalize_all_modifiers(price_modifiers, base_price) do
+    price_modifiers
+    |> Enum.map(fn {option_key, values} ->
+      normalized_values =
+        values
+        |> Enum.map(fn {value, modifier} ->
+          {value, normalize_modifier_value(modifier, base_price)}
+        end)
+        |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+        |> Map.new()
+
+      {option_key, normalized_values}
+    end)
+    |> Enum.reject(fn {_k, v} -> v == %{} end)
+    |> Map.new()
+  end
 
   @doc """
   Normalizes a complete set of product attributes before saving.

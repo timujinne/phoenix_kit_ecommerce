@@ -21,10 +21,10 @@ defmodule PhoenixKitEcommerce.Cart do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias PhoenixKitEcommerce.CartItem
-  alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKit.Users.Auth.User
   alias PhoenixKit.Utils.Date, as: UtilsDate
+  alias PhoenixKitEcommerce.CartItem
+  alias PhoenixKitEcommerce.ShippingMethod
 
   @statuses ~w(active merged converted abandoned expired)
 

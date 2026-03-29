@@ -14,8 +14,8 @@ defmodule PhoenixKitEcommerce.Web.Components.ShopLayouts do
   import PhoenixKitWeb.Components.Core.LanguageSwitcher, only: [language_switcher_dropdown: 1]
   import PhoenixKitWeb.LayoutHelpers, only: [dashboard_assigns: 1]
 
-  alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitEcommerce, as: Shop
 
   @doc """
   Public shop layout with navbar, flash messages, and main content area.

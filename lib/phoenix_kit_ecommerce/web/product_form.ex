@@ -8,14 +8,14 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Modules.Storage.URLSigner
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Components.TranslationTabs
-  alias PhoenixKit.Modules.Storage.URLSigner
-  alias PhoenixKit.Utils.Routes
 
   import TranslationTabs
 
@@ -377,45 +377,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     if value == "" do
       {:noreply, socket}
     else
-      # Check in both original and current values
-      original_values = socket.assigns[:original_option_values] || %{}
-      original_for_key = Map.get(original_values, option_key, [])
-
-      metadata = socket.assigns.metadata
-      option_values = metadata["_option_values"] || %{}
-      current_values = Map.get(option_values, option_key, [])
-
-      # Also check schema values
-      schema_opt = Enum.find(socket.assigns.option_schema, &(&1["key"] == option_key))
-      schema_values = (schema_opt && schema_opt["options"]) || []
-
-      all_existing = Enum.uniq(original_for_key ++ current_values ++ schema_values)
-
-      if value in all_existing do
-        {:noreply, put_flash(socket, :error, "Value '#{value}' already exists")}
-      else
-        # Add to original_option_values
-        updated_original = Map.put(original_values, option_key, original_for_key ++ [value])
-
-        # Add to selected_option_values (new value is selected by default)
-        # If key doesn't exist in selected, initialize with all values first
-        selected = socket.assigns.selected_option_values
-
-        current_selected =
-          if Map.has_key?(selected, option_key) do
-            Map.get(selected, option_key, [])
-          else
-            # Key not present = all values implicitly selected
-            Enum.uniq(schema_values ++ original_for_key)
-          end
-
-        updated_selected = Map.put(selected, option_key, current_selected ++ [value])
-
-        {:noreply,
-         socket
-         |> assign(:original_option_values, updated_original)
-         |> assign(:selected_option_values, updated_selected)}
-      end
+      do_add_option_value_with_check(socket, option_key, value)
     end
   end
 
@@ -519,46 +481,46 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   # PRIVATE FUNCTIONS
   # ===========================================
 
-  # Shared logic for adding option value
+  defp do_add_option_value_with_check(socket, option_key, value) do
+    {all_existing, original_for_key, schema_values, original_values} =
+      gather_existing_values(socket, option_key)
+
+    if value in all_existing do
+      {:noreply, put_flash(socket, :error, "Value '#{value}' already exists")}
+    else
+      selected = socket.assigns.selected_option_values
+
+      current_selected =
+        init_selected_values(selected, option_key, schema_values, original_for_key)
+
+      updated_original = Map.put(original_values, option_key, original_for_key ++ [value])
+      updated_selected = Map.put(selected, option_key, current_selected ++ [value])
+
+      {:noreply,
+       socket
+       |> assign(:original_option_values, updated_original)
+       |> assign(:selected_option_values, updated_selected)}
+    end
+  end
+
   defp do_add_option_value(socket, option_key, value) do
     if value == "" do
       {:noreply, put_flash(socket, :error, "Please enter a value first")}
     else
-      original_values = socket.assigns[:original_option_values] || %{}
-      original_for_key = Map.get(original_values, option_key, [])
-
-      metadata = socket.assigns.metadata
-      option_values = metadata["_option_values"] || %{}
-      current_values = Map.get(option_values, option_key, [])
-
-      # Also check schema values
-      schema_opt = Enum.find(socket.assigns.option_schema, &(&1["key"] == option_key))
-      schema_values = (schema_opt && schema_opt["options"]) || []
-
-      all_existing = Enum.uniq(original_for_key ++ current_values ++ schema_values)
+      {all_existing, original_for_key, schema_values, original_values} =
+        gather_existing_values(socket, option_key)
 
       if value in all_existing do
         {:noreply, put_flash(socket, :error, "Value '#{value}' already exists")}
       else
-        # Add to original_option_values (tracks all available values)
-        updated_original = Map.put(original_values, option_key, original_for_key ++ [value])
-
-        # Add to selected_option_values (new value is selected by default)
-        # If key doesn't exist in selected, initialize with all schema values first
         selected = socket.assigns.selected_option_values
 
         current_selected =
-          if Map.has_key?(selected, option_key) do
-            Map.get(selected, option_key, [])
-          else
-            # Key not present = all values implicitly selected
-            # Initialize with schema values + original values
-            Enum.uniq(schema_values ++ original_for_key)
-          end
+          init_selected_values(selected, option_key, schema_values, original_for_key)
 
+        updated_original = Map.put(original_values, option_key, original_for_key ++ [value])
         updated_selected = Map.put(selected, option_key, current_selected ++ [value])
 
-        # Clear the input field
         new_inputs = socket.assigns[:new_value_inputs] || %{}
         new_inputs = Map.put(new_inputs, option_key, "")
 
@@ -572,60 +534,71 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     end
   end
 
+  defp gather_existing_values(socket, option_key) do
+    original_values = socket.assigns[:original_option_values] || %{}
+    original_for_key = Map.get(original_values, option_key, [])
+    option_values = socket.assigns.metadata["_option_values"] || %{}
+    current_values = Map.get(option_values, option_key, [])
+    schema_opt = Enum.find(socket.assigns.option_schema, &(&1["key"] == option_key))
+    schema_values = (schema_opt && schema_opt["options"]) || []
+    all_existing = Enum.uniq(original_for_key ++ current_values ++ schema_values)
+    {all_existing, original_for_key, schema_values, original_values}
+  end
+
+  defp init_selected_values(selected, option_key, schema_values, original_for_key) do
+    if Map.has_key?(selected, option_key) do
+      Map.get(selected, option_key, [])
+    else
+      Enum.uniq(schema_values ++ original_for_key)
+    end
+  end
+
   defp do_add_new_option(socket, key, value) do
     if key == "" or value == "" do
       {:noreply, put_flash(socket, :error, "Option key and value are required")}
     else
-      original_values = socket.assigns[:original_option_values] || %{}
-      current_values = socket.assigns.metadata["_option_values"] || %{}
+      add_new_option_to_state(socket, key, value)
+    end
+  end
 
-      # Check if option already exists - if so, add value to it
-      existing_original = Map.get(original_values, key, [])
-      existing_current = Map.get(current_values, key, [])
-      all_existing = Enum.uniq(existing_original ++ existing_current)
+  defp add_new_option_to_state(socket, key, value) do
+    original_values = socket.assigns[:original_option_values] || %{}
+    current_values = socket.assigns.metadata["_option_values"] || %{}
+    existing_original = Map.get(original_values, key, [])
+    existing_current = Map.get(current_values, key, [])
+    all_existing = Enum.uniq(existing_original ++ existing_current)
+    schema_opt = Enum.find(socket.assigns.option_schema, &(&1["key"] == key))
+    schema_values = (schema_opt && schema_opt["options"]) || []
+    all_existing = Enum.uniq(all_existing ++ schema_values)
 
-      # Also check schema values
-      schema_opt = Enum.find(socket.assigns.option_schema, &(&1["key"] == key))
-      schema_values = (schema_opt && schema_opt["options"]) || []
-      all_existing = Enum.uniq(all_existing ++ schema_values)
+    selected = socket.assigns.selected_option_values
+    current_selected = Map.get(selected, key, [])
 
-      # Get current selected_option_values
-      selected = socket.assigns.selected_option_values
-      current_selected = Map.get(selected, key, [])
+    cond do
+      value in all_existing ->
+        {:noreply, put_flash(socket, :error, "Value '#{value}' already exists in '#{key}'")}
 
-      cond do
-        # Value already exists in this option
-        value in all_existing ->
-          {:noreply, put_flash(socket, :error, "Value '#{value}' already exists in '#{key}'")}
+      all_existing != [] ->
+        init_selected = if current_selected == [], do: all_existing, else: current_selected
+        updated_original = Map.put(original_values, key, existing_original ++ [value])
+        updated_selected = Map.put(selected, key, init_selected ++ [value])
 
-        # Option exists - add value to it
-        all_existing != [] ->
-          # Initialize selected with all existing values if not already set
-          init_selected = if current_selected == [], do: all_existing, else: current_selected
-          updated_original = Map.put(original_values, key, existing_original ++ [value])
-          updated_selected = Map.put(selected, key, init_selected ++ [value])
+        {:noreply,
+         socket
+         |> assign(:original_option_values, updated_original)
+         |> assign(:selected_option_values, updated_selected)
+         |> assign(:add_option_key, "")
+         |> assign(:add_option_value, "")
+         |> put_flash(:info, "Value '#{value}' added to '#{key}'")}
 
-          {:noreply,
-           socket
-           |> assign(:original_option_values, updated_original)
-           |> assign(:selected_option_values, updated_selected)
-           |> assign(:add_option_key, "")
-           |> assign(:add_option_value, "")
-           |> put_flash(:info, "Value '#{value}' added to '#{key}'")}
-
-        # New option - create it
-        true ->
-          updated_original = Map.put(original_values, key, [value])
-          updated_selected = Map.put(selected, key, [value])
-
-          {:noreply,
-           socket
-           |> assign(:original_option_values, updated_original)
-           |> assign(:selected_option_values, updated_selected)
-           |> assign(:add_option_key, "")
-           |> assign(:add_option_value, "")
-           |> put_flash(:info, "Option '#{key}' created")}
-      end
+      true ->
+        {:noreply,
+         socket
+         |> assign(:original_option_values, Map.put(original_values, key, [value]))
+         |> assign(:selected_option_values, Map.put(selected, key, [value]))
+         |> assign(:add_option_key, "")
+         |> assign(:add_option_value, "")
+         |> put_flash(:info, "Option '#{key}' created")}
     end
   end
 
@@ -1823,28 +1796,30 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   # - Object format (legacy): %{"type" => "fixed", "value" => "10.00"} -> returned as-is
   defp get_modifier_override(metadata, option_key, option_value) do
     case metadata do
-      %{"_price_modifiers" => %{^option_key => %{^option_value => override}}}
-      when is_map(override) ->
-        # Object format (legacy): %{"type" => "fixed", "value" => "10"}
-        if (override["type"] && override["type"] != "") or
-             (override["value"] && override["value"] != "") do
-          %{
-            "type" => override["type"] || "fixed",
-            "value" => override["value"] || "0"
-          }
-        else
-          nil
-        end
-
-      %{"_price_modifiers" => %{^option_key => %{^option_value => value}}}
-      when is_binary(value) and value != "" ->
-        # String format (unified): convert to object for UI display
-        %{"type" => "fixed", "value" => value}
+      %{"_price_modifiers" => %{^option_key => %{^option_value => override}}} ->
+        normalize_override(override)
 
       _ ->
         nil
     end
   end
+
+  defp normalize_override(override) when is_map(override) do
+    has_type = override["type"] && override["type"] != ""
+    has_value = override["value"] && override["value"] != ""
+
+    if has_type or has_value do
+      %{"type" => override["type"] || "fixed", "value" => override["value"] || "0"}
+    else
+      nil
+    end
+  end
+
+  defp normalize_override(value) when is_binary(value) and value != "" do
+    %{"type" => "fixed", "value" => value}
+  end
+
+  defp normalize_override(_), do: nil
 
   # Calculate final price for a single option value
   defp calculate_option_price(base_price, modifier_type, modifier_value) do
@@ -2049,29 +2024,26 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
         metadata
 
       price_modifiers when is_map(price_modifiers) ->
-        case Map.get(price_modifiers, option_key) do
-          nil ->
-            metadata
+        do_remove_modifier(metadata, price_modifiers, option_key, value)
 
-          option_modifiers when is_map(option_modifiers) ->
-            updated_option_modifiers = Map.delete(option_modifiers, value)
+      _ ->
+        metadata
+    end
+  end
 
-            updated_price_modifiers =
-              if updated_option_modifiers == %{} do
-                Map.delete(price_modifiers, option_key)
-              else
-                Map.put(price_modifiers, option_key, updated_option_modifiers)
-              end
+  defp do_remove_modifier(metadata, price_modifiers, option_key, value) do
+    case Map.get(price_modifiers, option_key) do
+      option_modifiers when is_map(option_modifiers) ->
+        updated_option_modifiers = Map.delete(option_modifiers, value)
 
-            if updated_price_modifiers == %{} do
-              Map.delete(metadata, "_price_modifiers")
-            else
-              Map.put(metadata, "_price_modifiers", updated_price_modifiers)
-            end
+        updated_price_modifiers =
+          if updated_option_modifiers == %{},
+            do: Map.delete(price_modifiers, option_key),
+            else: Map.put(price_modifiers, option_key, updated_option_modifiers)
 
-          _ ->
-            metadata
-        end
+        if updated_price_modifiers == %{},
+          do: Map.delete(metadata, "_price_modifiers"),
+          else: Map.put(metadata, "_price_modifiers", updated_price_modifiers)
 
       _ ->
         metadata
@@ -2089,27 +2061,29 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
         metadata
 
       price_modifiers when is_map(price_modifiers) ->
-        converted =
-          Enum.map(price_modifiers, fn {option_key, option_values} ->
-            converted_values =
-              Enum.map(option_values, fn {opt_value, modifier_data} ->
-                converted_data = convert_modifier_data(modifier_data, base_price)
-                {opt_value, converted_data}
-              end)
-              |> Enum.reject(fn {_k, v} -> v == nil end)
-              |> Map.new()
+        converted = convert_all_modifiers(price_modifiers, base_price)
 
-            {option_key, converted_values}
-          end)
-          |> Enum.reject(fn {_k, v} -> v == nil or v == %{} end)
-          |> Map.new()
-
-        if converted == %{} do
-          Map.delete(metadata, "_price_modifiers")
-        else
-          Map.put(metadata, "_price_modifiers", converted)
-        end
+        if converted == %{},
+          do: Map.delete(metadata, "_price_modifiers"),
+          else: Map.put(metadata, "_price_modifiers", converted)
     end
+  end
+
+  defp convert_all_modifiers(price_modifiers, base_price) do
+    price_modifiers
+    |> Enum.map(fn {option_key, option_values} ->
+      converted_values =
+        option_values
+        |> Enum.map(fn {opt_value, modifier_data} ->
+          {opt_value, convert_modifier_data(modifier_data, base_price)}
+        end)
+        |> Enum.reject(fn {_k, v} -> v == nil end)
+        |> Map.new()
+
+      {option_key, converted_values}
+    end)
+    |> Enum.reject(fn {_k, v} -> v == nil or v == %{} end)
+    |> Map.new()
   end
 
   # Convert a single modifier data entry

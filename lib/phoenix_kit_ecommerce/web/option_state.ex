@@ -147,33 +147,34 @@ defmodule PhoenixKitEcommerce.Web.OptionState do
       when is_binary(option_key) and is_binary(value) do
     value = String.trim(value)
 
-    if value == "" do
-      {:error, "value cannot be empty"}
-    else
-      # Get all existing values (schema + available)
+    with :ok <- validate_nonempty(value),
+         :ok <- validate_unique(value, state, option_key) do
       schema_values = get_schema_values(state.schema, option_key)
       available_values = Map.get(state.available, option_key, [])
       all_existing = Enum.uniq(schema_values ++ available_values)
 
-      if value in all_existing do
-        {:error, "value '#{value}' already exists"}
-      else
-        # Add to available
-        new_available =
-          Map.update(state.available, option_key, [value], fn existing ->
-            existing ++ [value]
-          end)
+      new_available =
+        Map.update(state.available, option_key, [value], fn existing ->
+          existing ++ [value]
+        end)
 
-        # Add to selected (new value is selected by default)
-        current_selected = Map.get(state.selected, option_key, all_existing)
-        new_selected = Map.put(state.selected, option_key, current_selected ++ [value])
+      current_selected = Map.get(state.selected, option_key, all_existing)
+      new_selected = Map.put(state.selected, option_key, current_selected ++ [value])
+      new_inputs = Map.put(state.new_inputs, option_key, "")
 
-        # Clear input
-        new_inputs = Map.put(state.new_inputs, option_key, "")
-
-        {:ok, %{state | available: new_available, selected: new_selected, new_inputs: new_inputs}}
-      end
+      {:ok, %{state | available: new_available, selected: new_selected, new_inputs: new_inputs}}
     end
+  end
+
+  defp validate_nonempty(""), do: {:error, "value cannot be empty"}
+  defp validate_nonempty(_), do: :ok
+
+  defp validate_unique(value, state, option_key) do
+    schema_values = get_schema_values(state.schema, option_key)
+    available_values = Map.get(state.available, option_key, [])
+    all_existing = Enum.uniq(schema_values ++ available_values)
+
+    if value in all_existing, do: {:error, "value '#{value}' already exists"}, else: :ok
   end
 
   @doc """

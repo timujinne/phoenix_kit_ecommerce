@@ -338,41 +338,30 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
       ]
     ]
 
-    case Req.get(url, opts) do
-      {:ok, %{status: 200} = response} ->
-        {:ok, response}
-
-      {:ok, %{status: 301}} ->
-        {:error, :redirect_loop}
-
-      {:ok, %{status: 302}} ->
-        {:error, :redirect_loop}
-
-      {:ok, %{status: 404}} ->
-        {:error, :not_found}
-
-      {:ok, %{status: 403}} ->
-        {:error, :forbidden}
-
-      {:ok, %{status: 429}} ->
-        {:error, :rate_limited}
-
-      {:ok, %{status: status}} when status >= 500 ->
-        {:error, :server_error}
-
-      {:ok, %{status: status}} ->
-        {:error, {:http_error, status}}
-
-      {:error, %Req.TransportError{reason: :timeout}} ->
-        {:error, :timeout}
-
-      {:error, %Req.TransportError{reason: reason}} ->
-        {:error, {:transport_error, reason}}
-
-      {:error, reason} ->
-        {:error, {:request_failed, reason}}
-    end
+    url |> Req.get(opts) |> handle_http_response()
   end
+
+  defp handle_http_response({:ok, %{status: 200} = response}), do: {:ok, response}
+
+  defp handle_http_response({:ok, %{status: status}}) when status in [301, 302],
+    do: {:error, :redirect_loop}
+
+  defp handle_http_response({:ok, %{status: 404}}), do: {:error, :not_found}
+  defp handle_http_response({:ok, %{status: 403}}), do: {:error, :forbidden}
+  defp handle_http_response({:ok, %{status: 429}}), do: {:error, :rate_limited}
+
+  defp handle_http_response({:ok, %{status: status}}) when status >= 500,
+    do: {:error, :server_error}
+
+  defp handle_http_response({:ok, %{status: status}}), do: {:error, {:http_error, status}}
+
+  defp handle_http_response({:error, %Req.TransportError{reason: :timeout}}),
+    do: {:error, :timeout}
+
+  defp handle_http_response({:error, %Req.TransportError{reason: reason}}),
+    do: {:error, {:transport_error, reason}}
+
+  defp handle_http_response({:error, reason}), do: {:error, {:request_failed, reason}}
 
   defp extract_content_type(%{headers: headers}) do
     case get_header_value(headers, "content-type") do

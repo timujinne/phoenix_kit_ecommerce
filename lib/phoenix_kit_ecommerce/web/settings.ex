@@ -7,10 +7,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
   use PhoenixKitEcommerce.Web, :live_view
 
-  alias PhoenixKitBilling, as: Billing
-  alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKit.Settings
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitBilling, as: Billing
+  alias PhoenixKitEcommerce, as: Shop
 
   @impl true
   def mount(_params, _session, socket) do

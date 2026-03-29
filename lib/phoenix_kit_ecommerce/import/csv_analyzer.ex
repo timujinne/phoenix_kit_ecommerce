@@ -173,17 +173,8 @@ defmodule PhoenixKitEcommerce.Import.CSVAnalyzer do
 
     # Collect values for each option name
     Enum.reduce(option_names, acc, fn {position, name}, acc ->
-      # Get all values for this option from variant rows
-      values =
-        Enum.reduce(variant_rows, MapSet.new(), fn row, values_acc ->
-          case get_option_value(row, position) do
-            nil -> values_acc
-            "" -> values_acc
-            value -> MapSet.put(values_acc, value)
-          end
-        end)
+      values = collect_option_values(variant_rows, position)
 
-      # Merge with existing values for this option name
       existing = Map.get(acc, name, MapSet.new())
       Map.put(acc, name, MapSet.union(existing, values))
     end)
@@ -197,6 +188,16 @@ defmodule PhoenixKitEcommerce.Import.CSVAnalyzer do
       "" -> nil
       name -> String.trim(name)
     end
+  end
+
+  defp collect_option_values(variant_rows, position) do
+    Enum.reduce(variant_rows, MapSet.new(), fn row, values_acc ->
+      case get_option_value(row, position) do
+        nil -> values_acc
+        "" -> values_acc
+        value -> MapSet.put(values_acc, value)
+      end
+    end)
   end
 
   defp get_option_value(row, position) do

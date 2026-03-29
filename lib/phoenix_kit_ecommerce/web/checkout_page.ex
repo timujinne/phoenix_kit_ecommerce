@@ -9,12 +9,13 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Utils.CountryData
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitBilling.PaymentOption
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Web.Components.ShopLayouts
-  alias PhoenixKit.Utils.CountryData
 
   import PhoenixKitEcommerce.Web.Helpers,
     only: [
@@ -24,8 +25,6 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
       profile_address: 1,
       get_current_user: 1
     ]
-
-  alias PhoenixKit.Utils.Routes
 
   @impl true
   def mount(_params, session, socket) do
@@ -234,6 +233,12 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   end
 
   defp profile_to_billing_data(profile, cart) do
+    profile
+    |> profile_base_data()
+    |> Map.put("country", profile.country || cart.shipping_country || "EE")
+  end
+
+  defp profile_base_data(profile) do
     %{
       "type" => profile.type || "individual",
       "first_name" => profile.first_name || "",
@@ -242,8 +247,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
       "phone" => profile.phone || "",
       "address_line1" => profile.address_line1 || "",
       "city" => profile.city || "",
-      "postal_code" => profile.postal_code || "",
-      "country" => profile.country || cart.shipping_country || "EE"
+      "postal_code" => profile.postal_code || ""
     }
   end
 
@@ -392,47 +396,48 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         [billing_profile_uuid: socket.assigns.selected_profile_uuid, user_uuid: user_uuid]
       end
 
-    case Shop.convert_cart_to_order(cart, opts) do
-      {:ok, order} ->
-        {:noreply,
-         socket
-         |> assign(:processing, false)
-         |> push_navigate(to: Routes.path("/checkout/complete/#{order.uuid}"))}
+    result = Shop.convert_cart_to_order(cart, opts)
+    {:noreply, handle_order_result(result, socket)}
+  end
 
-      {:error, :cart_not_active} ->
-        {:noreply,
-         socket
-         |> assign(:processing, false)
-         |> assign(:error_message, "Cart is no longer active")
-         |> put_flash(:error, "Cart is no longer active")}
+  defp handle_order_result({:ok, order}, socket) do
+    socket
+    |> assign(:processing, false)
+    |> push_navigate(to: Routes.path("/checkout/complete/#{order.uuid}"))
+  end
 
-      {:error, :cart_empty} ->
-        {:noreply,
-         socket
-         |> assign(:processing, false)
-         |> push_navigate(to: Routes.path("/cart"))}
+  defp handle_order_result({:error, :cart_not_active}, socket) do
+    socket
+    |> assign(:processing, false)
+    |> assign(:error_message, "Cart is no longer active")
+    |> put_flash(:error, "Cart is no longer active")
+  end
 
-      {:error, :no_shipping_method} ->
-        {:noreply,
-         socket
-         |> assign(:processing, false)
-         |> put_flash(:error, "Please select a shipping method")
-         |> push_navigate(to: Routes.path("/cart"))}
+  defp handle_order_result({:error, :cart_empty}, socket) do
+    socket
+    |> assign(:processing, false)
+    |> push_navigate(to: Routes.path("/cart"))
+  end
 
-      {:error, :email_already_registered} ->
-        {:noreply,
-         socket
-         |> assign(:processing, false)
-         |> assign(:email_exists_error, true)
-         |> assign(:error_message, nil)}
+  defp handle_order_result({:error, :no_shipping_method}, socket) do
+    socket
+    |> assign(:processing, false)
+    |> put_flash(:error, "Please select a shipping method")
+    |> push_navigate(to: Routes.path("/cart"))
+  end
 
-      {:error, _reason} ->
-        {:noreply,
-         socket
-         |> assign(:processing, false)
-         |> assign(:error_message, "Failed to create order. Please try again.")
-         |> put_flash(:error, "Failed to create order")}
-    end
+  defp handle_order_result({:error, :email_already_registered}, socket) do
+    socket
+    |> assign(:processing, false)
+    |> assign(:email_exists_error, true)
+    |> assign(:error_message, nil)
+  end
+
+  defp handle_order_result({:error, _reason}, socket) do
+    socket
+    |> assign(:processing, false)
+    |> assign(:error_message, "Failed to create order. Please try again.")
+    |> put_flash(:error, "Failed to create order")
   end
 
   defp validate_billing_data(data) do

@@ -151,14 +151,15 @@ defmodule PhoenixKitEcommerce.Import.Filter do
     Enum.find_value(rules, fn rule ->
       keywords = rule["keywords"] || rule[:keywords] || []
       slug = rule["slug"] || rule[:slug]
-
-      if Enum.any?(keywords, fn kw -> String.contains?(title_lower, String.downcase(kw)) end) do
-        slug
-      end
+      if rule_matches_title?(keywords, title_lower), do: slug
     end)
   end
 
   defp find_category_from_config(_title_lower, _config), do: nil
+
+  defp rule_matches_title?(keywords, title_lower) do
+    Enum.any?(keywords, fn kw -> String.contains?(title_lower, String.downcase(kw)) end)
+  end
 
   # ============================================
   # LEGACY HELPERS (backward compatibility)
