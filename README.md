@@ -63,7 +63,7 @@ PhoenixKit auto-discovers the module at startup — no additional configuration 
 ### Products
 
 ```elixir
-alias PhoenixKit.Modules.Shop
+alias PhoenixKitEcommerce, as: Shop
 
 # Create a product
 {:ok, product} = Shop.create_product(%{
@@ -197,7 +197,7 @@ Subscribe to shop events in your LiveViews:
 
 ```elixir
 def mount(_params, _session, socket) do
-  PhoenixKit.Modules.Shop.Events.subscribe_cart(user_uuid)
+  PhoenixKitEcommerce.Events.subscribe_cart(user_uuid)
   {:ok, socket}
 end
 
@@ -248,11 +248,11 @@ This module implements `css_sources/0` returning `[:phoenix_kit_ecommerce]`, so 
 
 ```
 lib/
-├── mix/tasks/
-│   ├── phoenix_kit_ecommerce.install.ex        # Install mix task
-│   └── phoenix_kit_ecommerce.deduplicate_products.ex  # Dedup utility
-└── phoenix_kit/modules/shop/
-    ├── shop.ex                    # Main context (PhoenixKit.Module behaviour)
+├── phoenix_kit_ecommerce.ex                    # Main context (PhoenixKit.Module behaviour)
+└── phoenix_kit_ecommerce/
+    ├── mix_tasks/
+    │   ├── phoenix_kit_ecommerce.install.ex    # Install mix task
+    │   └── phoenix_kit_ecommerce.deduplicate_products.ex  # Dedup utility
     ├── events.ex                  # PubSub event broadcasting
     ├── translations.ex            # Multi-language utilities
     ├── slug_resolver.ex           # Multi-language slug lookup
@@ -285,8 +285,8 @@ lib/
     │   ├── image_downloader.ex    # Download images from URLs
     │   └── image_migration.ex     # Batch image storage
     ├── workers/
-    │   ├── csv_import_worker.ex         # Oban: async CSV import
-    │   └── image_migration_worker.ex    # Oban: batch image processing
+    │   ├── csv_import_worker.ex   # Oban: async CSV import
+    │   └── image_migration_worker.ex # Oban: batch image processing
     └── web/
         ├── routes.ex              # Route definitions
         ├── shop_web.ex            # Web module config
@@ -323,7 +323,6 @@ lib/
         │   └── translation_tabs.ex # Multi-lang editing
         └── plugs/
             └── shop_session.ex    # Guest cart session
-
 ```
 
 ### Database Tables

@@ -94,7 +94,7 @@ defmodule PhoenixKitEcommerce.MixProject do
 
   defp docs do
     [
-      main: "PhoenixKit.Modules.Shop",
+      main: "PhoenixKitEcommerce",
       source_ref: "v#{@version}",
       source_url: @source_url
     ]

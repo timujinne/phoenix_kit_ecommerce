@@ -119,11 +119,11 @@ draft → active → archived
 
 ```
 lib/
-├── mix/tasks/
-│   ├── phoenix_kit_ecommerce.install.ex        # Install mix task
-│   └── phoenix_kit_ecommerce.deduplicate_products.ex  # Dedup utility
-└── phoenix_kit/modules/shop/
-    ├── shop.ex                    # Main module (PhoenixKit.Module behaviour + context)
+├── phoenix_kit_ecommerce.ex                    # Main module (PhoenixKit.Module behaviour + context)
+└── phoenix_kit_ecommerce/
+    ├── mix_tasks/
+    │   ├── phoenix_kit_ecommerce.install.ex    # Install mix task
+    │   └── phoenix_kit_ecommerce.deduplicate_products.ex  # Dedup utility
     ├── events.ex                  # PubSub event broadcasting
     ├── translations.ex            # Multi-language utilities
     ├── slug_resolver.ex           # Multi-language slug lookup
