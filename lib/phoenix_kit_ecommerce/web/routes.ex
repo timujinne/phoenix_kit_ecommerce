@@ -20,8 +20,7 @@ defmodule PhoenixKitEcommerce.Web.Routes do
       live "/shop/category/:slug", PhoenixKitEcommerce.Web.CatalogCategory, :show,
         as: :shop_category
 
-      live "/shop/product/:slug", PhoenixKitEcommerce.Web.CatalogProduct, :show,
-        as: :shop_product
+      live "/shop/product/:slug", PhoenixKitEcommerce.Web.CatalogProduct, :show, as: :shop_product
 
       live "/cart", PhoenixKitEcommerce.Web.CartPage, :index, as: :shop_cart
       live "/checkout", PhoenixKitEcommerce.Web.CheckoutPage, :index, as: :shop_checkout
@@ -50,8 +49,7 @@ defmodule PhoenixKitEcommerce.Web.Routes do
 
       live "/cart", PhoenixKitEcommerce.Web.CartPage, :index, as: :shop_cart_localized
 
-      live "/checkout", PhoenixKitEcommerce.Web.CheckoutPage, :index,
-        as: :shop_checkout_localized
+      live "/checkout", PhoenixKitEcommerce.Web.CheckoutPage, :index, as: :shop_checkout_localized
 
       live "/checkout/complete/:uuid", PhoenixKitEcommerce.Web.CheckoutComplete, :show,
         as: :shop_checkout_complete_localized
@@ -78,8 +76,7 @@ defmodule PhoenixKitEcommerce.Web.Routes do
     quote do
       live "/admin/shop", PhoenixKitEcommerce.Web.Dashboard, :index, as: :shop_dashboard
 
-      live "/admin/shop/products", PhoenixKitEcommerce.Web.Products, :index,
-        as: :shop_products
+      live "/admin/shop/products", PhoenixKitEcommerce.Web.Products, :index, as: :shop_products
 
       live "/admin/shop/products/new", PhoenixKitEcommerce.Web.ProductForm, :new,
         as: :shop_product_new
@@ -110,8 +107,7 @@ defmodule PhoenixKitEcommerce.Web.Routes do
 
       live "/admin/shop/carts", PhoenixKitEcommerce.Web.Carts, :index, as: :shop_carts
 
-      live "/admin/shop/settings", PhoenixKitEcommerce.Web.Settings, :index,
-        as: :shop_settings
+      live "/admin/shop/settings", PhoenixKitEcommerce.Web.Settings, :index, as: :shop_settings
 
       live "/admin/shop/settings/options", PhoenixKitEcommerce.Web.OptionsSettings, :index,
         as: :shop_options_settings
