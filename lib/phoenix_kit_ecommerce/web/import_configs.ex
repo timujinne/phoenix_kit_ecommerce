@@ -238,112 +238,186 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
         </div>
 
         <%!-- Configs List --%>
-        <div class="card bg-base-100 shadow-xl">
-          <div class="card-body">
-            <h2 class="card-title text-xl mb-6">
-              <.icon name="hero-funnel" class="w-5 h-5" /> Configurations
-            </h2>
+        <.table_default
+          id="import-configs-table"
+          variant="zebra"
+          class="w-full"
+          toggleable={true}
+          items={@configs}
+          card_fields={fn config ->
+            [
+              %{
+                label: "Keywords",
+                value:
+                  "+#{length(config.include_keywords)} / -#{length(config.exclude_keywords)}"
+              },
+              %{label: "Category Rules", value: "#{length(config.category_rules)} rules"}
+            ]
+          end}
+        >
+          <:card_header :let={config}>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-bold">{config.name}</span>
+              <%= if config.is_default do %>
+                <span class="badge badge-primary badge-sm">Default</span>
+              <% end %>
+              <%= if config.active do %>
+                <span class="badge badge-success badge-sm">Active</span>
+              <% else %>
+                <span class="badge badge-neutral badge-sm">Inactive</span>
+              <% end %>
+              <%= if config.skip_filter do %>
+                <span class="badge badge-warning badge-sm">Skip Filter</span>
+              <% end %>
+              <%= if config.download_images do %>
+                <span class="badge badge-info badge-sm">Download Images</span>
+              <% end %>
+            </div>
+          </:card_header>
 
+          <:card_actions :let={config}>
+            <.table_row_menu id={"card-menu-#{config.uuid}"}>
+              <%= unless config.is_default do %>
+                <.table_row_menu_button
+                  phx-click="set_default"
+                  phx-value-uuid={config.uuid}
+                  icon="hero-star"
+                  label="Set Default"
+                />
+              <% end %>
+              <.table_row_menu_button
+                phx-click="toggle_active"
+                phx-value-uuid={config.uuid}
+                icon={if config.active, do: "hero-eye-slash", else: "hero-eye"}
+                label={if config.active, do: "Deactivate", else: "Activate"}
+              />
+              <.table_row_menu_button
+                phx-click="show_edit_modal"
+                phx-value-uuid={config.uuid}
+                icon="hero-pencil"
+                label="Edit"
+              />
+              <.table_row_menu_divider />
+              <.table_row_menu_button
+                phx-click="delete_config"
+                phx-value-uuid={config.uuid}
+                data-confirm="Delete this configuration?"
+                icon="hero-trash"
+                label="Delete"
+                variant="error"
+              />
+            </.table_row_menu>
+          </:card_actions>
+
+          <.table_default_header>
+            <.table_default_row>
+              <.table_default_header_cell>Name</.table_default_header_cell>
+              <.table_default_header_cell>Keywords</.table_default_header_cell>
+              <.table_default_header_cell>Categories</.table_default_header_cell>
+              <.table_default_header_cell>Status</.table_default_header_cell>
+              <.table_default_header_cell class="text-right">Actions</.table_default_header_cell>
+            </.table_default_row>
+          </.table_default_header>
+
+          <.table_default_body>
             <%= if @configs == [] do %>
-              <div class="text-center py-12 text-base-content/60">
-                <.icon name="hero-funnel" class="w-16 h-16 mx-auto mb-4 opacity-30" />
-                <p class="text-lg">No configurations defined yet</p>
-                <p class="text-sm">Add your first import configuration to get started</p>
-              </div>
+              <tr>
+                <td colspan="5" class="text-center py-12 text-base-content/60">
+                  <.icon name="hero-funnel" class="w-16 h-16 mx-auto mb-4 opacity-30" />
+                  <p class="text-lg">No configurations defined yet</p>
+                  <p class="text-sm">Add your first import configuration to get started</p>
+                </td>
+              </tr>
             <% else %>
-              <div class="flex flex-col gap-3">
-                <%= for config <- @configs do %>
-                  <div class="p-4 bg-base-200 rounded-lg hover:bg-base-300 transition-colors">
-                    <div class="flex items-start justify-between">
-                      <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                          <span class="font-medium text-lg">{config.name}</span>
-                          <%= if config.is_default do %>
-                            <span class="badge badge-primary badge-sm">Default</span>
-                          <% end %>
-                          <%= if config.active do %>
-                            <span class="badge badge-success badge-sm">Active</span>
-                          <% else %>
-                            <span class="badge badge-neutral badge-sm">Inactive</span>
-                          <% end %>
-                          <%= if config.skip_filter do %>
-                            <span class="badge badge-warning badge-sm">Skip Filter</span>
-                          <% end %>
-                          <%= if config.download_images do %>
-                            <span class="badge badge-info badge-sm">Download Images</span>
-                          <% end %>
+              <%= for config <- @configs do %>
+                <.table_default_row class="hover">
+                  <.table_default_cell>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-medium">{config.name}</span>
+                      <%= if config.is_default do %>
+                        <span class="badge badge-primary badge-sm">Default</span>
+                      <% end %>
+                      <%= if config.skip_filter do %>
+                        <span class="badge badge-warning badge-sm">Skip Filter</span>
+                      <% end %>
+                      <%= if config.download_images do %>
+                        <span class="badge badge-info badge-sm">Download Images</span>
+                      <% end %>
+                    </div>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <div class="text-sm text-base-content/60 flex flex-wrap gap-3">
+                      <span>
+                        <.icon name="hero-plus-circle" class="w-3 h-3 inline" />
+                        {length(config.include_keywords)} include
+                      </span>
+                      <span>
+                        <.icon name="hero-minus-circle" class="w-3 h-3 inline" />
+                        {length(config.exclude_keywords)} exclude
+                      </span>
+                    </div>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <div class="text-sm text-base-content/60">
+                      <span>
+                        <.icon name="hero-tag" class="w-3 h-3 inline" />
+                        {length(config.category_rules)} rules
+                      </span>
+                      <%= if config.default_category_slug && config.default_category_slug != "" do %>
+                        <div class="mt-0.5">
+                          <.icon name="hero-folder" class="w-3 h-3 inline" />
+                          {config.default_category_slug}
                         </div>
-                        <div class="text-sm text-base-content/60 mt-1 flex flex-wrap gap-3">
-                          <span>
-                            <.icon name="hero-plus-circle" class="w-3 h-3 inline" />
-                            {length(config.include_keywords)} include
-                          </span>
-                          <span>
-                            <.icon name="hero-minus-circle" class="w-3 h-3 inline" />
-                            {length(config.exclude_keywords)} exclude
-                          </span>
-                          <span>
-                            <.icon name="hero-tag" class="w-3 h-3 inline" />
-                            {length(config.category_rules)} category rules
-                          </span>
-                          <%= if config.default_category_slug && config.default_category_slug != "" do %>
-                            <span>
-                              <.icon name="hero-folder" class="w-3 h-3 inline" />
-                              default: {config.default_category_slug}
-                            </span>
-                          <% end %>
-                        </div>
-                      </div>
-
-                      <div class="flex items-center gap-1 shrink-0 ml-4">
+                      <% end %>
+                    </div>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <%= if config.active do %>
+                      <span class="badge badge-success badge-sm">Active</span>
+                    <% else %>
+                      <span class="badge badge-neutral badge-sm">Inactive</span>
+                    <% end %>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <div class="flex justify-end">
+                      <.table_row_menu id={"menu-#{config.uuid}"}>
                         <%= unless config.is_default do %>
-                          <button
-                            type="button"
+                          <.table_row_menu_button
                             phx-click="set_default"
                             phx-value-uuid={config.uuid}
-                            class="btn btn-ghost btn-sm"
-                            title="Set as default"
-                          >
-                            <.icon name="hero-star" class="w-4 h-4" />
-                          </button>
+                            icon="hero-star"
+                            label="Set Default"
+                          />
                         <% end %>
-                        <button
-                          type="button"
+                        <.table_row_menu_button
                           phx-click="toggle_active"
                           phx-value-uuid={config.uuid}
-                          class="btn btn-ghost btn-sm"
-                          title={if config.active, do: "Deactivate", else: "Activate"}
-                        >
-                          <.icon
-                            name={if config.active, do: "hero-eye", else: "hero-eye-slash"}
-                            class="w-4 h-4"
-                          />
-                        </button>
-                        <button
-                          type="button"
+                          icon={if config.active, do: "hero-eye-slash", else: "hero-eye"}
+                          label={if config.active, do: "Deactivate", else: "Activate"}
+                        />
+                        <.table_row_menu_button
                           phx-click="show_edit_modal"
                           phx-value-uuid={config.uuid}
-                          class="btn btn-ghost btn-sm"
-                        >
-                          <.icon name="hero-pencil" class="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
+                          icon="hero-pencil"
+                          label="Edit"
+                        />
+                        <.table_row_menu_divider />
+                        <.table_row_menu_button
                           phx-click="delete_config"
                           phx-value-uuid={config.uuid}
                           data-confirm="Delete this configuration?"
-                          class="btn btn-ghost btn-sm text-error"
-                        >
-                          <.icon name="hero-trash" class="w-4 h-4" />
-                        </button>
-                      </div>
+                          icon="hero-trash"
+                          label="Delete"
+                          variant="error"
+                        />
+                      </.table_row_menu>
                     </div>
-                  </div>
-                <% end %>
-              </div>
+                  </.table_default_cell>
+                </.table_default_row>
+              <% end %>
             <% end %>
-          </div>
-        </div>
+          </.table_default_body>
+        </.table_default>
       </div>
 
       <%!-- Modal for Add/Edit Config --%>
