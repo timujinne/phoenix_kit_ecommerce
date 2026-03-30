@@ -108,8 +108,8 @@ defmodule PhoenixKitEcommerce do
     %{
       enabled: enabled?(),
       currency: get_default_currency_code(),
-      tax_enabled: Settings.get_setting_cached("shop_tax_enabled", "true") == "true",
-      tax_rate: Settings.get_setting_cached("shop_tax_rate", "20"),
+      tax_enabled: billing_tax_enabled?(),
+      tax_rate: billing_tax_rate_percent(),
       inventory_tracking:
         Settings.get_setting_cached("shop_inventory_tracking", "true") == "true",
       allow_price_override:
@@ -2740,15 +2740,45 @@ defmodule PhoenixKitEcommerce do
   defp get_tax_rate(%Cart{shipping_country: nil}), do: Decimal.new("0")
 
   defp get_tax_rate(%Cart{shipping_country: _country}) do
-    if Settings.get_setting_cached("shop_tax_enabled", "true") == "true" do
-      rate = Settings.get_setting_cached("shop_tax_rate", "20")
-      Decimal.div(Decimal.new(rate), Decimal.new("100"))
-    else
-      Decimal.new("0")
-    end
+    # Use billing module's tax rate as single source of truth
+    billing_tax_rate()
   end
 
   defp repo, do: PhoenixKit.RepoHelper.repo()
+
+  # ============================================
+  # TAX RATE (from Billing module — single source of truth)
+  # ============================================
+
+  defp billing_tax_enabled? do
+    if Code.ensure_loaded?(PhoenixKitBilling) do
+      PhoenixKitBilling.tax_enabled?()
+    else
+      Settings.get_setting_cached("billing_tax_enabled", "false") == "true"
+    end
+  end
+
+  defp billing_tax_rate do
+    if Code.ensure_loaded?(PhoenixKitBilling) do
+      PhoenixKitBilling.get_tax_rate()
+    else
+      rate = Settings.get_setting_cached("billing_default_tax_rate", "0")
+      Decimal.div(Decimal.new(rate), Decimal.new("100"))
+    end
+  end
+
+  defp billing_tax_rate_percent do
+    if Code.ensure_loaded?(PhoenixKitBilling) do
+      PhoenixKitBilling.get_tax_rate_percent()
+    else
+      rate = Settings.get_setting_cached("billing_default_tax_rate", "0")
+
+      case Integer.parse(rate) do
+        {value, _} -> value
+        :error -> 0
+      end
+    end
+  end
 
   # ============================================
   # IMPORT LOGS
