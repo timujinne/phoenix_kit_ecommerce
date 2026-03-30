@@ -57,13 +57,6 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
   @impl true
   def render(assigns) do
     ~H"""
-    <PhoenixKitWeb.Components.LayoutWrapper.app_layout
-      flash={@flash}
-      phoenix_kit_current_scope={@phoenix_kit_current_scope}
-      current_path={@url_path}
-      current_locale={@current_locale}
-      page_title={@page_title}
-    >
       <div class="p-6 max-w-6xl mx-auto">
         <.admin_page_header back={Routes.path("/admin/shop")}>
           <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">
@@ -79,107 +72,147 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
           </:actions>
         </.admin_page_header>
 
-        <div class="card bg-base-100 shadow-lg">
-          <div class="overflow-x-auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Method</th>
-                  <th>Price</th>
-                  <th>Constraints</th>
-                  <th>Delivery</th>
-                  <th>Status</th>
-                  <th class="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <%= if @methods == [] do %>
-                  <tr>
-                    <td colspan="6" class="text-center py-12 text-base-content/50">
-                      <.icon name="hero-truck" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                      <p class="text-lg">No shipping methods</p>
-                      <p class="text-sm">Create your first shipping method to get started</p>
-                    </td>
-                  </tr>
-                <% else %>
-                  <%= for method <- @methods do %>
-                    <tr class="hover">
-                      <td>
-                        <div class="font-bold">{method.name}</div>
-                        <%= if method.description do %>
-                          <div class="text-sm text-base-content/60 max-w-xs truncate">
-                            {method.description}
-                          </div>
-                        <% end %>
-                      </td>
-                      <td>
-                        <div class="font-semibold">{format_price(method.price, @currency)}</div>
-                        <%= if method.free_above_amount do %>
-                          <div class="text-xs text-success">
-                            Free above {format_price(method.free_above_amount, @currency)}
-                          </div>
-                        <% end %>
-                      </td>
-                      <td>
-                        <div class="flex flex-wrap gap-1">
-                          <%= if method.max_weight_grams do %>
-                            <span class="badge badge-outline badge-sm">
-                              Max {format_weight(method.max_weight_grams)}
-                            </span>
-                          <% end %>
-                          <%= if method.countries != [] do %>
-                            <span class="badge badge-outline badge-sm">
-                              {length(method.countries)} countries
-                            </span>
-                          <% end %>
-                          <%= if method.countries == [] && is_nil(method.max_weight_grams) do %>
-                            <span class="text-base-content/50 text-sm">No limits</span>
-                          <% end %>
-                        </div>
-                      </td>
-                      <td>
-                        <%= if estimate = PhoenixKitEcommerce.ShippingMethod.delivery_estimate(method) do %>
-                          <span class="text-sm">{estimate}</span>
-                        <% else %>
-                          <span class="text-base-content/50 text-sm">-</span>
-                        <% end %>
-                      </td>
-                      <td>
-                        <input
-                          type="checkbox"
-                          class="toggle toggle-success toggle-sm"
-                          checked={method.active}
-                          phx-click="toggle_active"
-                          phx-value-uuid={method.uuid}
+        <.table_default
+          id="shipping-methods-table"
+          variant="zebra"
+          class="w-full"
+          toggleable={true}
+          items={@methods}
+          card_fields={fn method ->
+            [
+              %{label: "Price", value: format_price(method.price, @currency)},
+              %{
+                label: "Delivery",
+                value:
+                  PhoenixKitEcommerce.ShippingMethod.delivery_estimate(method) || "-"
+              }
+            ]
+          end}
+        >
+          <:card_header :let={method}>
+            <div class="font-bold">{method.name}</div>
+            <%= if method.description do %>
+              <div class="text-sm text-base-content/60">{method.description}</div>
+            <% end %>
+          </:card_header>
+
+          <:card_actions :let={method}>
+            <.table_row_menu id={"card-menu-#{method.uuid}"}>
+              <.table_row_menu_link
+                navigate={Routes.path("/admin/shop/shipping/#{method.uuid}/edit")}
+                icon="hero-pencil"
+                label="Edit"
+              />
+              <.table_row_menu_divider />
+              <.table_row_menu_button
+                phx-click="delete"
+                phx-value-uuid={method.uuid}
+                data-confirm="Delete this shipping method?"
+                icon="hero-trash"
+                label="Delete"
+                variant="error"
+              />
+            </.table_row_menu>
+          </:card_actions>
+
+          <.table_default_header>
+            <.table_default_row>
+              <.table_default_header_cell>Method</.table_default_header_cell>
+              <.table_default_header_cell>Price</.table_default_header_cell>
+              <.table_default_header_cell>Constraints</.table_default_header_cell>
+              <.table_default_header_cell>Delivery</.table_default_header_cell>
+              <.table_default_header_cell>Status</.table_default_header_cell>
+              <.table_default_header_cell class="text-right">Actions</.table_default_header_cell>
+            </.table_default_row>
+          </.table_default_header>
+
+          <.table_default_body>
+            <%= if @methods == [] do %>
+              <tr>
+                <td colspan="6" class="text-center py-12 text-base-content/50">
+                  <.icon name="hero-truck" class="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p class="text-lg">No shipping methods</p>
+                  <p class="text-sm">Create your first shipping method to get started</p>
+                </td>
+              </tr>
+            <% else %>
+              <%= for method <- @methods do %>
+                <.table_default_row class="hover">
+                  <.table_default_cell>
+                    <div class="font-bold">{method.name}</div>
+                    <%= if method.description do %>
+                      <div class="text-sm text-base-content/60 max-w-xs truncate">
+                        {method.description}
+                      </div>
+                    <% end %>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <div class="font-semibold">{format_price(method.price, @currency)}</div>
+                    <%= if method.free_above_amount do %>
+                      <div class="text-xs text-success">
+                        Free above {format_price(method.free_above_amount, @currency)}
+                      </div>
+                    <% end %>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <div class="flex flex-wrap gap-1">
+                      <%= if method.max_weight_grams do %>
+                        <span class="badge badge-outline badge-sm">
+                          Max {format_weight(method.max_weight_grams)}
+                        </span>
+                      <% end %>
+                      <%= if method.countries != [] do %>
+                        <span class="badge badge-outline badge-sm">
+                          {length(method.countries)} countries
+                        </span>
+                      <% end %>
+                      <%= if method.countries == [] && is_nil(method.max_weight_grams) do %>
+                        <span class="text-base-content/50 text-sm">No limits</span>
+                      <% end %>
+                    </div>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <%= if estimate = PhoenixKitEcommerce.ShippingMethod.delivery_estimate(method) do %>
+                      <span class="text-sm">{estimate}</span>
+                    <% else %>
+                      <span class="text-base-content/50 text-sm">-</span>
+                    <% end %>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <input
+                      type="checkbox"
+                      class="toggle toggle-success toggle-sm"
+                      checked={method.active}
+                      phx-click="toggle_active"
+                      phx-value-uuid={method.uuid}
+                    />
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <div class="flex justify-end">
+                      <.table_row_menu id={"menu-#{method.uuid}"}>
+                        <.table_row_menu_link
+                          navigate={Routes.path("/admin/shop/shipping/#{method.uuid}/edit")}
+                          icon="hero-pencil"
+                          label="Edit"
                         />
-                      </td>
-                      <td class="text-right">
-                        <div class="flex justify-end gap-2">
-                          <.link
-                            navigate={Routes.path("/admin/shop/shipping/#{method.uuid}/edit")}
-                            class="btn btn-ghost btn-sm"
-                          >
-                            <.icon name="hero-pencil" class="w-4 h-4" />
-                          </.link>
-                          <button
-                            phx-click="delete"
-                            phx-value-uuid={method.uuid}
-                            data-confirm="Delete this shipping method?"
-                            class="btn btn-ghost btn-sm text-error"
-                          >
-                            <.icon name="hero-trash" class="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  <% end %>
-                <% end %>
-              </tbody>
-            </table>
-          </div>
-        </div>
+                        <.table_row_menu_divider />
+                        <.table_row_menu_button
+                          phx-click="delete"
+                          phx-value-uuid={method.uuid}
+                          data-confirm="Delete this shipping method?"
+                          icon="hero-trash"
+                          label="Delete"
+                          variant="error"
+                        />
+                      </.table_row_menu>
+                    </div>
+                  </.table_default_cell>
+                </.table_default_row>
+              <% end %>
+            <% end %>
+          </.table_default_body>
+        </.table_default>
       </div>
-    </PhoenixKitWeb.Components.LayoutWrapper.app_layout>
     """
   end
 

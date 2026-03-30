@@ -8,6 +8,9 @@ defmodule PhoenixKitEcommerce.Web.Categories do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  import PhoenixKitWeb.Components.Core.TableDefault
+  import PhoenixKitWeb.Components.Core.TableRowMenu
+
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
@@ -305,13 +308,6 @@ defmodule PhoenixKitEcommerce.Web.Categories do
   @impl true
   def render(assigns) do
     ~H"""
-    <PhoenixKitWeb.Components.LayoutWrapper.app_layout
-      flash={@flash}
-      phoenix_kit_current_scope={@phoenix_kit_current_scope}
-      current_path={@url_path}
-      current_locale={@current_locale}
-      page_title={@page_title}
-    >
       <div class="container flex-col mx-auto px-4 py-6 max-w-6xl">
         <.admin_page_header back={Routes.path("/admin/shop")}>
           <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">Categories</h1>
@@ -420,147 +416,165 @@ defmodule PhoenixKitEcommerce.Web.Categories do
         <% end %>
 
         <%!-- Categories Table --%>
-        <div class="card bg-base-100 shadow-xl overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th class="w-12">
+        <.table_default id="categories-table" variant="zebra" class="w-full" toggleable={true} items={@categories}
+          card_fields={fn category -> [
+            %{label: "Status", value: category.status || "active"},
+            %{label: "Position", value: category.position}
+          ] end}>
+
+          <:card_header :let={category}>
+            <div class="font-bold">{Translations.get(category, :name, @current_language)}</div>
+            <div class="text-sm text-base-content/60">
+              {Translations.get(category, :slug, @current_language)}
+            </div>
+          </:card_header>
+
+          <:card_actions :let={category}>
+            <.table_row_menu id={"card-menu-#{category.uuid}"}>
+              <.table_row_menu_link
+                navigate={Routes.path("/admin/shop/categories/#{category.uuid}/edit")}
+                icon="hero-pencil"
+                label={gettext("Edit")}
+              />
+              <.table_row_menu_divider />
+              <.table_row_menu_button
+                phx-click="delete"
+                phx-value-uuid={category.uuid}
+                data-confirm={gettext("Delete this category?")}
+                icon="hero-trash"
+                label={gettext("Delete")}
+                variant="error"
+              />
+            </.table_row_menu>
+          </:card_actions>
+
+          <.table_default_header>
+            <.table_default_row>
+              <.table_default_header_cell class="w-12">
+                <label class="cursor-pointer">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-sm"
+                    phx-click="select_all"
+                    checked={all_selected?(@categories, @selected_uuids)}
+                  />
+                </label>
+              </.table_default_header_cell>
+              <.table_default_header_cell>Name</.table_default_header_cell>
+              <.table_default_header_cell>Slug</.table_default_header_cell>
+              <.table_default_header_cell>Parent</.table_default_header_cell>
+              <.table_default_header_cell>Status</.table_default_header_cell>
+              <.table_default_header_cell>Position</.table_default_header_cell>
+              <.table_default_header_cell>Products</.table_default_header_cell>
+              <.table_default_header_cell class="text-right">Actions</.table_default_header_cell>
+            </.table_default_row>
+          </.table_default_header>
+
+          <.table_default_body>
+            <%= if Enum.empty?(@categories) do %>
+              <.table_default_row>
+                <.table_default_cell class="text-center py-12 text-base-content/50">
+                  <.icon name="hero-folder" class="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p class="text-lg">No categories found</p>
+                  <p class="text-sm">Create your first category to organize products</p>
+                </.table_default_cell>
+              </.table_default_row>
+            <% else %>
+              <%= for category <- @categories do %>
+                <% cat_name = Translations.get(category, :name, @current_language) %>
+                <% cat_slug = Translations.get(category, :slug, @current_language) %>
+                <.table_default_row class={"hover #{if MapSet.member?(@selected_uuids, category.uuid), do: "bg-primary/5", else: ""}"}>
+                  <.table_default_cell>
                     <label class="cursor-pointer">
                       <input
                         type="checkbox"
                         class="checkbox checkbox-sm"
-                        phx-click="select_all"
-                        checked={all_selected?(@categories, @selected_uuids)}
+                        phx-click="toggle_select"
+                        phx-value-uuid={category.uuid}
+                        checked={MapSet.member?(@selected_uuids, category.uuid)}
                       />
                     </label>
-                  </th>
-                  <th>Name</th>
-                  <th>Slug</th>
-                  <th>Parent</th>
-                  <th>Status</th>
-                  <th>Position</th>
-                  <th>Products</th>
-                  <th class="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <%= if Enum.empty?(@categories) do %>
-                  <tr>
-                    <td colspan="8" class="text-center py-12 text-base-content/50">
-                      <.icon name="hero-folder" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                      <p class="text-lg">No categories found</p>
-                      <p class="text-sm">Create your first category to organize products</p>
-                    </td>
-                  </tr>
-                <% else %>
-                  <%= for category <- @categories do %>
-                    <% cat_name = Translations.get(category, :name, @current_language) %>
-                    <% cat_slug = Translations.get(category, :slug, @current_language) %>
-                    <tr class={[
-                      "hover",
-                      if(MapSet.member?(@selected_uuids, category.uuid),
-                        do: "bg-primary/5",
-                        else: ""
-                      )
-                    ]}>
-                      <td>
-                        <label class="cursor-pointer">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-sm"
-                            phx-click="toggle_select"
-                            phx-value-uuid={category.uuid}
-                            checked={MapSet.member?(@selected_uuids, category.uuid)}
-                          />
-                        </label>
-                      </td>
-                      <td>
-                        <div class="flex items-center gap-3">
-                          <div class="avatar placeholder">
-                            <div class="bg-base-300 text-base-content/50 w-10 h-10 rounded">
-                              <%= if image_url = Category.get_image_url(category, size: "thumbnail") do %>
-                                <img src={image_url} alt={cat_name} />
-                              <% else %>
-                                <.icon name="hero-folder" class="w-5 h-5" />
-                              <% end %>
-                            </div>
-                          </div>
-                          <span class="font-medium">{cat_name}</span>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <div class="flex items-center gap-3">
+                      <div class="avatar placeholder">
+                        <div class="bg-base-300 text-base-content/50 w-10 h-10 rounded">
+                          <%= if image_url = Category.get_image_url(category, size: "thumbnail") do %>
+                            <img src={image_url} alt={cat_name} />
+                          <% else %>
+                            <.icon name="hero-folder" class="w-5 h-5" />
+                          <% end %>
                         </div>
-                      </td>
-                      <td class="text-base-content/60">{cat_slug}</td>
-                      <td>
-                        <%= if category.parent do %>
-                          <span class="badge badge-ghost">
-                            {Translations.get(category.parent, :name, @current_language)}
-                          </span>
-                        <% else %>
-                          <span class="text-base-content/40">&mdash;</span>
-                        <% end %>
-                      </td>
-                      <td>
-                        <span class={status_badge_class(category.status)}>
-                          {category.status || "active"}
-                        </span>
-                      </td>
-                      <td>{category.position}</td>
-                      <td>
-                        <span class="badge badge-ghost badge-sm">
-                          {Map.get(@product_counts, category.uuid, 0)}
-                        </span>
-                      </td>
-                      <td class="text-right">
-                        <div class="flex flex-wrap gap-1 justify-end">
-                          <.link
-                            navigate={Routes.path("/admin/shop/categories/#{category.uuid}/edit")}
-                            class="btn btn-xs btn-outline btn-secondary tooltip tooltip-bottom"
-                            data-tip={gettext("Edit")}
-                          >
-                            <.icon name="hero-pencil" class="h-4 w-4 hidden sm:inline" />
-                            <span class="sm:hidden whitespace-nowrap">{gettext("Edit")}</span>
-                          </.link>
-                          <button
-                            phx-click="delete"
-                            phx-value-uuid={category.uuid}
-                            data-confirm="Delete this category?"
-                            class="btn btn-xs btn-outline btn-error tooltip tooltip-bottom"
-                            data-tip={gettext("Delete")}
-                          >
-                            <.icon name="hero-trash" class="h-4 w-4 hidden sm:inline" />
-                            <span class="sm:hidden whitespace-nowrap">{gettext("Delete")}</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  <% end %>
-                <% end %>
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                      <span class="font-medium">{cat_name}</span>
+                    </div>
+                  </.table_default_cell>
+                  <.table_default_cell class="text-base-content/60">{cat_slug}</.table_default_cell>
+                  <.table_default_cell>
+                    <%= if category.parent do %>
+                      <span class="badge badge-ghost">
+                        {Translations.get(category.parent, :name, @current_language)}
+                      </span>
+                    <% else %>
+                      <span class="text-base-content/40">&mdash;</span>
+                    <% end %>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <span class={status_badge_class(category.status)}>
+                      {category.status || "active"}
+                    </span>
+                  </.table_default_cell>
+                  <.table_default_cell>{category.position}</.table_default_cell>
+                  <.table_default_cell>
+                    <span class="badge badge-ghost badge-sm">
+                      {Map.get(@product_counts, category.uuid, 0)}
+                    </span>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <div class="flex justify-end">
+                      <.table_row_menu id={"menu-#{category.uuid}"}>
+                        <.table_row_menu_link
+                          navigate={Routes.path("/admin/shop/categories/#{category.uuid}/edit")}
+                          icon="hero-pencil"
+                          label={gettext("Edit")}
+                        />
+                        <.table_row_menu_divider />
+                        <.table_row_menu_button
+                          phx-click="delete"
+                          phx-value-uuid={category.uuid}
+                          data-confirm={gettext("Delete this category?")}
+                          icon="hero-trash"
+                          label={gettext("Delete")}
+                          variant="error"
+                        />
+                      </.table_row_menu>
+                    </div>
+                  </.table_default_cell>
+                </.table_default_row>
+              <% end %>
+            <% end %>
+          </.table_default_body>
+        </.table_default>
 
-          <%!-- Pagination --%>
-          <%= if @total > @per_page do %>
-            <div class="card-body border-t">
-              <div class="flex justify-center">
-                <div class="join">
-                  <%= for page <- 1..ceil(@total / @per_page) do %>
-                    <button
-                      phx-click="change_page"
-                      phx-value-page={page}
-                      class={[
-                        "join-item btn btn-sm",
-                        if(@page == page, do: "btn-active", else: "")
-                      ]}
-                    >
-                      {page}
-                    </button>
-                  <% end %>
-                </div>
-              </div>
+        <%!-- Pagination --%>
+        <%= if @total > @per_page do %>
+          <div class="flex justify-center mt-6">
+            <div class="join">
+              <%= for page <- 1..ceil(@total / @per_page) do %>
+                <button
+                  phx-click="change_page"
+                  phx-value-page={page}
+                  class={[
+                    "join-item btn btn-sm",
+                    if(@page == page, do: "btn-active", else: "")
+                  ]}
+                >
+                  {page}
+                </button>
+              <% end %>
             </div>
-          <% end %>
-        </div>
+          </div>
+        <% end %>
       </div>
 
       <%!-- Bulk Status Change Modal --%>
@@ -660,7 +674,6 @@ defmodule PhoenixKitEcommerce.Web.Categories do
           <div class="modal-backdrop" phx-click="close_bulk_modal"></div>
         </div>
       <% end %>
-    </PhoenixKitWeb.Components.LayoutWrapper.app_layout>
     """
   end
 end
