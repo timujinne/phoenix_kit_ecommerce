@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.0] - 2026-03-30
+## 0.1.2 - 2026-03-30
 
 ### Added
 
@@ -23,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Replace raw `<tr><td>` empty-state rows with proper `table_default` components in shipping methods and import configs
 - Fix weight formatting in shipping methods to use `Float.round/2` for precision consistency with carts
 
-## [0.1.1] - 2026-03-29
+## 0.1.1 - 2026-03-29
 
 ### Changed
 
@@ -48,7 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CHANGELOG.md for release tracking
 - MIT LICENSE file
 
-## [0.1.0] - 2026-03-29
+## 0.1.0 - 2026-03-29
 
 ### Added
 
