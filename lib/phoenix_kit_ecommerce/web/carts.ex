@@ -5,6 +5,8 @@ defmodule PhoenixKitEcommerce.Web.Carts do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  import PhoenixKitWeb.Components.Core.TableDefault
+
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
@@ -130,75 +132,89 @@ defmodule PhoenixKitEcommerce.Web.Carts do
         </div>
 
         <%!-- Carts Table --%>
-        <div class="card bg-base-100 shadow-xl overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Customer</th>
-                  <th>Items</th>
-                  <th class="text-right">Total</th>
-                  <th>Status</th>
-                  <th>Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                <%= if @carts == [] do %>
-                  <tr>
-                    <td colspan="5" class="text-center py-12 text-base-content/50">
-                      <.icon name="hero-shopping-cart" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                      <p class="text-lg">No carts found</p>
-                      <p class="text-sm">Carts will appear here when customers add items</p>
-                    </td>
-                  </tr>
-                <% else %>
-                  <%= for cart <- @carts do %>
-                    <tr class="hover">
-                      <td>
-                        <%= if cart.user do %>
-                          <div class="font-medium">{cart.user.email}</div>
-                          <div class="text-xs text-base-content/50">User UUID: {cart.user.uuid}</div>
-                        <% else %>
-                          <div class="text-base-content/60">Guest</div>
-                          <div class="text-xs text-base-content/40 font-mono">
-                            {String.slice(cart.session_id || "", 0, 16)}...
-                          </div>
-                        <% end %>
-                      </td>
-                      <td>
-                        <span class="badge badge-neutral">{cart.items_count || 0} items</span>
-                        <%= if cart.total_weight_grams && cart.total_weight_grams > 0 do %>
-                          <span class="text-xs text-base-content/50 ml-2">
-                            {format_weight(cart.total_weight_grams)}
-                          </span>
-                        <% end %>
-                      </td>
-                      <td class="text-right">
-                        <div class="font-semibold">{format_price(cart.total, @currency)}</div>
-                        <%= if Decimal.compare(cart.subtotal || Decimal.new("0"), cart.total || Decimal.new("0")) != :eq do %>
-                          <div class="text-xs text-base-content/50">
-                            Subtotal: {format_price(cart.subtotal, @currency)}
-                          </div>
-                        <% end %>
-                      </td>
-                      <td>
-                        <span class={status_badge_class(cart.status)}>{cart.status}</span>
-                      </td>
-                      <td>
-                        <div class="text-sm">{format_datetime(cart.updated_at)}</div>
-                        <%= if cart.expires_at do %>
-                          <div class="text-xs text-base-content/50">
-                            Expires: {format_datetime(cart.expires_at)}
-                          </div>
-                        <% end %>
-                      </td>
-                    </tr>
-                  <% end %>
-                <% end %>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <.table_default id="carts-table" variant="zebra" class="w-full" toggleable={true} items={@carts}
+          card_fields={fn cart -> [
+            %{label: "Items", value: "#{cart.items_count || 0} items"},
+            %{label: "Total", value: if(cart.total, do: Decimal.to_string(Decimal.round(cart.total, 2)), else: "-")},
+            %{label: "Status", value: cart.status || "-"},
+            %{label: "Updated", value: Calendar.strftime(cart.updated_at, "%Y-%m-%d %H:%M")}
+          ] end}>
+
+          <:card_header :let={cart}>
+            <div class="font-bold">
+              <%= if cart.user do %>
+                {cart.user.email}
+              <% else %>
+                Guest — {String.slice(cart.session_id || "", 0, 16)}...
+              <% end %>
+            </div>
+          </:card_header>
+
+          <.table_default_header>
+            <.table_default_row>
+              <.table_default_header_cell>Customer</.table_default_header_cell>
+              <.table_default_header_cell>Items</.table_default_header_cell>
+              <.table_default_header_cell class="text-right">Total</.table_default_header_cell>
+              <.table_default_header_cell>Status</.table_default_header_cell>
+              <.table_default_header_cell>Updated</.table_default_header_cell>
+            </.table_default_row>
+          </.table_default_header>
+
+          <.table_default_body>
+            <%= if @carts == [] do %>
+              <.table_default_row>
+                <.table_default_cell class="text-center py-12 text-base-content/50">
+                  <.icon name="hero-shopping-cart" class="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p class="text-lg">No carts found</p>
+                  <p class="text-sm">Carts will appear here when customers add items</p>
+                </.table_default_cell>
+              </.table_default_row>
+            <% else %>
+              <%= for cart <- @carts do %>
+                <.table_default_row class="hover">
+                  <.table_default_cell>
+                    <%= if cart.user do %>
+                      <div class="font-medium">{cart.user.email}</div>
+                      <div class="text-xs text-base-content/50">User UUID: {cart.user.uuid}</div>
+                    <% else %>
+                      <div class="text-base-content/60">Guest</div>
+                      <div class="text-xs text-base-content/40 font-mono">
+                        {String.slice(cart.session_id || "", 0, 16)}...
+                      </div>
+                    <% end %>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <span class="badge badge-neutral">{cart.items_count || 0} items</span>
+                    <%= if cart.total_weight_grams && cart.total_weight_grams > 0 do %>
+                      <span class="text-xs text-base-content/50 ml-2">
+                        {format_weight(cart.total_weight_grams)}
+                      </span>
+                    <% end %>
+                  </.table_default_cell>
+                  <.table_default_cell class="text-right">
+                    <div class="font-semibold">{format_price(cart.total, @currency)}</div>
+                    <%= if Decimal.compare(cart.subtotal || Decimal.new("0"), cart.total || Decimal.new("0")) != :eq do %>
+                      <div class="text-xs text-base-content/50">
+                        Subtotal: {format_price(cart.subtotal, @currency)}
+                      </div>
+                    <% end %>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <span class={status_badge_class(cart.status)}>{cart.status}</span>
+                  </.table_default_cell>
+                  <.table_default_cell>
+                    <div class="text-sm">{format_datetime(cart.updated_at)}</div>
+                    <%= if cart.expires_at do %>
+                      <div class="text-xs text-base-content/50">
+                        Expires: {format_datetime(cart.expires_at)}
+                      </div>
+                    <% end %>
+                  </.table_default_cell>
+                </.table_default_row>
+              <% end %>
+            <% end %>
+          </.table_default_body>
+        </.table_default>
 
         <%!-- Pagination --%>
         <%= if @total > @per_page do %>
