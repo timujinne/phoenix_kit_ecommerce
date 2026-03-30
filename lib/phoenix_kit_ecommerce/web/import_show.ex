@@ -68,13 +68,6 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
   @impl true
   def render(assigns) do
     ~H"""
-    <PhoenixKitWeb.Components.LayoutWrapper.app_layout
-      flash={@flash}
-      phoenix_kit_current_scope={@phoenix_kit_current_scope}
-      current_path={@url_path}
-      current_locale={@current_locale}
-      page_title={@page_title}
-    >
       <div class="container mx-auto px-4 py-6 max-w-4xl">
         <.admin_page_header back={Routes.path("/admin/shop/imports")} title="Import Details">
           <:actions>
@@ -264,7 +257,6 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
           </div>
         <% end %>
       </div>
-    </PhoenixKitWeb.Components.LayoutWrapper.app_layout>
     """
   end
 end

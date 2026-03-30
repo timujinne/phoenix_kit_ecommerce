@@ -371,13 +371,6 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   @impl true
   def render(assigns) do
     ~H"""
-    <PhoenixKitWeb.Components.LayoutWrapper.app_layout
-      flash={@flash}
-      phoenix_kit_current_scope={@phoenix_kit_current_scope}
-      current_path={@url_path}
-      current_locale={@current_locale}
-      page_title={@page_title}
-    >
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
         <.admin_page_header back={Routes.path("/admin/shop/categories")}>
           <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{@page_title}</h1>
@@ -911,7 +904,6 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
         selected_uuids={if @image_uuid, do: [@image_uuid], else: []}
         phoenix_kit_current_user={@phoenix_kit_current_user}
       />
-    </PhoenixKitWeb.Components.LayoutWrapper.app_layout>
     """
   end
 
