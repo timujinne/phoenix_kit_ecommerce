@@ -9,7 +9,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
   use PhoenixKitEcommerce.Web, :live_view
 
-  alias PhoenixKit.Utils.CountryData
+  alias PhoenixKit.Modules.Billing.CountryData
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitBilling.PaymentOption
