@@ -321,13 +321,13 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
 
           <.table_default_body>
             <%= if @configs == [] do %>
-              <tr>
-                <td colspan="5" class="text-center py-12 text-base-content/60">
+              <.table_default_row>
+                <.table_default_cell colspan={5} class="text-center py-12 text-base-content/60">
                   <.icon name="hero-funnel" class="w-16 h-16 mx-auto mb-4 opacity-30" />
                   <p class="text-lg">No configurations defined yet</p>
                   <p class="text-sm">Add your first import configuration to get started</p>
-                </td>
-              </tr>
+                </.table_default_cell>
+              </.table_default_row>
             <% else %>
               <%= for config <- @configs do %>
                 <.table_default_row class="hover">

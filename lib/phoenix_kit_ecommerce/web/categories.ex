@@ -100,18 +100,22 @@ defmodule PhoenixKitEcommerce.Web.Categories do
 
   @impl true
   def handle_event("delete", %{"uuid" => uuid}, socket) do
-    category = Shop.get_category!(uuid)
+    if Scope.admin?(socket.assigns.phoenix_kit_current_scope) do
+      category = Shop.get_category!(uuid)
 
-    case Shop.delete_category(category) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> load_static_category_data()
-         |> load_filtered_categories()
-         |> put_flash(:info, "Category deleted")}
+      case Shop.delete_category(category) do
+        {:ok, _} ->
+          {:noreply,
+           socket
+           |> load_static_category_data()
+           |> load_filtered_categories()
+           |> put_flash(:info, "Category deleted")}
 
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to delete category")}
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Failed to delete category")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Not authorized")}
     end
   end
 

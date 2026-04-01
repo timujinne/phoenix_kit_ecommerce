@@ -128,13 +128,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
 
           <.table_default_body>
             <%= if @methods == [] do %>
-              <tr>
-                <td colspan="6" class="text-center py-12 text-base-content/50">
+              <.table_default_row>
+                <.table_default_cell colspan={6} class="text-center py-12 text-base-content/50">
                   <.icon name="hero-truck" class="w-12 h-12 mx-auto mb-3 opacity-50" />
                   <p class="text-lg">No shipping methods</p>
                   <p class="text-sm">Create your first shipping method to get started</p>
-                </td>
-              </tr>
+                </.table_default_cell>
+              </.table_default_row>
             <% else %>
               <%= for method <- @methods do %>
                 <.table_default_row class="hover">
@@ -226,6 +226,6 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
     Currency.format_amount(amount, currency)
   end
 
-  defp format_weight(grams) when grams >= 1000, do: "#{div(grams, 1000)} kg"
+  defp format_weight(grams) when grams >= 1000, do: "#{Float.round(grams / 1000, 1)} kg"
   defp format_weight(grams), do: "#{grams} g"
 end

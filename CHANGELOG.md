@@ -4,7 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.1] - 2026-03-29
+## 0.1.2 - 2026-03-30
+
+### Added
+
+- Compat alias modules (`lib/phoenix_kit_ecommerce/compat/`) bridging old `PhoenixKit.Modules.Shop.*` namespace to `PhoenixKitEcommerce.*` for backward compatibility
+- Billing module as single source of truth for tax rates with Settings fallback
+
+### Changed
+
+- Remove explicit `LayoutWrapper.app_layout` from 14 admin LiveViews (core now auto-applies admin layout; kept in `shop_layouts.ex` for public storefront)
+- Convert 5 admin list pages (carts, categories, products, shipping methods, import configs) to `table_default` + `table_row_menu` components
+- Remove 65 duplicate files from old `lib/phoenix_kit/modules/shop/` namespace and 2 duplicate mix tasks
+
+### Fixed
+
+- Add admin authorization check (`Scope.admin?/1`) to individual category delete, matching bulk operations
+- Replace raw `<tr><td>` empty-state rows with proper `table_default` components in shipping methods and import configs
+- Fix weight formatting in shipping methods to use `Float.round/2` for precision consistency with carts
+
+## 0.1.1 - 2026-03-29
 
 ### Changed
 
@@ -29,7 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CHANGELOG.md for release tracking
 - MIT LICENSE file
 
-## [0.1.0] - 2026-03-29
+## 0.1.0 - 2026-03-29
 
 ### Added
 
