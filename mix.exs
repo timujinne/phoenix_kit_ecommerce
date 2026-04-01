@@ -10,6 +10,7 @@ defmodule PhoenixKitEcommerce.MixProject do
       version: @version,
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
+      elixirc_options: [ignore_module_conflict: true],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
