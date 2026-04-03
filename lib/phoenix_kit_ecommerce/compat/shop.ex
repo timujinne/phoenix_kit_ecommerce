@@ -42,7 +42,7 @@ defmodule PhoenixKit.Modules.Shop do
   defdelegate get_product!(id), to: PhoenixKitEcommerce
   defdelegate get_product_by_slug(slug), to: PhoenixKitEcommerce
   defdelegate get_product_by_any_slug(slug), to: PhoenixKitEcommerce
-  defdelegate get_product_by_slug_localized(slug, locale), to: PhoenixKitEcommerce
+  defdelegate get_product_by_slug_localized(slug, locale, opts \\ []), to: PhoenixKitEcommerce
   defdelegate get_product_slug(product, locale), to: PhoenixKitEcommerce
   defdelegate product_slug_exists?(slug, language, opts \\ []), to: PhoenixKitEcommerce
   defdelegate change_product(product, attrs \\ %{}), to: PhoenixKitEcommerce
