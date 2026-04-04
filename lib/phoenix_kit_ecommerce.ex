@@ -164,13 +164,28 @@ defmodule PhoenixKitEcommerce do
   def module_name, do: "E-Commerce"
 
   @impl PhoenixKit.Module
+  def version, do: Application.spec(:phoenix_kit_ecommerce, :vsn) |> to_string()
+
+  @impl PhoenixKit.Module
   def permission_metadata do
     %{
       key: "shop",
       label: "E-Commerce",
-      icon: "hero-shopping-cart",
-      description: "Product catalog, orders, and e-commerce management"
+      icon: "🛒",
+      description: "Physical and digital products with cart and checkout"
     }
+  end
+
+  @doc """
+  Returns stats for the module card on the admin Modules page.
+  """
+  def module_stats do
+    config = get_config()
+
+    [
+      %{label: "Products", value: config[:products_count] || 0},
+      %{label: "Categories", value: config[:categories_count] || 0}
+    ]
   end
 
   @impl PhoenixKit.Module
