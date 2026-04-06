@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git reflog:*)",
+      "Bash(git gc:*)",
+      "Bash(cd:*)",
+      "Bash(git mv:*)",
+      "Bash(for item:*)",
+      "Bash(do git:*)",
+      "Bash(done)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(mix compile:*)",
+      "Bash(gh pr:*)"
+    ]
+  }
+}
