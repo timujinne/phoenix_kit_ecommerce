@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.3 - 2026-04-06
+
+### Added
+- Add `version/0` callback to display package version on modules page
+
+### Changed
+- Remove deprecated `select-bordered` class for daisyUI 5 compatibility
+- Expand compat module with full delegation list
+- Add `elixirc_options: [ignore_module_conflict: true]` for umbrella compatibility
+
+### Fixed
+- Fix compilation errors after core changes
+
 ## 0.1.2 - 2026-03-30
 
 ### Added
