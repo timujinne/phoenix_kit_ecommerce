@@ -164,6 +164,14 @@ defmodule PhoenixKitEcommerce do
   def module_name, do: "E-Commerce"
 
   @impl PhoenixKit.Module
+  def version do
+    case Application.spec(:phoenix_kit_ecommerce, :vsn) do
+      nil -> "0.0.0"
+      vsn -> to_string(vsn)
+    end
+  end
+
+  @impl PhoenixKit.Module
   def permission_metadata do
     %{
       key: "shop",

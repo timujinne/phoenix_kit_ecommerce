@@ -1020,7 +1020,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                           </.link>
                         </td>
                         <td>
-                          <.status_badge status={import.status} />
+                          <.import_status_badge status={import.status} />
                         </td>
                         <td>
                           <%= if import.status == "processing" do %>
@@ -1583,7 +1583,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
   defp get_global_option_label(_), do: ""
 
-  defp status_badge(assigns) do
+  defp import_status_badge(assigns) do
     ~H"""
     <span class={[
       "badge",
