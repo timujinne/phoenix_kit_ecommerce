@@ -1,0 +1,49 @@
+## "msgid"s in this file come from POT (.pot) files.
+##
+## Do not add, change, or remove `msgid`s manually here as
+## they're tied to the ones in the corresponding POT file
+## (with the same domain).
+##
+## Use `mix gettext.extract --merge` or `mix gettext.merge`
+## to merge POT files into PO files.
+msgid ""
+msgstr ""
+"Language: ru\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+#: lib/phoenix_kit_ecommerce.ex
+msgid "E-Commerce"
+msgstr "Электронная коммерция"
+
+#: lib/phoenix_kit_ecommerce.ex
+msgid "Dashboard"
+msgstr "Панель управления"
+
+#: lib/phoenix_kit_ecommerce.ex
+msgid "Products"
+msgstr "Товары"
+
+#: lib/phoenix_kit_ecommerce.ex
+msgid "Categories"
+msgstr "Категории"
+
+#: lib/phoenix_kit_ecommerce.ex
+msgid "Shipping"
+msgstr "Доставка"
+
+#: lib/phoenix_kit_ecommerce.ex
+msgid "Carts"
+msgstr "Корзины"
+
+#: lib/phoenix_kit_ecommerce.ex
+msgid "CSV Import"
+msgstr "CSV-импорт"
+
+#: lib/phoenix_kit_ecommerce.ex
+msgid "Shop"
+msgstr "Магазин"
+
+#: lib/phoenix_kit_ecommerce.ex
+msgid "My Cart"
+msgstr "Моя корзина"

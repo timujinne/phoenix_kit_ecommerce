@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.MixProject do
   use Mix.Project
 
-  @version "0.1.3"
+  @version "0.1.4"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_ecommerce"
 
   def project do
@@ -30,7 +30,7 @@ defmodule PhoenixKitEcommerce.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger]]
+    [extra_applications: [:logger, :gettext]]
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
@@ -48,6 +48,9 @@ defmodule PhoenixKitEcommerce.MixProject do
     [
       # PhoenixKit provides the Module behaviour and Settings API.
       {:phoenix_kit, "~> 1.7"},
+
+      # Gettext for per-module i18n of sidebar tab labels.
+      {:gettext, "~> 1.0"},
 
       # Billing integration for checkout and order conversion.
       {:phoenix_kit_billing, "~> 0.1"},
@@ -89,7 +92,7 @@ defmodule PhoenixKitEcommerce.MixProject do
     [
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
+      files: ~w(lib priv .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 
