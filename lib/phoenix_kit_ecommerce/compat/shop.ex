@@ -1,9 +1,12 @@
 defmodule PhoenixKit.Modules.Shop do
-  @moduledoc """
-  Compat alias for PhoenixKitEcommerce.
-  Delegates all public functions so core can reference the old namespace.
-  Will be removed once core is fully migrated to `PhoenixKitEcommerce.*`.
-  """
+  # Compat alias for PhoenixKitEcommerce. Delegates all public functions so
+  # core can reference the old namespace. Will be removed once core is fully
+  # migrated to `PhoenixKitEcommerce.*`.
+  #
+  # `@moduledoc false` keeps this transitional shim out of HexDocs and avoids
+  # ex_doc warnings about defdelegates pointing at @impl callbacks that have
+  # no explicit @doc on the target.
+  @moduledoc false
 
   # Module info and config
   defdelegate enabled?(), to: PhoenixKitEcommerce
