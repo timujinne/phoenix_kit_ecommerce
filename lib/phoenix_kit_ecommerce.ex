@@ -195,7 +195,8 @@ defmodule PhoenixKitEcommerce do
         match: :exact,
         group: :admin_modules,
         subtab_display: :when_active,
-        highlight_with_subtabs: false
+        highlight_with_subtabs: false,
+        gettext_backend: PhoenixKitEcommerce.Gettext
       ),
       Tab.new!(
         id: :admin_shop_dashboard,
@@ -206,7 +207,8 @@ defmodule PhoenixKitEcommerce do
         level: :admin,
         permission: "shop",
         parent: :admin_shop,
-        match: :exact
+        match: :exact,
+        gettext_backend: PhoenixKitEcommerce.Gettext
       ),
       Tab.new!(
         id: :admin_shop_products,
@@ -216,7 +218,8 @@ defmodule PhoenixKitEcommerce do
         priority: 532,
         level: :admin,
         permission: "shop",
-        parent: :admin_shop
+        parent: :admin_shop,
+        gettext_backend: PhoenixKitEcommerce.Gettext
       ),
       Tab.new!(
         id: :admin_shop_categories,
@@ -226,7 +229,8 @@ defmodule PhoenixKitEcommerce do
         priority: 533,
         level: :admin,
         permission: "shop",
-        parent: :admin_shop
+        parent: :admin_shop,
+        gettext_backend: PhoenixKitEcommerce.Gettext
       ),
       Tab.new!(
         id: :admin_shop_shipping,
@@ -236,7 +240,8 @@ defmodule PhoenixKitEcommerce do
         priority: 534,
         level: :admin,
         permission: "shop",
-        parent: :admin_shop
+        parent: :admin_shop,
+        gettext_backend: PhoenixKitEcommerce.Gettext
       ),
       Tab.new!(
         id: :admin_shop_carts,
@@ -246,7 +251,8 @@ defmodule PhoenixKitEcommerce do
         priority: 535,
         level: :admin,
         permission: "shop",
-        parent: :admin_shop
+        parent: :admin_shop,
+        gettext_backend: PhoenixKitEcommerce.Gettext
       ),
       Tab.new!(
         id: :admin_shop_imports,
@@ -256,7 +262,8 @@ defmodule PhoenixKitEcommerce do
         priority: 536,
         level: :admin,
         permission: "shop",
-        parent: :admin_shop
+        parent: :admin_shop,
+        gettext_backend: PhoenixKitEcommerce.Gettext
       )
     ]
   end
@@ -272,7 +279,8 @@ defmodule PhoenixKitEcommerce do
         priority: 927,
         level: :admin,
         parent: :admin_settings,
-        permission: "shop"
+        permission: "shop",
+        gettext_backend: PhoenixKitEcommerce.Gettext
       )
     ]
   end
@@ -287,7 +295,8 @@ defmodule PhoenixKitEcommerce do
         path: "/shop",
         priority: 300,
         match: :prefix,
-        group: :shop
+        group: :shop,
+        gettext_backend: PhoenixKitEcommerce.Gettext
       ),
       Tab.new!(
         id: :dashboard_cart,
@@ -296,7 +305,8 @@ defmodule PhoenixKitEcommerce do
         path: "/cart",
         priority: 310,
         match: :prefix,
-        group: :shop
+        group: :shop,
+        gettext_backend: PhoenixKitEcommerce.Gettext
       )
     ]
   end
