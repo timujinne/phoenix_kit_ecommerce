@@ -22,7 +22,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
     socket =
       socket
-      |> assign(:page_title, "E-Commerce Settings")
+      |> assign(:page_title, gettext("E-Commerce Settings"))
       |> assign(:enabled, config.enabled)
       |> assign(:inventory_tracking, config.inventory_tracking)
       |> assign(:billing_enabled, billing_enabled?())
@@ -59,11 +59,14 @@ defmodule PhoenixKitEcommerce.Web.Settings do
          |> assign(:inventory_tracking, new_value)
          |> put_flash(
            :info,
-           if(new_value, do: "Inventory tracking enabled", else: "Inventory tracking disabled")
+           if(new_value,
+             do: gettext("Inventory tracking enabled"),
+             else: gettext("Inventory tracking disabled")
+           )
          )}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update inventory setting")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update inventory setting"))}
     end
   end
 
@@ -74,10 +77,11 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply,
          socket
          |> assign(:category_name_display, display)
-         |> put_flash(:info, "Category display setting updated")}
+         |> put_flash(:info, gettext("Category display setting updated"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update category display setting")}
+        {:noreply,
+         put_flash(socket, :error, gettext("Failed to update category display setting"))}
     end
   end
 
@@ -94,13 +98,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
          |> put_flash(
            :info,
            if(new_value,
-             do: "Categories in shop enabled",
-             else: "Categories in shop disabled"
+             do: gettext("Categories in shop enabled"),
+             else: gettext("Categories in shop disabled")
            )
          )}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update setting")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update setting"))}
     end
   end
 
@@ -111,10 +115,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply,
          socket
          |> assign(:category_icon_mode, mode)
-         |> put_flash(:info, "Category icon setting updated")}
+         |> put_flash(:info, gettext("Category icon setting updated"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update category icon setting")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update category icon setting"))}
     end
   end
 
@@ -130,10 +134,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply,
          socket
          |> assign(:storefront_filters, filters)
-         |> put_flash(:info, "Storefront filter updated")}
+         |> put_flash(:info, gettext("Storefront filter updated"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update filter")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update filter"))}
     end
   end
 
@@ -149,7 +153,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply, assign(socket, :storefront_filters, filters)}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update filter label")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update filter label"))}
     end
   end
 
@@ -158,7 +162,8 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     existing_keys = Enum.map(socket.assigns.storefront_filters, & &1["key"])
 
     if option_key in existing_keys do
-      {:noreply, put_flash(socket, :error, "Filter for '#{option_key}' already exists")}
+      {:noreply,
+       put_flash(socket, :error, gettext("Filter for '%{key}' already exists", key: option_key))}
     else
       max_pos =
         socket.assigns.storefront_filters
@@ -181,10 +186,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           {:noreply,
            socket
            |> assign(:storefront_filters, filters)
-           |> put_flash(:info, "Filter '#{option_key}' added")}
+           |> put_flash(:info, gettext("Filter '%{key}' added", key: option_key))}
 
         {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Failed to add filter")}
+          {:noreply, put_flash(socket, :error, gettext("Failed to add filter"))}
       end
     end
   end
@@ -198,10 +203,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply,
          socket
          |> assign(:storefront_filters, filters)
-         |> put_flash(:info, "Filter removed")}
+         |> put_flash(:info, gettext("Filter removed"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to remove filter")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to remove filter"))}
     end
   end
 
@@ -214,10 +219,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply,
          socket
          |> assign(:storefront_filters, filters)
-         |> put_flash(:info, "Filters reset to defaults")}
+         |> put_flash(:info, gettext("Filters reset to defaults"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to reset filters")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to reset filters"))}
     end
   end
 
@@ -227,8 +232,8 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
         <.admin_page_header
           back={Routes.path("/admin/shop")}
-          title="E-Commerce Settings"
-          subtitle="Configure your e-commerce store"
+          title={gettext("E-Commerce Settings")}
+          subtitle={gettext("Configure your e-commerce store")}
         />
 
         <%!-- Inventory Settings (toggle pattern) --%>

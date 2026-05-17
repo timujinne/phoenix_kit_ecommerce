@@ -20,7 +20,7 @@ defmodule PhoenixKitEcommerce.Web.Carts do
 
     socket =
       socket
-      |> assign(:page_title, "Shopping Carts")
+      |> assign(:page_title, gettext("Shopping Carts"))
       |> assign(:carts, carts)
       |> assign(:total, total)
       |> assign(:page, 1)
@@ -90,8 +90,8 @@ defmodule PhoenixKitEcommerce.Web.Carts do
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-7xl">
         <.admin_page_header back={Routes.path("/admin/shop")}>
-          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">Shopping Carts</h1>
-          <p class="text-sm sm:text-base text-base-content/60 mt-0.5">{@total} carts total</p>
+          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{gettext("Shopping Carts")}</h1>
+          <p class="text-sm sm:text-base text-base-content/60 mt-0.5">{gettext("%{count} carts total", count: @total)}</p>
         </.admin_page_header>
 
         <%!-- Controls Bar --%>
@@ -99,13 +99,13 @@ defmodule PhoenixKitEcommerce.Web.Carts do
           <div class="flex flex-col lg:flex-row gap-4">
             <%!-- Search --%>
             <div class="flex-1">
-              <label class="label"><span class="label-text">Search</span></label>
+              <label class="label"><span class="label-text">{gettext("Search")}</span></label>
               <form phx-submit="search" phx-change="search">
                 <input
                   type="text"
                   name="search"
                   value={@search}
-                  placeholder="Search by email or session ID..."
+                  placeholder={gettext("Search by email or session ID...")}
                   class="input input-bordered w-full focus:input-primary"
                   phx-debounce="300"
                 />
@@ -114,13 +114,13 @@ defmodule PhoenixKitEcommerce.Web.Carts do
 
             <%!-- Status Filter --%>
             <div class="w-full lg:w-48">
-              <label class="label"><span class="label-text">Status</span></label>
+              <label class="label"><span class="label-text">{gettext("Status")}</span></label>
               <select
                 class="select select-bordered w-full focus:select-primary"
                 phx-change="filter_status"
                 name="status"
               >
-                <option value="" selected={is_nil(@status_filter)}>All Status</option>
+                <option value="" selected={is_nil(@status_filter)}>{gettext("All Status")}</option>
                 <option value="active" selected={@status_filter == "active"}>Active</option>
                 <option value="converted" selected={@status_filter == "converted"}>Converted</option>
                 <option value="abandoned" selected={@status_filter == "abandoned"}>Abandoned</option>
@@ -152,11 +152,11 @@ defmodule PhoenixKitEcommerce.Web.Carts do
 
           <.table_default_header>
             <.table_default_row>
-              <.table_default_header_cell>Customer</.table_default_header_cell>
-              <.table_default_header_cell>Items</.table_default_header_cell>
-              <.table_default_header_cell class="text-right">Total</.table_default_header_cell>
-              <.table_default_header_cell>Status</.table_default_header_cell>
-              <.table_default_header_cell>Updated</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Customer")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Items")}</.table_default_header_cell>
+              <.table_default_header_cell class="text-right">{gettext("Total")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Updated")}</.table_default_header_cell>
             </.table_default_row>
           </.table_default_header>
 
@@ -165,8 +165,8 @@ defmodule PhoenixKitEcommerce.Web.Carts do
               <.table_default_row>
                 <.table_default_cell class="text-center py-12 text-base-content/50">
                   <.icon name="hero-shopping-cart" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p class="text-lg">No carts found</p>
-                  <p class="text-sm">Carts will appear here when customers add items</p>
+                  <p class="text-lg">{gettext("No carts found")}</p>
+                  <p class="text-sm">{gettext("Carts will appear here when customers add items")}</p>
                 </.table_default_cell>
               </.table_default_row>
             <% else %>

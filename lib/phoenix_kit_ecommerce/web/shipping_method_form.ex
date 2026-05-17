@@ -30,7 +30,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     currencies = load_currencies()
 
     socket
-    |> assign(:page_title, "New Shipping Method")
+    |> assign(:page_title, gettext("New Shipping Method"))
     |> assign(:method, method)
     |> assign(:changeset, changeset)
     |> assign(:currencies, currencies)
@@ -44,7 +44,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     default_currency = Billing.get_default_currency()
 
     socket
-    |> assign(:page_title, "Edit #{method.name}")
+    |> assign(:page_title, gettext("Edit %{name}", name: method.name))
     |> assign(:method, method)
     |> assign(:changeset, changeset)
     |> assign(:currencies, currencies)
@@ -71,7 +71,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
       {:ok, _method} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Shipping method created")
+         |> put_flash(:info, gettext("Shipping method created"))
          |> push_navigate(to: Routes.path("/admin/shop/shipping"))}
 
       {:error, changeset} ->
@@ -84,7 +84,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
       {:ok, _method} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Shipping method updated")
+         |> put_flash(:info, gettext("Shipping method updated"))
          |> push_navigate(to: Routes.path("/admin/shop/shipping"))}
 
       {:error, changeset} ->
@@ -99,19 +99,19 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
         <.admin_page_header
           back={Routes.path("/admin/shop/shipping")}
           title={@page_title}
-          subtitle="Configure shipping method details"
+          subtitle={gettext("Configure shipping method details")}
         />
 
         <.form for={@changeset} phx-change="validate" phx-submit="save" class="space-y-6">
           <%!-- Basic Info --%>
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
-              <h2 class="card-title text-xl mb-6">Basic Information</h2>
+              <h2 class="card-title text-xl mb-6">{gettext("Basic Information")}</h2>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Name *</span>
+                    <span class="label-text font-medium">{gettext("Name")} *</span>
                   </label>
                   <input
                     type="text"
@@ -121,7 +121,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                       "input input-bordered w-full focus:input-primary",
                       @changeset.errors[:name] && "input-error"
                     ]}
-                    placeholder="Standard Shipping"
+                    placeholder={gettext("Standard Shipping")}
                     required
                   />
                   <%= if @changeset.errors[:name] do %>
@@ -135,25 +135,25 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Slug</span>
+                    <span class="label-text font-medium">{gettext("Slug")}</span>
                   </label>
                   <input
                     type="text"
                     name="shipping_method[slug]"
                     value={Ecto.Changeset.get_field(@changeset, :slug)}
                     class="input input-bordered w-full focus:input-primary"
-                    placeholder="auto-generated if empty"
+                    placeholder={gettext("auto-generated if empty")}
                   />
                 </div>
 
                 <div class="form-control w-full md:col-span-2">
                   <label class="label">
-                    <span class="label-text font-medium">Description</span>
+                    <span class="label-text font-medium">{gettext("Description")}</span>
                   </label>
                   <textarea
                     name="shipping_method[description]"
                     class="textarea textarea-bordered w-full focus:textarea-primary"
-                    placeholder="Delivery in 3-5 business days"
+                    placeholder={gettext("Delivery in 3-5 business days")}
                     rows="2"
                   >{Ecto.Changeset.get_field(@changeset, :description)}</textarea>
                 </div>
@@ -164,12 +164,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           <%!-- Pricing --%>
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
-              <h2 class="card-title text-xl mb-6">Pricing</h2>
+              <h2 class="card-title text-xl mb-6">{gettext("Pricing")}</h2>
 
               <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Price *</span>
+                    <span class="label-text font-medium">{gettext("Price")} *</span>
                   </label>
                   <input
                     type="number"
@@ -187,7 +187,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Currency</span>
+                    <span class="label-text font-medium">{gettext("Currency")}</span>
                   </label>
                   <%= if @currencies == [] do %>
                     <div class="input input-bordered flex items-center bg-base-200">
@@ -219,7 +219,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Free above</span>
+                    <span class="label-text font-medium">{gettext("Free above")}</span>
                   </label>
                   <input
                     type="number"
@@ -228,7 +228,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                     class="input input-bordered w-full focus:input-primary"
                     step="0.01"
                     min="0"
-                    placeholder="No threshold"
+                    placeholder={gettext("No threshold")}
                   />
                 </div>
               </div>
@@ -238,12 +238,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           <%!-- Constraints --%>
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
-              <h2 class="card-title text-xl mb-6">Constraints</h2>
+              <h2 class="card-title text-xl mb-6">{gettext("Constraints")}</h2>
 
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Min weight (g)</span>
+                    <span class="label-text font-medium">{gettext("Min weight (g)")}</span>
                   </label>
                   <input
                     type="number"
@@ -257,7 +257,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Max weight (g)</span>
+                    <span class="label-text font-medium">{gettext("Max weight (g)")}</span>
                   </label>
                   <input
                     type="number"
@@ -265,13 +265,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                     value={Ecto.Changeset.get_field(@changeset, :max_weight_grams)}
                     class="input input-bordered w-full focus:input-primary"
                     min="0"
-                    placeholder="No limit"
+                    placeholder={gettext("No limit")}
                   />
                 </div>
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Min order</span>
+                    <span class="label-text font-medium">{gettext("Min order")}</span>
                   </label>
                   <input
                     type="number"
@@ -280,13 +280,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                     class="input input-bordered w-full focus:input-primary"
                     step="0.01"
                     min="0"
-                    placeholder="No min"
+                    placeholder={gettext("No min")}
                   />
                 </div>
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Max order</span>
+                    <span class="label-text font-medium">{gettext("Max order")}</span>
                   </label>
                   <input
                     type="number"
@@ -295,7 +295,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                     class="input input-bordered w-full focus:input-primary"
                     step="0.01"
                     min="0"
-                    placeholder="No max"
+                    placeholder={gettext("No max")}
                   />
                 </div>
               </div>
@@ -305,12 +305,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           <%!-- Delivery & Status --%>
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
-              <h2 class="card-title text-xl mb-6">Delivery & Status</h2>
+              <h2 class="card-title text-xl mb-6">{gettext("Delivery & Status")}</h2>
 
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Est. days (min)</span>
+                    <span class="label-text font-medium">{gettext("Est. days (min)")}</span>
                   </label>
                   <input
                     type="number"
@@ -324,7 +324,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Est. days (max)</span>
+                    <span class="label-text font-medium">{gettext("Est. days (max)")}</span>
                   </label>
                   <input
                     type="number"
@@ -338,7 +338,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Position</span>
+                    <span class="label-text font-medium">{gettext("Position")}</span>
                   </label>
                   <input
                     type="number"
@@ -351,7 +351,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Status</span>
+                    <span class="label-text font-medium">{gettext("Status")}</span>
                   </label>
                   <label class="label cursor-pointer justify-start gap-3 h-12">
                     <input type="hidden" name="shipping_method[active]" value="false" />
@@ -362,7 +362,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                       checked={Ecto.Changeset.get_field(@changeset, :active)}
                       class="toggle toggle-success"
                     />
-                    <span class="label-text">Active</span>
+                    <span class="label-text">{gettext("Active")}</span>
                   </label>
                 </div>
               </div>
@@ -379,7 +379,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                     checked={Ecto.Changeset.get_field(@changeset, :tracking_supported)}
                     class="checkbox checkbox-primary"
                   />
-                  <span class="label-text font-medium">Tracking supported</span>
+                  <span class="label-text font-medium">{gettext("Tracking supported")}</span>
                 </label>
               </div>
             </div>
@@ -388,11 +388,11 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           <%!-- Submit --%>
           <div class="flex justify-end gap-4">
             <.link navigate={Routes.path("/admin/shop/shipping")} class="btn btn-outline">
-              Cancel
+              {gettext("Cancel")}
             </.link>
             <button type="submit" class="btn btn-primary">
               <.icon name="hero-check" class="w-4 h-4 mr-2" />
-              {if @live_action == :new, do: "Create Method", else: "Update Method"}
+              {if @live_action == :new, do: gettext("Create Method"), else: gettext("Update Method")}
             </button>
           </div>
         </.form>

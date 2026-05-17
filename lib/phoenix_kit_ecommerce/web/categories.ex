@@ -30,7 +30,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
 
     socket =
       socket
-      |> assign(:page_title, "Categories")
+      |> assign(:page_title, gettext("Categories"))
       |> assign(:page, 1)
       |> assign(:per_page, @per_page)
       |> assign(:search, "")
@@ -109,13 +109,13 @@ defmodule PhoenixKitEcommerce.Web.Categories do
            socket
            |> load_static_category_data()
            |> load_filtered_categories()
-           |> put_flash(:info, "Category deleted")}
+           |> put_flash(:info, gettext("Category deleted"))}
 
         {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Failed to delete category")}
+          {:noreply, put_flash(socket, :error, gettext("Failed to delete category"))}
       end
     else
-      {:noreply, put_flash(socket, :error, "Not authorized")}
+      {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
     end
   end
 
@@ -181,9 +181,12 @@ defmodule PhoenixKitEcommerce.Web.Categories do
        |> load_filtered_categories()
        |> assign(:selected_uuids, MapSet.new())
        |> assign(:show_bulk_modal, nil)
-       |> put_flash(:info, "#{count} categories updated to #{status}")}
+       |> put_flash(
+         :info,
+         gettext("%{count} categories updated to %{status}", count: count, status: status)
+       )}
     else
-      {:noreply, put_flash(socket, :error, "Not authorized")}
+      {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
     end
   end
 
@@ -200,9 +203,9 @@ defmodule PhoenixKitEcommerce.Web.Categories do
        |> load_filtered_categories()
        |> assign(:selected_uuids, MapSet.new())
        |> assign(:show_bulk_modal, nil)
-       |> put_flash(:info, "#{count} categories updated")}
+       |> put_flash(:info, gettext("%{count} categories updated", count: count))}
     else
-      {:noreply, put_flash(socket, :error, "Not authorized")}
+      {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
     end
   end
 
@@ -218,9 +221,9 @@ defmodule PhoenixKitEcommerce.Web.Categories do
        |> load_filtered_categories()
        |> assign(:selected_uuids, MapSet.new())
        |> assign(:show_bulk_modal, nil)
-       |> put_flash(:info, "#{count} categories deleted")}
+       |> put_flash(:info, gettext("%{count} categories deleted", count: count))}
     else
-      {:noreply, put_flash(socket, :error, "Not authorized")}
+      {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
     end
   end
 
@@ -314,9 +317,9 @@ defmodule PhoenixKitEcommerce.Web.Categories do
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-6xl">
         <.admin_page_header back={Routes.path("/admin/shop")}>
-          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">Categories</h1>
+          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{gettext("Categories")}</h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
-            {if @total == 1, do: "1 category", else: "#{@total} categories"}
+            {ngettext("1 category", "%{count} categories", @total, count: @total)}
           </p>
         </.admin_page_header>
 
@@ -325,13 +328,13 @@ defmodule PhoenixKitEcommerce.Web.Categories do
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
             <%!-- Search --%>
             <div class="lg:col-span-2">
-              <label class="label"><span class="label-text">Search</span></label>
+              <label class="label"><span class="label-text">{gettext("Search")}</span></label>
               <form phx-submit="search" phx-change="search">
                 <input
                   type="text"
                   name="search"
                   value={@search}
-                  placeholder="Search categories..."
+                  placeholder={gettext("Search categories...")}
                   class="input input-bordered w-full focus:input-primary"
                   phx-debounce="300"
                 />
@@ -340,24 +343,24 @@ defmodule PhoenixKitEcommerce.Web.Categories do
 
             <%!-- Status Filter --%>
             <div>
-              <label class="label"><span class="label-text">Status</span></label>
+              <label class="label"><span class="label-text">{gettext("Status")}</span></label>
               <form phx-change="filter_status">
                 <select class="select select-bordered w-full focus:select-primary" name="status">
-                  <option value="" selected={is_nil(@status_filter)}>All Status</option>
-                  <option value="active" selected={@status_filter == "active"}>Active</option>
-                  <option value="unlisted" selected={@status_filter == "unlisted"}>Unlisted</option>
-                  <option value="hidden" selected={@status_filter == "hidden"}>Hidden</option>
+                  <option value="" selected={is_nil(@status_filter)}>{gettext("All Status")}</option>
+                  <option value="active" selected={@status_filter == "active"}>{gettext("Active")}</option>
+                  <option value="unlisted" selected={@status_filter == "unlisted"}>{gettext("Unlisted")}</option>
+                  <option value="hidden" selected={@status_filter == "hidden"}>{gettext("Hidden")}</option>
                 </select>
               </form>
             </div>
 
             <%!-- Parent Filter --%>
             <div>
-              <label class="label"><span class="label-text">Parent</span></label>
+              <label class="label"><span class="label-text">{gettext("Parent")}</span></label>
               <form phx-change="filter_parent">
                 <select class="select select-bordered w-full focus:select-primary" name="parent">
-                  <option value="" selected={is_nil(@parent_filter)}>All Categories</option>
-                  <option value="root" selected={@parent_filter == "root"}>Root Only</option>
+                  <option value="" selected={is_nil(@parent_filter)}>{gettext("All Categories")}</option>
+                  <option value="root" selected={@parent_filter == "root"}>{gettext("Root Only")}</option>
                   <%= for category <- @all_categories do %>
                     <option value={category.uuid} selected={@parent_filter == category.uuid}>
                       {Translations.get(category, :name, @current_language)}
@@ -374,7 +377,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                 navigate={Routes.path("/admin/shop/categories/new")}
                 class="btn btn-primary w-full"
               >
-                <.icon name="hero-plus" class="w-4 h-4 mr-2" /> Add Category
+                <.icon name="hero-plus" class="w-4 h-4 mr-2" /> {gettext("Add Category")}
               </.link>
             </div>
           </div>
@@ -386,10 +389,10 @@ defmodule PhoenixKitEcommerce.Web.Categories do
             <div class="flex flex-wrap items-center justify-between gap-4">
               <div class="flex items-center gap-2">
                 <span class="badge badge-primary badge-lg">
-                  {MapSet.size(@selected_uuids)} selected
+                  {gettext("%{count} selected", count: MapSet.size(@selected_uuids))}
                 </span>
                 <button phx-click="clear_selection" class="btn btn-ghost btn-sm">
-                  Clear selection
+                  {gettext("Clear selection")}
                 </button>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -398,21 +401,21 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                   phx-value-action="status"
                   class="btn btn-sm btn-outline"
                 >
-                  <.icon name="hero-arrow-path" class="w-4 h-4 mr-1" /> Change Status
+                  <.icon name="hero-arrow-path" class="w-4 h-4 mr-1" /> {gettext("Change Status")}
                 </button>
                 <button
                   phx-click="show_bulk_modal"
                   phx-value-action="parent"
                   class="btn btn-sm btn-outline"
                 >
-                  <.icon name="hero-folder" class="w-4 h-4 mr-1" /> Change Parent
+                  <.icon name="hero-folder" class="w-4 h-4 mr-1" /> {gettext("Change Parent")}
                 </button>
                 <button
                   phx-click="show_bulk_modal"
                   phx-value-action="delete"
                   class="btn btn-sm btn-outline btn-error"
                 >
-                  <.icon name="hero-trash" class="w-4 h-4 mr-1" /> Delete
+                  <.icon name="hero-trash" class="w-4 h-4 mr-1" /> {gettext("Delete")}
                 </button>
               </div>
             </div>
@@ -422,8 +425,8 @@ defmodule PhoenixKitEcommerce.Web.Categories do
         <%!-- Categories Table --%>
         <.table_default id="categories-table" variant="zebra" class="w-full" toggleable={true} items={@categories}
           card_fields={fn category -> [
-            %{label: "Status", value: category.status || "active"},
-            %{label: "Position", value: category.position}
+            %{label: gettext("Status"), value: category.status || "active"},
+            %{label: gettext("Position"), value: category.position}
           ] end}>
 
           <:card_header :let={category}>
@@ -464,13 +467,13 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                   />
                 </label>
               </.table_default_header_cell>
-              <.table_default_header_cell>Name</.table_default_header_cell>
-              <.table_default_header_cell>Slug</.table_default_header_cell>
-              <.table_default_header_cell>Parent</.table_default_header_cell>
-              <.table_default_header_cell>Status</.table_default_header_cell>
-              <.table_default_header_cell>Position</.table_default_header_cell>
-              <.table_default_header_cell>Products</.table_default_header_cell>
-              <.table_default_header_cell class="text-right">Actions</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Name")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Slug")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Parent")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Position")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Products")}</.table_default_header_cell>
+              <.table_default_header_cell class="text-right">{gettext("Actions")}</.table_default_header_cell>
             </.table_default_row>
           </.table_default_header>
 
@@ -479,8 +482,8 @@ defmodule PhoenixKitEcommerce.Web.Categories do
               <.table_default_row>
                 <.table_default_cell class="text-center py-12 text-base-content/50">
                   <.icon name="hero-folder" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p class="text-lg">No categories found</p>
-                  <p class="text-sm">Create your first category to organize products</p>
+                  <p class="text-lg">{gettext("No categories found")}</p>
+                  <p class="text-sm">{gettext("Create your first category to organize products")}</p>
                 </.table_default_cell>
               </.table_default_row>
             <% else %>
@@ -585,9 +588,9 @@ defmodule PhoenixKitEcommerce.Web.Categories do
       <%= if @show_bulk_modal == "status" do %>
         <div class="modal modal-open">
           <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4">Change Status</h3>
+            <h3 class="font-bold text-lg mb-4">{gettext("Change Status")}</h3>
             <p class="text-base-content/70 mb-4">
-              Update status for {MapSet.size(@selected_uuids)} selected categories
+              {gettext("Update status for %{count} selected categories", count: MapSet.size(@selected_uuids))}
             </p>
             <div class="flex flex-col gap-2">
               <button
@@ -595,25 +598,25 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                 phx-value-status="active"
                 class="btn btn-success btn-outline justify-start"
               >
-                <.icon name="hero-check-circle" class="w-5 h-5 mr-2" /> Set Active
+                <.icon name="hero-check-circle" class="w-5 h-5 mr-2" /> {gettext("Set Active")}
               </button>
               <button
                 phx-click="bulk_change_status"
                 phx-value-status="unlisted"
                 class="btn btn-warning btn-outline justify-start"
               >
-                <.icon name="hero-eye-slash" class="w-5 h-5 mr-2" /> Set Unlisted
+                <.icon name="hero-eye-slash" class="w-5 h-5 mr-2" /> {gettext("Set Unlisted")}
               </button>
               <button
                 phx-click="bulk_change_status"
                 phx-value-status="hidden"
                 class="btn btn-error btn-outline justify-start"
               >
-                <.icon name="hero-x-circle" class="w-5 h-5 mr-2" /> Set Hidden
+                <.icon name="hero-x-circle" class="w-5 h-5 mr-2" /> {gettext("Set Hidden")}
               </button>
             </div>
             <div class="modal-action">
-              <button phx-click="close_bulk_modal" class="btn">Cancel</button>
+              <button phx-click="close_bulk_modal" class="btn">{gettext("Cancel")}</button>
             </div>
           </div>
           <div class="modal-backdrop" phx-click="close_bulk_modal"></div>
@@ -624,9 +627,9 @@ defmodule PhoenixKitEcommerce.Web.Categories do
       <%= if @show_bulk_modal == "parent" do %>
         <div class="modal modal-open">
           <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4">Change Parent</h3>
+            <h3 class="font-bold text-lg mb-4">{gettext("Change Parent")}</h3>
             <p class="text-base-content/70 mb-4">
-              Set parent for {MapSet.size(@selected_uuids)} selected categories
+              {gettext("Set parent for %{count} selected categories", count: MapSet.size(@selected_uuids))}
             </p>
             <div class="flex flex-col gap-2 max-h-96 overflow-y-auto">
               <button
@@ -634,7 +637,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                 phx-value-parent_uuid=""
                 class="btn btn-ghost justify-start"
               >
-                <.icon name="hero-x-mark" class="w-5 h-5 mr-2" /> Make Root (No Parent)
+                <.icon name="hero-x-mark" class="w-5 h-5 mr-2" /> {gettext("Make Root (No Parent)")}
               </button>
               <%= for category <- @all_categories,
                       !MapSet.member?(@selected_uuids, category.uuid) do %>
@@ -652,7 +655,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
               <% end %>
             </div>
             <div class="modal-action">
-              <button phx-click="close_bulk_modal" class="btn">Cancel</button>
+              <button phx-click="close_bulk_modal" class="btn">{gettext("Cancel")}</button>
             </div>
           </div>
           <div class="modal-backdrop" phx-click="close_bulk_modal"></div>
@@ -663,15 +666,14 @@ defmodule PhoenixKitEcommerce.Web.Categories do
       <%= if @show_bulk_modal == "delete" do %>
         <div class="modal modal-open">
           <div class="modal-box">
-            <h3 class="font-bold text-lg text-error mb-4">Delete Categories</h3>
+            <h3 class="font-bold text-lg text-error mb-4">{gettext("Delete Categories")}</h3>
             <p class="text-base-content/70 mb-4">
-              Are you sure you want to delete {MapSet.size(@selected_uuids)} categories?
-              This action cannot be undone.
+              {gettext("Are you sure you want to delete %{count} categories? This action cannot be undone.", count: MapSet.size(@selected_uuids))}
             </p>
             <div class="modal-action">
-              <button phx-click="close_bulk_modal" class="btn">Cancel</button>
+              <button phx-click="close_bulk_modal" class="btn">{gettext("Cancel")}</button>
               <button phx-click="bulk_delete" class="btn btn-error">
-                <.icon name="hero-trash" class="w-4 h-4 mr-2" /> Delete Categories
+                <.icon name="hero-trash" class="w-4 h-4 mr-2" /> {gettext("Delete Categories")}
               </button>
             </div>
           </div>

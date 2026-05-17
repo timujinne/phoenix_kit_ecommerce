@@ -20,7 +20,7 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
       nil ->
         {:ok,
          socket
-         |> put_flash(:error, "Import not found")
+         |> put_flash(:error, gettext("Import not found"))
          |> push_navigate(to: Routes.path("/admin/shop/imports"))}
 
       import_log ->
@@ -28,7 +28,7 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
 
         socket =
           socket
-          |> assign(:page_title, "Import: #{import_log.filename}")
+          |> assign(:page_title, gettext("Import: %{filename}", filename: import_log.filename))
           |> assign(:import, import_log)
           |> assign(:products, products)
 
@@ -69,7 +69,7 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
   def render(assigns) do
     ~H"""
       <div class="container mx-auto px-4 py-6 max-w-4xl">
-        <.admin_page_header back={Routes.path("/admin/shop/imports")} title="Import Details">
+        <.admin_page_header back={Routes.path("/admin/shop/imports")} title={gettext("Import Details")}>
           <:actions>
             <span class={[
               "badge",
@@ -90,23 +90,23 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
         <div class="card bg-base-100 shadow mb-6">
           <div class="card-body">
             <h2 class="card-title text-lg mb-4">
-              <.icon name="hero-document-text" class="w-5 h-5" /> Import Information
+              <.icon name="hero-document-text" class="w-5 h-5" /> {gettext("Import Information")}
             </h2>
             <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <dt class="text-sm text-base-content/60">Filename</dt>
+                <dt class="text-sm text-base-content/60">{gettext("Filename")}</dt>
                 <dd class="font-medium">{@import.filename}</dd>
               </div>
               <div>
-                <dt class="text-sm text-base-content/60">User</dt>
+                <dt class="text-sm text-base-content/60">{gettext("User")}</dt>
                 <dd class="font-medium">{if @import.user, do: @import.user.email, else: "-"}</dd>
               </div>
               <div>
-                <dt class="text-sm text-base-content/60">Started At</dt>
+                <dt class="text-sm text-base-content/60">{gettext("Started At")}</dt>
                 <dd class="font-medium">{format_datetime(@import.started_at)}</dd>
               </div>
               <div>
-                <dt class="text-sm text-base-content/60">Completed At</dt>
+                <dt class="text-sm text-base-content/60">{gettext("Completed At")}</dt>
                 <dd class="font-medium">{format_datetime(@import.completed_at)}</dd>
               </div>
             </dl>
@@ -119,36 +119,36 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
             <div class="stat-figure text-success">
               <.icon name="hero-plus-circle" class="w-8 h-8" />
             </div>
-            <div class="stat-title">Imported</div>
+            <div class="stat-title">{gettext("Imported")}</div>
             <div class="stat-value text-success">{@import.imported_count}</div>
-            <div class="stat-desc">new products</div>
+            <div class="stat-desc">{gettext("new products")}</div>
           </div>
 
           <div class="stat">
             <div class="stat-figure text-info">
               <.icon name="hero-arrow-path" class="w-8 h-8" />
             </div>
-            <div class="stat-title">Updated</div>
+            <div class="stat-title">{gettext("Updated")}</div>
             <div class="stat-value text-info">{@import.updated_count}</div>
-            <div class="stat-desc">existing products</div>
+            <div class="stat-desc">{gettext("existing products")}</div>
           </div>
 
           <div class="stat">
             <div class="stat-figure text-warning">
               <.icon name="hero-minus-circle" class="w-8 h-8" />
             </div>
-            <div class="stat-title">Skipped</div>
+            <div class="stat-title">{gettext("Skipped")}</div>
             <div class="stat-value text-warning">{@import.skipped_count}</div>
-            <div class="stat-desc">filtered out</div>
+            <div class="stat-desc">{gettext("filtered out")}</div>
           </div>
 
           <div class="stat">
             <div class="stat-figure text-error">
               <.icon name="hero-exclamation-circle" class="w-8 h-8" />
             </div>
-            <div class="stat-title">Errors</div>
+            <div class="stat-title">{gettext("Errors")}</div>
             <div class="stat-value text-error">{@import.error_count}</div>
-            <div class="stat-desc">failed rows</div>
+            <div class="stat-desc">{gettext("failed rows")}</div>
           </div>
         </div>
 
@@ -157,16 +157,16 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
           <div class="card bg-base-100 shadow mb-6">
             <div class="card-body">
               <h2 class="card-title text-lg mb-4">
-                <.icon name="hero-cube" class="w-5 h-5" /> Imported Products
+                <.icon name="hero-cube" class="w-5 h-5" /> {gettext("Imported Products")}
                 <span class="badge badge-ghost">{length(@products)}</span>
               </h2>
               <div class="overflow-x-auto">
                 <table class="table table-zebra">
                   <thead>
                     <tr>
-                      <th>Title</th>
-                      <th>Slug</th>
-                      <th>Price</th>
+                      <th>{gettext("Title")}</th>
+                      <th>{gettext("Slug")}</th>
+                      <th>{gettext("Price")}</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -221,16 +221,16 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
           <div class="card bg-base-100 shadow">
             <div class="card-body">
               <h2 class="card-title text-lg text-error mb-4">
-                <.icon name="hero-exclamation-triangle" class="w-5 h-5" /> Errors
+                <.icon name="hero-exclamation-triangle" class="w-5 h-5" /> {gettext("Errors")}
                 <span class="badge badge-error">{@import.error_count}</span>
               </h2>
               <div class="overflow-x-auto">
                 <table class="table table-sm">
                   <thead>
                     <tr>
-                      <th>Handle</th>
-                      <th>Error</th>
-                      <th>Time</th>
+                      <th>{gettext("Handle")}</th>
+                      <th>{gettext("Error")}</th>
+                      <th>{gettext("Time")}</th>
                     </tr>
                   </thead>
                   <tbody>

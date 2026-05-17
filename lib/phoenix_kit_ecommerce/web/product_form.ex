@@ -21,7 +21,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, :page_title, "New Product")}
+    {:ok, assign(socket, :page_title, gettext("New Product"))}
   end
 
   @impl true
@@ -41,7 +41,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     price_affecting_options = get_price_affecting_options(option_schema)
 
     socket
-    |> assign(:page_title, "New Product")
+    |> assign(:page_title, gettext("New Product"))
     |> assign(:product, product)
     |> assign(:changeset, changeset)
     |> assign(:categories, categories)
@@ -96,7 +96,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     product_title = Translations.get(product, :title, TranslationTabs.get_default_language())
 
     socket
-    |> assign(:page_title, "Edit #{product_title}")
+    |> assign(:page_title, gettext("Edit %{title}", title: product_title))
     |> assign(:product, product)
     |> assign(:changeset, changeset)
     |> assign(:categories, categories)
@@ -486,7 +486,8 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
       gather_existing_values(socket, option_key)
 
     if value in all_existing do
-      {:noreply, put_flash(socket, :error, "Value '#{value}' already exists")}
+      {:noreply,
+       put_flash(socket, :error, gettext("Value '%{value}' already exists", value: value))}
     else
       selected = socket.assigns.selected_option_values
 
@@ -505,13 +506,14 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
   defp do_add_option_value(socket, option_key, value) do
     if value == "" do
-      {:noreply, put_flash(socket, :error, "Please enter a value first")}
+      {:noreply, put_flash(socket, :error, gettext("Please enter a value first"))}
     else
       {all_existing, original_for_key, schema_values, original_values} =
         gather_existing_values(socket, option_key)
 
       if value in all_existing do
-        {:noreply, put_flash(socket, :error, "Value '#{value}' already exists")}
+        {:noreply,
+         put_flash(socket, :error, gettext("Value '%{value}' already exists", value: value))}
       else
         selected = socket.assigns.selected_option_values
 
@@ -529,7 +531,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
          |> assign(:original_option_values, updated_original)
          |> assign(:selected_option_values, updated_selected)
          |> assign(:new_value_inputs, new_inputs)
-         |> put_flash(:info, "Value '#{value}' added")}
+         |> put_flash(:info, gettext("Value '%{value}' added", value: value))}
       end
     end
   end
@@ -555,7 +557,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
   defp do_add_new_option(socket, key, value) do
     if key == "" or value == "" do
-      {:noreply, put_flash(socket, :error, "Option key and value are required")}
+      {:noreply, put_flash(socket, :error, gettext("Option key and value are required"))}
     else
       add_new_option_to_state(socket, key, value)
     end
@@ -576,7 +578,12 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
     cond do
       value in all_existing ->
-        {:noreply, put_flash(socket, :error, "Value '#{value}' already exists in '#{key}'")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           gettext("Value '%{value}' already exists in '%{key}'", value: value, key: key)
+         )}
 
       all_existing != [] ->
         init_selected = if current_selected == [], do: all_existing, else: current_selected
@@ -589,7 +596,10 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
          |> assign(:selected_option_values, updated_selected)
          |> assign(:add_option_key, "")
          |> assign(:add_option_value, "")
-         |> put_flash(:info, "Value '#{value}' added to '#{key}'")}
+         |> put_flash(
+           :info,
+           gettext("Value '%{value}' added to '%{key}'", value: value, key: key)
+         )}
 
       true ->
         {:noreply,
@@ -598,7 +608,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
          |> assign(:selected_option_values, Map.put(selected, key, [value]))
          |> assign(:add_option_key, "")
          |> assign(:add_option_value, "")
-         |> put_flash(:info, "Option '#{key}' created")}
+         |> put_flash(:info, gettext("Option '%{key}' created", key: key))}
     end
   end
 
@@ -607,7 +617,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
       {:ok, product} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Product created")
+         |> put_flash(:info, gettext("Product created"))
          |> push_navigate(to: Routes.path("/admin/shop/products/#{product.uuid}"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -617,7 +627,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     e ->
       require Logger
       Logger.error("Product save failed: #{Exception.message(e)}")
-      {:noreply, put_flash(socket, :error, "Something went wrong. Please try again.")}
+      {:noreply, put_flash(socket, :error, gettext("Something went wrong. Please try again."))}
   end
 
   defp save_product(socket, :edit, product_params) do
@@ -629,7 +639,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
          socket
          |> assign(:product, product)
          |> assign(:changeset, changeset)
-         |> put_flash(:info, "Product updated")}
+         |> put_flash(:info, gettext("Product updated"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :changeset, changeset)}
@@ -638,7 +648,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     e ->
       require Logger
       Logger.error("Product save failed: #{Exception.message(e)}")
-      {:noreply, put_flash(socket, :error, "Something went wrong. Please try again.")}
+      {:noreply, put_flash(socket, :error, gettext("Something went wrong. Please try again."))}
   end
 
   # Get options with affects_price=true
@@ -655,7 +665,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
         <.admin_page_header back={Routes.path("/admin/shop/products")}>
           <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{@page_title}</h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
-            {if @live_action == :new, do: "Create a new product", else: "Edit product details"}
+            {if @live_action == :new, do: gettext("Create a new product"), else: gettext("Edit product details")}
           </p>
         </.admin_page_header>
 
@@ -669,13 +679,13 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
           <%!-- Card 1: Basic Info & Organization --%>
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
-              <h2 class="card-title text-xl mb-6">Product Details</h2>
+              <h2 class="card-title text-xl mb-6">{gettext("Product Details")}</h2>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-4">
                 <%!-- Row 1: Title + Status --%>
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Title *</span>
+                    <span class="label-text font-medium">{gettext("Title")} *</span>
                     <%= if @show_translation_tabs do %>
                       <span class="label-text-alt text-base-content/50">
                         {String.upcase(@default_language)}
@@ -690,7 +700,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                       "input input-bordered w-full focus:input-primary",
                       @changeset.errors[:title] && "input-error"
                     ]}
-                    placeholder="Product title"
+                    placeholder={gettext("Product title")}
                     required
                   />
                   <%= if @changeset.errors[:title] do %>
@@ -704,7 +714,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Status</span>
+                    <span class="label-text font-medium">{gettext("Status")}</span>
                   </label>
                   <select
                     name="product[status]"
@@ -714,19 +724,19 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                       value="draft"
                       selected={Ecto.Changeset.get_field(@changeset, :status) == "draft"}
                     >
-                      Draft
+                      {gettext("Draft")}
                     </option>
                     <option
                       value="active"
                       selected={Ecto.Changeset.get_field(@changeset, :status) == "active"}
                     >
-                      Active
+                      {gettext("Active")}
                     </option>
                     <option
                       value="archived"
                       selected={Ecto.Changeset.get_field(@changeset, :status) == "archived"}
                     >
-                      Archived
+                      {gettext("Archived")}
                     </option>
                   </select>
                 </div>
@@ -734,7 +744,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 <%!-- Row 2: Slug + Vendor --%>
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Slug</span>
+                    <span class="label-text font-medium">{gettext("Slug")}</span>
                     <%= if @show_translation_tabs do %>
                       <span class="label-text-alt text-base-content/50">
                         {String.upcase(@default_language)}
@@ -746,27 +756,27 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     name="product[slug]"
                     value={TranslationTabs.get_localized_value(@changeset, :slug, @default_language)}
                     class="input input-bordered w-full focus:input-primary"
-                    placeholder="Auto-generated from title"
+                    placeholder={gettext("Auto-generated from title")}
                   />
                 </div>
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Vendor</span>
+                    <span class="label-text font-medium">{gettext("Vendor")}</span>
                   </label>
                   <input
                     type="text"
                     name="product[vendor]"
                     value={Ecto.Changeset.get_field(@changeset, :vendor)}
                     class="input input-bordered w-full focus:input-primary"
-                    placeholder="Brand or manufacturer"
+                    placeholder={gettext("Brand or manufacturer")}
                   />
                 </div>
 
                 <%!-- Row 3: Product Type + Category --%>
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Product Type</span>
+                    <span class="label-text font-medium">{gettext("Product Type")}</span>
                   </label>
                   <select
                     name="product[product_type]"
@@ -776,26 +786,26 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                       value="physical"
                       selected={Ecto.Changeset.get_field(@changeset, :product_type) == "physical"}
                     >
-                      Physical
+                      {gettext("Physical")}
                     </option>
                     <option
                       value="digital"
                       selected={Ecto.Changeset.get_field(@changeset, :product_type) == "digital"}
                     >
-                      Digital
+                      {gettext("Digital")}
                     </option>
                   </select>
                 </div>
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Category</span>
+                    <span class="label-text font-medium">{gettext("Category")}</span>
                   </label>
                   <select
                     name="product[category_uuid]"
                     class="select select-bordered w-full focus:select-primary"
                   >
-                    <option value="">No category</option>
+                    <option value="">{gettext("No category")}</option>
                     <%= for {name, uuid} <- @categories do %>
                       <option
                         value={uuid}
@@ -810,7 +820,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 <%!-- Row 4: Description (full width) --%>
                 <div class="form-control w-full md:col-span-2">
                   <label class="label">
-                    <span class="label-text font-medium">Description</span>
+                    <span class="label-text font-medium">{gettext("Description")}</span>
                     <%= if @show_translation_tabs do %>
                       <span class="label-text-alt text-base-content/50">
                         {String.upcase(@default_language)}
@@ -820,7 +830,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <textarea
                     name="product[description]"
                     class="textarea textarea-bordered w-full h-24 focus:textarea-primary"
-                    placeholder="Short product description"
+                    placeholder={gettext("Short product description")}
                   >{TranslationTabs.get_localized_value(@changeset, :description, @default_language)}</textarea>
                 </div>
               </div>
@@ -830,13 +840,13 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
           <%!-- Card 2: Pricing --%>
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
-              <h2 class="card-title text-xl mb-6">Pricing</h2>
+              <h2 class="card-title text-xl mb-6">{gettext("Pricing")}</h2>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-4">
                 <%!-- Row 1: Base Price + Compare Price --%>
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Base Price *</span>
+                    <span class="label-text font-medium">{gettext("Base Price")} *</span>
                   </label>
                   <input
                     type="number"
@@ -854,7 +864,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Compare at Price</span>
+                    <span class="label-text font-medium">{gettext("Compare at Price")}</span>
                   </label>
                   <input
                     type="number"
@@ -863,14 +873,14 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     class="input input-bordered w-full focus:input-primary"
                     step="0.01"
                     min="0"
-                    placeholder="Original price"
+                    placeholder={gettext("Original price")}
                   />
                 </div>
 
                 <%!-- Row 2: Cost + Taxable --%>
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Cost per Item</span>
+                    <span class="label-text font-medium">{gettext("Cost per Item")}</span>
                   </label>
                   <input
                     type="number"
@@ -879,13 +889,13 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     class="input input-bordered w-full focus:input-primary"
                     step="0.01"
                     min="0"
-                    placeholder="Your cost for profit calculation"
+                    placeholder={gettext("Your cost for profit calculation")}
                   />
                 </div>
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Tax Settings</span>
+                    <span class="label-text font-medium">{gettext("Tax Settings")}</span>
                   </label>
                   <label class="label cursor-pointer justify-start gap-3 h-12 px-4 bg-base-200 rounded-lg">
                     <input
@@ -895,7 +905,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                       checked={Ecto.Changeset.get_field(@changeset, :taxable)}
                       class="checkbox checkbox-primary"
                     />
-                    <span class="label-text">Charge tax on this product</span>
+                    <span class="label-text">{gettext("Charge tax on this product")}</span>
                   </label>
                 </div>
               </div>
@@ -906,7 +916,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
           <%= if @show_translation_tabs do %>
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
-                <h2 class="card-title text-xl mb-4">Translations</h2>
+                <h2 class="card-title text-xl mb-4">{gettext("Translations")}</h2>
                 <p class="text-base-content/60 text-sm mb-4">
                   Translate product content for different languages. The default language uses the main fields above.
                 </p>
@@ -1023,7 +1033,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
                 <h2 class="card-title">
-                  <.icon name="hero-adjustments-horizontal" class="w-5 h-5" /> Available Options
+                  <.icon name="hero-adjustments-horizontal" class="w-5 h-5" /> {gettext("Available Options")}
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
                   <%= if all_select_options != [] do %>
@@ -1243,7 +1253,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
                 <h2 class="card-title">
-                  <.icon name="hero-calculator" class="w-5 h-5" /> Option Prices
+                  <.icon name="hero-calculator" class="w-5 h-5" /> {gettext("Option Prices")}
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
                   Base price:
@@ -1477,7 +1487,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
                 <h2 class="card-title">
-                  <.icon name="hero-currency-dollar" class="w-5 h-5" /> Imported Option Prices
+                  <.icon name="hero-currency-dollar" class="w-5 h-5" /> {gettext("Imported Option Prices")}
                   <span class="badge badge-info badge-sm">From Import</span>
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
@@ -1556,7 +1566,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
                 <h2 class="card-title">
-                  <.icon name="hero-photo" class="w-5 h-5" /> Variant Images
+                  <.icon name="hero-photo" class="w-5 h-5" /> {gettext("Variant Images")}
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
                   Link images to option values. When a customer selects an option, the corresponding image displays.
@@ -1618,7 +1628,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
               <h2 class="card-title text-xl mb-2">
-                <.icon name="hero-photo" class="w-5 h-5" /> Product Images
+                <.icon name="hero-photo" class="w-5 h-5" /> {gettext("Product Images")}
               </h2>
               <p class="text-sm text-base-content/60 mb-4">
                 Drag images to reorder. First image is the featured (main) image.
@@ -1679,7 +1689,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
                 <h2 class="card-title text-xl mb-6">
-                  <.icon name="hero-tag" class="w-5 h-5" /> Specifications
+                  <.icon name="hero-tag" class="w-5 h-5" /> {gettext("Specifications")}
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
                   Fill in the product specifications based on global and category options.
@@ -1697,11 +1707,11 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
           <%!-- Submit --%>
           <div class="flex justify-end gap-4">
             <.link navigate={Routes.path("/admin/shop/products")} class="btn btn-ghost">
-              Cancel
+              {gettext("Cancel")}
             </.link>
             <button type="submit" class="btn btn-primary">
               <.icon name="hero-check" class="w-5 h-5 mr-2" />
-              {if @live_action == :new, do: "Create Product", else: "Update Product"}
+              {if @live_action == :new, do: gettext("Create Product"), else: gettext("Update Product")}
             </button>
           </div>
         </.form>

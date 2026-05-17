@@ -18,7 +18,7 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
 
     socket =
       socket
-      |> assign(:page_title, "E-Commerce")
+      |> assign(:page_title, gettext("E-Commerce"))
       |> assign(:stats, stats)
       |> assign(:enabled, Shop.enabled?())
 
@@ -37,15 +37,15 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
       <div class="container flex-col mx-auto px-4 py-6 max-w-7xl">
         <.admin_page_header
           back={Routes.path("/admin")}
-          title="E-Commerce"
-          subtitle="Manage your e-commerce store"
+          title={gettext("E-Commerce")}
+          subtitle={gettext("Manage your e-commerce store")}
         />
 
         <%!-- Controls Bar --%>
         <div class="bg-base-200 rounded-lg p-6 mb-6">
           <div class="flex flex-col lg:flex-row gap-4 justify-end">
             <.link navigate={Routes.path("/admin/shop/products/new")} class="btn btn-primary">
-              <.icon name="hero-plus" class="w-4 h-4 mr-2" /> Add Product
+              <.icon name="hero-plus" class="w-4 h-4 mr-2" /> {gettext("Add Product")}
             </.link>
           </div>
         </div>
@@ -57,7 +57,7 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
             <div class="card-body">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-base-content/70 text-sm">Total Products</p>
+                  <p class="text-base-content/70 text-sm">{gettext("Total Products")}</p>
                   <p class="text-3xl font-bold text-base-content">{@stats.total_products}</p>
                 </div>
                 <div class="bg-primary/10 p-3 rounded-lg">
@@ -72,7 +72,7 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
             <div class="card-body">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-base-content/70 text-sm">Active Products</p>
+                  <p class="text-base-content/70 text-sm">{gettext("Active Products")}</p>
                   <p class="text-3xl font-bold text-success">{@stats.active_products}</p>
                 </div>
                 <div class="bg-success/10 p-3 rounded-lg">
@@ -87,7 +87,7 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
             <div class="card-body">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-base-content/70 text-sm">Draft Products</p>
+                  <p class="text-base-content/70 text-sm">{gettext("Draft Products")}</p>
                   <p class="text-3xl font-bold text-warning">{@stats.draft_products}</p>
                 </div>
                 <div class="bg-warning/10 p-3 rounded-lg">
@@ -102,7 +102,7 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
             <div class="card-body">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-base-content/70 text-sm">Categories</p>
+                  <p class="text-base-content/70 text-sm">{gettext("Categories")}</p>
                   <p class="text-3xl font-bold text-base-content">{@stats.total_categories}</p>
                 </div>
                 <div class="bg-info/10 p-3 rounded-lg">
@@ -119,10 +119,10 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
               <h2 class="card-title">
-                <.icon name="hero-truck" class="w-6 h-6" /> Physical Products
+                <.icon name="hero-truck" class="w-6 h-6" /> {gettext("Physical Products")}
               </h2>
               <p class="text-4xl font-bold text-primary">{@stats.physical_products}</p>
-              <p class="text-base-content/70">Products requiring shipping</p>
+              <p class="text-base-content/70">{gettext("Products requiring shipping")}</p>
             </div>
           </div>
 
@@ -130,10 +130,10 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
               <h2 class="card-title">
-                <.icon name="hero-arrow-down-tray" class="w-6 h-6" /> Digital Products
+                <.icon name="hero-arrow-down-tray" class="w-6 h-6" /> {gettext("Digital Products")}
               </h2>
               <p class="text-4xl font-bold text-secondary">{@stats.digital_products}</p>
-              <p class="text-base-content/70">Downloadable products</p>
+              <p class="text-base-content/70">{gettext("Downloadable products")}</p>
             </div>
           </div>
         </div>
@@ -141,41 +141,41 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
         <%!-- Quick Actions --%>
         <div class="card bg-base-100 shadow-xl">
           <div class="card-body">
-            <h2 class="card-title text-xl mb-6">Quick Actions</h2>
+            <h2 class="card-title text-xl mb-6">{gettext("Quick Actions")}</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <.link
                 navigate={Routes.path("/admin/shop/products")}
                 class="btn btn-outline btn-lg justify-start"
               >
-                <.icon name="hero-cube" class="w-5 h-5 mr-2" /> Products
+                <.icon name="hero-cube" class="w-5 h-5 mr-2" /> {gettext("Products")}
               </.link>
 
               <.link
                 navigate={Routes.path("/admin/shop/categories")}
                 class="btn btn-outline btn-lg justify-start"
               >
-                <.icon name="hero-folder" class="w-5 h-5 mr-2" /> Categories
+                <.icon name="hero-folder" class="w-5 h-5 mr-2" /> {gettext("Categories")}
               </.link>
 
               <.link
                 navigate={Routes.path("/admin/shop/carts")}
                 class="btn btn-outline btn-lg justify-start"
               >
-                <.icon name="hero-shopping-cart" class="w-5 h-5 mr-2" /> Carts
+                <.icon name="hero-shopping-cart" class="w-5 h-5 mr-2" /> {gettext("Carts")}
               </.link>
 
               <.link
                 navigate={Routes.path("/admin/shop/imports")}
                 class="btn btn-outline btn-lg justify-start"
               >
-                <.icon name="hero-cloud-arrow-up" class="w-5 h-5 mr-2" /> CSV Import
+                <.icon name="hero-cloud-arrow-up" class="w-5 h-5 mr-2" /> {gettext("CSV Import")}
               </.link>
 
               <.link
                 navigate={Routes.path("/admin/shop/settings")}
                 class="btn btn-outline btn-lg justify-start"
               >
-                <.icon name="hero-cog-6-tooth" class="w-5 h-5 mr-2" /> Settings
+                <.icon name="hero-cog-6-tooth" class="w-5 h-5 mr-2" /> {gettext("Settings")}
               </.link>
             </div>
           </div>

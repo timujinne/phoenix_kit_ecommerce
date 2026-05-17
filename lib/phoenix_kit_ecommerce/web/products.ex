@@ -34,7 +34,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
     socket =
       socket
-      |> assign(:page_title, "Products")
+      |> assign(:page_title, gettext("Products"))
       |> assign(:products, products)
       |> assign(:total, total)
       |> assign(:page, 1)
@@ -201,13 +201,13 @@ defmodule PhoenixKitEcommerce.Web.Products do
          |> assign(:total, total)
          |> assign(:delete_target, nil)
          |> assign(:delete_media_checked, false)
-         |> put_flash(:info, "Product deleted")}
+         |> put_flash(:info, gettext("Product deleted"))}
 
       {:error, _} ->
         {:noreply,
          socket
          |> assign(:delete_target, nil)
-         |> put_flash(:error, "Failed to delete product")}
+         |> put_flash(:error, gettext("Failed to delete product"))}
     end
   end
 
@@ -228,10 +228,10 @@ defmodule PhoenixKitEcommerce.Web.Products do
          socket
          |> assign(:products, products)
          |> assign(:total, total)
-         |> put_flash(:info, "Product deleted")}
+         |> put_flash(:info, gettext("Product deleted"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to delete product")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to delete product"))}
     end
   end
 
@@ -293,7 +293,10 @@ defmodule PhoenixKitEcommerce.Web.Products do
      socket
      |> assign(:selected_uuids, MapSet.new())
      |> assign(:show_bulk_modal, nil)
-     |> put_flash(:info, "#{count} products updated to #{status}")}
+     |> put_flash(
+       :info,
+       gettext("%{count} products updated to %{status}", count: count, status: status)
+     )}
   end
 
   @impl true
@@ -308,7 +311,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
      socket
      |> assign(:selected_uuids, MapSet.new())
      |> assign(:show_bulk_modal, nil)
-     |> put_flash(:info, "#{count} products moved")}
+     |> put_flash(:info, gettext("%{count} products moved", count: count))}
   end
 
   @impl true
@@ -335,7 +338,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
      |> assign(:selected_uuids, MapSet.new())
      |> assign(:show_bulk_modal, nil)
      |> assign(:bulk_delete_media, false)
-     |> put_flash(:info, "#{count} products deleted")}
+     |> put_flash(:info, gettext("%{count} products deleted", count: count))}
   end
 
   defp load_products(socket) do
@@ -386,9 +389,9 @@ defmodule PhoenixKitEcommerce.Web.Products do
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-7xl">
         <.admin_page_header back={Routes.path("/admin/shop")}>
-          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">Products</h1>
+          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{gettext("Products")}</h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
-            {if @total == 1, do: "1 product", else: "#{@total} products"}
+            {ngettext("1 product", "%{count} products", @total, count: @total)}
           </p>
         </.admin_page_header>
 
@@ -397,13 +400,13 @@ defmodule PhoenixKitEcommerce.Web.Products do
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
             <%!-- Search --%>
             <div class="lg:col-span-2">
-              <label class="label"><span class="label-text">Search</span></label>
+              <label class="label"><span class="label-text">{gettext("Search")}</span></label>
               <form phx-submit="search" phx-change="search">
                 <input
                   type="text"
                   name="search"
                   value={@search}
-                  placeholder="Search products..."
+                  placeholder={gettext("Search products...")}
                   class="input input-bordered w-full focus:input-primary"
                   phx-debounce="300"
                 />
@@ -412,35 +415,35 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
             <%!-- Status Filter --%>
             <div>
-              <label class="label"><span class="label-text">Status</span></label>
+              <label class="label"><span class="label-text">{gettext("Status")}</span></label>
               <form phx-change="filter_status">
                 <select class="select select-bordered w-full focus:select-primary" name="status">
-                  <option value="" selected={is_nil(@status_filter)}>All Status</option>
-                  <option value="active" selected={@status_filter == "active"}>Active</option>
-                  <option value="draft" selected={@status_filter == "draft"}>Draft</option>
-                  <option value="archived" selected={@status_filter == "archived"}>Archived</option>
+                  <option value="" selected={is_nil(@status_filter)}>{gettext("All Status")}</option>
+                  <option value="active" selected={@status_filter == "active"}>{gettext("Active")}</option>
+                  <option value="draft" selected={@status_filter == "draft"}>{gettext("Draft")}</option>
+                  <option value="archived" selected={@status_filter == "archived"}>{gettext("Archived")}</option>
                 </select>
               </form>
             </div>
 
             <%!-- Type Filter --%>
             <div>
-              <label class="label"><span class="label-text">Type</span></label>
+              <label class="label"><span class="label-text">{gettext("Type")}</span></label>
               <form phx-change="filter_type">
                 <select class="select select-bordered w-full focus:select-primary" name="type">
-                  <option value="" selected={is_nil(@type_filter)}>All Types</option>
-                  <option value="physical" selected={@type_filter == "physical"}>Physical</option>
-                  <option value="digital" selected={@type_filter == "digital"}>Digital</option>
+                  <option value="" selected={is_nil(@type_filter)}>{gettext("All Types")}</option>
+                  <option value="physical" selected={@type_filter == "physical"}>{gettext("Physical")}</option>
+                  <option value="digital" selected={@type_filter == "digital"}>{gettext("Digital")}</option>
                 </select>
               </form>
             </div>
 
             <%!-- Category Filter --%>
             <div>
-              <label class="label"><span class="label-text">Category</span></label>
+              <label class="label"><span class="label-text">{gettext("Category")}</span></label>
               <form phx-change="filter_category">
                 <select class="select select-bordered w-full focus:select-primary" name="category">
-                  <option value="" selected={is_nil(@category_filter)}>All Categories</option>
+                  <option value="" selected={is_nil(@category_filter)}>{gettext("All Categories")}</option>
                   <%= for category <- @categories do %>
                     <option value={category.uuid} selected={@category_filter == category.uuid}>
                       {Translations.get(category, :name, @current_language)}
@@ -457,7 +460,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
                 navigate={Routes.path("/admin/shop/products/new")}
                 class="btn btn-primary w-full"
               >
-                <.icon name="hero-plus" class="w-4 h-4 mr-2" /> Add Product
+                <.icon name="hero-plus" class="w-4 h-4 mr-2" /> {gettext("Add Product")}
               </.link>
             </div>
           </div>
@@ -469,10 +472,10 @@ defmodule PhoenixKitEcommerce.Web.Products do
             <div class="flex flex-wrap items-center justify-between gap-4">
               <div class="flex items-center gap-2">
                 <span class="badge badge-primary badge-lg">
-                  {MapSet.size(@selected_uuids)} selected
+                  {gettext("%{count} selected", count: MapSet.size(@selected_uuids))}
                 </span>
                 <button phx-click="clear_selection" class="btn btn-ghost btn-sm">
-                  Clear selection
+                  {gettext("Clear selection")}
                 </button>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -481,21 +484,21 @@ defmodule PhoenixKitEcommerce.Web.Products do
                   phx-value-action="status"
                   class="btn btn-sm btn-outline"
                 >
-                  <.icon name="hero-arrow-path" class="w-4 h-4 mr-1" /> Change Status
+                  <.icon name="hero-arrow-path" class="w-4 h-4 mr-1" /> {gettext("Change Status")}
                 </button>
                 <button
                   phx-click="show_bulk_modal"
                   phx-value-action="category"
                   class="btn btn-sm btn-outline"
                 >
-                  <.icon name="hero-folder" class="w-4 h-4 mr-1" /> Move to Category
+                  <.icon name="hero-folder" class="w-4 h-4 mr-1" /> {gettext("Move to Category")}
                 </button>
                 <button
                   phx-click="show_bulk_modal"
                   phx-value-action="delete"
                   class="btn btn-sm btn-outline btn-error"
                 >
-                  <.icon name="hero-trash" class="w-4 h-4 mr-1" /> Delete
+                  <.icon name="hero-trash" class="w-4 h-4 mr-1" /> {gettext("Delete")}
                 </button>
               </div>
             </div>
@@ -510,17 +513,17 @@ defmodule PhoenixKitEcommerce.Web.Products do
           items={@products}
           card_fields={fn product ->
             [
-              %{label: "Status", value: product.status},
-              %{label: "Type", value: product.product_type},
+              %{label: gettext("Status"), value: product.status},
+              %{label: gettext("Type"), value: product.product_type},
               %{
-                label: "Category",
+                label: gettext("Category"),
                 value:
                   if(product.category,
                     do: Translations.get(product.category, :name, @current_language),
                     else: "—"
                   )
               },
-              %{label: "Price", value: format_price(product.price, @currency)}
+              %{label: gettext("Price"), value: format_price(product.price, @currency)}
             ]
           end}
         >
@@ -587,12 +590,12 @@ defmodule PhoenixKitEcommerce.Web.Products do
                   />
                 </label>
               </.table_default_header_cell>
-              <.table_default_header_cell>Product</.table_default_header_cell>
-              <.table_default_header_cell>Status</.table_default_header_cell>
-              <.table_default_header_cell>Type</.table_default_header_cell>
-              <.table_default_header_cell>Category</.table_default_header_cell>
-              <.table_default_header_cell class="text-right">Price</.table_default_header_cell>
-              <.table_default_header_cell class="text-right">Actions</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Product")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Type")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Category")}</.table_default_header_cell>
+              <.table_default_header_cell class="text-right">{gettext("Price")}</.table_default_header_cell>
+              <.table_default_header_cell class="text-right">{gettext("Actions")}</.table_default_header_cell>
             </.table_default_row>
           </.table_default_header>
 
@@ -601,8 +604,8 @@ defmodule PhoenixKitEcommerce.Web.Products do
               <.table_default_row hover={false}>
                 <.table_default_cell colspan={7} class="text-center py-12 text-base-content/50">
                   <.icon name="hero-cube" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p class="text-lg">No products found</p>
-                  <p class="text-sm">Create your first product to get started</p>
+                  <p class="text-lg">{gettext("No products found")}</p>
+                  <p class="text-sm">{gettext("Create your first product to get started")}</p>
                 </.table_default_cell>
               </.table_default_row>
             <% else %>
@@ -734,9 +737,9 @@ defmodule PhoenixKitEcommerce.Web.Products do
       <%= if @show_bulk_modal == "status" do %>
         <div class="modal modal-open">
           <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4">Change Status</h3>
+            <h3 class="font-bold text-lg mb-4">{gettext("Change Status")}</h3>
             <p class="text-base-content/70 mb-4">
-              Update status for {MapSet.size(@selected_uuids)} selected products
+              {gettext("Update status for %{count} selected products", count: MapSet.size(@selected_uuids))}
             </p>
             <div class="flex flex-col gap-2">
               <button
@@ -744,25 +747,25 @@ defmodule PhoenixKitEcommerce.Web.Products do
                 phx-value-status="active"
                 class="btn btn-success btn-outline justify-start"
               >
-                <.icon name="hero-check-circle" class="w-5 h-5 mr-2" /> Set Active
+                <.icon name="hero-check-circle" class="w-5 h-5 mr-2" /> {gettext("Set Active")}
               </button>
               <button
                 phx-click="bulk_change_status"
                 phx-value-status="draft"
                 class="btn btn-warning btn-outline justify-start"
               >
-                <.icon name="hero-pencil-square" class="w-5 h-5 mr-2" /> Set Draft
+                <.icon name="hero-pencil-square" class="w-5 h-5 mr-2" /> {gettext("Set Draft")}
               </button>
               <button
                 phx-click="bulk_change_status"
                 phx-value-status="archived"
                 class="btn btn-neutral btn-outline justify-start"
               >
-                <.icon name="hero-archive-box" class="w-5 h-5 mr-2" /> Set Archived
+                <.icon name="hero-archive-box" class="w-5 h-5 mr-2" /> {gettext("Set Archived")}
               </button>
             </div>
             <div class="modal-action">
-              <button phx-click="close_bulk_modal" class="btn">Cancel</button>
+              <button phx-click="close_bulk_modal" class="btn">{gettext("Cancel")}</button>
             </div>
           </div>
           <div class="modal-backdrop" phx-click="close_bulk_modal"></div>
@@ -773,9 +776,9 @@ defmodule PhoenixKitEcommerce.Web.Products do
       <%= if @show_bulk_modal == "category" do %>
         <div class="modal modal-open">
           <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4">Move to Category</h3>
+            <h3 class="font-bold text-lg mb-4">{gettext("Move to Category")}</h3>
             <p class="text-base-content/70 mb-4">
-              Move {MapSet.size(@selected_uuids)} selected products to a category
+              {gettext("Move %{count} selected products to a category", count: MapSet.size(@selected_uuids))}
             </p>
             <div class="flex flex-col gap-2">
               <button
@@ -783,7 +786,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
                 phx-value-category_uuid=""
                 class="btn btn-ghost justify-start"
               >
-                <.icon name="hero-x-mark" class="w-5 h-5 mr-2" /> No Category
+                <.icon name="hero-x-mark" class="w-5 h-5 mr-2" /> {gettext("No Category")}
               </button>
               <%= for category <- @categories do %>
                 <button
@@ -800,7 +803,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
               <% end %>
             </div>
             <div class="modal-action">
-              <button phx-click="close_bulk_modal" class="btn">Cancel</button>
+              <button phx-click="close_bulk_modal" class="btn">{gettext("Cancel")}</button>
             </div>
           </div>
           <div class="modal-backdrop" phx-click="close_bulk_modal"></div>
@@ -811,10 +814,9 @@ defmodule PhoenixKitEcommerce.Web.Products do
       <%= if @show_bulk_modal == "delete" do %>
         <div class="modal modal-open">
           <div class="modal-box">
-            <h3 class="font-bold text-lg text-error mb-4">Delete Products</h3>
+            <h3 class="font-bold text-lg text-error mb-4">{gettext("Delete Products")}</h3>
             <p class="text-base-content/70 mb-4">
-              Are you sure you want to delete {MapSet.size(@selected_uuids)} products?
-              This action cannot be undone.
+              {gettext("Are you sure you want to delete %{count} products? This action cannot be undone.", count: MapSet.size(@selected_uuids))}
             </p>
             <label class="label cursor-pointer justify-start gap-3">
               <input
@@ -823,12 +825,12 @@ defmodule PhoenixKitEcommerce.Web.Products do
                 phx-click="toggle_bulk_delete_media"
                 checked={@bulk_delete_media}
               />
-              <span class="label-text">Delete associated media files (orphaned only)</span>
+              <span class="label-text">{gettext("Delete associated media files (orphaned only)")}</span>
             </label>
             <div class="modal-action">
-              <button phx-click="close_bulk_modal" class="btn">Cancel</button>
+              <button phx-click="close_bulk_modal" class="btn">{gettext("Cancel")}</button>
               <button phx-click="bulk_delete" class="btn btn-error">
-                <.icon name="hero-trash" class="w-4 h-4 mr-2" /> Delete Products
+                <.icon name="hero-trash" class="w-4 h-4 mr-2" /> {gettext("Delete Products")}
               </button>
             </div>
           </div>
@@ -840,8 +842,8 @@ defmodule PhoenixKitEcommerce.Web.Products do
       <%= if @delete_target do %>
         <div class="modal modal-open">
           <div class="modal-box">
-            <h3 class="font-bold text-lg text-error mb-4">Delete Product</h3>
-            <p class="mb-4">Are you sure you want to delete this product?</p>
+            <h3 class="font-bold text-lg text-error mb-4">{gettext("Delete Product")}</h3>
+            <p class="mb-4">{gettext("Are you sure you want to delete this product?")}</p>
             <label class="label cursor-pointer justify-start gap-3">
               <input
                 type="checkbox"
@@ -849,11 +851,11 @@ defmodule PhoenixKitEcommerce.Web.Products do
                 phx-click="toggle_delete_media"
                 checked={@delete_media_checked}
               />
-              <span class="label-text">Delete associated media files (orphaned only)</span>
+              <span class="label-text">{gettext("Delete associated media files (orphaned only)")}</span>
             </label>
             <div class="modal-action">
-              <button phx-click="cancel_delete" class="btn">Cancel</button>
-              <button phx-click="execute_delete" class="btn btn-error">Delete</button>
+              <button phx-click="cancel_delete" class="btn">{gettext("Cancel")}</button>
+              <button phx-click="execute_delete" class="btn btn-error">{gettext("Delete")}</button>
             </div>
           </div>
           <div class="modal-backdrop" phx-click="cancel_delete"></div>
