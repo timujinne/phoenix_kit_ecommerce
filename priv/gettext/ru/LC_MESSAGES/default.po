@@ -7,12 +7,11 @@
 ## Use `mix gettext.extract --merge` or `mix gettext.merge`
 ## to merge POT files into PO files.
 msgid ""
-msgstr ""
-"Language: ru\n"
-"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
-"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+msgstr "Language: ru\nPlural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
-#: lib/phoenix_kit_ecommerce.ex
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:21
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:40
+#, elixir-autogen
 msgid "E-Commerce"
 msgstr "Электронная коммерция"
 
@@ -20,11 +19,19 @@ msgstr "Электронная коммерция"
 msgid "Dashboard"
 msgstr "Панель управления"
 
-#: lib/phoenix_kit_ecommerce.ex
+#: lib/phoenix_kit_ecommerce/web/categories.ex:475
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:150
+#: lib/phoenix_kit_ecommerce/web/products.ex:37
+#: lib/phoenix_kit_ecommerce/web/products.ex:392
+#, elixir-autogen
 msgid "Products"
 msgstr "Товары"
 
-#: lib/phoenix_kit_ecommerce.ex
+#: lib/phoenix_kit_ecommerce/web/categories.ex:33
+#: lib/phoenix_kit_ecommerce/web/categories.ex:320
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:105
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:157
+#, elixir-autogen
 msgid "Categories"
 msgstr "Категории"
 
@@ -32,11 +39,15 @@ msgstr "Категории"
 msgid "Shipping"
 msgstr "Доставка"
 
-#: lib/phoenix_kit_ecommerce.ex
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:164
+#, elixir-autogen
 msgid "Carts"
 msgstr "Корзины"
 
-#: lib/phoenix_kit_ecommerce.ex
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:171
+#: lib/phoenix_kit_ecommerce/web/imports.ex:61
+#: lib/phoenix_kit_ecommerce/web/imports.ex:788
+#, elixir-autogen
 msgid "CSV Import"
 msgstr "CSV-импорт"
 
@@ -47,3 +58,2565 @@ msgstr "Магазин"
 #: lib/phoenix_kit_ecommerce.ex
 msgid "My Cart"
 msgstr "Моя корзина"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:94
+#, elixir-autogen, elixir-format
+msgid "%{count} carts total"
+msgstr "%{count} корзин всего"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:224
+#, elixir-autogen, elixir-format
+msgid "%{count} categories deleted"
+msgstr "%{count} категорий удалено"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:206
+#, elixir-autogen, elixir-format
+msgid "%{count} categories updated"
+msgstr "%{count} категорий обновлено"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:186
+#, elixir-autogen, elixir-format
+msgid "%{count} categories updated to %{status}"
+msgstr "%{count} категорий переведено в статус %{status}"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:66
+#, elixir-autogen, elixir-format
+msgid "%{count} methods configured"
+msgstr "%{count} методов настроено"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:53
+#, elixir-autogen, elixir-format
+msgid "%{count} order"
+msgid_plural "%{count} orders"
+msgstr[0] "1 заказ"
+msgstr[1] "%{count} заказа"
+msgstr[2] "%{count} заказов"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:341
+#, elixir-autogen, elixir-format
+msgid "%{count} products deleted"
+msgstr "%{count} продуктов удалено"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:314
+#, elixir-autogen, elixir-format
+msgid "%{count} products moved"
+msgstr "%{count} товаров перемещено"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:298
+#, elixir-autogen, elixir-format
+msgid "%{count} products updated to %{status}"
+msgstr "%{count} товаров переведено в статус %{status}"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:392
+#: lib/phoenix_kit_ecommerce/web/products.ex:475
+#, elixir-autogen, elixir-format
+msgid "%{count} selected"
+msgstr "Выбрано: %{count}"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:322
+#, elixir-autogen, elixir-format
+msgid "1 category"
+msgid_plural "%{count} categories"
+msgstr[0] "1 категория"
+msgstr[1] "%{count} категории"
+msgstr[2] "%{count} категорий"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:538
+#, elixir-autogen, elixir-format
+msgid "1 day"
+msgid_plural "%{count} days"
+msgstr[0] "1 день"
+msgstr[1] "%{count} дня"
+msgstr[2] "%{count} дней"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:394
+#, elixir-autogen, elixir-format
+msgid "1 product"
+msgid_plural "%{count} products"
+msgstr[0] "Товары"
+msgstr[1] "Товары"
+msgstr[2] "Товары"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:765
+#, elixir-autogen, elixir-format
+msgid "= Category specific,"
+msgstr "= Специфично для категории,"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:766
+#, elixir-autogen, elixir-format
+msgid "= Global"
+msgstr "= Глобальное"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:126
+#, elixir-autogen, elixir-format
+msgid "Abandoned"
+msgstr "Брошен"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1096
+#, elixir-autogen, elixir-format
+msgid "About CSV Import"
+msgstr "О CSV-импорте"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.ex:46
+#, elixir-autogen, elixir-format
+msgid "Access denied"
+msgstr "Доступ запрещён"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:476
+#: lib/phoenix_kit_ecommerce/web/products.ex:598
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:125
+#, elixir-autogen, elixir-format
+msgid "Actions"
+msgstr "Действия"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:124
+#: lib/phoenix_kit_ecommerce/web/categories.ex:350
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:733
+#: lib/phoenix_kit_ecommerce/web/products.ex:422
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:365
+#, elixir-autogen, elixir-format
+msgid "Active"
+msgstr "Активно"
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:75
+#, elixir-autogen, elixir-format
+msgid "Active Products"
+msgstr "Активные продукты"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:495
+#, elixir-autogen, elixir-format
+msgid "Active — Category and products visible"
+msgstr "Активна — категория и товары видны"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:840
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:896
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1181
+#, elixir-autogen, elixir-format
+msgid "Add"
+msgstr "Добавить"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:380
+#, elixir-autogen, elixir-format
+msgid "Add Category"
+msgstr "Добавить категорию"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:791
+#, elixir-autogen, elixir-format
+msgid "Add Category Option"
+msgstr "Добавить опцию категории"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:70
+#, elixir-autogen, elixir-format
+msgid "Add Method"
+msgstr "Добавить метод"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:686
+#, elixir-autogen, elixir-format
+msgid "Add Option"
+msgstr "Добавить параметр"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1190
+#, elixir-autogen, elixir-format
+msgid "Add Option or Value"
+msgstr "Добавить параметр или значение"
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:48
+#: lib/phoenix_kit_ecommerce/web/products.ex:463
+#, elixir-autogen, elixir-format
+msgid "Add Product"
+msgstr "Добавить товар"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1168
+#, elixir-autogen, elixir-format
+msgid "Add new value..."
+msgstr "Добавить новое значение..."
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:362
+#: lib/phoenix_kit_ecommerce/web/products.ex:446
+#, elixir-autogen, elixir-format
+msgid "All Categories"
+msgstr "Категории"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:978
+#, elixir-autogen, elixir-format
+msgid "All Images Migrated"
+msgstr "Все изображения перенесены"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:123
+#: lib/phoenix_kit_ecommerce/web/categories.ex:349
+#: lib/phoenix_kit_ecommerce/web/products.ex:421
+#, elixir-autogen, elixir-format
+msgid "All Status"
+msgstr "Все статусы"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:24
+#, elixir-autogen, elixir-format
+msgid "All Statuses"
+msgstr "Все статусы"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:434
+#, elixir-autogen, elixir-format
+msgid "All Types"
+msgstr "Все типы"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1100
+#, elixir-autogen, elixir-format
+msgid "All values"
+msgstr "Все значения"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1283
+#, elixir-autogen, elixir-format
+msgid "Analyze & Configure"
+msgstr "Анализировать и настроить"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:739
+#: lib/phoenix_kit_ecommerce/web/products.ex:424
+#, elixir-autogen, elixir-format
+msgid "Archived"
+msgstr "Архивирован"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:671
+#, elixir-autogen, elixir-format
+msgid "Are you sure you want to delete %{count} categories? This action cannot be undone."
+msgstr "Вы уверены, что хотите удалить %{count} категорий? Это действие нельзя отменить."
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:819
+#, elixir-autogen, elixir-format
+msgid "Are you sure you want to delete %{count} products? This action cannot be undone."
+msgstr "Вы уверены, что хотите удалить %{count} продуктов? Это действие нельзя отменить."
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1075
+#, elixir-autogen, elixir-format
+msgid "Are you sure you want to delete this import log?"
+msgstr "Вы уверены, что хотите удалить этот журнал импорта?"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:846
+#, elixir-autogen, elixir-format
+msgid "Are you sure you want to delete this product?"
+msgstr "Вы уверены, что хотите удалить этот продукт?"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:599
+#, elixir-autogen, elixir-format
+msgid "Are you sure you want to delete this product? This action cannot be undone."
+msgstr "Вы уверены, что хотите удалить этот продукт? Это действие нельзя отменить."
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:527
+#, elixir-autogen, elixir-format
+msgid "Attached"
+msgstr "Прикреплён"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1468
+#, elixir-autogen, elixir-format
+msgid "Auto-add"
+msgstr "Авто-добавление"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:592
+#, elixir-autogen, elixir-format
+msgid "Auto-detect (first product with image)"
+msgstr "Авто-определение (первый товар с изображением)"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:819
+#, elixir-autogen, elixir-format
+msgid "Auto-generated"
+msgstr "Авто-генерация"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:445
+#, elixir-autogen, elixir-format
+msgid "Auto-generated from name"
+msgstr "Генерируется из названия"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:759
+#, elixir-autogen, elixir-format
+msgid "Auto-generated from title"
+msgstr "Генерируется из заголовка"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:273
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1036
+#, elixir-autogen, elixir-format
+msgid "Available Options"
+msgstr "Доступные параметры"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:411
+#, elixir-autogen, elixir-format
+msgid "Available Product Options"
+msgstr "Доступные параметры товаров"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:10
+#, elixir-autogen, elixir-format
+msgid "Back to Orders"
+msgstr "Назад к заказам"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:437
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:849
+#, elixir-autogen, elixir-format
+msgid "Base Price"
+msgstr "Базовая цена"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1259
+#, elixir-autogen, elixir-format
+msgid "Base price:"
+msgstr "Базовая цена:"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:399
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:109
+#, elixir-autogen, elixir-format
+msgid "Basic Information"
+msgstr "Основная информация"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:93
+#, elixir-autogen, elixir-format
+msgid "Billing Information"
+msgstr "Информация об оплате"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.ex:27
+#: lib/phoenix_kit_ecommerce/web/user_orders.ex:34
+#, elixir-autogen, elixir-format
+msgid "Billing module is not enabled"
+msgstr "Модуль выставления счетов не включён"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:273
+#, elixir-autogen, elixir-format
+msgid "Billing module settings"
+msgstr "Настройки модуля Billing"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:764
+#, elixir-autogen, elixir-format
+msgid "Blue"
+msgstr "Синий"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:772
+#, elixir-autogen, elixir-format
+msgid "Brand or manufacturer"
+msgstr "Бренд или производитель"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:80
+#, elixir-autogen, elixir-format
+msgid "Browse Products"
+msgstr "Просмотреть товары"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:14
+#, elixir-autogen, elixir-format
+msgid "Browse Shop"
+msgstr "Перейти в магазин"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:318
+#, elixir-autogen, elixir-format
+msgid "CSV Import Filters"
+msgstr "CSV-импорт"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:619
+#: lib/phoenix_kit_ecommerce/web/categories.ex:658
+#: lib/phoenix_kit_ecommerce/web/categories.ex:674
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:776
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:893
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:611
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1710
+#: lib/phoenix_kit_ecommerce/web/products.ex:768
+#: lib/phoenix_kit_ecommerce/web/products.ex:806
+#: lib/phoenix_kit_ecommerce/web/products.ex:831
+#: lib/phoenix_kit_ecommerce/web/products.ex:857
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:391
+#, elixir-autogen, elixir-format
+msgid "Cancel"
+msgstr "Отмена"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:964
+#, elixir-autogen, elixir-format
+msgid "Cancel Migration"
+msgstr "Отменить миграцию"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:41
+#, elixir-autogen, elixir-format
+msgid "Cancelled"
+msgstr "Отменён"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:278
+#, elixir-autogen, elixir-format
+msgid "Cancelled %{count} pending migration jobs"
+msgstr "Отменено %{count} заданий миграции"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:455
+#, elixir-autogen, elixir-format
+msgid "Cannot retry: file no longer exists"
+msgstr "Повтор невозможен: файл больше не существует"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:169
+#, elixir-autogen, elixir-format
+msgid "Carts will appear here when customers add items"
+msgstr "Корзины появятся здесь, когда покупатели добавят товары"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:102
+#, elixir-autogen, elixir-format
+msgid "Categories in shop disabled"
+msgstr "Категории в магазине отключены"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:101
+#, elixir-autogen, elixir-format
+msgid "Categories in shop enabled"
+msgstr "Категории в магазине включены"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:507
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:802
+#: lib/phoenix_kit_ecommerce/web/products.ex:443
+#: lib/phoenix_kit_ecommerce/web/products.ex:519
+#: lib/phoenix_kit_ecommerce/web/products.ex:596
+#, elixir-autogen, elixir-format
+msgid "Category"
+msgstr "Категории"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:503
+#, elixir-autogen, elixir-format
+msgid "Category Icons"
+msgstr "Иконки категорий"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:536
+#, elixir-autogen, elixir-format
+msgid "Category Image"
+msgstr "Изображение категории"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:465
+#, elixir-autogen, elixir-format
+msgid "Category Name Display"
+msgstr "Отображение названий категорий"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:679
+#, elixir-autogen, elixir-format
+msgid "Category Options"
+msgstr "Категории"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:924
+#, elixir-autogen, elixir-format
+msgid "Category created"
+msgstr "Категория создана"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:112
+#, elixir-autogen, elixir-format
+msgid "Category deleted"
+msgstr "Категория удалена"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:529
+#, elixir-autogen, elixir-format
+msgid "Category description"
+msgstr "Описание категории"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:80
+#, elixir-autogen, elixir-format
+msgid "Category display setting updated"
+msgstr "Настройка отображения категорий обновлена"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:118
+#, elixir-autogen, elixir-format
+msgid "Category icon setting updated"
+msgstr "Настройка иконки категорий обновлена"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:543
+#, elixir-autogen, elixir-format
+msgid "Category image"
+msgstr "Категории"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:419
+#, elixir-autogen, elixir-format
+msgid "Category name"
+msgstr "Категории"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:937
+#, elixir-autogen, elixir-format
+msgid "Category updated"
+msgstr "Категория обновлена"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:569
+#, elixir-autogen, elixir-format
+msgid "Change Image"
+msgstr "Изменить изображение"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:411
+#: lib/phoenix_kit_ecommerce/web/categories.ex:630
+#, elixir-autogen, elixir-format
+msgid "Change Parent"
+msgstr "Изменить родительскую"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:404
+#: lib/phoenix_kit_ecommerce/web/categories.ex:591
+#: lib/phoenix_kit_ecommerce/web/products.ex:487
+#: lib/phoenix_kit_ecommerce/web/products.ex:740
+#, elixir-autogen, elixir-format
+msgid "Change Status"
+msgstr "Изменить статус"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:908
+#, elixir-autogen, elixir-format
+msgid "Charge tax on this product"
+msgstr "Взимать налог с этого товара"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:48
+#, elixir-autogen, elixir-format
+msgid "Clear"
+msgstr "Очистить"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:395
+#: lib/phoenix_kit_ecommerce/web/products.ex:478
+#, elixir-autogen, elixir-format
+msgid "Clear selection"
+msgstr "Снять выделение"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:407
+#, elixir-autogen, elixir-format
+msgid "Compare At"
+msgstr "Цена сравнения"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:867
+#, elixir-autogen, elixir-format
+msgid "Compare at Price"
+msgstr "Цена сравнения"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:38
+#, elixir-autogen, elixir-format
+msgid "Completed"
+msgstr "Завершённых"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:109
+#, elixir-autogen, elixir-format
+msgid "Completed At"
+msgstr "Завершено в"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:833
+#: lib/phoenix_kit_ecommerce/web/settings.ex:301
+#: lib/phoenix_kit_ecommerce/web/settings.ex:327
+#, elixir-autogen, elixir-format
+msgid "Configure"
+msgstr "Настроить"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1294
+#, elixir-autogen, elixir-format
+msgid "Configure Option Mappings"
+msgstr "Настроить сопоставление опций"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:320
+#, elixir-autogen, elixir-format
+msgid "Configure keyword filters and category rules for CSV product imports"
+msgstr "Настройте ключевые слова и правила категоризации для CSV-импорта товаров"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:347
+#, elixir-autogen, elixir-format
+msgid "Configure product filters shown on the storefront sidebar. Customers can filter by price, vendor, and product options."
+msgstr "Настройте фильтры товаров на боковой панели витрины. Покупатели могут фильтровать по цене, поставщику и параметрам товара."
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:102
+#, elixir-autogen, elixir-format
+msgid "Configure shipping method details"
+msgstr "Настроить параметры метода доставки"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:236
+#, elixir-autogen, elixir-format
+msgid "Configure your e-commerce store"
+msgstr "Настройте свой интернет-магазин"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:814
+#, elixir-autogen, elixir-format
+msgid "Confirm"
+msgstr "Подтвердить"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1487
+#, elixir-autogen, elixir-format
+msgid "Confirm Import"
+msgstr "Подтвердить импорт"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:241
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:122
+#, elixir-autogen, elixir-format
+msgid "Constraints"
+msgstr "Ограничения"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:212
+#, elixir-autogen, elixir-format
+msgid "Continue Shopping"
+msgstr "Продолжить покупки"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:125
+#, elixir-autogen, elixir-format
+msgid "Converted"
+msgstr "Конвертирован"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:416
+#, elixir-autogen, elixir-format
+msgid "Cost"
+msgstr "Себестоимость"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:883
+#, elixir-autogen, elixir-format
+msgid "Cost per Item"
+msgstr "Себестоимость товара"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:780
+#, elixir-autogen, elixir-format
+msgid "Create Category"
+msgstr "Создать категорию"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:395
+#, elixir-autogen, elixir-format
+msgid "Create Method"
+msgstr "Создать метод"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1714
+#, elixir-autogen, elixir-format
+msgid "Create Product"
+msgstr "Создать продукт"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:386
+#, elixir-autogen, elixir-format
+msgid "Create a new category"
+msgstr "Создать новую категорию"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:668
+#, elixir-autogen, elixir-format
+msgid "Create a new product"
+msgstr "Создать новый продукт"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:486
+#, elixir-autogen, elixir-format
+msgid "Create your first category to organize products"
+msgstr "Создайте первую категорию для организации товаров"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:608
+#, elixir-autogen, elixir-format
+msgid "Create your first product to get started"
+msgstr "Создайте первый товар для начала работы"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:135
+#, elixir-autogen, elixir-format
+msgid "Create your first shipping method to get started"
+msgstr "Создайте первый метод доставки для начала работы"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:576
+#, elixir-autogen, elixir-format
+msgid "Created:"
+msgstr "Создано:"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:190
+#, elixir-autogen, elixir-format
+msgid "Currency"
+msgstr "Валюта"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:269
+#, elixir-autogen, elixir-format
+msgid "Currency & Tax Settings"
+msgstr "Настройки валюты и налогов"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:271
+#, elixir-autogen, elixir-format
+msgid "Currency and tax configuration is managed in the"
+msgstr "Настройка валюты и налогов выполняется в"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1511
+#, elixir-autogen, elixir-format
+msgid "Current Modifier"
+msgstr "Текущий модификатор"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1364
+#, elixir-autogen, elixir-format
+msgid "Custom"
+msgstr "Пользовательский"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1305
+#, elixir-autogen, elixir-format
+msgid "Custom Price"
+msgstr "Настраиваемая цена"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1098
+#, elixir-autogen, elixir-format
+msgid "Custom selection"
+msgstr "Пользовательский выбор"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:155
+#, elixir-autogen, elixir-format
+msgid "Customer"
+msgstr "Покупатель"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1007
+#, elixir-autogen, elixir-format
+msgid "Date"
+msgstr "Дата"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1304
+#, elixir-autogen, elixir-format
+msgid "Default Price"
+msgstr "Цена по умолчанию"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:691
+#, elixir-autogen, elixir-format
+msgid "Define options specific to this category. These override global options with the same key."
+msgstr "Определите опции, специфичные для этой категории. Они переопределяют глобальные опции с тем же ключом."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:291
+#, elixir-autogen, elixir-format
+msgid "Define options that apply to all products (size, color, material, etc.)"
+msgstr "Задайте параметры для всех товаров (размер, цвет, материал и т.д.)"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:418
+#: lib/phoenix_kit_ecommerce/web/categories.ex:452
+#: lib/phoenix_kit_ecommerce/web/categories.ex:554
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1074
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1078
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:217
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:613
+#: lib/phoenix_kit_ecommerce/web/products.ex:501
+#: lib/phoenix_kit_ecommerce/web/products.ex:575
+#: lib/phoenix_kit_ecommerce/web/products.ex:704
+#: lib/phoenix_kit_ecommerce/web/products.ex:858
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:112
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:204
+#, elixir-autogen, elixir-format
+msgid "Delete"
+msgstr "Удалить"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:669
+#: lib/phoenix_kit_ecommerce/web/categories.ex:676
+#, elixir-autogen, elixir-format
+msgid "Delete Categories"
+msgstr "Удалить категории"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:597
+#: lib/phoenix_kit_ecommerce/web/products.ex:845
+#, elixir-autogen, elixir-format
+msgid "Delete Product"
+msgstr "Удалить продукт"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:817
+#: lib/phoenix_kit_ecommerce/web/products.ex:833
+#, elixir-autogen, elixir-format
+msgid "Delete Products"
+msgstr "Удалить продукты"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:608
+#: lib/phoenix_kit_ecommerce/web/products.ex:828
+#: lib/phoenix_kit_ecommerce/web/products.ex:854
+#, elixir-autogen, elixir-format
+msgid "Delete associated media files (orphaned only)"
+msgstr "Удалить связанные медиафайлы (только осиротевшие)"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:450
+#: lib/phoenix_kit_ecommerce/web/categories.ex:552
+#, elixir-autogen, elixir-format
+msgid "Delete this category?"
+msgstr "Удалить эту категорию?"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:110
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:202
+#, elixir-autogen, elixir-format
+msgid "Delete this shipping method?"
+msgstr "Удалить этот метод доставки?"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:35
+#, elixir-autogen, elixir-format
+msgid "Delivered"
+msgstr "Доставлен"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:123
+#, elixir-autogen, elixir-format
+msgid "Delivery"
+msgstr "Доставка"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:308
+#, elixir-autogen, elixir-format
+msgid "Delivery & Status"
+msgstr "Доставка и статус"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:156
+#, elixir-autogen, elixir-format
+msgid "Delivery in 3-5 business days"
+msgstr "Доставка за 3–5 рабочих дней"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:519
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:662
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:823
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:151
+#, elixir-autogen, elixir-format
+msgid "Description"
+msgstr "Описание"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:561
+#, elixir-autogen, elixir-format
+msgid "Description:"
+msgstr "Описание:"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:795
+#: lib/phoenix_kit_ecommerce/web/products.ex:436
+#, elixir-autogen, elixir-format
+msgid "Digital"
+msgstr "Цифровой"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:522
+#, elixir-autogen, elixir-format
+msgid "Digital Product"
+msgstr "Цифровой товар"
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:133
+#, elixir-autogen, elixir-format
+msgid "Digital Products"
+msgstr "Цифровые товары"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:77
+#, elixir-autogen, elixir-format
+msgid "Discount"
+msgstr "Скидка"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:448
+#, elixir-autogen, elixir-format
+msgid "Display category cards above products in the main shop page"
+msgstr "Отображать карточки категорий над товарами на главной странице магазина"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:531
+#, elixir-autogen, elixir-format
+msgid "Download Limit:"
+msgstr "Лимит загрузок:"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1253
+#, elixir-autogen, elixir-format
+msgid "Download images to Storage"
+msgstr "Загрузить изображения в Хранилище"
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:136
+#, elixir-autogen, elixir-format
+msgid "Downloadable products"
+msgstr "Загружаемые товары"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:727
+#: lib/phoenix_kit_ecommerce/web/products.ex:423
+#, elixir-autogen, elixir-format
+msgid "Draft"
+msgstr "Черновик"
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:90
+#, elixir-autogen, elixir-format
+msgid "Draft Products"
+msgstr "Черновики товаров"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1206
+#, elixir-autogen, elixir-format
+msgid "Drag CSV file here or click to browse"
+msgstr "Перетащите CSV-файл сюда или нажмите для выбора"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:25
+#: lib/phoenix_kit_ecommerce/web/settings.ex:235
+#, elixir-autogen, elixir-format
+msgid "E-Commerce Settings"
+msgstr "Электронная коммерция"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:444
+#: lib/phoenix_kit_ecommerce/web/categories.ex:546
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:196
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:199
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:211
+#: lib/phoenix_kit_ecommerce/web/products.ex:568
+#: lib/phoenix_kit_ecommerce/web/products.ex:697
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:104
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:196
+#, elixir-autogen, elixir-format
+msgid "Edit"
+msgstr "Изменить"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:78
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:47
+#, elixir-autogen, elixir-format
+msgid "Edit %{name}"
+msgstr "Редактировать %{name}"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:99
+#, elixir-autogen, elixir-format
+msgid "Edit %{title}"
+msgstr "Редактировать %{title}"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:791
+#, elixir-autogen, elixir-format
+msgid "Edit Option"
+msgstr "Редактировать опцию"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:386
+#, elixir-autogen, elixir-format
+msgid "Edit category details"
+msgstr "Редактировать категорию"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:668
+#, elixir-autogen, elixir-format
+msgid "Edit product details"
+msgstr "Редактировать товар"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1270
+#, elixir-autogen, elixir-format
+msgid "Editable"
+msgstr "Редактируемое"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:251
+#, elixir-autogen, elixir-format
+msgid "Enable stock tracking for products (Phase 2)"
+msgstr "Включить отслеживание запасов товаров (Фаза 2)"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:358
+#, elixir-autogen, elixir-format
+msgid "Enabled"
+msgstr "Включено"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1192
+#, elixir-autogen, elixir-format
+msgid "Enter an existing option key to add a new value, or a new key to create a new option."
+msgstr "Введите существующий ключ параметра для добавления нового значения или новый ключ для создания нового параметра."
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:232
+#, elixir-autogen, elixir-format
+msgid "Error"
+msgstr "Ошибка"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:279
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:358
+#, elixir-autogen, elixir-format
+msgid "Error: %{reason}"
+msgstr "Ошибка: %{reason}"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:149
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:224
+#, elixir-autogen, elixir-format
+msgid "Errors"
+msgstr "Ошибки"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:327
+#, elixir-autogen, elixir-format
+msgid "Est. days (max)"
+msgstr "Срок (макс., дней)"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:313
+#, elixir-autogen, elixir-format
+msgid "Est. days (min)"
+msgstr "Срок (мин., дней)"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1100
+#, elixir-autogen, elixir-format
+msgid "Existing products with the same slug are updated"
+msgstr "Существующие товары с таким же slug обновляются"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:127
+#, elixir-autogen, elixir-format
+msgid "Expired"
+msgstr "Истёк"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:535
+#, elixir-autogen, elixir-format
+msgid "Expiry:"
+msgstr "Срок действия:"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:931
+#, elixir-autogen, elixir-format
+msgid "Failed"
+msgstr "Не удалось"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:192
+#, elixir-autogen, elixir-format
+msgid "Failed to add filter"
+msgstr "Не удалось добавить фильтр"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:577
+#, elixir-autogen, elixir-format
+msgid "Failed to create import log"
+msgstr "Не удалось создать журнал импорта"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:115
+#, elixir-autogen, elixir-format
+msgid "Failed to delete category"
+msgstr "Не удалось удалить категорию"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:512
+#, elixir-autogen, elixir-format
+msgid "Failed to delete import log"
+msgstr "Не удалось удалить журнал импорта"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:120
+#: lib/phoenix_kit_ecommerce/web/products.ex:210
+#: lib/phoenix_kit_ecommerce/web/products.ex:234
+#, elixir-autogen, elixir-format
+msgid "Failed to delete product"
+msgstr "Не удалось удалить продукт"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:53
+#, elixir-autogen, elixir-format
+msgid "Failed to delete shipping method"
+msgstr "Не удалось удалить способ доставки"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:311
+#, elixir-autogen, elixir-format
+msgid "Failed to read CSV file headers"
+msgstr "Не удалось прочитать заголовки CSV-файла"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:209
+#, elixir-autogen, elixir-format
+msgid "Failed to remove filter"
+msgstr "Не удалось удалить фильтр"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:225
+#, elixir-autogen, elixir-format
+msgid "Failed to reset filters"
+msgstr "Не удалось сбросить фильтры"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:84
+#, elixir-autogen, elixir-format
+msgid "Failed to update category display setting"
+msgstr "Не удалось обновить настройку отображения категории"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:121
+#, elixir-autogen, elixir-format
+msgid "Failed to update category icon setting"
+msgstr "Не удалось обновить настройку иконки категории"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:140
+#, elixir-autogen, elixir-format
+msgid "Failed to update filter"
+msgstr "Не удалось обновить фильтр"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:156
+#, elixir-autogen, elixir-format
+msgid "Failed to update filter label"
+msgstr "Не удалось обновить метку фильтра"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:69
+#, elixir-autogen, elixir-format
+msgid "Failed to update inventory setting"
+msgstr "Не удалось обновить настройку инвентаря"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:107
+#, elixir-autogen, elixir-format
+msgid "Failed to update setting"
+msgstr "Не удалось обновить настройку"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:579
+#, elixir-autogen, elixir-format
+msgid "Featured Product (image fallback)"
+msgstr "Рекомендованный товар (запасное изображение)"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1003
+#, elixir-autogen, elixir-format
+msgid "File"
+msgstr "Файл"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1609
+#, elixir-autogen, elixir-format
+msgid "File is too large (max 50MB)"
+msgstr "Файл слишком большой (макс. 50 МБ)"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:525
+#, elixir-autogen, elixir-format
+msgid "File:"
+msgstr "Файл:"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:97
+#, elixir-autogen, elixir-format
+msgid "Filename"
+msgstr "Имя файла"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:355
+#, elixir-autogen, elixir-format
+msgid "Filter"
+msgstr "Фильтр"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:189
+#, elixir-autogen, elixir-format
+msgid "Filter '%{key}' added"
+msgstr "Фильтр «%{key}» добавлен"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:166
+#, elixir-autogen, elixir-format
+msgid "Filter for '%{key}' already exists"
+msgstr "Фильтр для «%{key}» уже существует"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:206
+#, elixir-autogen, elixir-format
+msgid "Filter removed"
+msgstr "Фильтр удалён"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:222
+#, elixir-autogen, elixir-format
+msgid "Filters reset to defaults"
+msgstr "Фильтры сброшены"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1512
+#, elixir-autogen, elixir-format
+msgid "Final Price"
+msgstr "Итоговая цена"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:531
+#, elixir-autogen, elixir-format
+msgid "Folder icon"
+msgstr "Иконка папки"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:222
+#, elixir-autogen, elixir-format
+msgid "Free above"
+msgstr "Бесплатно от"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1491
+#, elixir-autogen, elixir-format
+msgid "From Import"
+msgstr "Из импорта"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:380
+#, elixir-autogen, elixir-format
+msgid "Full Description:"
+msgstr "Полное описание:"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:289
+#, elixir-autogen, elixir-format
+msgid "Global Product Options"
+msgstr "Глобальные параметры товаров"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:765
+#, elixir-autogen, elixir-format
+msgid "Gray"
+msgstr "Серый"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:148
+#: lib/phoenix_kit_ecommerce/web/carts.ex:180
+#, elixir-autogen, elixir-format
+msgid "Guest"
+msgstr "Гость"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:231
+#, elixir-autogen, elixir-format
+msgid "Handle"
+msgstr "Идентификатор"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:352
+#, elixir-autogen, elixir-format
+msgid "Hidden"
+msgstr "Скрыт"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:507
+#, elixir-autogen, elixir-format
+msgid "Hidden — Category and products hidden"
+msgstr "Скрыта — категория и товары скрыты"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:468
+#, elixir-autogen, elixir-format
+msgid "How category names should be displayed in the sidebar"
+msgstr "Как отображать названия категорий на боковой панели"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:205
+#, elixir-autogen, elixir-format
+msgid "If you have questions about your order, please contact our support team."
+msgstr "Если у вас есть вопросы о вашем заказе, свяжитесь с нашей службой поддержки."
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:229
+#, elixir-autogen, elixir-format
+msgid "Image"
+msgstr "Изображение"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:887
+#, elixir-autogen, elixir-format
+msgid "Image Migration"
+msgstr "Миграция изображений"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1255
+#, elixir-autogen, elixir-format
+msgid "Images will be downloaded from CDN URLs and stored in the Storage module"
+msgstr "Изображения будут загружены с CDN и сохранены в модуле Хранилища"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:817
+#: lib/phoenix_kit_ecommerce/web/imports.ex:836
+#, elixir-autogen, elixir-format
+msgid "Import"
+msgstr "CSV-импорт"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:312
+#, elixir-autogen, elixir-format
+msgid "Import Configurations"
+msgstr "Конфигурации импорта"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:72
+#, elixir-autogen, elixir-format
+msgid "Import Details"
+msgstr "Детали импорта"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1160
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1305
+#, elixir-autogen, elixir-format
+msgid "Import Filter"
+msgstr "Фильтр импорта"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:990
+#, elixir-autogen, elixir-format
+msgid "Import History"
+msgstr "История импорта"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:93
+#, elixir-autogen, elixir-format
+msgid "Import Information"
+msgstr "Информация об импорте"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1124
+#, elixir-autogen, elixir-format
+msgid "Import Language"
+msgstr "Язык импорта"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:346
+#, elixir-autogen, elixir-format
+msgid "Import completed successfully!"
+msgstr "Импорт успешно завершён!"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:366
+#, elixir-autogen, elixir-format
+msgid "Import failed: %{reason}"
+msgstr "Импорт не выполнен: %{reason}"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1552
+#, elixir-autogen, elixir-format
+msgid "Import in Progress"
+msgstr "Импорт выполняется"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1151
+#, elixir-autogen, elixir-format
+msgid "Import language:"
+msgstr "Язык импорта:"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:507
+#, elixir-autogen, elixir-format
+msgid "Import log deleted"
+msgstr "Журнал импорта удалён"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:23
+#: lib/phoenix_kit_ecommerce/web/imports.ex:449
+#: lib/phoenix_kit_ecommerce/web/imports.ex:499
+#, elixir-autogen, elixir-format
+msgid "Import not found"
+msgstr "Импорт не найден"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:790
+#, elixir-autogen, elixir-format
+msgid "Import products from CSV files"
+msgstr "Импорт товаров из CSV-файлов"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1101
+#, elixir-autogen, elixir-format
+msgid "Import runs in the background — you can leave this page"
+msgstr "Импорт выполняется в фоне — вы можете покинуть эту страницу"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:572
+#, elixir-autogen, elixir-format
+msgid "Import started: %{filename}"
+msgstr "Импорт запущен: %{filename}"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:31
+#, elixir-autogen, elixir-format
+msgid "Import: %{filename}"
+msgstr "Импорт: %{filename}"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:122
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1094
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1504
+#, elixir-autogen, elixir-format
+msgid "Imported"
+msgstr "Импортировано"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1490
+#, elixir-autogen, elixir-format
+msgid "Imported Option Prices"
+msgstr "Импортированные цены опций"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:160
+#, elixir-autogen, elixir-format
+msgid "Imported Products"
+msgstr "Импортированные товары"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:924
+#, elixir-autogen, elixir-format
+msgid "In Progress"
+msgstr "В работе"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:202
+#: lib/phoenix_kit_ecommerce/web/imports.ex:213
+#, elixir-autogen, elixir-format
+msgid "Invalid import ID"
+msgstr "Неверный идентификатор импорта"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:64
+#, elixir-autogen, elixir-format
+msgid "Inventory tracking disabled"
+msgstr "Отслеживание остатков отключено"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:63
+#, elixir-autogen, elixir-format
+msgid "Inventory tracking enabled"
+msgstr "Отслеживание остатков включено"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:137
+#: lib/phoenix_kit_ecommerce/web/carts.ex:156
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:166
+#, elixir-autogen, elixir-format
+msgid "Items"
+msgstr "Позиции"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:813
+#, elixir-autogen, elixir-format
+msgid "Key"
+msgstr "Ключ"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:801
+#: lib/phoenix_kit_ecommerce/web/settings.ex:357
+#, elixir-autogen, elixir-format
+msgid "Label"
+msgstr "Метка"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1413
+#, elixir-autogen, elixir-format
+msgid "Link to Global Option"
+msgstr "Привязать к глобальному параметру"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:356
+#, elixir-autogen, elixir-format
+msgid "Made to Order:"
+msgstr "На заказ:"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:640
+#, elixir-autogen, elixir-format
+msgid "Make Root (No Parent)"
+msgstr "Сделать корневой (без родительской)"
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:41
+#, elixir-autogen, elixir-format
+msgid "Manage your e-commerce store"
+msgstr "Управляйте своим интернет-магазином"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:289
+#, elixir-autogen, elixir-format
+msgid "Max order"
+msgstr "Макс. заказ"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:260
+#, elixir-autogen, elixir-format
+msgid "Max weight (g)"
+msgstr "Макс. вес (г)"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:128
+#, elixir-autogen, elixir-format
+msgid "Merged"
+msgstr "Объединён"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:120
+#, elixir-autogen, elixir-format
+msgid "Method"
+msgstr "Метод"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:974
+#, elixir-autogen, elixir-format
+msgid "Migrate %{count} Products"
+msgstr "Перенести %{count} товаров"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:900
+#, elixir-autogen, elixir-format
+msgid "Migrate product images from external CDN URLs to the Storage module for better control and reliability."
+msgstr "Перенесите изображения товаров с внешних CDN-URL в модуль Storage для лучшего контроля и надёжности."
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:912
+#, elixir-autogen, elixir-format
+msgid "Migrated"
+msgstr "Перенесено"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:274
+#, elixir-autogen, elixir-format
+msgid "Min order"
+msgstr "Мин. заказ"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:246
+#, elixir-autogen, elixir-format
+msgid "Min weight (g)"
+msgstr "Мин. вес (г)"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1415
+#, elixir-autogen, elixir-format
+msgid "Modifier"
+msgstr "Модификатор"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:781
+#, elixir-autogen, elixir-format
+msgid "Move %{count} selected products to a category"
+msgstr "Переместить %{count} выбранных товаров в категорию"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:494
+#: lib/phoenix_kit_ecommerce/web/products.ex:779
+#, elixir-autogen, elixir-format
+msgid "Move to Category"
+msgstr "Переместить в категорию"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.ex:22
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:6
+#, elixir-autogen, elixir-format
+msgid "My Orders"
+msgstr "Мои заказы"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:470
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:404
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:649
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:114
+#, elixir-autogen, elixir-format
+msgid "Name"
+msgstr "Название"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:203
+#, elixir-autogen, elixir-format
+msgid "Need help?"
+msgstr "Нужна помощь?"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:539
+#, elixir-autogen, elixir-format
+msgid "Never"
+msgstr "Никогда"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:25
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:46
+#, elixir-autogen, elixir-format
+msgid "New Category"
+msgstr "Новая категория"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:24
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:44
+#, elixir-autogen, elixir-format
+msgid "New Product"
+msgstr "Товары"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:33
+#, elixir-autogen, elixir-format
+msgid "New Shipping Method"
+msgstr "Доставка"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:138
+#, elixir-autogen, elixir-format
+msgid "Next"
+msgstr "Вперёд"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:343
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:352
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:358
+#, elixir-autogen, elixir-format
+msgid "No"
+msgstr "Нет"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:789
+#, elixir-autogen, elixir-format
+msgid "No Category"
+msgstr "Без категории"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:127
+#, elixir-autogen, elixir-format
+msgid "No billing information available"
+msgstr "Информация об оплате недоступна"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:168
+#, elixir-autogen, elixir-format
+msgid "No carts found"
+msgstr "Корзины не найдены"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:485
+#, elixir-autogen, elixir-format
+msgid "No categories found"
+msgstr "Категории не найдены"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:513
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:808
+#, elixir-autogen, elixir-format
+msgid "No category"
+msgstr "Без категории"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:696
+#, elixir-autogen, elixir-format
+msgid "No category-specific options"
+msgstr "Нет опций для этой категории"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1168
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1313
+#, elixir-autogen, elixir-format
+msgid "No filter (import all products)"
+msgstr "Без фильтра (импортировать все товары)"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:519
+#, elixir-autogen, elixir-format
+msgid "No icons"
+msgstr "Без иконок"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:241
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1586
+#, elixir-autogen, elixir-format
+msgid "No image"
+msgstr "Нет изображения"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:996
+#, elixir-autogen, elixir-format
+msgid "No imports yet"
+msgstr "Импортов ещё нет"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:268
+#, elixir-autogen, elixir-format
+msgid "No limit"
+msgstr "Без ограничений"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:170
+#, elixir-autogen, elixir-format
+msgid "No limits"
+msgstr "Без ограничений"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:298
+#, elixir-autogen, elixir-format
+msgid "No max"
+msgstr "Без макс."
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:283
+#, elixir-autogen, elixir-format
+msgid "No min"
+msgstr "Без мин."
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:760
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1930
+#, elixir-autogen, elixir-format
+msgid "No options defined"
+msgstr "Опции не определены"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:71
+#, elixir-autogen, elixir-format
+msgid "No orders with this status. Try a different filter."
+msgstr "Нет заказов с таким статусом. Попробуйте другой фильтр."
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:68
+#, elixir-autogen, elixir-format
+msgid "No orders yet"
+msgstr "Заказов пока нет"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:457
+#, elixir-autogen, elixir-format
+msgid "No parent (root category)"
+msgstr "Без родительской (корневая категория)"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:607
+#, elixir-autogen, elixir-format
+msgid "No products found"
+msgstr "Товары не найдены"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:607
+#, elixir-autogen, elixir-format
+msgid "No products with images in this category. Add product images to enable this option."
+msgstr "В этой категории нет товаров с изображениями. Добавьте изображения товаров, чтобы активировать эту опцию."
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:134
+#, elixir-autogen, elixir-format
+msgid "No shipping methods"
+msgstr "Методы доставки не настроены"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:231
+#, elixir-autogen, elixir-format
+msgid "No threshold"
+msgstr "Без порога"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:118
+#: lib/phoenix_kit_ecommerce/web/categories.ex:189
+#: lib/phoenix_kit_ecommerce/web/categories.ex:208
+#: lib/phoenix_kit_ecommerce/web/categories.ex:226
+#, elixir-autogen, elixir-format
+msgid "Not authorized"
+msgstr "Нет прав доступа"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1610
+#, elixir-autogen, elixir-format
+msgid "Only CSV files are accepted"
+msgstr "Принимаются только CSV-файлы"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1611
+#, elixir-autogen, elixir-format
+msgid "Only one file at a time"
+msgstr "Только один файл за раз"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1413
+#, elixir-autogen, elixir-format
+msgid "Option"
+msgstr "Параметр"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:611
+#, elixir-autogen, elixir-format
+msgid "Option '%{key}' created"
+msgstr "Опция «%{key}» создана"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1197
+#, elixir-autogen, elixir-format
+msgid "Option Key"
+msgstr "Ключ параметра"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1256
+#, elixir-autogen, elixir-format
+msgid "Option Prices"
+msgstr "Цены опций"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:353
+#, elixir-autogen, elixir-format
+msgid "Option added"
+msgstr "Параметр добавлен"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:560
+#, elixir-autogen, elixir-format
+msgid "Option key and value are required"
+msgstr "Ключ и значение опции обязательны"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:275
+#, elixir-autogen, elixir-format
+msgid "Option removed"
+msgstr "Опция удалена"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:353
+#, elixir-autogen, elixir-format
+msgid "Option updated"
+msgstr "Опция обновлена"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:851
+#, elixir-autogen, elixir-format
+msgid "Option value"
+msgstr "Значение параметра"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:838
+#, elixir-autogen, elixir-format
+msgid "Options"
+msgstr "Параметры"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.ex:59
+#, elixir-autogen, elixir-format
+msgid "Order %{number}"
+msgstr "Заказ %{number}"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:160
+#, elixir-autogen, elixir-format
+msgid "Order Date"
+msgstr "Дата заказа"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:39
+#, elixir-autogen, elixir-format
+msgid "Order Items"
+msgstr "Состав заказа"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:154
+#, elixir-autogen, elixir-format
+msgid "Order Number"
+msgstr "Номер заказа"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:140
+#, elixir-autogen, elixir-format
+msgid "Order Summary"
+msgstr "Итого по заказу"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.ex:39
+#, elixir-autogen, elixir-format
+msgid "Order not found"
+msgstr "Заказ не найден"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:876
+#, elixir-autogen, elixir-format
+msgid "Original price"
+msgstr "Исходная цена"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:130
+#, elixir-autogen, elixir-format
+msgid "Page %{page} of %{total}"
+msgstr "Страница %{page} из %{total}"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:359
+#: lib/phoenix_kit_ecommerce/web/categories.ex:472
+#, elixir-autogen, elixir-format
+msgid "Parent"
+msgstr "Родитель"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:451
+#, elixir-autogen, elixir-format
+msgid "Parent Category"
+msgstr "Родительская категория"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:918
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:26
+#, elixir-autogen, elixir-format
+msgid "Pending"
+msgstr "Ожидает"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1271
+#, elixir-autogen, elixir-format
+msgid "Per-product price modifiers"
+msgstr "Модификаторы цены для конкретного продукта"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:789
+#: lib/phoenix_kit_ecommerce/web/products.ex:435
+#, elixir-autogen, elixir-format
+msgid "Physical"
+msgstr "Физический"
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:122
+#, elixir-autogen, elixir-format
+msgid "Physical Products"
+msgstr "Физические товары"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:25
+#, elixir-autogen, elixir-format
+msgid "Placed on %{date}"
+msgstr "Оформлен %{date}"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:509
+#, elixir-autogen, elixir-format
+msgid "Please enter a value first"
+msgstr "Сначала введите значение"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:123
+#, elixir-autogen, elixir-format
+msgid "Please select a CSV file first"
+msgstr "Сначала выберите CSV-файл"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:429
+#: lib/phoenix_kit_ecommerce/web/categories.ex:474
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:471
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:341
+#, elixir-autogen, elixir-format
+msgid "Position"
+msgstr "Позиция"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1571
+#, elixir-autogen, elixir-format
+msgid "Preparing import..."
+msgstr "Подготовка импорта..."
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:185
+#, elixir-autogen, elixir-format
+msgid "Preview:"
+msgstr "Предпросмотр:"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:742
+#, elixir-autogen, elixir-format
+msgid "Preview: Merged Schema"
+msgstr "Предпросмотр: объединённая схема"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:127
+#, elixir-autogen, elixir-format
+msgid "Previous"
+msgstr "Предыдущая"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:169
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:399
+#: lib/phoenix_kit_ecommerce/web/products.ex:526
+#: lib/phoenix_kit_ecommerce/web/products.ex:597
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:172
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:121
+#, elixir-autogen, elixir-format
+msgid "Price"
+msgstr "Цена"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:431
+#, elixir-autogen, elixir-format
+msgid "Price Calculation"
+msgstr "Расчёт цены"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:475
+#, elixir-autogen, elixir-format
+msgid "Price Range"
+msgstr "Диапазон цен"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:294
+#, elixir-autogen, elixir-format
+msgid "Price override is configured per-option in the options settings."
+msgstr "Переопределение цены настраивается для каждого параметра в настройках параметров."
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:393
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:843
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:167
+#, elixir-autogen, elixir-format
+msgid "Pricing"
+msgstr "Цены"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:29
+#, elixir-autogen, elixir-format
+msgid "Processing"
+msgstr "В обработке"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:593
+#, elixir-autogen, elixir-format
+msgid "Product"
+msgstr "Товары"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:319
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:682
+#, elixir-autogen, elixir-format
+msgid "Product Details"
+msgstr "Детали товара"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1631
+#, elixir-autogen, elixir-format
+msgid "Product Images"
+msgstr "Товары"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:283
+#, elixir-autogen, elixir-format
+msgid "Product Options"
+msgstr "Параметры товара"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:779
+#, elixir-autogen, elixir-format
+msgid "Product Type"
+msgstr "Товары"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:620
+#, elixir-autogen, elixir-format
+msgid "Product created"
+msgstr "Товар создан"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:116
+#: lib/phoenix_kit_ecommerce/web/products.ex:204
+#: lib/phoenix_kit_ecommerce/web/products.ex:231
+#, elixir-autogen, elixir-format
+msgid "Product deleted"
+msgstr "Товар удалён"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:703
+#, elixir-autogen, elixir-format
+msgid "Product title"
+msgstr "Товары"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:642
+#, elixir-autogen, elixir-format
+msgid "Product updated"
+msgstr "Товар обновлён"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1099
+#, elixir-autogen, elixir-format
+msgid "Products are automatically categorized based on title or category name"
+msgstr "Товары автоматически категоризируются по названию или имени категории"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:745
+#, elixir-autogen, elixir-format
+msgid "Products in this category will show these options:"
+msgstr "Товары в этой категории будут показывать следующие опции:"
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:125
+#, elixir-autogen, elixir-format
+msgid "Products requiring shipping"
+msgstr "Товары, требующие доставки"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:697
+#, elixir-autogen, elixir-format
+msgid "Products will use global options only"
+msgstr "Товары будут использовать только глобальные опции"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1005
+#, elixir-autogen, elixir-format
+msgid "Progress"
+msgstr "Прогресс"
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:144
+#, elixir-autogen, elixir-format
+msgid "Quick Actions"
+msgstr "Быстрые действия"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:893
+#, elixir-autogen, elixir-format
+msgid "Refresh stats"
+msgstr "Обновить статистику"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:395
+#: lib/phoenix_kit_ecommerce/web/settings.ex:399
+#, elixir-autogen, elixir-format
+msgid "Remove"
+msgstr "Удалить"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1272
+#, elixir-autogen, elixir-format
+msgid "Remove auto-created categories that have no products after import"
+msgstr "Удалить авто-созданные категории без товаров после импорта"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:396
+#, elixir-autogen, elixir-format
+msgid "Remove this filter?"
+msgstr "Удалить этот фильтр?"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:308
+#, elixir-autogen, elixir-format
+msgid "Reorder failed: %{reason}"
+msgstr "Ошибка сортировки: %{reason}"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:708
+#, elixir-autogen, elixir-format
+msgid "Required"
+msgstr "Обязательно"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:887
+#, elixir-autogen, elixir-format
+msgid "Required field"
+msgstr "Обязательное поле"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:350
+#, elixir-autogen, elixir-format
+msgid "Requires Shipping:"
+msgstr "Требует доставки:"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:342
+#, elixir-autogen, elixir-format
+msgid "Reset to defaults"
+msgstr "Сбросить к настройкам по умолчанию"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1006
+#, elixir-autogen, elixir-format
+msgid "Results"
+msgstr "Результаты"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1063
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1066
+#, elixir-autogen, elixir-format
+msgid "Retry"
+msgstr "Повторить"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:491
+#, elixir-autogen, elixir-format
+msgid "Retrying import: %{filename}"
+msgstr "Повтор импорта: %{filename}"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:363
+#, elixir-autogen, elixir-format
+msgid "Root Only"
+msgstr "Только корневые"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:551
+#, elixir-autogen, elixir-format
+msgid "SEO"
+msgstr "SEO"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:658
+#, elixir-autogen, elixir-format
+msgid "SEO-friendly URL for this language"
+msgstr "SEO-адрес для этого языка"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:102
+#: lib/phoenix_kit_ecommerce/web/categories.ex:331
+#: lib/phoenix_kit_ecommerce/web/products.ex:403
+#, elixir-autogen, elixir-format
+msgid "Search"
+msgstr "Поиск"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:108
+#, elixir-autogen, elixir-format
+msgid "Search by email or session ID..."
+msgstr "Поиск по email или ID сессии..."
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:337
+#, elixir-autogen, elixir-format
+msgid "Search categories..."
+msgstr "Поиск категорий..."
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:409
+#, elixir-autogen, elixir-format
+msgid "Search products..."
+msgstr "Поиск товаров..."
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:569
+#, elixir-autogen, elixir-format
+msgid "Select from Storage"
+msgstr "Выбрать из хранилища"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:601
+#: lib/phoenix_kit_ecommerce/web/products.ex:750
+#, elixir-autogen, elixir-format
+msgid "Set Active"
+msgstr "Сделать активным"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:764
+#, elixir-autogen, elixir-format
+msgid "Set Archived"
+msgstr "Архивировать"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:757
+#, elixir-autogen, elixir-format
+msgid "Set Draft"
+msgstr "Установить черновик"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:615
+#, elixir-autogen, elixir-format
+msgid "Set Hidden"
+msgstr "Скрыть"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:608
+#, elixir-autogen, elixir-format
+msgid "Set Unlisted"
+msgstr "Убрать из списка"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:632
+#, elixir-autogen, elixir-format
+msgid "Set parent for %{count} selected categories"
+msgstr "Установить родительскую для %{count} выбранных категорий"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1494
+#, elixir-autogen, elixir-format
+msgid "Set prices for each option value. Enter the final price (base price + modifier)."
+msgstr "Установите цену для каждого значения опции. Введите итоговую цену (базовая цена + модификатор)."
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:178
+#, elixir-autogen, elixir-format
+msgid "Settings"
+msgstr "Настройки"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Shipped"
+msgstr "Отправлен"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:19
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:63
+#, elixir-autogen, elixir-format
+msgid "Shipping Methods"
+msgstr "Доставка"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:74
+#, elixir-autogen, elixir-format
+msgid "Shipping method created"
+msgstr "Метод доставки создан"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:50
+#, elixir-autogen, elixir-format
+msgid "Shipping method deleted"
+msgstr "Метод доставки удалён"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:87
+#, elixir-autogen, elixir-format
+msgid "Shipping method updated"
+msgstr "Метод доставки обновлён"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1209
+#, elixir-autogen, elixir-format
+msgid "Shopify or Prom.ua CSV format, max 50MB"
+msgstr "Формат CSV Shopify или Prom.ua, макс. 50 МБ"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:23
+#: lib/phoenix_kit_ecommerce/web/carts.ex:93
+#, elixir-autogen, elixir-format
+msgid "Shopping Carts"
+msgstr "Корзины покупателей"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:833
+#, elixir-autogen, elixir-format
+msgid "Short product description"
+msgstr "Краткое описание товара"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:446
+#, elixir-autogen, elixir-format
+msgid "Show Categories in Shop"
+msgstr "Показывать категории в магазине"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:506
+#, elixir-autogen, elixir-format
+msgid "Show icons next to category names in sidebar"
+msgstr "Показывать иконки рядом с названиями категорий на панели"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:439
+#, elixir-autogen, elixir-format
+msgid "Sidebar Display"
+msgstr "Отображение на боковой панели"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1376
+#, elixir-autogen, elixir-format
+msgid "Skip Mapping"
+msgstr "Доставка"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1270
+#, elixir-autogen, elixir-format
+msgid "Skip empty categories"
+msgstr "Пропускать пустые категории"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1532
+#, elixir-autogen, elixir-format
+msgid "Skip empty categories (remove categories with no products after import)"
+msgstr "Пропускать пустые категории (удалять без товаров после импорта)"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:140
+#, elixir-autogen, elixir-format
+msgid "Skipped"
+msgstr "Пропущено"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1433
+#, elixir-autogen, elixir-format
+msgid "Slot Key"
+msgstr "Ключ слота"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:471
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:433
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:168
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:747
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:138
+#, elixir-autogen, elixir-format
+msgid "Slug"
+msgstr "Slug"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:258
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:630
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:651
+#, elixir-autogen, elixir-format
+msgid "Something went wrong. Please try again."
+msgstr "Что-то пошло не так. Попробуйте снова."
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1692
+#, elixir-autogen, elixir-format
+msgid "Specifications"
+msgstr "Характеристики"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:124
+#, elixir-autogen, elixir-format
+msgid "Standard Shipping"
+msgstr "Стандартная доставка"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1380
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1543
+#, elixir-autogen, elixir-format
+msgid "Start Import"
+msgstr "Начать импорт"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:73
+#, elixir-autogen, elixir-format
+msgid "Start shopping to see your orders here."
+msgstr "Начните покупки, чтобы здесь появились ваши заказы."
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:105
+#, elixir-autogen, elixir-format
+msgid "Started At"
+msgstr "Начато"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:265
+#, elixir-autogen, elixir-format
+msgid "Started migration for %{count} products"
+msgstr "Запущена миграция для %{count} товаров"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:117
+#: lib/phoenix_kit_ecommerce/web/carts.ex:139
+#: lib/phoenix_kit_ecommerce/web/carts.ex:158
+#: lib/phoenix_kit_ecommerce/web/categories.ex:346
+#: lib/phoenix_kit_ecommerce/web/categories.ex:428
+#: lib/phoenix_kit_ecommerce/web/categories.ex:473
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:485
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1004
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:495
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:717
+#: lib/phoenix_kit_ecommerce/web/products.ex:418
+#: lib/phoenix_kit_ecommerce/web/products.ex:516
+#: lib/phoenix_kit_ecommerce/web/products.ex:594
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:354
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:124
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:144
+#, elixir-autogen, elixir-format
+msgid "Status"
+msgstr "Статус"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:581
+#, elixir-autogen, elixir-format
+msgid "Storage image has priority"
+msgstr "Изображение из Хранилища имеет приоритет"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:339
+#, elixir-autogen, elixir-format
+msgid "Storefront Filters"
+msgstr "Фильтры витрины"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:137
+#, elixir-autogen, elixir-format
+msgid "Storefront filter updated"
+msgstr "Фильтр витрины обновлён"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:64
+#, elixir-autogen, elixir-format
+msgid "Subtotal"
+msgstr "Подытог"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1098
+#, elixir-autogen, elixir-format
+msgid "Supported formats: Shopify, Prom.ua (auto-detected from file headers)"
+msgstr "Поддерживаемые форматы: Shopify, Prom.ua (определяется автоматически по заголовкам файла)"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:367
+#, elixir-autogen, elixir-format
+msgid "Tags:"
+msgstr "Теги:"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:70
+#, elixir-autogen, elixir-format
+msgid "Tax"
+msgstr "Налог"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:898
+#, elixir-autogen, elixir-format
+msgid "Tax Settings"
+msgstr "Налоговые настройки"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:342
+#, elixir-autogen, elixir-format
+msgid "Taxable:"
+msgstr "Налогооблагаемый:"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1144
+#, elixir-autogen, elixir-format
+msgid "Text fields will be imported to this language"
+msgstr "Текстовые поля будут импортированы для этого языка"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:413
+#, elixir-autogen, elixir-format
+msgid "These option keys were found in product metadata. Click to add as a filter."
+msgstr "Эти ключи опций найдены в метаданных продуктов. Нажмите, чтобы добавить как фильтр."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:194
+#, elixir-autogen, elixir-format
+msgid "This order has been cancelled."
+msgstr "Этот заказ был отменён."
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:233
+#, elixir-autogen, elixir-format
+msgid "Time"
+msgstr "Время"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:573
+#, elixir-autogen, elixir-format
+msgid "Timestamps"
+msgstr "Метки времени"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:167
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:688
+#, elixir-autogen, elixir-format
+msgid "Title"
+msgstr "Название"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:555
+#, elixir-autogen, elixir-format
+msgid "Title:"
+msgstr "Заголовок:"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:138
+#: lib/phoenix_kit_ecommerce/web/carts.ex:157
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:83
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:172
+#, elixir-autogen, elixir-format
+msgid "Total"
+msgstr "Итого"
+
+#: lib/phoenix_kit_ecommerce/web/dashboard.ex:60
+#: lib/phoenix_kit_ecommerce/web/imports.ex:906
+#, elixir-autogen, elixir-format
+msgid "Total Products"
+msgstr "Всего продуктов"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:249
+#, elixir-autogen, elixir-format
+msgid "Track Inventory"
+msgstr "Отслеживать запасы"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:382
+#, elixir-autogen, elixir-format
+msgid "Tracking supported"
+msgstr "Поддерживается отслеживание"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:627
+#, elixir-autogen, elixir-format
+msgid "Translate category content for different languages. The default language uses the main fields above."
+msgstr "Переведите содержимое категории на другие языки. Основной язык использует поля выше."
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:651
+#, elixir-autogen, elixir-format
+msgid "Translated category name"
+msgstr "Переведённое название категории"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:664
+#, elixir-autogen, elixir-format
+msgid "Translated description"
+msgstr "Переведённое описание"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:625
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:919
+#, elixir-autogen, elixir-format
+msgid "Translations"
+msgstr "Переводы"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:481
+#, elixir-autogen, elixir-format
+msgid "Truncate (single line)"
+msgstr "Обрезать (одна строка)"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:825
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1416
+#: lib/phoenix_kit_ecommerce/web/products.ex:431
+#: lib/phoenix_kit_ecommerce/web/products.ex:517
+#: lib/phoenix_kit_ecommerce/web/products.ex:595
+#: lib/phoenix_kit_ecommerce/web/settings.ex:356
+#, elixir-autogen, elixir-format
+msgid "Type"
+msgstr "Тип"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:334
+#, elixir-autogen, elixir-format
+msgid "Type:"
+msgstr "Тип:"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:655
+#, elixir-autogen, elixir-format
+msgid "URL Slug"
+msgstr "URL Slug"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:868
+#, elixir-autogen, elixir-format
+msgid "Unit (optional)"
+msgstr "Единица (необязательно)"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:532
+#, elixir-autogen, elixir-format
+msgid "Unlimited"
+msgstr "Безлимитно"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:351
+#, elixir-autogen, elixir-format
+msgid "Unlisted"
+msgstr "Скрытая"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:501
+#, elixir-autogen, elixir-format
+msgid "Unlisted — Category hidden, products still visible"
+msgstr "Скрыта — категория не видна, товары отображаются"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:512
+#, elixir-autogen, elixir-format
+msgid "Unlisted: products appear in search/catalog but category not in menu"
+msgstr "Скрыта: товары видны в поиске/каталоге, но категория не в меню"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:307
+#, elixir-autogen, elixir-format
+msgid "Unrecognized CSV format"
+msgstr "Нераспознанный формат CSV"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:896
+#, elixir-autogen, elixir-format
+msgid "Update"
+msgstr "Обновить"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:780
+#, elixir-autogen, elixir-format
+msgid "Update Category"
+msgstr "Обновить категорию"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:395
+#, elixir-autogen, elixir-format
+msgid "Update Method"
+msgstr "Обновить метод"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1714
+#, elixir-autogen, elixir-format
+msgid "Update Product"
+msgstr "Обновить продукт"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:593
+#, elixir-autogen, elixir-format
+msgid "Update status for %{count} selected categories"
+msgstr "Обновить статус %{count} выбранных категорий"
+
+#: lib/phoenix_kit_ecommerce/web/products.ex:742
+#, elixir-autogen, elixir-format
+msgid "Update status for %{count} selected products"
+msgstr "Обновить статус %{count} выбранных товаров"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:140
+#: lib/phoenix_kit_ecommerce/web/carts.ex:159
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:131
+#, elixir-autogen, elixir-format
+msgid "Updated"
+msgstr "Обновлено"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:582
+#, elixir-autogen, elixir-format
+msgid "Updated:"
+msgstr "Обновлено:"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:808
+#: lib/phoenix_kit_ecommerce/web/imports.ex:827
+#, elixir-autogen, elixir-format
+msgid "Upload"
+msgstr "Загрузить"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1116
+#, elixir-autogen, elixir-format
+msgid "Upload CSV File"
+msgstr "Загрузить CSV-файл"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:612
+#, elixir-autogen, elixir-format
+msgid "Used as category image when no Storage image is selected"
+msgstr "Используется как изображение категории, если не выбрано изображение из Хранилища"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:101
+#, elixir-autogen, elixir-format
+msgid "User"
+msgstr "Пользователи"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1209
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1303
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1414
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1510
+#, elixir-autogen, elixir-format
+msgid "Value"
+msgstr "Значение"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:534
+#, elixir-autogen, elixir-format
+msgid "Value '%{value}' added"
+msgstr "Значение «%{value}» добавлено"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:601
+#, elixir-autogen, elixir-format
+msgid "Value '%{value}' added to '%{key}'"
+msgstr "Значение «%{value}» добавлено в «%{key}»"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:490
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:516
+#, elixir-autogen, elixir-format
+msgid "Value '%{value}' already exists"
+msgstr "Значение «%{value}» уже существует"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:585
+#, elixir-autogen, elixir-format
+msgid "Value '%{value}' already exists in '%{key}'"
+msgstr "Значение «%{value}» уже существует в «%{key}»"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1569
+#, elixir-autogen, elixir-format
+msgid "Variant Images"
+msgstr "Изображения вариантов"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:765
+#, elixir-autogen, elixir-format
+msgid "Vendor"
+msgstr "Поставщик"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:338
+#, elixir-autogen, elixir-format
+msgid "Vendor:"
+msgstr "Поставщик:"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:188
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:191
+#: lib/phoenix_kit_ecommerce/web/products.ex:563
+#: lib/phoenix_kit_ecommerce/web/products.ex:692
+#, elixir-autogen, elixir-format
+msgid "View"
+msgstr "Просмотр"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1051
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1055
+#, elixir-autogen, elixir-format
+msgid "View Details"
+msgstr "Просмотр деталей"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:7
+#, elixir-autogen, elixir-format
+msgid "View your order history"
+msgstr "История заказов"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:346
+#, elixir-autogen, elixir-format
+msgid "Weight:"
+msgstr "Вес:"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:493
+#, elixir-autogen, elixir-format
+msgid "Wrap (multi-line)"
+msgstr "Перенос (несколько строк)"
+
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:343
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:352
+#: lib/phoenix_kit_ecommerce/web/product_detail.ex:358
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:1903
+#, elixir-autogen, elixir-format
+msgid "Yes"
+msgstr "Да"
+
+#: lib/phoenix_kit_ecommerce/web/product_form.ex:892
+#, elixir-autogen, elixir-format
+msgid "Your cost for profit calculation"
+msgstr "Ваша стоимость для расчёта прибыли"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:180
+#, elixir-autogen, elixir-format
+msgid "Your order has been delivered."
+msgstr "Ваш заказ доставлен."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:187
+#, elixir-autogen, elixir-format
+msgid "Your order is on its way!"
+msgstr "Ваш заказ в пути!"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:145
+#, elixir-autogen, elixir-format
+msgid "auto-generated if empty"
+msgstr "генерируется автоматически, если пусто"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:807
+#, elixir-autogen, elixir-format
+msgid "e.g., Mounting Type"
+msgstr "напр., Тип крепления"
+
+#: lib/phoenix_kit_ecommerce/web/category_form.ex:874
+#, elixir-autogen, elixir-format
+msgid "e.g., cm"
+msgstr "напр., см"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:933
+#, elixir-autogen, elixir-format
+msgid "errors"
+msgstr "ошибок"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:133
+#, elixir-autogen, elixir-format
+msgid "existing products"
+msgstr "существующих товаров"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:151
+#, elixir-autogen, elixir-format
+msgid "failed rows"
+msgstr "строк с ошибками"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:142
+#, elixir-autogen, elixir-format
+msgid "filtered out"
+msgstr "отфильтровано"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:914
+#, elixir-autogen, elixir-format
+msgid "in Storage"
+msgstr "в Хранилище"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:93
+#, elixir-autogen, elixir-format
+msgid "item"
+msgid_plural "items"
+msgstr[0] "1 позиция"
+msgstr[1] "%{count} позиции"
+msgstr[2] "%{count} позиций"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:137
+#: lib/phoenix_kit_ecommerce/web/carts.ex:187
+#, elixir-autogen, elixir-format
+msgid "items"
+msgstr "позиций"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:926
+#, elixir-autogen, elixir-format
+msgid "jobs"
+msgstr "заданий"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:920
+#, elixir-autogen, elixir-format
+msgid "legacy URLs"
+msgstr "устаревших URL"
+
+#: lib/phoenix_kit_ecommerce/web/import_show.ex:124
+#, elixir-autogen, elixir-format
+msgid "new products"
+msgstr "Товары"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:908
+#, elixir-autogen, elixir-format
+msgid "with images"
+msgstr "с изображениями"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1421
+#, elixir-autogen, elixir-format
+msgid "— Standalone (no mapping) —"
+msgstr "— Отдельный (без привязки) —"

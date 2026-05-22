@@ -9,7 +9,7 @@ defmodule PhoenixKitEcommerce.Web do
   def live_view do
     quote do
       use Phoenix.LiveView
-      use Gettext, backend: PhoenixKitWeb.Gettext
+      use Gettext, backend: PhoenixKitEcommerce.Gettext
 
       import Phoenix.HTML
       import Phoenix.HTML.Form
@@ -56,7 +56,7 @@ defmodule PhoenixKitEcommerce.Web do
   def live_component do
     quote do
       use Phoenix.LiveComponent
-      use Gettext, backend: PhoenixKitWeb.Gettext
+      use Gettext, backend: PhoenixKitEcommerce.Gettext
 
       import Phoenix.HTML
       import Phoenix.HTML.Form
