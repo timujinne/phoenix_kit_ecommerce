@@ -1091,13 +1091,13 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                         <span class="font-medium">
                           {option["label"]}
                           <%= if is_imported do %>
-                            <span class="badge badge-info badge-xs ml-2">Imported</span>
+                            <span class="badge badge-info badge-xs ml-2">{gettext("Imported")}</span>
                           <% end %>
                         </span>
                         <%= if has_custom_selection do %>
-                          <span class="badge badge-warning badge-sm">Custom selection</span>
+                          <span class="badge badge-warning badge-sm">{gettext("Custom selection")}</span>
                         <% else %>
-                          <span class="badge badge-ghost badge-sm">All values</span>
+                          <span class="badge badge-ghost badge-sm">{gettext("All values")}</span>
                         <% end %>
                       </div>
 
@@ -1165,7 +1165,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                             id={"new_option_value_#{option_key}"}
                             name={"_new_option_value_#{option_key}"}
                             value={input_value}
-                            placeholder="Add new value..."
+                            placeholder={gettext("Add new value...")}
                             class="input input-sm input-bordered flex-1 max-w-xs"
                             autocomplete="off"
                             phx-keydown="add_option_value_keydown"
@@ -1178,7 +1178,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                             phx-click="add_option_value_click"
                             phx-value-key={option_key}
                           >
-                            <.icon name="hero-plus" class="w-4 h-4" /> Add
+                            <.icon name="hero-plus" class="w-4 h-4" /> {gettext("Add")}
                           </button>
                         </div>
                       <% end %>
@@ -1187,14 +1187,14 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 </div>
 
                 <%!-- Add Option/Value Section --%>
-                <div class="divider text-sm text-base-content/50">Add Option or Value</div>
+                <div class="divider text-sm text-base-content/50">{gettext("Add Option or Value")}</div>
                 <p class="text-xs text-base-content/50 mb-2">
-                  Enter an existing option key to add a new value, or a new key to create a new option.
+                  {gettext("Enter an existing option key to add a new value, or a new key to create a new option.")}
                 </p>
                 <div class="flex flex-wrap gap-3 items-end">
                   <div class="form-control">
                     <label class="label py-1">
-                      <span class="label-text text-xs">Option Key</span>
+                      <span class="label-text text-xs">{gettext("Option Key")}</span>
                     </label>
                     <input
                       type="text"
@@ -1206,7 +1206,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   </div>
                   <div class="form-control flex-1">
                     <label class="label py-1">
-                      <span class="label-text text-xs">Value</span>
+                      <span class="label-text text-xs">{gettext("Value")}</span>
                     </label>
                     <input
                       type="text"
@@ -1267,7 +1267,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 <%= if editable_options != [] do %>
                   <div class="mb-6">
                     <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
-                      <span class="badge badge-warning badge-sm">Editable</span>
+                      <span class="badge badge-warning badge-sm">{gettext("Editable")}</span>
                       Per-product price modifiers
                     </h3>
                     <p class="text-xs text-base-content/60 mb-3">
@@ -1300,9 +1300,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                             <table class="table table-xs">
                               <thead>
                                 <tr>
-                                  <th>Value</th>
-                                  <th>Default Price</th>
-                                  <th>Custom Price</th>
+                                  <th>{gettext("Value")}</th>
+                                  <th>{gettext("Default Price")}</th>
+                                  <th>{gettext("Custom Price")}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1361,7 +1361,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                                             placeholder={Decimal.round(default_final, 2)}
                                           />
                                           <%= if custom_final do %>
-                                            <span class="badge badge-success badge-xs">Custom</span>
+                                            <span class="badge badge-success badge-xs">{gettext("Custom")}</span>
                                           <% end %>
                                         <% else %>
                                           <%!-- Added values: use simple format like imported --%>
@@ -1410,10 +1410,10 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     <table class="table table-zebra table-sm">
                       <thead>
                         <tr>
-                          <th>Option</th>
-                          <th>Value</th>
-                          <th>Modifier</th>
-                          <th>Type</th>
+                          <th>{gettext("Option")}</th>
+                          <th>{gettext("Value")}</th>
+                          <th>{gettext("Modifier")}</th>
+                          <th>{gettext("Type")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1488,7 +1488,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
               <div class="card-body">
                 <h2 class="card-title">
                   <.icon name="hero-currency-dollar" class="w-5 h-5" /> {gettext("Imported Option Prices")}
-                  <span class="badge badge-info badge-sm">From Import</span>
+                  <span class="badge badge-info badge-sm">{gettext("From Import")}</span>
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
                   Set prices for each option value. Enter the final price (base price + modifier).
@@ -1501,15 +1501,15 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     <div class="p-4 bg-base-200 rounded-lg">
                       <div class="font-medium mb-3 flex items-center gap-2">
                         {opt["label"]}
-                        <span class="badge badge-xs badge-info">Imported</span>
+                        <span class="badge badge-xs badge-info">{gettext("Imported")}</span>
                       </div>
                       <div class="overflow-x-auto">
                         <table class="table table-xs">
                           <thead>
                             <tr>
-                              <th>Value</th>
-                              <th>Current Modifier</th>
-                              <th>Final Price</th>
+                              <th>{gettext("Value")}</th>
+                              <th>{gettext("Current Modifier")}</th>
+                              <th>{gettext("Final Price")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1583,7 +1583,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                             name={"product[metadata][_image_mappings][#{option_key}][#{value}]"}
                             class="select select-bordered select-sm"
                           >
-                            <option value="">No image</option>
+                            <option value="">{gettext("No image")}</option>
                             <%!-- Storage images (unified list - first is featured) --%>
                             <%= for {image_uuid, idx} <- Enum.with_index(@all_image_uuids) do %>
                               <option
@@ -1900,7 +1900,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
               checked={@value == true or @value == "true"}
               class="checkbox checkbox-primary"
             />
-            <span class="ml-2 text-sm text-base-content/70">Yes</span>
+            <span class="ml-2 text-sm text-base-content/70">{gettext("Yes")}</span>
           </div>
         <% "select" -> %>
           <select
@@ -1927,7 +1927,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
               </label>
             <% end %>
             <%= if (@opt["options"] || []) == [] do %>
-              <span class="text-sm text-base-content/50">No options defined</span>
+              <span class="text-sm text-base-content/50">{gettext("No options defined")}</span>
             <% end %>
           </div>
         <% _ -> %>

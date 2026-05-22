@@ -121,11 +121,11 @@ defmodule PhoenixKitEcommerce.Web.Carts do
                 name="status"
               >
                 <option value="" selected={is_nil(@status_filter)}>{gettext("All Status")}</option>
-                <option value="active" selected={@status_filter == "active"}>Active</option>
-                <option value="converted" selected={@status_filter == "converted"}>Converted</option>
-                <option value="abandoned" selected={@status_filter == "abandoned"}>Abandoned</option>
-                <option value="expired" selected={@status_filter == "expired"}>Expired</option>
-                <option value="merged" selected={@status_filter == "merged"}>Merged</option>
+                <option value="active" selected={@status_filter == "active"}>{gettext("Active")}</option>
+                <option value="converted" selected={@status_filter == "converted"}>{gettext("Converted")}</option>
+                <option value="abandoned" selected={@status_filter == "abandoned"}>{gettext("Abandoned")}</option>
+                <option value="expired" selected={@status_filter == "expired"}>{gettext("Expired")}</option>
+                <option value="merged" selected={@status_filter == "merged"}>{gettext("Merged")}</option>
               </select>
             </div>
           </div>
@@ -134,10 +134,10 @@ defmodule PhoenixKitEcommerce.Web.Carts do
         <%!-- Carts Table --%>
         <.table_default id="carts-table" variant="zebra" class="w-full" toggleable={true} items={@carts}
           card_fields={fn cart -> [
-            %{label: "Items", value: "#{cart.items_count || 0} items"},
-            %{label: "Total", value: if(cart.total, do: Decimal.to_string(Decimal.round(cart.total, 2)), else: "-")},
-            %{label: "Status", value: cart.status || "-"},
-            %{label: "Updated", value: Calendar.strftime(cart.updated_at, "%Y-%m-%d %H:%M")}
+            %{label: gettext("Items"), value: "#{cart.items_count || 0} #{gettext("items")}"},
+            %{label: gettext("Total"), value: if(cart.total, do: Decimal.to_string(Decimal.round(cart.total, 2)), else: "-")},
+            %{label: gettext("Status"), value: cart.status || "-"},
+            %{label: gettext("Updated"), value: Calendar.strftime(cart.updated_at, "%Y-%m-%d %H:%M")}
           ] end}>
 
           <:card_header :let={cart}>
@@ -145,7 +145,7 @@ defmodule PhoenixKitEcommerce.Web.Carts do
               <%= if cart.user do %>
                 {cart.user.email}
               <% else %>
-                Guest — {String.slice(cart.session_id || "", 0, 16)}...
+                {gettext("Guest")} — {String.slice(cart.session_id || "", 0, 16)}...
               <% end %>
             </div>
           </:card_header>
@@ -177,14 +177,14 @@ defmodule PhoenixKitEcommerce.Web.Carts do
                       <div class="font-medium">{cart.user.email}</div>
                       <div class="text-xs text-base-content/50">User UUID: {cart.user.uuid}</div>
                     <% else %>
-                      <div class="text-base-content/60">Guest</div>
+                      <div class="text-base-content/60">{gettext("Guest")}</div>
                       <div class="text-xs text-base-content/40 font-mono">
                         {String.slice(cart.session_id || "", 0, 16)}...
                       </div>
                     <% end %>
                   </.table_default_cell>
                   <.table_default_cell>
-                    <span class="badge badge-neutral">{cart.items_count || 0} items</span>
+                    <span class="badge badge-neutral">{cart.items_count || 0} {gettext("items")}</span>
                     <%= if cart.total_weight_grams && cart.total_weight_grams > 0 do %>
                       <span class="text-xs text-base-content/50 ml-2">
                         {format_weight(cart.total_weight_grams)}

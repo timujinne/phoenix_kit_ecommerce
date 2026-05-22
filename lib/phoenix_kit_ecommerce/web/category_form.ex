@@ -275,7 +275,8 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          |> put_flash(:info, gettext("Option removed"))}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Error: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, gettext("Error: %{reason}", reason: inspect(reason)))}
     end
   end
 
@@ -303,7 +304,8 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          |> assign(:merged_preview, merged)}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Reorder failed: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, gettext("Reorder failed: %{reason}", reason: inspect(reason)))}
     end
   end
 
@@ -352,7 +354,8 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          )}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Error: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, gettext("Error: %{reason}", reason: inspect(reason)))}
     end
   end
 

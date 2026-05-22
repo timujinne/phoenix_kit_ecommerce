@@ -890,47 +890,47 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                 type="button"
                 phx-click="refresh_migration_stats"
                 class="btn btn-ghost btn-sm"
-                title="Refresh stats"
+                title={gettext("Refresh stats")}
               >
                 <.icon name="hero-arrow-path" class="w-4 h-4" />
               </button>
             </div>
 
             <p class="text-base-content/70 text-sm mt-2">
-              Migrate product images from external CDN URLs to the Storage module for better control and reliability.
+              {gettext("Migrate product images from external CDN URLs to the Storage module for better control and reliability.")}
             </p>
 
             <%!-- Migration Stats --%>
             <div class="stats stats-horizontal shadow mt-4 w-full">
               <div class="stat place-items-center py-3">
-                <div class="stat-title text-xs">Total Products</div>
+                <div class="stat-title text-xs">{gettext("Total Products")}</div>
                 <div class="stat-value text-2xl">{@migration_stats.total}</div>
-                <div class="stat-desc text-xs">with images</div>
+                <div class="stat-desc text-xs">{gettext("with images")}</div>
               </div>
 
               <div class="stat place-items-center py-3">
-                <div class="stat-title text-xs">Migrated</div>
+                <div class="stat-title text-xs">{gettext("Migrated")}</div>
                 <div class="stat-value text-2xl text-success">{@migration_stats.migrated}</div>
-                <div class="stat-desc text-xs">in Storage</div>
+                <div class="stat-desc text-xs">{gettext("in Storage")}</div>
               </div>
 
               <div class="stat place-items-center py-3">
-                <div class="stat-title text-xs">Pending</div>
+                <div class="stat-title text-xs">{gettext("Pending")}</div>
                 <div class="stat-value text-2xl text-warning">{@migration_stats.pending}</div>
-                <div class="stat-desc text-xs">legacy URLs</div>
+                <div class="stat-desc text-xs">{gettext("legacy URLs")}</div>
               </div>
 
               <div class="stat place-items-center py-3">
-                <div class="stat-title text-xs">In Progress</div>
+                <div class="stat-title text-xs">{gettext("In Progress")}</div>
                 <div class="stat-value text-2xl text-info">{@migration_stats.in_progress}</div>
-                <div class="stat-desc text-xs">jobs</div>
+                <div class="stat-desc text-xs">{gettext("jobs")}</div>
               </div>
 
               <%= if @migration_stats.failed > 0 do %>
                 <div class="stat place-items-center py-3">
-                  <div class="stat-title text-xs">Failed</div>
+                  <div class="stat-title text-xs">{gettext("Failed")}</div>
                   <div class="stat-value text-2xl text-error">{@migration_stats.failed}</div>
-                  <div class="stat-desc text-xs">errors</div>
+                  <div class="stat-desc text-xs">{gettext("errors")}</div>
                 </div>
               <% end %>
             </div>
@@ -1093,12 +1093,12 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         <div class="alert alert-info mt-6">
           <.icon name="hero-information-circle" class="w-6 h-6" />
           <div>
-            <h3 class="font-bold">About CSV Import</h3>
+            <h3 class="font-bold">{gettext("About CSV Import")}</h3>
             <ul class="text-sm mt-1 list-disc list-inside">
-              <li>Supported formats: Shopify, Prom.ua (auto-detected from file headers)</li>
-              <li>Products are automatically categorized based on title or category name</li>
-              <li>Existing products with the same slug are updated</li>
-              <li>Import runs in the background — you can leave this page</li>
+              <li>{gettext("Supported formats: Shopify, Prom.ua (auto-detected from file headers)")}</li>
+              <li>{gettext("Products are automatically categorized based on title or category name")}</li>
+              <li>{gettext("Existing products with the same slug are updated")}</li>
+              <li>{gettext("Import runs in the background — you can leave this page")}</li>
             </ul>
           </div>
         </div>
@@ -1410,7 +1410,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
           <div class="flex-1">
             <label class="form-control">
               <div class="label py-1">
-                <span class="label-text text-xs">Link to Global Option</span>
+                <span class="label-text text-xs">{gettext("Link to Global Option")}</span>
               </div>
               <select
                 class="select select-bordered select-sm w-full"
@@ -1418,7 +1418,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                 phx-value-index={@index}
                 name="source_key"
               >
-                <option value="">— Standalone (no mapping) —</option>
+                <option value="">{gettext("— Standalone (no mapping) —")}</option>
                 <%= for opt <- @global_options do %>
                   <option value={opt["key"]} selected={@mapping.source_key == opt["key"]}>
                     {opt["key"]} - {get_global_option_label(opt)}
@@ -1430,7 +1430,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
             <%= if @mapping.source_key do %>
               <label class="form-control mt-2">
                 <div class="label py-1">
-                  <span class="label-text text-xs">Slot Key</span>
+                  <span class="label-text text-xs">{gettext("Slot Key")}</span>
                 </div>
                 <input
                   type="text"
@@ -1465,7 +1465,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
               </div>
             </div>
             <label class="label cursor-pointer gap-2">
-              <span class="label-text text-sm">Auto-add</span>
+              <span class="label-text text-sm">{gettext("Auto-add")}</span>
               <input
                 type="checkbox"
                 class="toggle toggle-primary toggle-sm"
