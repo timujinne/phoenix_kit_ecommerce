@@ -133,9 +133,9 @@ msgstr[2] "%{count} дней"
 #, elixir-autogen, elixir-format
 msgid "1 product"
 msgid_plural "%{count} products"
-msgstr[0] "Товары"
-msgstr[1] "Товары"
-msgstr[2] "Товары"
+msgstr[0] "1 товар"
+msgstr[1] "%{count} товара"
+msgstr[2] "%{count} товаров"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:765
 #, elixir-autogen, elixir-format

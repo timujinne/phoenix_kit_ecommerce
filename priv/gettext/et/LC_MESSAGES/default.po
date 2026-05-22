@@ -130,8 +130,8 @@ msgstr[1] "%{count} päeva"
 #, elixir-autogen, elixir-format
 msgid "1 product"
 msgid_plural "%{count} products"
-msgstr[0] "Tooted"
-msgstr[1] "Tooted"
+msgstr[0] "1 toode"
+msgstr[1] "%{count} toodet"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:765
 #, elixir-autogen, elixir-format
