@@ -1256,7 +1256,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <.icon name="hero-calculator" class="w-5 h-5" /> {gettext("Option Prices")}
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
-                  Base price:
+                  {gettext("Base price:")}
                   <span class="font-semibold">
                     {format_price(Ecto.Changeset.get_field(@changeset, :price), @currency)}
                   </span>
@@ -1268,7 +1268,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <div class="mb-6">
                     <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
                       <span class="badge badge-warning badge-sm">{gettext("Editable")}</span>
-                      Per-product price modifiers
+                      {gettext("Per-product price modifiers")}
                     </h3>
                     <p class="text-xs text-base-content/60 mb-3">
                       Leave as "Default" to use global option values, or set custom values per-product.
@@ -1491,7 +1491,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <span class="badge badge-info badge-sm">{gettext("From Import")}</span>
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
-                  Set prices for each option value. Enter the final price (base price + modifier).
+                  {gettext("Set prices for each option value. Enter the final price (base price + modifier).")}
                 </p>
 
                 <% base_price = Ecto.Changeset.get_field(@changeset, :price) || Decimal.new("0") %>

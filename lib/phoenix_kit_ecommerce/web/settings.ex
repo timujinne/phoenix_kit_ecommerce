@@ -410,7 +410,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
             <%= if @discovered_options != [] do %>
               <div class="divider">{gettext("Available Product Options")}</div>
               <p class="text-sm text-base-content/70 mb-3">
-                These option keys were found in product metadata. Click to add as a filter.
+                {gettext("These option keys were found in product metadata. Click to add as a filter.")}
               </p>
               <div class="flex flex-wrap gap-2">
                 <% existing_keys = Enum.map(@storefront_filters, & &1["key"]) %>
