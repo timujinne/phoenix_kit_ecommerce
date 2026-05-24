@@ -779,7 +779,7 @@ msgstr "Удалить категории"
 #: lib/phoenix_kit_ecommerce/web/products.ex:845
 #, elixir-autogen, elixir-format
 msgid "Delete Product"
-msgstr "Удалить продукт"
+msgstr "Удалить товар"
 
 #: lib/phoenix_kit_ecommerce/web/products.ex:817
 #: lib/phoenix_kit_ecommerce/web/products.ex:833
