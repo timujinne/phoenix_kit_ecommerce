@@ -258,6 +258,70 @@ mix test test/file_test.exs                     # Single test file
 mix test test/file_test.exs:42                  # Specific test by line
 ```
 
+### Test harness
+
+The suite is two-tiered:
+
+- **Unit tests** (schemas, changesets, pure functions) always run — no
+  database required.
+- **Integration tests** (tagged `:integration` via the case templates
+  below) need PostgreSQL. They are auto-excluded when the database is
+  unavailable, so `mix test` never hard-fails on a fresh checkout.
+
+First-time setup (one-off):
+
+```bash
+createdb phoenix_kit_ecommerce_test
+```
+
+After that, `mix test` boots `PhoenixKitEcommerce.Test.Repo`, runs core's
+versioned migrations via `PhoenixKit.Migration.ensure_current/2` (no
+module-owned DDL), and uses the Ecto SQL sandbox for per-test isolation.
+The test DB name is overridable via the `MIX_TEST_PARTITION` env var.
+
+Case templates live under `test/support/`:
+
+- **`PhoenixKitEcommerce.DataCase`** — context/schema tests; sets up the
+  sandbox connection and imports Ecto query/changeset helpers.
+- **`PhoenixKitEcommerce.LiveCase`** — LiveView tests; wires the test
+  endpoint/router (`test_endpoint.ex` / `test_router.ex`) and conn
+  helpers on top of `DataCase`.
+
+Other support modules: `activity_log_assertions.ex` (assertion helpers),
+`test_layouts.ex` (a host-consumer layout fixture), `hooks.ex`,
+`test_repo.ex`. Dialyzer suppressions are tracked in
+`.dialyzer_ignore.exs`.
+
+### Deferred from the 2026-06-04 quality sweep
+
+Larger items intentionally left for focused follow-up PRs (each is gated
+on a product/behavioral decision or is too large to fold into a sweep).
+See the per-PR `FOLLOW_UP.md` files for the originating findings.
+
+1. **Module-wide activity logging** — there is currently **no**
+   `PhoenixKit.Activity.log/1` usage anywhere in `lib/` (verified by
+   grep). Admin mutations (product/category/shipping CRUD, import runs,
+   cart status changes) are unaudited. Adding activity logging is a
+   cross-cutting feature, not a sweep cleanup.
+2. **Dedicated `Errors` atom-dispatch module** — error reasons are
+   currently returned/handled ad hoc; a centralized module mapping error
+   atoms to user-facing (gettext'd) messages would dedup the handling and
+   make the error surface auditable.
+3. **Migrate remaining raw `<input>`/`<select>` to core components** —
+   some admin forms still use bare HTML inputs/selects instead of the
+   shared PhoenixKit form components, leaving styling/behavior drift.
+4. **Hardcoded `$` price fallback + import-config keyword cap** (from PR
+   #2) — `products.ex`/`carts.ex` emit a literal `"$"` in the
+   nil-currency `format_price` branch (needs a decision on the fallback
+   symbol), and `import_configs.ex` accepts unbounded keyword /
+   category-rule lists (needs a decision on the cap).
+5. **Body-string gettext-backend migration** (from PR #4) —
+   `web/shop_web.ex` injects `PhoenixKitWeb.Gettext`, so ~25+ body-string
+   `gettext()` calls across `web/` resolve against the parent app's
+   catalogue rather than `PhoenixKitEcommerce.Gettext`. Migrating means
+   switching the `__using__` injection and extracting/translating
+   hundreds of msgids — a separate, larger PR.
+
 ## Pull Requests
 
 ### Commit Message Rules

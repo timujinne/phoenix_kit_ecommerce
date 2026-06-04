@@ -87,7 +87,11 @@ defmodule PhoenixKitEcommerce.Schemas.ProductTest do
 
     test "requires_shipping?/1 is false for digital products" do
       refute Product.requires_shipping?(%Product{product_type: "digital"})
-      assert Product.requires_shipping?(%Product{product_type: "physical", requires_shipping: true})
+
+      assert Product.requires_shipping?(%Product{
+               product_type: "physical",
+               requires_shipping: true
+             })
     end
 
     test "on_sale?/1 and discount_percentage/1" do

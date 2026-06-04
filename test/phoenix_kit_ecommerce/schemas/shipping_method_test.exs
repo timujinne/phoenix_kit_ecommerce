@@ -11,7 +11,9 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodTest do
     end
 
     test "auto-generates a slug from the name" do
-      cs = ShippingMethod.changeset(%ShippingMethod{}, %{"name" => "Express Post", "price" => "1"})
+      cs =
+        ShippingMethod.changeset(%ShippingMethod{}, %{"name" => "Express Post", "price" => "1"})
+
       assert get_change(cs, :slug) == "express-post"
     end
   end
@@ -49,13 +51,25 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodTest do
   describe "calculate_cost/2" do
     test "returns price when no free threshold" do
       method = %ShippingMethod{price: Decimal.new("5"), free_above_amount: nil}
-      assert Decimal.equal?(ShippingMethod.calculate_cost(method, Decimal.new("100")), Decimal.new("5"))
+
+      assert Decimal.equal?(
+               ShippingMethod.calculate_cost(method, Decimal.new("100")),
+               Decimal.new("5")
+             )
     end
 
     test "is free at or above the threshold" do
       method = %ShippingMethod{price: Decimal.new("5"), free_above_amount: Decimal.new("50")}
-      assert Decimal.equal?(ShippingMethod.calculate_cost(method, Decimal.new("50")), Decimal.new("0"))
-      assert Decimal.equal?(ShippingMethod.calculate_cost(method, Decimal.new("49")), Decimal.new("5"))
+
+      assert Decimal.equal?(
+               ShippingMethod.calculate_cost(method, Decimal.new("50")),
+               Decimal.new("0")
+             )
+
+      assert Decimal.equal?(
+               ShippingMethod.calculate_cost(method, Decimal.new("49")),
+               Decimal.new("5")
+             )
     end
   end
 
@@ -77,8 +91,16 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodTest do
 
   describe "delivery_estimate/1" do
     test "formats day ranges" do
-      assert ShippingMethod.delivery_estimate(%ShippingMethod{estimated_days_min: 1, estimated_days_max: 1}) == "1 day"
-      assert ShippingMethod.delivery_estimate(%ShippingMethod{estimated_days_min: 3, estimated_days_max: 5}) == "3-5 days"
+      assert ShippingMethod.delivery_estimate(%ShippingMethod{
+               estimated_days_min: 1,
+               estimated_days_max: 1
+             }) == "1 day"
+
+      assert ShippingMethod.delivery_estimate(%ShippingMethod{
+               estimated_days_min: 3,
+               estimated_days_max: 5
+             }) == "3-5 days"
+
       assert ShippingMethod.delivery_estimate(%ShippingMethod{estimated_days_min: nil}) == nil
     end
   end
@@ -95,7 +117,11 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodTest do
 
       assert {:error, changeset} =
                %ShippingMethod{}
-               |> ShippingMethod.changeset(%{"name" => "Dup2", "price" => "1", "slug" => "dup-ship"})
+               |> ShippingMethod.changeset(%{
+                 "name" => "Dup2",
+                 "price" => "1",
+                 "slug" => "dup-ship"
+               })
                |> Repo.insert()
 
       assert "has already been taken" in errors_on(changeset).slug

@@ -164,7 +164,11 @@ defmodule PhoenixKitEcommerce.Integration.ContextTest do
       assert Decimal.equal?(cart.subtotal, Decimal.new("50.00"))
     end
 
-    test "set_cart_shipping/3 adds shipping into the total", %{cart: cart, product: product, method: method} do
+    test "set_cart_shipping/3 adds shipping into the total", %{
+      cart: cart,
+      product: product,
+      method: method
+    } do
       {:ok, cart} = Shop.add_to_cart(cart, product, 1)
       {:ok, cart} = Shop.set_cart_shipping(cart, method, "US")
       assert cart.shipping_country == "US"

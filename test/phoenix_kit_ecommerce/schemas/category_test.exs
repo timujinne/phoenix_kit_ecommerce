@@ -49,12 +49,18 @@ defmodule PhoenixKitEcommerce.Schemas.CategoryTest do
     test "rejects a second category whose primary slug collides" do
       {:ok, _first} =
         %Category{}
-        |> Category.changeset(%{"name" => %{"en" => "Unique Cat"}, "slug" => %{"en" => "dup-slug"}})
+        |> Category.changeset(%{
+          "name" => %{"en" => "Unique Cat"},
+          "slug" => %{"en" => "dup-slug"}
+        })
         |> Repo.insert()
 
       {:error, cs} =
         %Category{}
-        |> Category.changeset(%{"name" => %{"en" => "Other Cat"}, "slug" => %{"en" => "dup-slug"}})
+        |> Category.changeset(%{
+          "name" => %{"en" => "Other Cat"},
+          "slug" => %{"en" => "dup-slug"}
+        })
         |> Repo.insert()
 
       # Schema declares unique_constraint(:slug, name: "idx_shop_categories_slug_primary"),
