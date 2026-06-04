@@ -18,6 +18,10 @@ This review re-verified the merged code on `main` and applied a set of safe,
 clearly-correct fixes (see **Fixed in this review**). What could not be fixed
 without a larger or riskier change is recorded under **Deferred**.
 
+**Follow-up commit:** the fixes and this document landed on `main` in commit
+`9187103` ("Post-merge fixes for PR #5 review + review doc"), pushed
+`17e634e..9187103`.
+
 **Verification of this review's changes:** `mix compile --warnings-as-errors`,
 `mix format --check-formatted`, and `mix credo --strict` are all clean. The
 runnable (non-DB) suite passes — `38 tests, 0 failures`; the 145 DB-tagged tests
