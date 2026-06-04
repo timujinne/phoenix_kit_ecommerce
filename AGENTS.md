@@ -294,27 +294,28 @@ Other support modules: `activity_log_assertions.ex` (assertion helpers),
 
 ### Deferred from the 2026-06-04 quality sweep
 
-Larger items intentionally left for focused follow-up PRs (each is gated
-on a product/behavioral decision or is too large to fold into a sweep).
-See the per-PR `FOLLOW_UP.md` files for the originating findings.
+The sweep completed most of the initially-deferred items. **Completed:**
 
-1. **Module-wide activity logging** — there is currently **no**
-   `PhoenixKit.Activity.log/1` usage anywhere in `lib/` (verified by
-   grep). Admin mutations (product/category/shipping CRUD, import runs,
-   cart status changes) are unaudited. Adding activity logging is a
-   cross-cutting feature, not a sweep cleanup.
-2. **Dedicated `Errors` atom-dispatch module** — error reasons are
-   currently returned/handled ad hoc; a centralized module mapping error
-   atoms to user-facing (gettext'd) messages would dedup the handling and
-   make the error surface auditable.
-3. **Migrate remaining raw `<input>`/`<select>` to core components** —
-   some admin forms still use bare HTML inputs/selects instead of the
-   shared PhoenixKit form components, leaving styling/behavior drift.
-4. **Hardcoded `$` price fallback + import-config keyword cap** (from PR
-   #2) — `products.ex`/`carts.ex` emit a literal `"$"` in the
-   nil-currency `format_price` branch (needs a decision on the fallback
-   symbol), and `import_configs.ex` accepts unbounded keyword /
-   category-rule lists (needs a decision on the cap).
+1. **Module-wide activity logging** — `PhoenixKitEcommerce.Activity`
+   LV-layer wrapper logged on every admin mutation (product/category/
+   shipping/import-config CRUD + bulk ops + import runs); PII-safe;
+   covered by `test/phoenix_kit_ecommerce/activity_logging_test.exs`.
+2. **`Errors` atom-dispatch module** — `PhoenixKitEcommerce.Errors.message/1`
+   maps the module's atom errors to gettext-backed strings;
+   `test/phoenix_kit_ecommerce/errors_test.exs` pins each.
+4. **Import-config keyword cap** — `include_keywords` / `exclude_keywords`
+   / `exclude_phrases` capped at 100 entries each with a changeset error.
+   The hardcoded `$` price fallback was centralized as a single attribute
+   (it only fires when no default currency is configured; a real currency
+   still formats via `Currency.format_amount/2`).
+
+**Still remaining (genuinely out of scope for now):**
+
+3. **Component-migration tail** — the shipping-method form was migrated to
+   core `<.input>/<.select>/<.textarea>`. The multilang **category/product
+   forms** (driven by `TranslationTabs` + dynamic-option selects) and the
+   **map-backed import-config form** (no changeset/`:action`) were left
+   as-is — migrating them safely needs translation/validation rewiring.
 5. **Body-string gettext-backend migration** (from PR #4) —
    `web/shop_web.ex` injects `PhoenixKitWeb.Gettext`, so ~25+ body-string
    `gettext()` calls across `web/` resolve against the parent app's
