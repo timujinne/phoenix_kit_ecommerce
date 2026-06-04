@@ -40,7 +40,11 @@ defmodule PhoenixKitEcommerce.MixProject do
     [
       quality: ["format", "credo --strict", "dialyzer"],
       "quality.ci": ["format --check-formatted", "credo --strict", "dialyzer"],
-      precommit: ["compile", "quality"]
+      precommit: [
+        "compile --force --warnings-as-errors",
+        "deps.unlock --check-unused",
+        "quality.ci"
+      ]
     ]
   end
 
