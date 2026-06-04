@@ -13,6 +13,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Translations
 
@@ -182,6 +183,14 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
     case Shop.delete_product(product) do
       {:ok, _} ->
+        Activity.log("shop.product_deleted",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "product",
+          resource_uuid: product.uuid,
+          metadata: %{"status" => product.status}
+        )
+
         if file_uuids != [], do: Storage.queue_file_cleanup(file_uuids)
 
         {products, total} =
@@ -217,6 +226,14 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
     case Shop.delete_product(product) do
       {:ok, _} ->
+        Activity.log("shop.product_deleted",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "product",
+          resource_uuid: product.uuid,
+          metadata: %{"status" => product.status}
+        )
+
         {products, total} =
           Shop.list_products_with_count(
             page: socket.assigns.page,
@@ -287,6 +304,13 @@ defmodule PhoenixKitEcommerce.Web.Products do
     uuids = MapSet.to_list(socket.assigns.selected_uuids)
     count = Shop.bulk_update_product_status(uuids, status)
 
+    Activity.log("shop.products_status_changed",
+      actor_uuid: Activity.actor_uuid(socket),
+      actor_role: Activity.actor_role(socket),
+      resource_type: "product",
+      metadata: %{"status" => status, "count" => count}
+    )
+
     socket = load_products(socket)
 
     {:noreply,
@@ -327,6 +351,13 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
     count = Shop.bulk_delete_products(uuids)
     if file_uuids != [], do: Storage.queue_file_cleanup(file_uuids)
+
+    Activity.log("shop.products_bulk_deleted",
+      actor_uuid: Activity.actor_uuid(socket),
+      actor_role: Activity.actor_role(socket),
+      resource_type: "product",
+      metadata: %{"count" => count}
+    )
 
     socket = load_products(socket)
 

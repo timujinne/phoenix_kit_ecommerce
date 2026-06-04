@@ -12,6 +12,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.Translations
@@ -605,6 +606,14 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   defp save_product(socket, :new, product_params) do
     case Shop.create_product(product_params) do
       {:ok, product} ->
+        Activity.log("shop.product_created",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "product",
+          resource_uuid: product.uuid,
+          metadata: product_metadata(product)
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, "Product created")
@@ -623,6 +632,14 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   defp save_product(socket, :edit, product_params) do
     case Shop.update_product(socket.assigns.product, product_params) do
       {:ok, product} ->
+        Activity.log("shop.product_updated",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "product",
+          resource_uuid: product.uuid,
+          metadata: product_metadata(product)
+        )
+
         changeset = Shop.change_product(product)
 
         {:noreply,
@@ -640,6 +657,19 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
       Logger.error("Product save failed: #{Exception.message(e)}")
       {:noreply, put_flash(socket, :error, "Something went wrong. Please try again.")}
   end
+
+  # PII-safe activity metadata for a product mutation.
+  defp product_metadata(product) do
+    %{
+      "status" => product.status,
+      "product_type" => product.product_type,
+      "price" => price_to_string(product.price)
+    }
+  end
+
+  defp price_to_string(nil), do: nil
+  defp price_to_string(%Decimal{} = price), do: Decimal.to_string(price)
+  defp price_to_string(price), do: to_string(price)
 
   # Get options with affects_price=true
   defp get_price_affecting_options(option_schema) do

@@ -8,6 +8,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.ShippingMethod
 
   @impl true
@@ -68,7 +69,15 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp save_method(socket, :new, params) do
     case Shop.create_shipping_method(params) do
-      {:ok, _method} ->
+      {:ok, method} ->
+        Activity.log("shop.shipping_method_created",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "shipping_method",
+          resource_uuid: method.uuid,
+          metadata: %{"slug" => method.slug, "active" => method.active}
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, "Shipping method created")
@@ -81,7 +90,15 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp save_method(socket, :edit, params) do
     case Shop.update_shipping_method(socket.assigns.method, params) do
-      {:ok, _method} ->
+      {:ok, method} ->
+        Activity.log("shop.shipping_method_updated",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "shipping_method",
+          resource_uuid: method.uuid,
+          metadata: %{"slug" => method.slug, "active" => method.active}
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, "Shipping method updated")
