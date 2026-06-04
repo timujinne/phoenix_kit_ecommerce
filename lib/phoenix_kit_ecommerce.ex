@@ -2780,20 +2780,27 @@ defmodule PhoenixKitEcommerce do
     if Code.ensure_loaded?(PhoenixKitBilling) do
       PhoenixKitBilling.get_tax_rate()
     else
-      rate = Settings.get_setting_cached("billing_default_tax_rate", "0")
+      # Mirror PhoenixKitBilling.get_tax_rate/0, which yields 0 when tax is
+      # disabled: without this gate the fallback would apply the default rate
+      # even with billing_tax_enabled = "false".
+      if billing_tax_enabled?(), do: fallback_tax_rate(), else: Decimal.new("0")
+    end
+  end
 
-      case Decimal.parse(rate) do
-        {decimal, _rest} ->
-          Decimal.div(decimal, Decimal.new("100"))
+  defp fallback_tax_rate do
+    rate = Settings.get_setting_cached("billing_default_tax_rate", "0")
 
-        :error ->
-          Logger.warning(
-            "Failed to parse billing_default_tax_rate setting #{inspect(rate)} as a decimal; " <>
-              "falling back to a 0 tax rate."
-          )
+    case Decimal.parse(rate) do
+      {decimal, _rest} ->
+        Decimal.div(decimal, Decimal.new("100"))
 
-          Decimal.new("0")
-      end
+      :error ->
+        Logger.warning(
+          "Failed to parse billing_default_tax_rate setting #{inspect(rate)} as a decimal; " <>
+            "falling back to a 0 tax rate."
+        )
+
+        Decimal.new("0")
     end
   end
 
@@ -2801,20 +2808,26 @@ defmodule PhoenixKitEcommerce do
     if Code.ensure_loaded?(PhoenixKitBilling) do
       PhoenixKitBilling.get_tax_rate_percent()
     else
-      rate = Settings.get_setting_cached("billing_default_tax_rate", "0")
+      # Same enabled-gate as billing_tax_rate/0 so a configured default rate
+      # is not reported while tax is disabled.
+      if billing_tax_enabled?(), do: fallback_tax_rate_percent(), else: 0
+    end
+  end
 
-      case Integer.parse(rate) do
-        {value, _} ->
-          value
+  defp fallback_tax_rate_percent do
+    rate = Settings.get_setting_cached("billing_default_tax_rate", "0")
 
-        :error ->
-          Logger.warning(
-            "Failed to parse billing_default_tax_rate setting #{inspect(rate)} as an integer; " <>
-              "falling back to a 0 tax-rate percent."
-          )
+    case Integer.parse(rate) do
+      {value, _} ->
+        value
 
-          0
-      end
+      :error ->
+        Logger.warning(
+          "Failed to parse billing_default_tax_rate setting #{inspect(rate)} as an integer; " <>
+            "falling back to a 0 tax-rate percent."
+        )
+
+        0
     end
   end
 

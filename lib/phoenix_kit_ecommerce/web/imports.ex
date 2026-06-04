@@ -21,6 +21,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
+  alias PhoenixKitEcommerce.Errors
   alias PhoenixKitEcommerce.Import.{CSVAnalyzer, FormatDetector}
   alias PhoenixKitEcommerce.ImportLog
   alias PhoenixKitEcommerce.Options
@@ -305,7 +306,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
       {:error, :unknown_format} ->
         File.rm(dest_path)
-        {:noreply, put_flash(socket, :error, "Unrecognized CSV format")}
+        {:noreply, put_flash(socket, :error, Errors.message(:unknown_format))}
 
       {:error, _reason} ->
         File.rm(dest_path)

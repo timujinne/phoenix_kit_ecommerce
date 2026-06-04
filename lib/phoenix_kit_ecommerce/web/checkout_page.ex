@@ -14,6 +14,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitBilling.PaymentOption
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Errors
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Web.Components.ShopLayouts
 
@@ -407,10 +408,12 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   end
 
   defp handle_order_result({:error, :cart_not_active}, socket) do
+    message = Errors.message(:cart_not_active)
+
     socket
     |> assign(:processing, false)
-    |> assign(:error_message, "Cart is no longer active")
-    |> put_flash(:error, "Cart is no longer active")
+    |> assign(:error_message, message)
+    |> put_flash(:error, message)
   end
 
   defp handle_order_result({:error, :cart_empty}, socket) do

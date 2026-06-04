@@ -52,7 +52,7 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   Used by catalog and category pages (non-product pages).
   """
   def get_language_from_params_or_default(%{"locale" => locale}) when is_binary(locale) do
-    DialectMapper.resolve_dialect(locale, nil)
+    DialectMapper.resolve_dialect(locale)
   end
 
   def get_language_from_params_or_default(_params) do
