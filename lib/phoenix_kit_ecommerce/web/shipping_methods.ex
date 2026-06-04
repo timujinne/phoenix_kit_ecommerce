@@ -8,6 +8,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
 
   @impl true
   def mount(_params, _session, socket) do
@@ -28,6 +29,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
     method = Shop.get_shipping_method!(uuid)
     {:ok, updated} = Shop.update_shipping_method(method, %{active: !method.active})
 
+    Activity.log("shop.shipping_method_updated",
+      actor_uuid: Activity.actor_uuid(socket),
+      actor_role: Activity.actor_role(socket),
+      resource_type: "shipping_method",
+      resource_uuid: updated.uuid,
+      metadata: %{"active" => updated.active, "slug" => updated.slug}
+    )
+
     methods =
       Enum.map(socket.assigns.methods, fn m ->
         if m.uuid == updated.uuid, do: updated, else: m
@@ -42,6 +51,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
 
     case Shop.delete_shipping_method(method) do
       {:ok, _} ->
+        Activity.log("shop.shipping_method_deleted",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "shipping_method",
+          resource_uuid: method.uuid,
+          metadata: %{"slug" => method.slug}
+        )
+
         methods = Enum.reject(socket.assigns.methods, &(&1.uuid == method.uuid))
 
         {:noreply,

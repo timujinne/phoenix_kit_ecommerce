@@ -8,6 +8,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.ShippingMethod
 
   @impl true
@@ -32,9 +33,9 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     socket
     |> assign(:page_title, "New Shipping Method")
     |> assign(:method, method)
-    |> assign(:changeset, changeset)
     |> assign(:currencies, currencies)
     |> assign(:default_currency, default_currency)
+    |> assign_form(changeset)
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
@@ -46,9 +47,9 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     socket
     |> assign(:page_title, "Edit #{method.name}")
     |> assign(:method, method)
-    |> assign(:changeset, changeset)
     |> assign(:currencies, currencies)
     |> assign(:default_currency, default_currency)
+    |> assign_form(changeset)
   end
 
   @impl true
@@ -58,7 +59,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
       |> Shop.change_shipping_method(params)
       |> Map.put(:action, :validate)
 
-    {:noreply, assign(socket, :changeset, changeset)}
+    {:noreply, assign_form(socket, changeset)}
   end
 
   @impl true
@@ -68,27 +69,43 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp save_method(socket, :new, params) do
     case Shop.create_shipping_method(params) do
-      {:ok, _method} ->
+      {:ok, method} ->
+        Activity.log("shop.shipping_method_created",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "shipping_method",
+          resource_uuid: method.uuid,
+          metadata: %{"slug" => method.slug, "active" => method.active}
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, "Shipping method created")
          |> push_navigate(to: Routes.path("/admin/shop/shipping"))}
 
       {:error, changeset} ->
-        {:noreply, assign(socket, :changeset, changeset)}
+        {:noreply, assign_form(socket, changeset)}
     end
   end
 
   defp save_method(socket, :edit, params) do
     case Shop.update_shipping_method(socket.assigns.method, params) do
-      {:ok, _method} ->
+      {:ok, method} ->
+        Activity.log("shop.shipping_method_updated",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "shipping_method",
+          resource_uuid: method.uuid,
+          metadata: %{"slug" => method.slug, "active" => method.active}
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, "Shipping method updated")
          |> push_navigate(to: Routes.path("/admin/shop/shipping"))}
 
       {:error, changeset} ->
-        {:noreply, assign(socket, :changeset, changeset)}
+        {:noreply, assign_form(socket, changeset)}
     end
   end
 
@@ -102,7 +119,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           subtitle="Configure shipping method details"
         />
 
-        <.form for={@changeset} phx-change="validate" phx-submit="save" class="space-y-6">
+        <.form for={@form} phx-change="validate" phx-submit="save" class="space-y-6">
           <%!-- Basic Info --%>
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
@@ -110,52 +127,31 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Name *</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:name]}
                     type="text"
-                    name="shipping_method[name]"
-                    value={Ecto.Changeset.get_field(@changeset, :name)}
-                    class={[
-                      "input input-bordered w-full focus:input-primary",
-                      @changeset.errors[:name] && "input-error"
-                    ]}
+                    label="Name *"
                     placeholder="Standard Shipping"
                     required
                   />
-                  <%= if @changeset.errors[:name] do %>
-                    <label class="label">
-                      <span class="label-text-alt text-error">
-                        {elem(@changeset.errors[:name], 0)}
-                      </span>
-                    </label>
-                  <% end %>
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Slug</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:slug]}
                     type="text"
-                    name="shipping_method[slug]"
-                    value={Ecto.Changeset.get_field(@changeset, :slug)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Slug"
                     placeholder="auto-generated if empty"
                   />
                 </div>
 
                 <div class="form-control w-full md:col-span-2">
-                  <label class="label">
-                    <span class="label-text font-medium">Description</span>
-                  </label>
-                  <textarea
-                    name="shipping_method[description]"
-                    class="textarea textarea-bordered w-full focus:textarea-primary"
+                  <.textarea
+                    field={@form[:description]}
+                    label="Description"
                     placeholder="Delivery in 3-5 business days"
                     rows="2"
-                  >{Ecto.Changeset.get_field(@changeset, :description)}</textarea>
+                  />
                 </div>
               </div>
             </div>
@@ -168,17 +164,10 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
               <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Price *</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:price]}
                     type="number"
-                    name="shipping_method[price]"
-                    value={Ecto.Changeset.get_field(@changeset, :price)}
-                    class={[
-                      "input input-bordered w-full focus:input-primary",
-                      @changeset.errors[:price] && "input-error"
-                    ]}
+                    label="Price *"
                     step="0.01"
                     min="0"
                     required
@@ -201,31 +190,18 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                       value={if @default_currency, do: @default_currency.code, else: "USD"}
                     />
                   <% else %>
-                    <select
-                      name="shipping_method[currency]"
-                      class="select select-bordered w-full focus:select-primary"
-                    >
-                      <%= for currency <- @currencies do %>
-                        <option
-                          value={currency.code}
-                          selected={Ecto.Changeset.get_field(@changeset, :currency) == currency.code}
-                        >
-                          {currency.code} - {currency.name}
-                        </option>
-                      <% end %>
-                    </select>
+                    <.select
+                      field={@form[:currency]}
+                      options={Enum.map(@currencies, &{"#{&1.code} - #{&1.name}", &1.code})}
+                    />
                   <% end %>
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Free above</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:free_above_amount]}
                     type="number"
-                    name="shipping_method[free_above_amount]"
-                    value={Ecto.Changeset.get_field(@changeset, :free_above_amount)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Free above"
                     step="0.01"
                     min="0"
                     placeholder="No threshold"
@@ -242,42 +218,30 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Min weight (g)</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:min_weight_grams]}
                     type="number"
-                    name="shipping_method[min_weight_grams]"
-                    value={Ecto.Changeset.get_field(@changeset, :min_weight_grams)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Min weight (g)"
                     min="0"
                     placeholder="0"
                   />
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Max weight (g)</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:max_weight_grams]}
                     type="number"
-                    name="shipping_method[max_weight_grams]"
-                    value={Ecto.Changeset.get_field(@changeset, :max_weight_grams)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Max weight (g)"
                     min="0"
                     placeholder="No limit"
                   />
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Min order</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:min_order_amount]}
                     type="number"
-                    name="shipping_method[min_order_amount]"
-                    value={Ecto.Changeset.get_field(@changeset, :min_order_amount)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Min order"
                     step="0.01"
                     min="0"
                     placeholder="No min"
@@ -285,14 +249,10 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Max order</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:max_order_amount]}
                     type="number"
-                    name="shipping_method[max_order_amount]"
-                    value={Ecto.Changeset.get_field(@changeset, :max_order_amount)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Max order"
                     step="0.01"
                     min="0"
                     placeholder="No max"
@@ -309,42 +269,30 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Est. days (min)</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:estimated_days_min]}
                     type="number"
-                    name="shipping_method[estimated_days_min]"
-                    value={Ecto.Changeset.get_field(@changeset, :estimated_days_min)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Est. days (min)"
                     min="0"
                     placeholder="1"
                   />
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Est. days (max)</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:estimated_days_max]}
                     type="number"
-                    name="shipping_method[estimated_days_max]"
-                    value={Ecto.Changeset.get_field(@changeset, :estimated_days_max)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Est. days (max)"
                     min="0"
                     placeholder="5"
                   />
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Position</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:position]}
                     type="number"
-                    name="shipping_method[position]"
-                    value={Ecto.Changeset.get_field(@changeset, :position) || 0}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Position"
                     min="0"
                   />
                 </div>
@@ -404,5 +352,11 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     Billing.list_currencies(enabled: true)
   rescue
     _ -> []
+  end
+
+  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
+    socket
+    |> assign(:changeset, changeset)
+    |> assign(:form, to_form(changeset))
   end
 end

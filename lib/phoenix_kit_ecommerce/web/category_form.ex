@@ -10,6 +10,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.OptionTypes
@@ -911,7 +912,15 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
   defp save_category(socket, :new, category_params) do
     case Shop.create_category(category_params) do
-      {:ok, _category} ->
+      {:ok, category} ->
+        Activity.log("shop.category_created",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "category",
+          resource_uuid: category.uuid,
+          metadata: %{"status" => category.status}
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, "Category created")
@@ -924,7 +933,15 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
   defp save_category(socket, :edit, category_params) do
     case Shop.update_category(socket.assigns.category, category_params) do
-      {:ok, _category} ->
+      {:ok, category} ->
+        Activity.log("shop.category_updated",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "category",
+          resource_uuid: category.uuid,
+          metadata: %{"status" => category.status}
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, "Category updated")

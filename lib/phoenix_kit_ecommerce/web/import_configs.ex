@@ -10,6 +10,7 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
 
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
 
   @impl true
   def mount(_params, _session, socket) do
@@ -84,7 +85,16 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
       end
 
     case result do
-      {:ok, _} ->
+      {:ok, config} ->
+        Activity.log(
+          if(editing, do: "shop.import_config_updated", else: "shop.import_config_created"),
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "import_config",
+          resource_uuid: config.uuid,
+          metadata: %{"active" => config.active, "is_default" => config.is_default}
+        )
+
         {:noreply,
          socket
          |> assign(:configs, Shop.list_import_configs(active_only: false))
@@ -106,6 +116,14 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
     if config do
       case Shop.delete_import_config(config) do
         {:ok, _} ->
+          Activity.log("shop.import_config_deleted",
+            actor_uuid: Activity.actor_uuid(socket),
+            actor_role: Activity.actor_role(socket),
+            resource_type: "import_config",
+            resource_uuid: config.uuid,
+            metadata: %{"is_default" => config.is_default}
+          )
+
           {:noreply,
            socket
            |> assign(:configs, Shop.list_import_configs(active_only: false))
@@ -125,7 +143,15 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
 
     if config do
       case Shop.update_import_config(config, %{active: !config.active}) do
-        {:ok, _} ->
+        {:ok, updated} ->
+          Activity.log("shop.import_config_updated",
+            actor_uuid: Activity.actor_uuid(socket),
+            actor_role: Activity.actor_role(socket),
+            resource_type: "import_config",
+            resource_uuid: updated.uuid,
+            metadata: %{"active" => updated.active}
+          )
+
           {:noreply,
            socket
            |> assign(:configs, Shop.list_import_configs(active_only: false))
@@ -145,7 +171,15 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
 
     if config do
       case Shop.update_import_config(config, %{is_default: true}) do
-        {:ok, _} ->
+        {:ok, updated} ->
+          Activity.log("shop.import_config_set_default",
+            actor_uuid: Activity.actor_uuid(socket),
+            actor_role: Activity.actor_role(socket),
+            resource_type: "import_config",
+            resource_uuid: updated.uuid,
+            metadata: %{"is_default" => updated.is_default}
+          )
+
           {:noreply,
            socket
            |> assign(:configs, Shop.list_import_configs(active_only: false))

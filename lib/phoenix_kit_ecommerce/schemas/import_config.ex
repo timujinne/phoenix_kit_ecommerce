@@ -53,6 +53,11 @@ defmodule PhoenixKitEcommerce.ImportConfig do
 
   @default_required_columns ["Handle", "Title", "Variant Price"]
 
+  # Upper bound on the number of entries allowed in each keyword/phrase
+  # filter list. Prevents an operator from pasting an unbounded list that
+  # would bloat the row and slow every per-product filter pass.
+  @max_keywords 100
+
   @primary_key {:uuid, UUIDv7, autogenerate: true}
 
   schema "phoenix_kit_shop_import_configs" do
@@ -104,10 +109,25 @@ defmodule PhoenixKitEcommerce.ImportConfig do
       :option_mappings
     ])
     |> validate_required([:name])
-    |> unique_constraint(:name)
-    |> unique_constraint(:uuid)
+    |> unique_constraint(:name, name: :idx_shop_import_configs_name)
+    |> unique_constraint(:uuid, name: :idx_shop_import_configs_uuid)
+    |> validate_keyword_list_length(:include_keywords)
+    |> validate_keyword_list_length(:exclude_keywords)
+    |> validate_keyword_list_length(:exclude_phrases)
     |> validate_category_rules()
     |> validate_option_mappings()
+  end
+
+  defp validate_keyword_list_length(changeset, field) do
+    case get_field(changeset, field) do
+      list when is_list(list) and length(list) > @max_keywords ->
+        add_error(changeset, field, "cannot contain more than %{count} entries",
+          count: @max_keywords
+        )
+
+      _ ->
+        changeset
+    end
   end
 
   defp validate_category_rules(changeset) do

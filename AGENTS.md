@@ -258,6 +258,71 @@ mix test test/file_test.exs                     # Single test file
 mix test test/file_test.exs:42                  # Specific test by line
 ```
 
+### Test harness
+
+The suite is two-tiered:
+
+- **Unit tests** (schemas, changesets, pure functions) always run — no
+  database required.
+- **Integration tests** (tagged `:integration` via the case templates
+  below) need PostgreSQL. They are auto-excluded when the database is
+  unavailable, so `mix test` never hard-fails on a fresh checkout.
+
+First-time setup (one-off):
+
+```bash
+createdb phoenix_kit_ecommerce_test
+```
+
+After that, `mix test` boots `PhoenixKitEcommerce.Test.Repo`, runs core's
+versioned migrations via `PhoenixKit.Migration.ensure_current/2` (no
+module-owned DDL), and uses the Ecto SQL sandbox for per-test isolation.
+The test DB name is overridable via the `MIX_TEST_PARTITION` env var.
+
+Case templates live under `test/support/`:
+
+- **`PhoenixKitEcommerce.DataCase`** — context/schema tests; sets up the
+  sandbox connection and imports Ecto query/changeset helpers.
+- **`PhoenixKitEcommerce.LiveCase`** — LiveView tests; wires the test
+  endpoint/router (`test_endpoint.ex` / `test_router.ex`) and conn
+  helpers on top of `DataCase`.
+
+Other support modules: `activity_log_assertions.ex` (assertion helpers),
+`test_layouts.ex` (a host-consumer layout fixture), `hooks.ex`,
+`test_repo.ex`. Dialyzer suppressions are tracked in
+`.dialyzer_ignore.exs`.
+
+### Deferred from the 2026-06-04 quality sweep
+
+The sweep completed most of the initially-deferred items. **Completed:**
+
+1. **Module-wide activity logging** — `PhoenixKitEcommerce.Activity`
+   LV-layer wrapper logged on every admin mutation (product/category/
+   shipping/import-config CRUD + bulk ops + import runs); PII-safe;
+   covered by `test/phoenix_kit_ecommerce/activity_logging_test.exs`.
+2. **`Errors` atom-dispatch module** — `PhoenixKitEcommerce.Errors.message/1`
+   maps the module's atom errors to gettext-backed strings;
+   `test/phoenix_kit_ecommerce/errors_test.exs` pins each.
+4. **Import-config keyword cap** — `include_keywords` / `exclude_keywords`
+   / `exclude_phrases` capped at 100 entries each with a changeset error.
+   The hardcoded `$` price fallback was centralized as a single attribute
+   (it only fires when no default currency is configured; a real currency
+   still formats via `Currency.format_amount/2`).
+
+**Still remaining (genuinely out of scope for now):**
+
+3. **Component-migration tail** — the shipping-method form was migrated to
+   core `<.input>/<.select>/<.textarea>`. The multilang **category/product
+   forms** (driven by `TranslationTabs` + dynamic-option selects) and the
+   **map-backed import-config form** (no changeset/`:action`) were left
+   as-is — migrating them safely needs translation/validation rewiring.
+5. **Body-string gettext-backend migration** (from PR #4) —
+   `web/shop_web.ex` injects `PhoenixKitWeb.Gettext`, so ~25+ body-string
+   `gettext()` calls across `web/` resolve against the parent app's
+   catalogue rather than `PhoenixKitEcommerce.Gettext`. Migrating means
+   switching the `__using__` injection and extracting/translating
+   hundreds of msgids — a separate, larger PR.
+
 ## Pull Requests
 
 ### Commit Message Rules

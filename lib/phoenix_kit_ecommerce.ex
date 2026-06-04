@@ -2280,7 +2280,7 @@ defmodule PhoenixKitEcommerce do
       "line_items" => line_items,
       "subtotal" => cart.subtotal,
       "tax_amount" => cart.tax_amount || Decimal.new(0),
-      "tax_rate" => Decimal.new(0),
+      "tax_rate" => get_tax_rate(cart),
       "discount_amount" => cart.discount_amount || Decimal.new(0),
       "discount_code" => cart.discount_code,
       "total" => cart.total,
@@ -2781,7 +2781,19 @@ defmodule PhoenixKitEcommerce do
       PhoenixKitBilling.get_tax_rate()
     else
       rate = Settings.get_setting_cached("billing_default_tax_rate", "0")
-      Decimal.div(Decimal.new(rate), Decimal.new("100"))
+
+      case Decimal.parse(rate) do
+        {decimal, _rest} ->
+          Decimal.div(decimal, Decimal.new("100"))
+
+        :error ->
+          Logger.warning(
+            "Failed to parse billing_default_tax_rate setting #{inspect(rate)} as a decimal; " <>
+              "falling back to a 0 tax rate."
+          )
+
+          Decimal.new("0")
+      end
     end
   end
 
@@ -2792,8 +2804,16 @@ defmodule PhoenixKitEcommerce do
       rate = Settings.get_setting_cached("billing_default_tax_rate", "0")
 
       case Integer.parse(rate) do
-        {value, _} -> value
-        :error -> 0
+        {value, _} ->
+          value
+
+        :error ->
+          Logger.warning(
+            "Failed to parse billing_default_tax_rate setting #{inspect(rate)} as an integer; " <>
+              "falling back to a 0 tax-rate percent."
+          )
+
+          0
       end
     end
   end

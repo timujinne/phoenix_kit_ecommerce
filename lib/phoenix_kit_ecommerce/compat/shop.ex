@@ -1,7 +1,14 @@
 defmodule PhoenixKit.Modules.Shop do
+  # TRANSITIONAL DELEGATE SHIM — not a real module home.
+  #
   # Compat alias for PhoenixKitEcommerce. Delegates all public functions so
   # core can reference the old namespace. Will be removed once core is fully
   # migrated to `PhoenixKitEcommerce.*`.
+  #
+  # MAINTENANCE NOTE: this list of defdelegates must be re-audited against
+  # the `PhoenixKitEcommerce` public API whenever that API changes — new
+  # public functions need a delegate here, and removed ones must be dropped
+  # to avoid pointing at functions that no longer exist.
   #
   # `@moduledoc false` keeps this transitional shim out of HexDocs and avoids
   # ex_doc warnings about defdelegates pointing at @impl callbacks that have

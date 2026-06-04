@@ -380,6 +380,22 @@ mix precommit      # Compile + format + credo + dialyzer
 mix quality        # Format + credo + dialyzer
 ```
 
+### Testing
+
+The suite has unit tests (always run, no DB) and integration tests
+(tagged `:integration`, auto-excluded when PostgreSQL is unavailable).
+Run the integration tests after a one-off database create:
+
+```bash
+createdb phoenix_kit_ecommerce_test   # one-time setup
+mix test                              # boots Test.Repo, runs core migrations, sandboxes per test
+```
+
+Case templates live in `test/support/`: `PhoenixKitEcommerce.DataCase`
+(context/schema tests) and `PhoenixKitEcommerce.LiveCase` (LiveView
+tests). The test repo runs core's versioned migrations via
+`PhoenixKit.Migration.ensure_current/2` — no module-owned DDL.
+
 ## Troubleshooting
 
 ### Shop not appearing in admin

@@ -13,6 +13,11 @@ defmodule PhoenixKitEcommerce.Web.Carts do
 
   @per_page 25
 
+  # Last-resort currency symbol used only when no default currency is
+  # configured in Billing (i.e. `@currency` resolved to nil at mount).
+  # When a currency struct is present we always defer to its own symbol.
+  @default_currency_symbol "$"
+
   @impl true
   def mount(_params, _session, socket) do
     {carts, total} = Shop.list_carts_with_count(per_page: @per_page)
@@ -245,7 +250,7 @@ defmodule PhoenixKitEcommerce.Web.Carts do
   defp format_price(nil, _currency), do: "-"
 
   defp format_price(amount, nil) do
-    "$#{Decimal.round(amount, 2)}"
+    "#{@default_currency_symbol}#{Decimal.round(amount, 2)}"
   end
 
   defp format_price(amount, currency) do
