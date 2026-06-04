@@ -104,8 +104,8 @@ defmodule PhoenixKitEcommerce.ImportConfig do
       :option_mappings
     ])
     |> validate_required([:name])
-    |> unique_constraint(:name)
-    |> unique_constraint(:uuid)
+    |> unique_constraint(:name, name: :idx_shop_import_configs_name)
+    |> unique_constraint(:uuid, name: :idx_shop_import_configs_uuid)
     |> validate_category_rules()
     |> validate_option_mappings()
   end

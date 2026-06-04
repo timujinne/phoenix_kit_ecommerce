@@ -102,7 +102,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     |> validate_number(:estimated_days_min, greater_than_or_equal_to: 0)
     |> validate_number(:estimated_days_max, greater_than: 0)
     |> maybe_generate_slug()
-    |> unique_constraint(:slug)
+    |> unique_constraint(:slug, name: :phoenix_kit_shop_shipping_methods_slug_unique)
   end
 
   @doc """
