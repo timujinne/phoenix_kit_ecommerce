@@ -2280,7 +2280,7 @@ defmodule PhoenixKitEcommerce do
       "line_items" => line_items,
       "subtotal" => cart.subtotal,
       "tax_amount" => cart.tax_amount || Decimal.new(0),
-      "tax_rate" => Decimal.new(0),
+      "tax_rate" => get_tax_rate(cart),
       "discount_amount" => cart.discount_amount || Decimal.new(0),
       "discount_code" => cart.discount_code,
       "total" => cart.total,
