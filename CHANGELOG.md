@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.7 - 2026-06-05
+
+### Changed
+- Migrate the category and product admin forms to core form components. Non-translatable scalar fields (status, product_type, vendor, price/compare_at/cost, position) and the changeset-backed selects (`parent_uuid`, `featured_product_uuid`, `category_uuid`) now render through core `<.input>`/`<.select>`. An `assign_form/2` helper keeps `:changeset` (consumed by the multilang `TranslationTabs` fields) and `:form = to_form(changeset)` in sync, so inline validation errors render on `validate`. Translatable fields, dynamic-option selects, and the option/media machinery are intentionally left as-is.
+- Route web body strings through the module's own `PhoenixKitEcommerce.Gettext` backend (was the parent app's `PhoenixKitWeb.Gettext`). Generic UI-chrome strings are still resolved against core to keep its vetted translations; shop-domain strings resolve in-module and ship `et`/`ru` catalogues (correct 2-form/3-form plurals).
+
+### Fixed
+- Inline validation errors now render on the migrated `<.select>` fields, via the `phoenix_kit` 1.7.131 core `Select` component (it now maps `field.errors` like `<.input>` does).
+
+### Dependencies
+- Bump `phoenix_kit` 1.7.130 → 1.7.131 (core `<.select>` surfaces `field.errors`) and `etcher` 0.5.5 → 0.6.5.
+
 ## 0.1.6 - 2026-06-04
 
 ### Fixed
