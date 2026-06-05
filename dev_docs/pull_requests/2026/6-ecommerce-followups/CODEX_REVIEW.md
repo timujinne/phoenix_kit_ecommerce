@@ -19,3 +19,18 @@ migration of non-translatable scalar fields in category/product forms to core
   initial load, validation, and save errors. `TranslationTabs` still reads
   `@changeset` while the converted core fields read `@form`, so there is no
   desync or breakage of the multilang field names/values.
+
+---
+
+## Round 2 (2026-06-05) — i18n body-string + form-select migration
+
+Codex re-reviewed the added commits (gettext body-string migration with the
+generic→core / domain→module hybrid split + et/ru translations; migration of
+3 changeset-backed form selects to core `<.select>` via `assign_form/2`).
+
+**Verdict: no issues found.** Codex verified the routed generic labels are
+present in core's catalogue while the bare module `gettext` strings are present
+in the ecommerce catalogue (no string silently regressed to English, no
+misrouted domain string), and that the dual `@changeset`/`@form` flow preserves
+selected values for `parent_uuid` / `featured_product_uuid` / `category_uuid`
+while TranslationTabs still reads `@changeset`.

@@ -34,3 +34,16 @@ dialyzer (0 errors, 0 skips). `mix test` — 185 tests, 0 failures.
 
 None. (The MED above is surfaced for the maintainer's release-time pin
 decision, not parked work.)
+
+---
+
+## Round 2 (2026-06-05) — i18n + form selects
+
+- Body-string gettext migration (hybrid split + et/ru translations) and the
+  3 changeset-backed form-select migrations landed on this PR. Codex round-2
+  review: **no issues**. Map-backed selects + the map-backed import-config form
+  intentionally left as-is (would require rewiring the non-changeset validate
+  flow). The new et/ru domain translations are best-effort and welcome a native
+  review pass.
+- `.dialyzer_ignore.exs` restored for the gettext `Expo.PluralForms` opaque
+  false-positive (surfaces once plural translations exist).
