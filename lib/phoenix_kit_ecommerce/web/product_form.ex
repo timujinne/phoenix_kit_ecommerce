@@ -44,7 +44,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     socket
     |> assign(:page_title, "New Product")
     |> assign(:product, product)
-    |> assign(:changeset, changeset)
+    |> assign_form(changeset)
     |> assign(:categories, categories)
     |> assign(:currency, currency)
     |> assign(:option_schema, option_schema)
@@ -99,7 +99,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     socket
     |> assign(:page_title, "Edit #{product_title}")
     |> assign(:product, product)
-    |> assign(:changeset, changeset)
+    |> assign_form(changeset)
     |> assign(:categories, categories)
     |> assign(:currency, currency)
     |> assign(:option_schema, option_schema)
@@ -188,7 +188,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     socket = maybe_update_price_range(socket, product_params, metadata)
 
     socket
-    |> assign(:changeset, changeset)
+    |> assign_form(changeset)
     |> assign(:metadata, metadata)
     |> assign(:new_value_inputs, new_value_inputs)
     |> assign(:add_option_key, add_option_key)
@@ -620,7 +620,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
          |> push_navigate(to: Routes.path("/admin/shop/products/#{product.uuid}"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :changeset, changeset)}
+        {:noreply, assign_form(socket, changeset)}
     end
   rescue
     e ->
@@ -645,11 +645,11 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
         {:noreply,
          socket
          |> assign(:product, product)
-         |> assign(:changeset, changeset)
+         |> assign_form(changeset)
          |> put_flash(:info, "Product updated")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :changeset, changeset)}
+        {:noreply, assign_form(socket, changeset)}
     end
   rescue
     e ->
@@ -691,7 +691,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
         <%!-- Form --%>
         <.form
-          for={@changeset}
+          for={@form}
           phx-change="validate"
           phx-submit="save"
           class="space-y-6"
@@ -733,32 +733,11 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Status</span>
-                  </label>
-                  <select
-                    name="product[status]"
-                    class="select select-bordered w-full focus:select-primary"
-                  >
-                    <option
-                      value="draft"
-                      selected={Ecto.Changeset.get_field(@changeset, :status) == "draft"}
-                    >
-                      Draft
-                    </option>
-                    <option
-                      value="active"
-                      selected={Ecto.Changeset.get_field(@changeset, :status) == "active"}
-                    >
-                      Active
-                    </option>
-                    <option
-                      value="archived"
-                      selected={Ecto.Changeset.get_field(@changeset, :status) == "archived"}
-                    >
-                      Archived
-                    </option>
-                  </select>
+                  <.select
+                    field={@form[:status]}
+                    label="Status"
+                    options={[{"Draft", "draft"}, {"Active", "active"}, {"Archived", "archived"}]}
+                  />
                 </div>
 
                 <%!-- Row 2: Slug + Vendor --%>
@@ -781,40 +760,21 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Vendor</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:vendor]}
                     type="text"
-                    name="product[vendor]"
-                    value={Ecto.Changeset.get_field(@changeset, :vendor)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Vendor"
                     placeholder="Brand or manufacturer"
                   />
                 </div>
 
                 <%!-- Row 3: Product Type + Category --%>
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Product Type</span>
-                  </label>
-                  <select
-                    name="product[product_type]"
-                    class="select select-bordered w-full focus:select-primary"
-                  >
-                    <option
-                      value="physical"
-                      selected={Ecto.Changeset.get_field(@changeset, :product_type) == "physical"}
-                    >
-                      Physical
-                    </option>
-                    <option
-                      value="digital"
-                      selected={Ecto.Changeset.get_field(@changeset, :product_type) == "digital"}
-                    >
-                      Digital
-                    </option>
-                  </select>
+                  <.select
+                    field={@form[:product_type]}
+                    label="Product Type"
+                    options={[{"Physical", "physical"}, {"Digital", "digital"}]}
+                  />
                 </div>
 
                 <div class="form-control w-full">
@@ -865,17 +825,10 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
               <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-4">
                 <%!-- Row 1: Base Price + Compare Price --%>
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Base Price *</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:price]}
                     type="number"
-                    name="product[price]"
-                    value={Ecto.Changeset.get_field(@changeset, :price)}
-                    class={[
-                      "input input-bordered w-full focus:input-primary",
-                      @changeset.errors[:price] && "input-error"
-                    ]}
+                    label="Base Price *"
                     step="0.01"
                     min="0"
                     required
@@ -883,14 +836,10 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Compare at Price</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:compare_at_price]}
                     type="number"
-                    name="product[compare_at_price]"
-                    value={Ecto.Changeset.get_field(@changeset, :compare_at_price)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Compare at Price"
                     step="0.01"
                     min="0"
                     placeholder="Original price"
@@ -899,14 +848,10 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
                 <%!-- Row 2: Cost + Taxable --%>
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Cost per Item</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:cost_per_item]}
                     type="number"
-                    name="product[cost_per_item]"
-                    value={Ecto.Changeset.get_field(@changeset, :cost_per_item)}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Cost per Item"
                     step="0.01"
                     min="0"
                     placeholder="Your cost for profit calculation"
@@ -1747,6 +1692,14 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
         />
       </div>
     """
+  end
+
+  # Keep both @changeset (consumed by TranslationTabs / multilang fields) and
+  # @form (consumed by core <.input>/<.select>) in sync from a single source.
+  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
+    socket
+    |> assign(:changeset, changeset)
+    |> assign(:form, to_form(changeset))
   end
 
   # Build unified image list from featured + gallery (featured always first)

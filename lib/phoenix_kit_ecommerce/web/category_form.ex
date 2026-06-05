@@ -46,7 +46,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     socket
     |> assign(:page_title, "New Category")
     |> assign(:category, category)
-    |> assign(:changeset, changeset)
+    |> assign_form(changeset)
     |> assign(:parent_options, parent_options)
     |> assign(:category_options, [])
     |> assign(:global_options, global_options)
@@ -79,7 +79,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
       "Edit #{Translations.get(category, :name, TranslationTabs.get_default_language())}"
     )
     |> assign(:category, category)
-    |> assign(:changeset, changeset)
+    |> assign_form(changeset)
     |> assign(:parent_options, parent_options)
     |> assign(:category_options, category_options)
     |> assign(:global_options, global_options)
@@ -134,7 +134,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
       |> Map.put(:action, :validate)
 
     socket
-    |> assign(:changeset, changeset)
+    |> assign_form(changeset)
     |> assign(:category_translations, category_translations)
     |> then(&{:noreply, &1})
   end
@@ -382,7 +382,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
         <%!-- Form --%>
         <.form
-          for={@changeset}
+          for={@form}
           phx-change="validate"
           phx-submit="save"
           class="space-y-6"
@@ -460,46 +460,26 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Position</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:position]}
                     type="number"
-                    name="category[position]"
-                    value={Ecto.Changeset.get_field(@changeset, :position) || 0}
-                    class="input input-bordered w-full focus:input-primary"
+                    label="Position"
+                    value={@form[:position].value || 0}
                     min="0"
                     placeholder="0"
                   />
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Status</span>
-                  </label>
-                  <select
-                    name="category[status]"
-                    class="select select-bordered w-full focus:select-primary"
-                  >
-                    <option
-                      value="active"
-                      selected={Ecto.Changeset.get_field(@changeset, :status) == "active"}
-                    >
-                      Active — Category and products visible
-                    </option>
-                    <option
-                      value="unlisted"
-                      selected={Ecto.Changeset.get_field(@changeset, :status) == "unlisted"}
-                    >
-                      Unlisted — Category hidden, products still visible
-                    </option>
-                    <option
-                      value="hidden"
-                      selected={Ecto.Changeset.get_field(@changeset, :status) == "hidden"}
-                    >
-                      Hidden — Category and products hidden
-                    </option>
-                  </select>
+                  <.select
+                    field={@form[:status]}
+                    label="Status"
+                    options={[
+                      {"Active — Category and products visible", "active"},
+                      {"Unlisted — Category hidden, products still visible", "unlisted"},
+                      {"Hidden — Category and products hidden", "hidden"}
+                    ]}
+                  />
                   <label class="label">
                     <span class="label-text-alt text-base-content/50">
                       Unlisted: products appear in search/catalog but category not in menu
@@ -927,7 +907,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          |> push_navigate(to: Routes.path("/admin/shop/categories"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :changeset, changeset)}
+        {:noreply, assign_form(socket, changeset)}
     end
   end
 
@@ -948,11 +928,19 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          |> push_navigate(to: Routes.path("/admin/shop/categories"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :changeset, changeset)}
+        {:noreply, assign_form(socket, changeset)}
     end
   end
 
   # Private helpers
+
+  # Keep both @changeset (consumed by TranslationTabs / multilang fields) and
+  # @form (consumed by core <.input>/<.select>) in sync from a single source.
+  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
+    socket
+    |> assign(:changeset, changeset)
+    |> assign(:form, to_form(changeset))
+  end
 
   defp initial_opt_form_data do
     %{

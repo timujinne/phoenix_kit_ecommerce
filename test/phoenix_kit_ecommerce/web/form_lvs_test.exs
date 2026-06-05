@@ -34,4 +34,44 @@ defmodule PhoenixKitEcommerce.Web.FormLvsTest do
       assert rendered =~ "can&#39;t be blank"
     end
   end
+
+  describe "CategoryForm validate errors" do
+    test "renders inline error for negative position on validate", %{conn: conn} do
+      {:ok, view, html} = live(conn, "/en/admin/shop/categories/new")
+
+      refute html =~ "must be greater than or equal to"
+
+      rendered =
+        view
+        |> form(~s(form.space-y-6), %{
+          "category" => %{"name" => "Tools", "position" => "-1"}
+        })
+        |> render_change()
+
+      # `position` is a non-translatable scalar migrated to core <.input>;
+      # the inline error proves @form is kept in sync via assign_form/2 and
+      # :action is set on validate.
+      assert rendered =~ "must be greater than or equal to"
+    end
+  end
+
+  describe "ProductForm validate errors" do
+    test "renders inline error for negative compare-at price on validate", %{conn: conn} do
+      {:ok, view, html} = live(conn, "/en/admin/shop/products/new")
+
+      refute html =~ "must be greater than or equal to"
+
+      rendered =
+        view
+        |> form(~s(form.space-y-6), %{
+          "product" => %{"title" => "Widget", "price" => "10.00", "compare_at_price" => "-1"}
+        })
+        |> render_change()
+
+      # `compare_at_price` is a non-translatable scalar migrated to core
+      # <.input>; the inline error proves @form is kept in sync via
+      # assign_form/2 and :action is set on validate.
+      assert rendered =~ "must be greater than or equal to"
+    end
+  end
 end
