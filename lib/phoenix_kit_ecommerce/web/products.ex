@@ -593,19 +593,19 @@ defmodule PhoenixKitEcommerce.Web.Products do
               <.table_row_menu_link
                 navigate={Routes.path("/admin/shop/products/#{product.uuid}")}
                 icon="hero-eye"
-                label={gettext("View")}
+                label={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
               />
               <.table_row_menu_link
                 navigate={Routes.path("/admin/shop/products/#{product.uuid}/edit")}
                 icon="hero-pencil"
-                label={gettext("Edit")}
+                label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
               />
               <.table_row_menu_divider />
               <.table_row_menu_button
                 phx-click="confirm_delete"
                 phx-value-uuid={product.uuid}
                 icon="hero-trash"
-                label={gettext("Delete")}
+                label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
                 variant="error"
               />
             </.table_row_menu>
@@ -722,19 +722,19 @@ defmodule PhoenixKitEcommerce.Web.Products do
                         <.table_row_menu_link
                           navigate={Routes.path("/admin/shop/products/#{product.uuid}")}
                           icon="hero-eye"
-                          label={gettext("View")}
+                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
                         />
                         <.table_row_menu_link
                           navigate={Routes.path("/admin/shop/products/#{product.uuid}/edit")}
                           icon="hero-pencil"
-                          label={gettext("Edit")}
+                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
                         />
                         <.table_row_menu_divider />
                         <.table_row_menu_button
                           phx-click="confirm_delete"
                           phx-value-uuid={product.uuid}
                           icon="hero-trash"
-                          label={gettext("Delete")}
+                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
                           variant="error"
                         />
                       </.table_row_menu>

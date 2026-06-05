@@ -388,11 +388,11 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                             phx-click="remove_filter"
                             phx-value-key={filter["key"]}
                             class="btn btn-outline btn-error btn-xs tooltip tooltip-bottom"
-                            data-tip={gettext("Remove")}
+                            data-tip={Gettext.gettext(PhoenixKitWeb.Gettext, "Remove")}
                             data-confirm="Remove this filter?"
                           >
                             <.icon name="hero-trash" class="w-4 h-4 hidden sm:inline" />
-                            <span class="sm:hidden whitespace-nowrap">{gettext("Remove")}</span>
+                            <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "Remove")}</span>
                           </button>
                         <% end %>
                       </td>

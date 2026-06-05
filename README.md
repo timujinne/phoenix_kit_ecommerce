@@ -160,6 +160,11 @@ price = Shop.calculate_product_price(product, selected_specs)
 {:ok, order} = Shop.convert_cart_to_order(cart)
 ```
 
+> Payments (Stripe etc.) are handled by **PhoenixKitBilling**. To configure and
+> test payment providers — including running Stripe webhooks against
+> `localhost` via the Stripe CLI — see **"Testing Stripe locally"** in the
+> [phoenix_kit_billing README](https://github.com/BeamLabEU/phoenix_kit_billing#testing-stripe-locally).
+
 ### Shipping Methods
 
 ```elixir

@@ -461,7 +461,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
               <.table_row_menu_link
                 navigate={Routes.path("/admin/shop/categories/#{category.uuid}/edit")}
                 icon="hero-pencil"
-                label={gettext("Edit")}
+                label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
               />
               <.table_row_menu_divider />
               <.table_row_menu_button
@@ -469,7 +469,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                 phx-value-uuid={category.uuid}
                 data-confirm={gettext("Delete this category?")}
                 icon="hero-trash"
-                label={gettext("Delete")}
+                label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
                 variant="error"
               />
             </.table_row_menu>
@@ -563,7 +563,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                         <.table_row_menu_link
                           navigate={Routes.path("/admin/shop/categories/#{category.uuid}/edit")}
                           icon="hero-pencil"
-                          label={gettext("Edit")}
+                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
                         />
                         <.table_row_menu_divider />
                         <.table_row_menu_button
@@ -571,7 +571,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                           phx-value-uuid={category.uuid}
                           data-confirm={gettext("Delete this category?")}
                           icon="hero-trash"
-                          label={gettext("Delete")}
+                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
                           variant="error"
                         />
                       </.table_row_menu>
