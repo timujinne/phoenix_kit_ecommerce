@@ -1096,11 +1096,11 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                                 phx-click="delete_import"
                                 phx-value-id={import.uuid}
                                 class="btn btn-xs btn-outline btn-error tooltip tooltip-bottom"
-                                data-tip={gettext("Delete")}
+                                data-tip={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
                                 data-confirm="Are you sure you want to delete this import log?"
                               >
                                 <.icon name="hero-trash" class="w-4 h-4 hidden sm:inline" />
-                                <span class="sm:hidden whitespace-nowrap">{gettext("Delete")}</span>
+                                <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}</span>
                               </button>
                             <% end %>
                           </div>

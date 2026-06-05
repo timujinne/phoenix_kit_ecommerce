@@ -80,7 +80,7 @@
               <% end %>
 
               <div class="flex justify-between text-lg font-bold pt-2 border-t border-base-200">
-                <span>{gettext("Total")}</span>
+                <span>{Gettext.gettext(PhoenixKitWeb.Gettext, "Total")}</span>
                 <span>{format_price(@order.total, @currency)}</span>
               </div>
             </div>
@@ -141,7 +141,7 @@
 
             <%!-- Status --%>
             <div class="mb-4">
-              <span class="text-sm text-base-content/70">{gettext("Status")}</span>
+              <span class="text-sm text-base-content/70">{Gettext.gettext(PhoenixKitWeb.Gettext, "Status")}</span>
               <div class="mt-1">
                 <span class={"badge #{status_badge_class(@order.status)} capitalize"}>
                   {@order.status}
@@ -169,7 +169,7 @@
 
             <%!-- Total --%>
             <div class="mb-4">
-              <span class="text-sm text-base-content/70">{gettext("Total")}</span>
+              <span class="text-sm text-base-content/70">{Gettext.gettext(PhoenixKitWeb.Gettext, "Total")}</span>
               <div class="mt-1 text-xl font-bold">{format_price(@order.total, @currency)}</div>
             </div>
 

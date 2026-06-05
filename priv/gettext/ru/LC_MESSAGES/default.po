@@ -47,3 +47,369 @@ msgstr "Магазин"
 #: lib/phoenix_kit_ecommerce.ex
 msgid "My Cart"
 msgstr "Моя корзина"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:53
+#, elixir-autogen, elixir-format
+msgid "%{count} order"
+msgid_plural "%{count} orders"
+msgstr[0] "%{count} заказ"
+msgstr[1] "%{count} заказа"
+msgstr[2] "%{count} заказов"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:88
+#, elixir-autogen, elixir-format
+msgid "A slug is required."
+msgstr "Требуется ярлык (slug)."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:89
+#, elixir-autogen, elixir-format
+msgid "A title is required."
+msgstr "Требуется заголовок."
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:24
+#, elixir-autogen, elixir-format
+msgid "All Statuses"
+msgstr "Все статусы"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:78
+#, elixir-autogen, elixir-format
+msgid "An account with this email address already exists."
+msgstr "Учётная запись с этим адресом электронной почты уже существует."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:10
+#, elixir-autogen, elixir-format
+msgid "Back to Orders"
+msgstr "Назад к заказам"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:93
+#, elixir-autogen, elixir-format
+msgid "Billing Information"
+msgstr "Платёжная информация"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.ex:27
+#: lib/phoenix_kit_ecommerce/web/user_orders.ex:34
+#, elixir-autogen, elixir-format
+msgid "Billing module is not enabled"
+msgstr "Модуль биллинга не включён"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:80
+#, elixir-autogen, elixir-format
+msgid "Browse Products"
+msgstr "Просмотреть товары"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:14
+#, elixir-autogen, elixir-format
+msgid "Browse Shop"
+msgstr "Перейти в магазин"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:41
+#, elixir-autogen, elixir-format
+msgid "Cancelled"
+msgstr "Отменён"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:212
+#, elixir-autogen, elixir-format
+msgid "Continue Shopping"
+msgstr "Продолжить покупки"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:470
+#: lib/phoenix_kit_ecommerce/web/categories.ex:572
+#, elixir-autogen, elixir-format
+msgid "Delete this category?"
+msgstr "Удалить эту категорию?"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:35
+#, elixir-autogen, elixir-format
+msgid "Delivered"
+msgstr "Доставлен"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:77
+#, elixir-autogen, elixir-format
+msgid "Discount"
+msgstr "Скидка"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:66
+#, elixir-autogen, elixir-format
+msgid "Every image download failed."
+msgstr "Не удалось загрузить ни одно изображение."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:205
+#, elixir-autogen, elixir-format
+msgid "If you have questions about your order, please contact our support team."
+msgstr "Если у вас есть вопросы о заказе, обратитесь в нашу службу поддержки."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:166
+#, elixir-autogen, elixir-format
+msgid "Items"
+msgstr "Позиции"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.ex:22
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:6
+#, elixir-autogen, elixir-format
+msgid "My Orders"
+msgstr "Мои заказы"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:203
+#, elixir-autogen, elixir-format
+msgid "Need help?"
+msgstr "Нужна помощь?"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:127
+#, elixir-autogen, elixir-format
+msgid "No billing information available"
+msgstr "Платёжная информация отсутствует"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:91
+#, elixir-autogen, elixir-format
+msgid "No images could be downloaded."
+msgstr "Не удалось загрузить ни одного изображения."
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:71
+#, elixir-autogen, elixir-format
+msgid "No orders with this status. Try a different filter."
+msgstr "Нет заказов с этим статусом. Попробуйте другой фильтр."
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:68
+#, elixir-autogen, elixir-format
+msgid "No orders yet"
+msgstr "Заказов пока нет"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:92
+#, elixir-autogen, elixir-format
+msgid "No shipping method is available."
+msgstr "Нет доступных способов доставки."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:67
+#, elixir-autogen, elixir-format
+msgid "None of the image URLs are valid."
+msgstr "Ни один из URL-адресов изображений недействителен."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.ex:59
+#, elixir-autogen, elixir-format
+msgid "Order %{number}"
+msgstr "Заказ %{number}"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:160
+#, elixir-autogen, elixir-format
+msgid "Order Date"
+msgstr "Дата заказа"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:39
+#, elixir-autogen, elixir-format
+msgid "Order Items"
+msgstr "Позиции заказа"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:154
+#, elixir-autogen, elixir-format
+msgid "Order Number"
+msgstr "Номер заказа"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:140
+#, elixir-autogen, elixir-format
+msgid "Order Summary"
+msgstr "Сводка по заказу"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.ex:39
+#, elixir-autogen, elixir-format
+msgid "Order not found"
+msgstr "Заказ не найден"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:130
+#, elixir-autogen, elixir-format
+msgid "Page %{page} of %{total}"
+msgstr "Страница %{page} из %{total}"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:25
+#, elixir-autogen, elixir-format
+msgid "Placed on %{date}"
+msgstr "Оформлен %{date}"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:127
+#, elixir-autogen, elixir-format
+msgid "Previous"
+msgstr "Назад"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:29
+#, elixir-autogen, elixir-format
+msgid "Processing"
+msgstr "В обработке"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1088
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1091
+#, elixir-autogen, elixir-format
+msgid "Retry"
+msgstr "Повторить"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Shipped"
+msgstr "Отправлен"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:73
+#, elixir-autogen, elixir-format
+msgid "Start shopping to see your orders here."
+msgstr "Начните покупки, чтобы увидеть здесь свои заказы."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:64
+#, elixir-autogen, elixir-format
+msgid "Subtotal"
+msgstr "Промежуточный итог"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:70
+#, elixir-autogen, elixir-format
+msgid "Tax"
+msgstr "Налог"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:84
+#, elixir-autogen, elixir-format
+msgid "The CSV file format is invalid."
+msgstr "Неверный формат CSV-файла."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:85
+#, elixir-autogen, elixir-format
+msgid "The URL host is not allowed."
+msgstr "Хост URL-адреса не разрешён."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:97
+#, elixir-autogen, elixir-format
+msgid "The URL redirected too many times."
+msgstr "URL-адрес перенаправлялся слишком много раз."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:86
+#, elixir-autogen, elixir-format
+msgid "The URL scheme is not allowed."
+msgstr "Схема URL-адреса не разрешена."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:73
+#, elixir-autogen, elixir-format
+msgid "The cart is empty."
+msgstr "Корзина пуста."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:81
+#, elixir-autogen, elixir-format
+msgid "The file could not be found."
+msgstr "Файл не найден."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:101
+#, elixir-autogen, elixir-format
+msgid "The file format is not recognized."
+msgstr "Формат файла не распознан."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:80
+#, elixir-autogen, elixir-format
+msgid "The file is empty."
+msgstr "Файл пуст."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:83
+#, elixir-autogen, elixir-format
+msgid "The import log could not be found."
+msgstr "Журнал импорта не найден."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:100
+#, elixir-autogen, elixir-format
+msgid "The operation timed out."
+msgstr "Время ожидания операции истекло."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:94
+#, elixir-autogen, elixir-format
+msgid "The payment option could not be found."
+msgstr "Способ оплаты не найден."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:95
+#, elixir-autogen, elixir-format
+msgid "The product could not be found."
+msgstr "Товар не найден."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:93
+#, elixir-autogen, elixir-format
+msgid "The requested record was not found."
+msgstr "Запрошенная запись не найдена."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:87
+#, elixir-autogen, elixir-format
+msgid "The response is missing a content type."
+msgstr "В ответе отсутствует тип содержимого."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:98
+#, elixir-autogen, elixir-format
+msgid "The server returned an error."
+msgstr "Сервер вернул ошибку."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:99
+#, elixir-autogen, elixir-format
+msgid "The temporary file is missing."
+msgstr "Временный файл отсутствует."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:90
+#, elixir-autogen, elixir-format
+msgid "There are no images to process."
+msgstr "Нет изображений для обработки."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:71
+#, elixir-autogen, elixir-format
+msgid "This cart is already being converted to an order."
+msgstr "Эта корзина уже преобразуется в заказ."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:74
+#, elixir-autogen, elixir-format
+msgid "This cart is no longer active."
+msgstr "Эта корзина больше не активна."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:75
+#, elixir-autogen, elixir-format
+msgid "This email address is already registered."
+msgstr "Этот адрес электронной почты уже зарегистрирован."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:68
+#, elixir-autogen, elixir-format
+msgid "This has already been migrated."
+msgstr "Это уже было перенесено."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:194
+#, elixir-autogen, elixir-format
+msgid "This order has been cancelled."
+msgstr "Этот заказ был отменён."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:96
+#, elixir-autogen, elixir-format
+msgid "Too many requests. Please try again later."
+msgstr "Слишком много запросов. Пожалуйста, повторите попытку позже."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:106
+#, elixir-autogen, elixir-format
+msgid "Unexpected error: %{reason}"
+msgstr "Неожиданная ошибка: %{reason}"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1076
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1080
+#, elixir-autogen, elixir-format
+msgid "View Details"
+msgstr "Подробнее"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:7
+#, elixir-autogen, elixir-format
+msgid "View your order history"
+msgstr "Просмотр истории заказов"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:82
+#, elixir-autogen, elixir-format
+msgid "You do not have permission to perform this action."
+msgstr "У вас нет прав для выполнения этого действия."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:180
+#, elixir-autogen, elixir-format
+msgid "Your order has been delivered."
+msgstr "Ваш заказ доставлен."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:187
+#, elixir-autogen, elixir-format
+msgid "Your order is on its way!"
+msgstr "Ваш заказ в пути!"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:93
+#, elixir-autogen, elixir-format
+msgid "item"
+msgid_plural "items"
+msgstr[0] "товар"
+msgstr[1] "товара"
+msgstr[2] "товаров"

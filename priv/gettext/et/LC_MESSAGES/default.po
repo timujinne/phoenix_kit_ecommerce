@@ -46,3 +46,367 @@ msgstr "Pood"
 #: lib/phoenix_kit_ecommerce.ex
 msgid "My Cart"
 msgstr "Minu ostukorv"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:53
+#, elixir-autogen, elixir-format
+msgid "%{count} order"
+msgid_plural "%{count} orders"
+msgstr[0] "%{count} tellimus"
+msgstr[1] "%{count} tellimust"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:88
+#, elixir-autogen, elixir-format
+msgid "A slug is required."
+msgstr "Nõutav on permalink."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:89
+#, elixir-autogen, elixir-format
+msgid "A title is required."
+msgstr "Nõutav on pealkiri."
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:24
+#, elixir-autogen, elixir-format
+msgid "All Statuses"
+msgstr "Kõik olekud"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:78
+#, elixir-autogen, elixir-format
+msgid "An account with this email address already exists."
+msgstr "Selle e-posti aadressiga konto on juba olemas."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:10
+#, elixir-autogen, elixir-format
+msgid "Back to Orders"
+msgstr "Tagasi tellimuste juurde"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:93
+#, elixir-autogen, elixir-format
+msgid "Billing Information"
+msgstr "Arvelduse teave"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.ex:27
+#: lib/phoenix_kit_ecommerce/web/user_orders.ex:34
+#, elixir-autogen, elixir-format
+msgid "Billing module is not enabled"
+msgstr "Arvelduse moodul ei ole aktiveeritud"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:80
+#, elixir-autogen, elixir-format
+msgid "Browse Products"
+msgstr "Sirvi tooteid"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:14
+#, elixir-autogen, elixir-format
+msgid "Browse Shop"
+msgstr "Sirvi poodi"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:41
+#, elixir-autogen, elixir-format
+msgid "Cancelled"
+msgstr "Tühistatud"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:212
+#, elixir-autogen, elixir-format
+msgid "Continue Shopping"
+msgstr "Jätka ostlemist"
+
+#: lib/phoenix_kit_ecommerce/web/categories.ex:470
+#: lib/phoenix_kit_ecommerce/web/categories.ex:572
+#, elixir-autogen, elixir-format
+msgid "Delete this category?"
+msgstr "Kustutada see kategooria?"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:35
+#, elixir-autogen, elixir-format
+msgid "Delivered"
+msgstr "Tarnitud"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:77
+#, elixir-autogen, elixir-format
+msgid "Discount"
+msgstr "Allahindlus"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:66
+#, elixir-autogen, elixir-format
+msgid "Every image download failed."
+msgstr "Kõigi piltide allalaadimine ebaõnnestus."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:205
+#, elixir-autogen, elixir-format
+msgid "If you have questions about your order, please contact our support team."
+msgstr "Kui teil on tellimuse kohta küsimusi, võtke ühendust meie tugitiimiga."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:166
+#, elixir-autogen, elixir-format
+msgid "Items"
+msgstr "Tooted"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.ex:22
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:6
+#, elixir-autogen, elixir-format
+msgid "My Orders"
+msgstr "Minu tellimused"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:203
+#, elixir-autogen, elixir-format
+msgid "Need help?"
+msgstr "Vajate abi?"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:127
+#, elixir-autogen, elixir-format
+msgid "No billing information available"
+msgstr "Arvelduse teavet pole saadaval"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:91
+#, elixir-autogen, elixir-format
+msgid "No images could be downloaded."
+msgstr "Ühtegi pilti ei õnnestunud alla laadida."
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:71
+#, elixir-autogen, elixir-format
+msgid "No orders with this status. Try a different filter."
+msgstr "Selle olekuga tellimusi pole. Proovige teist filtrit."
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:68
+#, elixir-autogen, elixir-format
+msgid "No orders yet"
+msgstr "Tellimusi pole veel"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:92
+#, elixir-autogen, elixir-format
+msgid "No shipping method is available."
+msgstr "Ühtegi tarneviisi pole saadaval."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:67
+#, elixir-autogen, elixir-format
+msgid "None of the image URLs are valid."
+msgstr "Ükski pildi URL ei ole kehtiv."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.ex:59
+#, elixir-autogen, elixir-format
+msgid "Order %{number}"
+msgstr "Tellimus %{number}"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:160
+#, elixir-autogen, elixir-format
+msgid "Order Date"
+msgstr "Tellimuse kuupäev"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:39
+#, elixir-autogen, elixir-format
+msgid "Order Items"
+msgstr "Tellimuse tooted"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:154
+#, elixir-autogen, elixir-format
+msgid "Order Number"
+msgstr "Tellimuse number"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:140
+#, elixir-autogen, elixir-format
+msgid "Order Summary"
+msgstr "Tellimuse kokkuvõte"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.ex:39
+#, elixir-autogen, elixir-format
+msgid "Order not found"
+msgstr "Tellimust ei leitud"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:130
+#, elixir-autogen, elixir-format
+msgid "Page %{page} of %{total}"
+msgstr "Lehekülg %{page} / %{total}"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:25
+#, elixir-autogen, elixir-format
+msgid "Placed on %{date}"
+msgstr "Esitatud %{date}"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:127
+#, elixir-autogen, elixir-format
+msgid "Previous"
+msgstr "Eelmine"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:29
+#, elixir-autogen, elixir-format
+msgid "Processing"
+msgstr "Töötlemisel"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1088
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1091
+#, elixir-autogen, elixir-format
+msgid "Retry"
+msgstr "Proovi uuesti"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:32
+#, elixir-autogen, elixir-format
+msgid "Shipped"
+msgstr "Saadetud"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:73
+#, elixir-autogen, elixir-format
+msgid "Start shopping to see your orders here."
+msgstr "Alustage ostlemist, et näha oma tellimusi siin."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:64
+#, elixir-autogen, elixir-format
+msgid "Subtotal"
+msgstr "Vahesumma"
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:70
+#, elixir-autogen, elixir-format
+msgid "Tax"
+msgstr "Maks"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:84
+#, elixir-autogen, elixir-format
+msgid "The CSV file format is invalid."
+msgstr "CSV-faili vorming on vigane."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:85
+#, elixir-autogen, elixir-format
+msgid "The URL host is not allowed."
+msgstr "URL-i host ei ole lubatud."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:97
+#, elixir-autogen, elixir-format
+msgid "The URL redirected too many times."
+msgstr "URL suunati ümber liiga palju kordi."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:86
+#, elixir-autogen, elixir-format
+msgid "The URL scheme is not allowed."
+msgstr "URL-i skeem ei ole lubatud."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:73
+#, elixir-autogen, elixir-format
+msgid "The cart is empty."
+msgstr "Ostukorv on tühi."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:81
+#, elixir-autogen, elixir-format
+msgid "The file could not be found."
+msgstr "Faili ei leitud."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:101
+#, elixir-autogen, elixir-format
+msgid "The file format is not recognized."
+msgstr "Faili vormingut ei tuvastatud."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:80
+#, elixir-autogen, elixir-format
+msgid "The file is empty."
+msgstr "Fail on tühi."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:83
+#, elixir-autogen, elixir-format
+msgid "The import log could not be found."
+msgstr "Impordi logi ei leitud."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:100
+#, elixir-autogen, elixir-format
+msgid "The operation timed out."
+msgstr "Toiming aegus."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:94
+#, elixir-autogen, elixir-format
+msgid "The payment option could not be found."
+msgstr "Makseviisi ei leitud."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:95
+#, elixir-autogen, elixir-format
+msgid "The product could not be found."
+msgstr "Toodet ei leitud."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:93
+#, elixir-autogen, elixir-format
+msgid "The requested record was not found."
+msgstr "Soovitud kirjet ei leitud."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:87
+#, elixir-autogen, elixir-format
+msgid "The response is missing a content type."
+msgstr "Vastusel puudub sisutüüp."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:98
+#, elixir-autogen, elixir-format
+msgid "The server returned an error."
+msgstr "Server tagastas vea."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:99
+#, elixir-autogen, elixir-format
+msgid "The temporary file is missing."
+msgstr "Ajutine fail puudub."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:90
+#, elixir-autogen, elixir-format
+msgid "There are no images to process."
+msgstr "Töödeldavaid pilte pole."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:71
+#, elixir-autogen, elixir-format
+msgid "This cart is already being converted to an order."
+msgstr "See ostukorv on juba tellimuseks teisendamisel."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:74
+#, elixir-autogen, elixir-format
+msgid "This cart is no longer active."
+msgstr "See ostukorv ei ole enam aktiivne."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:75
+#, elixir-autogen, elixir-format
+msgid "This email address is already registered."
+msgstr "See e-posti aadress on juba registreeritud."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:68
+#, elixir-autogen, elixir-format
+msgid "This has already been migrated."
+msgstr "See on juba migreeritud."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:194
+#, elixir-autogen, elixir-format
+msgid "This order has been cancelled."
+msgstr "See tellimus on tühistatud."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:96
+#, elixir-autogen, elixir-format
+msgid "Too many requests. Please try again later."
+msgstr "Liiga palju päringuid. Palun proovige hiljem uuesti."
+
+#: lib/phoenix_kit_ecommerce/errors.ex:106
+#, elixir-autogen, elixir-format
+msgid "Unexpected error: %{reason}"
+msgstr "Ootamatu viga: %{reason}"
+
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1076
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1080
+#, elixir-autogen, elixir-format
+msgid "View Details"
+msgstr "Vaata üksikasju"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:7
+#, elixir-autogen, elixir-format
+msgid "View your order history"
+msgstr "Vaadake oma tellimuste ajalugu"
+
+#: lib/phoenix_kit_ecommerce/errors.ex:82
+#, elixir-autogen, elixir-format
+msgid "You do not have permission to perform this action."
+msgstr "Teil pole õigust seda toimingut teha."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:180
+#, elixir-autogen, elixir-format
+msgid "Your order has been delivered."
+msgstr "Teie tellimus on kohale toimetatud."
+
+#: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:187
+#, elixir-autogen, elixir-format
+msgid "Your order is on its way!"
+msgstr "Teie tellimus on teel!"
+
+#: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:93
+#, elixir-autogen, elixir-format
+msgid "item"
+msgid_plural "items"
+msgstr[0] "toode"
+msgstr[1] "toodet"
