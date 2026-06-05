@@ -440,23 +440,12 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Parent Category</span>
-                  </label>
-                  <select
-                    name="category[parent_uuid]"
-                    class="select select-bordered w-full focus:select-primary"
-                  >
-                    <option value="">No parent (root category)</option>
-                    <%= for {name, uuid} <- @parent_options do %>
-                      <option
-                        value={uuid}
-                        selected={Ecto.Changeset.get_field(@changeset, :parent_uuid) == uuid}
-                      >
-                        {name}
-                      </option>
-                    <% end %>
-                  </select>
+                  <.select
+                    field={@form[:parent_uuid]}
+                    label="Parent Category"
+                    prompt="No parent (root category)"
+                    options={@parent_options}
+                  />
                 </div>
 
                 <div class="form-control w-full">
@@ -555,25 +544,12 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                       <% end %>
                     </label>
                     <%= if @product_options != [] do %>
-                      <select
-                        name="category[featured_product_uuid]"
-                        class={[
-                          "select select-bordered w-full focus:select-primary",
-                          @image_uuid && "opacity-50"
-                        ]}
-                      >
-                        <option value="">Auto-detect (first product with image)</option>
-                        <%= for {name, uuid} <- @product_options do %>
-                          <option
-                            value={uuid}
-                            selected={
-                              Ecto.Changeset.get_field(@changeset, :featured_product_uuid) == uuid
-                            }
-                          >
-                            {name}
-                          </option>
-                        <% end %>
-                      </select>
+                      <.select
+                        field={@form[:featured_product_uuid]}
+                        prompt="Auto-detect (first product with image)"
+                        options={@product_options}
+                        class={@image_uuid && "opacity-50"}
+                      />
                     <% else %>
                       <div class="text-sm text-base-content/50 py-2">
                         <.icon name="hero-information-circle" class="w-4 h-4 inline mr-1" />

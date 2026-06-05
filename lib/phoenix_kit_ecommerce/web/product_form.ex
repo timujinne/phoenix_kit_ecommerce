@@ -778,23 +778,12 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">Category</span>
-                  </label>
-                  <select
-                    name="product[category_uuid]"
-                    class="select select-bordered w-full focus:select-primary"
-                  >
-                    <option value="">No category</option>
-                    <%= for {name, uuid} <- @categories do %>
-                      <option
-                        value={uuid}
-                        selected={Ecto.Changeset.get_field(@changeset, :category_uuid) == uuid}
-                      >
-                        {name}
-                      </option>
-                    <% end %>
-                  </select>
+                  <.select
+                    field={@form[:category_uuid]}
+                    label="Category"
+                    prompt="No category"
+                    options={@categories}
+                  />
                 </div>
 
                 <%!-- Row 4: Description (full width) --%>

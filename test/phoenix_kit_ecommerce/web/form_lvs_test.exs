@@ -12,6 +12,8 @@ defmodule PhoenixKitEcommerce.Web.FormLvsTest do
 
   use PhoenixKitEcommerce.LiveCase, async: true
 
+  alias PhoenixKitEcommerce, as: Shop
+
   setup %{conn: conn} do
     scope = fake_scope()
     {:ok, conn: put_test_scope(conn, scope)}
@@ -52,6 +54,44 @@ defmodule PhoenixKitEcommerce.Web.FormLvsTest do
       # the inline error proves @form is kept in sync via assign_form/2 and
       # :action is set on validate.
       assert rendered =~ "must be greater than or equal to"
+    end
+  end
+
+  describe "CategoryForm parent_uuid select (migrated to core <.select>)" do
+    test "renders prompt and changeset-backed options", %{conn: conn} do
+      {:ok, _parent} = Shop.create_category(%{"name" => %{"en" => "Furniture"}})
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/categories/new")
+
+      # core <.select> emits name="category[parent_uuid]" and keeps the prompt
+      assert html =~ ~s(name="category[parent_uuid]")
+      assert html =~ "No parent (root category)"
+      # options built from Shop.category_options() still render
+      assert html =~ "Furniture"
+    end
+
+    test "preserves the current selection on edit", %{conn: conn} do
+      {:ok, parent} = Shop.create_category(%{"name" => %{"en" => "Parent Cat"}})
+
+      {:ok, child} =
+        Shop.create_category(%{"name" => %{"en" => "Child Cat"}, "parent_uuid" => parent.uuid})
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/categories/#{child.uuid}/edit")
+
+      # options_for_select marks the persisted parent_uuid as selected
+      assert html =~ ~r/<option[^>]*selected[^>]*value="#{parent.uuid}"/
+    end
+  end
+
+  describe "ProductForm category_uuid select (migrated to core <.select>)" do
+    test "renders prompt and changeset-backed category options", %{conn: conn} do
+      {:ok, _cat} = Shop.create_category(%{"name" => %{"en" => "Gadgets"}})
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/products/new")
+
+      assert html =~ ~s(name="product[category_uuid]")
+      assert html =~ "No category"
+      assert html =~ "Gadgets"
     end
   end
 
