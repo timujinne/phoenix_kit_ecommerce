@@ -77,10 +77,18 @@ defmodule PhoenixKitEcommerce.MixProject do
   defp pk_dep(app, requirement, opts \\ []) do
     env_var = String.upcase(Atom.to_string(app)) <> "_PATH"
 
+    # A set-but-blank value (`PHOENIX_KIT_PATH=`) reads as "" rather than nil;
+    # treat it as unset so it falls back to the Hex pin instead of building a
+    # broken `path: ""` dep.
     case System.get_env(env_var) do
-      nil when opts == [] -> {app, requirement}
-      nil -> {app, requirement, opts}
-      path -> {app, [path: path, override: true] ++ opts}
+      path when is_binary(path) and path != "" ->
+        {app, [path: path, override: true] ++ opts}
+
+      _unset when opts == [] ->
+        {app, requirement}
+
+      _unset ->
+        {app, requirement, opts}
     end
   end
 
