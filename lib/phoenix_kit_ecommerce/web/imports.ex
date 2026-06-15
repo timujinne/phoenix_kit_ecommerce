@@ -1465,7 +1465,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                   phx-blur="update_mapping"
                   phx-value-index={@index}
                   name="slot_key"
-                  placeholder="e.g., cup_color"
+                  placeholder={gettext("e.g., cup_color")}
                 />
               </label>
             <% end %>

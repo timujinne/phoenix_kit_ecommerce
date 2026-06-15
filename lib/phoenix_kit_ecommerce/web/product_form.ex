@@ -1167,7 +1167,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     <input
                       type="text"
                       name="_add_option_key"
-                      placeholder="e.g. size, color"
+                      placeholder={gettext("e.g. size, color")}
                       class="input input-sm input-bordered w-40"
                       autocomplete="off"
                     />
@@ -1179,7 +1179,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     <input
                       type="text"
                       name="_add_option_first_value"
-                      placeholder="e.g. 14 inches, Red"
+                      placeholder={gettext("e.g. 14 inches, Red")}
                       class="input input-sm input-bordered min-w-32"
                       autocomplete="off"
                     />
