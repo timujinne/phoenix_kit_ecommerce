@@ -43,7 +43,7 @@ defmodule PhoenixKitEcommerce.Web.UserOrderDetails do
         if order.user_uuid != current_user.uuid do
           {:ok,
            socket
-           |> put_flash(:error, gettext("Access denied"))
+           |> put_flash(:error, Gettext.gettext(PhoenixKitWeb.Gettext, "Access denied"))
            |> push_navigate(to: Routes.path("/dashboard/orders"))}
         else
           {:ok, setup_order_assigns(socket, order, current_user)}

@@ -23,7 +23,7 @@
           <select name="filters[status]" class="select select-bordered w-full">
             <option value="">{gettext("All Statuses")}</option>
             <option value="pending" selected={@status_filter == "pending"}>
-              {gettext("Pending")}
+              {Gettext.gettext(PhoenixKitWeb.Gettext, "Pending")}
             </option>
             <option value="processing" selected={@status_filter == "processing"}>
               {gettext("Processing")}
@@ -35,7 +35,7 @@
               {gettext("Delivered")}
             </option>
             <option value="completed" selected={@status_filter == "completed"}>
-              {gettext("Completed")}
+              {Gettext.gettext(PhoenixKitWeb.Gettext, "Completed")}
             </option>
             <option value="cancelled" selected={@status_filter == "cancelled"}>
               {gettext("Cancelled")}
@@ -45,7 +45,7 @@
 
         <%= if @status_filter do %>
           <button type="button" phx-click="clear_filters" class="btn btn-ghost btn-sm">
-            {gettext("Clear")}
+            {Gettext.gettext(PhoenixKitWeb.Gettext, "Clear")}
           </button>
         <% end %>
 
@@ -135,7 +135,7 @@
                 class={"btn btn-sm #{if @page == @total_pages, do: "btn-disabled"}"}
                 disabled={@page == @total_pages}
               >
-                {gettext("Next")}
+                {Gettext.gettext(PhoenixKitWeb.Gettext, "Next")}
               </button>
             </div>
           <% end %>

@@ -12,6 +12,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.Translations
 
@@ -109,6 +110,14 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
 
     case Shop.delete_product(product) do
       {:ok, _} ->
+        Activity.log("shop.product_deleted",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "product",
+          resource_uuid: product.uuid,
+          metadata: %{"status" => product.status}
+        )
+
         if file_uuids != [], do: Storage.queue_file_cleanup(file_uuids)
 
         {:noreply,

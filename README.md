@@ -160,6 +160,11 @@ price = Shop.calculate_product_price(product, selected_specs)
 {:ok, order} = Shop.convert_cart_to_order(cart)
 ```
 
+> Payments (Stripe etc.) are handled by **PhoenixKitBilling**. To configure and
+> test payment providers — including running Stripe webhooks against
+> `localhost` via the Stripe CLI — see **"Testing Stripe locally"** in the
+> [phoenix_kit_billing README](https://github.com/BeamLabEU/phoenix_kit_billing#testing-stripe-locally).
+
 ### Shipping Methods
 
 ```elixir
@@ -379,6 +384,22 @@ mix docs           # Generate documentation
 mix precommit      # Compile + format + credo + dialyzer
 mix quality        # Format + credo + dialyzer
 ```
+
+### Testing
+
+The suite has unit tests (always run, no DB) and integration tests
+(tagged `:integration`, auto-excluded when PostgreSQL is unavailable).
+Run the integration tests after a one-off database create:
+
+```bash
+createdb phoenix_kit_ecommerce_test   # one-time setup
+mix test                              # boots Test.Repo, runs core migrations, sandboxes per test
+```
+
+Case templates live in `test/support/`: `PhoenixKitEcommerce.DataCase`
+(context/schema tests) and `PhoenixKitEcommerce.LiveCase` (LiveView
+tests). The test repo runs core's versioned migrations via
+`PhoenixKit.Migration.ensure_current/2` — no module-owned DDL.
 
 ## Troubleshooting
 

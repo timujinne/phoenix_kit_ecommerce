@@ -1255,7 +1255,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   # regardless of what's stored in session from previous visits
   defp get_language_from_params_or_default(%{"locale" => locale}) when is_binary(locale) do
     # Localized route - use the locale from URL
-    DialectMapper.resolve_dialect(locale, nil)
+    DialectMapper.resolve_dialect(locale)
   end
 
   defp get_language_from_params_or_default(_params) do

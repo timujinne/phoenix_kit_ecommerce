@@ -10,6 +10,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.OptionTypes
@@ -45,7 +46,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     socket
     |> assign(:page_title, gettext("New Category"))
     |> assign(:category, category)
-    |> assign(:changeset, changeset)
+    |> assign_form(changeset)
     |> assign(:parent_options, parent_options)
     |> assign(:category_options, [])
     |> assign(:global_options, global_options)
@@ -80,7 +81,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
       )
     )
     |> assign(:category, category)
-    |> assign(:changeset, changeset)
+    |> assign_form(changeset)
     |> assign(:parent_options, parent_options)
     |> assign(:category_options, category_options)
     |> assign(:global_options, global_options)
@@ -135,7 +136,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
       |> Map.put(:action, :validate)
 
     socket
-    |> assign(:changeset, changeset)
+    |> assign_form(changeset)
     |> assign(:category_translations, category_translations)
     |> then(&{:noreply, &1})
   end
@@ -389,7 +390,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
         <%!-- Form --%>
         <.form
-          for={@changeset}
+          for={@form}
           phx-change="validate"
           phx-submit="save"
           class="space-y-6"
@@ -447,66 +448,35 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">{gettext("Parent Category")}</span>
-                  </label>
-                  <select
-                    name="category[parent_uuid]"
-                    class="select select-bordered w-full focus:select-primary"
-                  >
-                    <option value="">{gettext("No parent (root category)")}</option>
-                    <%= for {name, uuid} <- @parent_options do %>
-                      <option
-                        value={uuid}
-                        selected={Ecto.Changeset.get_field(@changeset, :parent_uuid) == uuid}
-                      >
-                        {name}
-                      </option>
-                    <% end %>
-                  </select>
+                  <.select
+                    field={@form[:parent_uuid]}
+                    label={gettext("Parent Category")}
+                    prompt={gettext("No parent (root category)")}
+                    options={@parent_options}
+                  />
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">{gettext("Position")}</span>
-                  </label>
-                  <input
+                  <.input
+                    field={@form[:position]}
                     type="number"
-                    name="category[position]"
-                    value={Ecto.Changeset.get_field(@changeset, :position) || 0}
-                    class="input input-bordered w-full focus:input-primary"
+                    label={gettext("Position")}
+                    value={@form[:position].value || 0}
                     min="0"
                     placeholder="0"
                   />
                 </div>
 
                 <div class="form-control w-full">
-                  <label class="label">
-                    <span class="label-text font-medium">{gettext("Status")}</span>
-                  </label>
-                  <select
-                    name="category[status]"
-                    class="select select-bordered w-full focus:select-primary"
-                  >
-                    <option
-                      value="active"
-                      selected={Ecto.Changeset.get_field(@changeset, :status) == "active"}
-                    >
-                      {gettext("Active — Category and products visible")}
-                    </option>
-                    <option
-                      value="unlisted"
-                      selected={Ecto.Changeset.get_field(@changeset, :status) == "unlisted"}
-                    >
-                      {gettext("Unlisted — Category hidden, products still visible")}
-                    </option>
-                    <option
-                      value="hidden"
-                      selected={Ecto.Changeset.get_field(@changeset, :status) == "hidden"}
-                    >
-                      {gettext("Hidden — Category and products hidden")}
-                    </option>
-                  </select>
+                  <.select
+                    field={@form[:status]}
+                    label={gettext("Status")}
+                    options={[
+                      {gettext("Active — Category and products visible"), "active"},
+                      {gettext("Unlisted — Category hidden, products still visible"), "unlisted"},
+                      {gettext("Hidden — Category and products hidden"), "hidden"}
+                    ]}
+                  />
                   <label class="label">
                     <span class="label-text-alt text-base-content/50">
                       {gettext("Unlisted: products appear in search/catalog but category not in menu")}
@@ -582,25 +552,12 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                       <% end %>
                     </label>
                     <%= if @product_options != [] do %>
-                      <select
-                        name="category[featured_product_uuid]"
-                        class={[
-                          "select select-bordered w-full focus:select-primary",
-                          @image_uuid && "opacity-50"
-                        ]}
-                      >
-                        <option value="">{gettext("Auto-detect (first product with image)")}</option>
-                        <%= for {name, uuid} <- @product_options do %>
-                          <option
-                            value={uuid}
-                            selected={
-                              Ecto.Changeset.get_field(@changeset, :featured_product_uuid) == uuid
-                            }
-                          >
-                            {name}
-                          </option>
-                        <% end %>
-                      </select>
+                      <.select
+                        field={@form[:featured_product_uuid]}
+                        prompt={gettext("Auto-detect (first product with image)")}
+                        options={@product_options}
+                        class={@image_uuid && "opacity-50"}
+                      />
                     <% else %>
                       <div class="text-sm text-base-content/50 py-2">
                         <.icon name="hero-information-circle" class="w-4 h-4 inline mr-1" />
@@ -918,31 +875,55 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
   defp save_category(socket, :new, category_params) do
     case Shop.create_category(category_params) do
-      {:ok, _category} ->
+      {:ok, category} ->
+        Activity.log("shop.category_created",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "category",
+          resource_uuid: category.uuid,
+          metadata: %{"status" => category.status}
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, gettext("Category created"))
          |> push_navigate(to: Routes.path("/admin/shop/categories"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :changeset, changeset)}
+        {:noreply, assign_form(socket, changeset)}
     end
   end
 
   defp save_category(socket, :edit, category_params) do
     case Shop.update_category(socket.assigns.category, category_params) do
-      {:ok, _category} ->
+      {:ok, category} ->
+        Activity.log("shop.category_updated",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "category",
+          resource_uuid: category.uuid,
+          metadata: %{"status" => category.status}
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, gettext("Category updated"))
          |> push_navigate(to: Routes.path("/admin/shop/categories"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :changeset, changeset)}
+        {:noreply, assign_form(socket, changeset)}
     end
   end
 
   # Private helpers
+
+  # Keep both @changeset (consumed by TranslationTabs / multilang fields) and
+  # @form (consumed by core <.input>/<.select>) in sync from a single source.
+  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
+    socket
+    |> assign(:changeset, changeset)
+    |> assign(:form, to_form(changeset))
+  end
 
   defp initial_opt_form_data do
     %{

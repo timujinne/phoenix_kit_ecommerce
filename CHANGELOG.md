@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.8 - 2026-06-08
+
+### Added
+- Developer tooling: `pk_dep/3` in `mix.exs` resolves any `phoenix_kit*` dependency from a local checkout when `<APP>_PATH` is exported (e.g. `PHOENIX_KIT_PATH=../phoenix_kit mix test`), for cross-repo development. Unset — the default — keeps the published Hex pin, so `mix hex.publish` and CI resolve exactly as before. A set-but-blank value (`PHOENIX_KIT_PATH=`) is also treated as unset rather than producing a broken `path: ""` dep. Documented in `AGENTS.md`.
+
+### Changed
+- Refresh dependency lock: `phoenix_kit` 1.7.131 → 1.7.133 and `phoenix_kit_billing` 0.4.0 → 0.5.0, plus transitive bumps (`bandit` 1.11.1 → 1.12.0, `etcher` 0.6.5 → 0.6.6, `fresco` 0.6.3 → 0.7.1, `req` 0.5.18 → 0.6.1, `spitfire` 0.3.12 → 0.3.13, `tesla` 1.18.3 → 1.20.0). Declared dependency requirements are unchanged; no library or migration code changed.
+
+## 0.1.7 - 2026-06-05
+
+### Changed
+- Migrate the category and product admin forms to core form components. Non-translatable scalar fields (status, product_type, vendor, price/compare_at/cost, position) and the changeset-backed selects (`parent_uuid`, `featured_product_uuid`, `category_uuid`) now render through core `<.input>`/`<.select>`. An `assign_form/2` helper keeps `:changeset` (consumed by the multilang `TranslationTabs` fields) and `:form = to_form(changeset)` in sync, so inline validation errors render on `validate`. Translatable fields, dynamic-option selects, and the option/media machinery are intentionally left as-is.
+- Route web body strings through the module's own `PhoenixKitEcommerce.Gettext` backend (was the parent app's `PhoenixKitWeb.Gettext`). Generic UI-chrome strings are still resolved against core to keep its vetted translations; shop-domain strings resolve in-module and ship `et`/`ru` catalogues (correct 2-form/3-form plurals).
+
+### Fixed
+- Inline validation errors now render on the migrated `<.select>` fields, via the `phoenix_kit` 1.7.131 core `Select` component (it now maps `field.errors` like `<.input>` does).
+
+### Dependencies
+- Bump `phoenix_kit` 1.7.130 → 1.7.131 (core `<.select>` surfaces `field.errors`) and `etcher` 0.5.5 → 0.6.5.
+
+## 0.1.6 - 2026-06-04
+
+### Fixed
+- Order `tax_rate` persisted as `0` on cart→order conversion. `build_order_attrs/3` hardcoded a `0` rate while `tax_amount` was computed from the live rate, so every order recorded a 0% rate — breaking receipts, tax reports, and refund math that derive the percentage from the order. Now uses `get_tax_rate(cart)` (single source of truth). Pinned by an end-to-end regression test.
+- `unique_constraint` names for `ShippingMethod` (`:slug`) and `ImportConfig` (`:name`, `:uuid`) did not match the actual DB indexes, so duplicate inserts raised `Ecto.ConstraintError` instead of returning `{:error, changeset}`. Pinned to the real index names.
+- No-billing tax fallback applied the configured `billing_default_tax_rate` even when `billing_tax_enabled` was `false`; now gated on the enabled flag, matching the `PhoenixKitBilling`-loaded path.
+- `DialectMapper.resolve_dialect/2` → `/1` after the `phoenix_kit` upgrade dropped the 2-arity form, restoring a clean `--warnings-as-errors` build.
+
+### Added
+- `PhoenixKitEcommerce.Activity` — PII-safe LiveView-layer activity-logging wrapper around `PhoenixKit.Activity`. Logs admin mutations (products incl. bulk, categories, shipping methods, import configs/runs) and never crashes the caller (no-ops when core's `PhoenixKit.Activity` is absent; rescues DB errors).
+- `PhoenixKitEcommerce.Errors` — central gettext-backed mapping from error atoms to user-facing strings (`PhoenixKitEcommerce.Gettext` backend). Wired into the `:cart_not_active` and `:unknown_format` paths.
+- Test harness: `DataCase`/`LiveCase`, test endpoint/router/layouts, schema via `PhoenixKit.Migration.ensure_current/2`, and full schema/context/LiveView coverage (6 → 183 tests).
+
+### Changed
+- Cap `include_keywords`/`exclude_keywords`/`exclude_phrases` import filters at 100 entries each with a friendly changeset error (was unbounded).
+- Centralize the nil-currency `$` fallback as a single documented module attribute.
+- Migrate the shipping-method form to core components (`<.input>`/`<.select>`/`<.textarea>` with `assign_form/2`) for inline validation errors.
+- Log a warning on `billing_default_tax_rate` parse failure instead of silently falling back to `0`.
+- Refresh `mix.lock` for the upgraded `phoenix_kit` and related dependencies.
+
 ## 0.1.5 - 2026-05-09
 
 ### Fixed

@@ -396,7 +396,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                             data-confirm={gettext("Remove this filter?")}
                           >
                             <.icon name="hero-trash" class="w-4 h-4 hidden sm:inline" />
-                            <span class="sm:hidden whitespace-nowrap">{gettext("Remove")}</span>
+                            <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "Remove")}</span>
                           </button>
                         <% end %>
                       </td>

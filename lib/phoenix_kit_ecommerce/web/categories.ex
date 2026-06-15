@@ -14,6 +14,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Translations
@@ -105,6 +106,14 @@ defmodule PhoenixKitEcommerce.Web.Categories do
 
       case Shop.delete_category(category) do
         {:ok, _} ->
+          Activity.log("shop.category_deleted",
+            actor_uuid: Activity.actor_uuid(socket),
+            actor_role: Activity.actor_role(socket),
+            resource_type: "category",
+            resource_uuid: category.uuid,
+            metadata: %{"status" => category.status}
+          )
+
           {:noreply,
            socket
            |> load_static_category_data()
@@ -175,6 +184,13 @@ defmodule PhoenixKitEcommerce.Web.Categories do
       uuids = MapSet.to_list(socket.assigns.selected_uuids)
       count = Shop.bulk_update_category_status(uuids, status)
 
+      Activity.log("shop.categories_status_changed",
+        actor_uuid: Activity.actor_uuid(socket),
+        actor_role: Activity.actor_role(socket),
+        resource_type: "category",
+        metadata: %{"status" => status, "count" => count}
+      )
+
       {:noreply,
        socket
        |> load_static_category_data()
@@ -214,6 +230,13 @@ defmodule PhoenixKitEcommerce.Web.Categories do
     if Scope.admin?(socket.assigns.phoenix_kit_current_scope) do
       uuids = MapSet.to_list(socket.assigns.selected_uuids)
       count = Shop.bulk_delete_categories(uuids)
+
+      Activity.log("shop.categories_bulk_deleted",
+        actor_uuid: Activity.actor_uuid(socket),
+        actor_role: Activity.actor_role(socket),
+        resource_type: "category",
+        metadata: %{"count" => count}
+      )
 
       {:noreply,
        socket
@@ -441,7 +464,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
               <.table_row_menu_link
                 navigate={Routes.path("/admin/shop/categories/#{category.uuid}/edit")}
                 icon="hero-pencil"
-                label={gettext("Edit")}
+                label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
               />
               <.table_row_menu_divider />
               <.table_row_menu_button
@@ -449,7 +472,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                 phx-value-uuid={category.uuid}
                 data-confirm={gettext("Delete this category?")}
                 icon="hero-trash"
-                label={gettext("Delete")}
+                label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
                 variant="error"
               />
             </.table_row_menu>
@@ -543,7 +566,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                         <.table_row_menu_link
                           navigate={Routes.path("/admin/shop/categories/#{category.uuid}/edit")}
                           icon="hero-pencil"
-                          label={gettext("Edit")}
+                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
                         />
                         <.table_row_menu_divider />
                         <.table_row_menu_button
@@ -551,7 +574,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                           phx-value-uuid={category.uuid}
                           data-confirm={gettext("Delete this category?")}
                           icon="hero-trash"
-                          label={gettext("Delete")}
+                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
                           variant="error"
                         />
                       </.table_row_menu>

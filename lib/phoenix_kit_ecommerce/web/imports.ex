@@ -20,6 +20,8 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   alias PhoenixKit.PubSub.Manager
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
+  alias PhoenixKitEcommerce.Errors
   alias PhoenixKitEcommerce.Import.{CSVAnalyzer, FormatDetector}
   alias PhoenixKitEcommerce.ImportLog
   alias PhoenixKitEcommerce.Options
@@ -304,7 +306,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
       {:error, :unknown_format} ->
         File.rm(dest_path)
-        {:noreply, put_flash(socket, :error, gettext("Unrecognized CSV format"))}
+        {:noreply, put_flash(socket, :error, Errors.message(:unknown_format))}
 
       {:error, _reason} ->
         File.rm(dest_path)
@@ -483,6 +485,14 @@ defmodule PhoenixKitEcommerce.Web.Imports do
     worker_args |> CSVImportWorker.new() |> Oban.insert()
     Manager.subscribe("shop:import:#{updated_log.uuid}")
 
+    Activity.log("shop.import_run_retried",
+      actor_uuid: Activity.actor_uuid(socket),
+      actor_role: Activity.actor_role(socket),
+      resource_type: "import_log",
+      resource_uuid: updated_log.uuid,
+      metadata: %{"status" => updated_log.status}
+    )
+
     socket =
       socket
       |> assign(:current_import, updated_log)
@@ -501,6 +511,14 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       import_log ->
         case Shop.delete_import_log(import_log) do
           {:ok, _} ->
+            Activity.log("shop.import_run_deleted",
+              actor_uuid: Activity.actor_uuid(socket),
+              actor_role: Activity.actor_role(socket),
+              resource_type: "import_log",
+              resource_uuid: import_log.uuid,
+              metadata: %{"status" => import_log.status}
+            )
+
             socket =
               socket
               |> assign(:imports, list_imports())
@@ -559,6 +577,14 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         worker_args
         |> CSVImportWorker.new()
         |> Oban.insert()
+
+        Activity.log("shop.import_run_started",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "import_log",
+          resource_uuid: import_log.uuid,
+          metadata: %{"status" => import_log.status, "language" => language}
+        )
 
         # Subscribe to this specific import
         Manager.subscribe("shop:import:#{import_log.uuid}")
@@ -1075,7 +1101,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                                 data-confirm={gettext("Are you sure you want to delete this import log?")}
                               >
                                 <.icon name="hero-trash" class="w-4 h-4 hidden sm:inline" />
-                                <span class="sm:hidden whitespace-nowrap">{gettext("Delete")}</span>
+                                <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}</span>
                               </button>
                             <% end %>
                           </div>

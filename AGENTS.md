@@ -22,6 +22,27 @@ mix quality                 # format + credo --strict + dialyzer
 mix quality.ci              # format --check-formatted + credo --strict + dialyzer
 ```
 
+## Local cross-repo development
+
+`phoenix_kit` (and any sibling `phoenix_kit_*` dep) resolves from Hex by
+default. To build or test this module against a **local checkout** of a
+dependency — e.g. an unpublished core change — export `<APP>_PATH` and Mix
+swaps the Hex pin for a `path:` + `override: true` dep at resolve time:
+
+```bash
+PHOENIX_KIT_PATH=../phoenix_kit mix test     # this module against local core
+PHOENIX_KIT_BILLING_PATH=../phoenix_kit_billing mix test
+```
+
+The variable name is the dep's app name upper-cased with `_PATH` appended
+(`:phoenix_kit` -> `PHOENIX_KIT_PATH`, `:phoenix_kit_ai` ->
+`PHOENIX_KIT_AI_PATH`). Set several at once to override multiple deps. This
+module's sibling overrides: `PHOENIX_KIT_BILLING_PATH`. **Unset = the
+published pin**, so `mix hex.publish` and CI resolve exactly as before.
+Implemented via `pk_dep/3` in `mix.exs` — never hand-edit a `phoenix_kit*`
+dep into a `path:` tuple (a committed path dep ships a broken package); set
+the env var instead.
+
 ## Architecture
 
 This is a **library** (not a standalone Phoenix app) that provides e-commerce as a PhoenixKit plugin module.
@@ -257,6 +278,71 @@ mix test                                        # All tests
 mix test test/file_test.exs                     # Single test file
 mix test test/file_test.exs:42                  # Specific test by line
 ```
+
+### Test harness
+
+The suite is two-tiered:
+
+- **Unit tests** (schemas, changesets, pure functions) always run — no
+  database required.
+- **Integration tests** (tagged `:integration` via the case templates
+  below) need PostgreSQL. They are auto-excluded when the database is
+  unavailable, so `mix test` never hard-fails on a fresh checkout.
+
+First-time setup (one-off):
+
+```bash
+createdb phoenix_kit_ecommerce_test
+```
+
+After that, `mix test` boots `PhoenixKitEcommerce.Test.Repo`, runs core's
+versioned migrations via `PhoenixKit.Migration.ensure_current/2` (no
+module-owned DDL), and uses the Ecto SQL sandbox for per-test isolation.
+The test DB name is overridable via the `MIX_TEST_PARTITION` env var.
+
+Case templates live under `test/support/`:
+
+- **`PhoenixKitEcommerce.DataCase`** — context/schema tests; sets up the
+  sandbox connection and imports Ecto query/changeset helpers.
+- **`PhoenixKitEcommerce.LiveCase`** — LiveView tests; wires the test
+  endpoint/router (`test_endpoint.ex` / `test_router.ex`) and conn
+  helpers on top of `DataCase`.
+
+Other support modules: `activity_log_assertions.ex` (assertion helpers),
+`test_layouts.ex` (a host-consumer layout fixture), `hooks.ex`,
+`test_repo.ex`. Dialyzer suppressions are tracked in
+`.dialyzer_ignore.exs`.
+
+### Deferred from the 2026-06-04 quality sweep
+
+The sweep completed most of the initially-deferred items. **Completed:**
+
+1. **Module-wide activity logging** — `PhoenixKitEcommerce.Activity`
+   LV-layer wrapper logged on every admin mutation (product/category/
+   shipping/import-config CRUD + bulk ops + import runs); PII-safe;
+   covered by `test/phoenix_kit_ecommerce/activity_logging_test.exs`.
+2. **`Errors` atom-dispatch module** — `PhoenixKitEcommerce.Errors.message/1`
+   maps the module's atom errors to gettext-backed strings;
+   `test/phoenix_kit_ecommerce/errors_test.exs` pins each.
+4. **Import-config keyword cap** — `include_keywords` / `exclude_keywords`
+   / `exclude_phrases` capped at 100 entries each with a changeset error.
+   The hardcoded `$` price fallback was centralized as a single attribute
+   (it only fires when no default currency is configured; a real currency
+   still formats via `Currency.format_amount/2`).
+
+**Still remaining (genuinely out of scope for now):**
+
+3. **Component-migration tail** — the shipping-method form was migrated to
+   core `<.input>/<.select>/<.textarea>`. The multilang **category/product
+   forms** (driven by `TranslationTabs` + dynamic-option selects) and the
+   **map-backed import-config form** (no changeset/`:action`) were left
+   as-is — migrating them safely needs translation/validation rewiring.
+5. **Body-string gettext-backend migration** (from PR #4) —
+   `web/shop_web.ex` injects `PhoenixKitWeb.Gettext`, so ~25+ body-string
+   `gettext()` calls across `web/` resolve against the parent app's
+   catalogue rather than `PhoenixKitEcommerce.Gettext`. Migrating means
+   switching the `__using__` injection and extracting/translating
+   hundreds of msgids — a separate, larger PR.
 
 ## Pull Requests
 

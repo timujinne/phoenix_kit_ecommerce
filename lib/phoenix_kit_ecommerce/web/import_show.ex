@@ -185,18 +185,18 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
                             <.link
                               navigate={Routes.path("/admin/shop/products/#{product.uuid}")}
                               class="btn btn-xs btn-outline btn-info tooltip tooltip-bottom"
-                              data-tip={gettext("View")}
+                              data-tip={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
                             >
                               <.icon name="hero-eye" class="w-4 h-4 hidden sm:inline" />
-                              <span class="sm:hidden whitespace-nowrap">{gettext("View")}</span>
+                              <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "View")}</span>
                             </.link>
                             <.link
                               navigate={Routes.path("/admin/shop/products/#{product.uuid}/edit")}
                               class="btn btn-xs btn-outline btn-info tooltip tooltip-bottom"
-                              data-tip={gettext("Edit")}
+                              data-tip={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
                             >
                               <.icon name="hero-pencil" class="w-4 h-4 hidden sm:inline" />
-                              <span class="sm:hidden whitespace-nowrap">{gettext("Edit")}</span>
+                              <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}</span>
                             </.link>
                           </div>
                         </td>
