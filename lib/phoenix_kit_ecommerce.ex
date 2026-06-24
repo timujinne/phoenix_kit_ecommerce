@@ -314,6 +314,9 @@ defmodule PhoenixKitEcommerce do
   @impl PhoenixKit.Module
   def route_module, do: PhoenixKitEcommerce.Web.Routes
 
+  @impl PhoenixKit.Module
+  def css_sources, do: [:phoenix_kit_ecommerce]
+
   # ============================================
   # PRODUCTS
   # ============================================
