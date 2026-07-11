@@ -216,6 +216,15 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
   end
 
   @impl true
+  def handle_event("filter_search", %{"filter_key" => key} = params, socket) do
+    active_filters =
+      FilterHelpers.update_search_filter(socket.assigns.active_filters, key, params[key])
+
+    path = build_filter_path(socket.assigns, active_filters)
+    {:noreply, push_patch(socket, to: path)}
+  end
+
+  @impl true
   def handle_event("clear_filters", _params, socket) do
     base_path = Shop.category_url(socket.assigns.category, socket.assigns.current_language)
     {:noreply, push_patch(socket, to: base_path)}

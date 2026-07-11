@@ -307,6 +307,36 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
     """
   end
 
+  def filter_section(%{filter: %{"type" => "search"}} = assigns) do
+    ~H"""
+    <details
+      open
+      class="group border-t border-base-200 pt-2 mt-2 first:border-t-0 first:mt-0 first:pt-0"
+    >
+      <summary class="cursor-pointer font-semibold text-sm py-2 select-none flex items-center gap-1">
+        <.icon name="hero-chevron-right" class="w-3 h-3 transition-transform group-open:rotate-90" />
+        {@filter["label"]}
+      </summary>
+      <div class="pt-1 pb-2">
+        <form phx-submit="filter_search" class="join w-full">
+          <input type="hidden" name="filter_key" value={@filter["key"]} />
+          <input
+            type="search"
+            name={@filter["key"]}
+            value={@active}
+            placeholder={@filter["label"]}
+            class="input input-sm join-item w-full"
+            autocomplete="off"
+          />
+          <button type="submit" class="btn btn-primary btn-sm join-item" aria-label="Search">
+            <.icon name="hero-magnifying-glass" class="w-4 h-4" />
+          </button>
+        </form>
+      </div>
+    </details>
+    """
+  end
+
   def filter_section(assigns) do
     ~H"""
     """

@@ -9,8 +9,9 @@ defmodule PhoenixKitEcommerce.Test.Router do
   the default locale ("en") prefix — so our base becomes
   `/en/admin/shop` for the shop admin tabs.
 
-  Storefront pages (shop_catalog / checkout / cart_page / product_detail)
-  are intentionally omitted here — this harness covers the admin LVs only.
+  Most storefront pages (checkout / cart_page / product_detail) are
+  intentionally omitted here — the harness covers the admin LVs plus the
+  public catalog page (`/shop`), which the storefront-search tests drive.
 
   The ecommerce LV modules have no `Live` suffix, so each `live/2` passes
   an explicit `as:` to avoid colliding auto-generated route helper names.
@@ -26,6 +27,19 @@ defmodule PhoenixKitEcommerce.Test.Router do
     plug(:fetch_live_flash)
     plug(:put_root_layout, {PhoenixKitEcommerce.Test.Layouts, :root})
     plug(:protect_from_forgery)
+  end
+
+  scope "/", PhoenixKitEcommerce.Web do
+    pipe_through(:browser)
+
+    live_session :storefront_test,
+      layout: {PhoenixKitEcommerce.Test.Layouts, :app},
+      on_mount: {PhoenixKitEcommerce.Test.Hooks, :assign_scope} do
+      live("/shop", ShopCatalog, :index, as: :shop_catalog)
+      # `Shop.catalog_url/1` resolves to the locale-prefixed form in the
+      # test env, so patches from filter events land here.
+      live("/:locale/shop", ShopCatalog, :index, as: :shop_catalog_localized)
+    end
   end
 
   scope "/en/admin/shop", PhoenixKitEcommerce.Web do
