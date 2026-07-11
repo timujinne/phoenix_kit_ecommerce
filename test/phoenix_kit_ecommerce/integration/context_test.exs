@@ -58,6 +58,60 @@ defmodule PhoenixKitEcommerce.Integration.ContextTest do
     end
   end
 
+  describe "product search" do
+    test "list_products/1 :search matches localized title" do
+      {:ok, product} =
+        Shop.create_product(product_attrs(%{"title" => %{"en" => "Skeleton Wall Mask"}}))
+
+      uuids = Enum.map(Shop.list_products(search: "skeleton wall"), & &1.uuid)
+      assert product.uuid in uuids
+
+      assert Shop.list_products(search: "no-such-product-anywhere") == []
+    end
+
+    test "list_products/1 :search matches metadata sku" do
+      {:ok, product} =
+        Shop.create_product(product_attrs(%{"metadata" => %{"sku" => "MASK-042-BLK"}}))
+
+      {:ok, other} = Shop.create_product(product_attrs())
+
+      uuids = Enum.map(Shop.list_products(search: "mask-042"), & &1.uuid)
+      assert product.uuid in uuids
+      refute other.uuid in uuids
+    end
+
+    test "list_products/1 :search composes with :exclude_hidden_categories" do
+      # Regression: the search fragment referenced unqualified columns
+      # (title/description), which turn ambiguous once the hidden-category
+      # left join is applied — the exact combination the public storefront
+      # always uses.
+      {:ok, product} =
+        Shop.create_product(product_attrs(%{"title" => %{"en" => "Skeleton Wall Mask"}}))
+
+      {products, total} =
+        Shop.list_products_with_count(
+          search: "skeleton",
+          exclude_hidden_categories: true,
+          status: "active"
+        )
+
+      assert total == 1
+      assert [%{uuid: uuid}] = products
+      assert uuid == product.uuid
+    end
+
+    test "list_products/1 :search matches tags" do
+      {:ok, product} =
+        Shop.create_product(product_attrs(%{"tags" => ["halloween", "wall-decor"]}))
+
+      {:ok, other} = Shop.create_product(product_attrs())
+
+      uuids = Enum.map(Shop.list_products(search: "hallowee"), & &1.uuid)
+      assert product.uuid in uuids
+      refute other.uuid in uuids
+    end
+  end
+
   describe "categories" do
     test "create_category/1 and get_category/1" do
       assert {:ok, cat} = Shop.create_category(%{"name" => %{"en" => "Books"}})
@@ -193,6 +247,26 @@ defmodule PhoenixKitEcommerce.Integration.ContextTest do
       filters = [%{"type" => "vendor", "enabled" => true}]
       assert {:ok, _} = Shop.update_storefront_filters(filters)
       assert Shop.get_storefront_filters() == filters
+    end
+
+    test "default_storefront_filters/0 includes an enabled search filter first" do
+      assert [%{"key" => "search", "type" => "search", "enabled" => true} | _] =
+               Enum.sort_by(Shop.default_storefront_filters(), & &1["position"])
+    end
+
+    test "merge_missing_builtin_filters/1 appends absent built-ins as disabled" do
+      saved = [%{"key" => "price", "type" => "price_range", "enabled" => true}]
+      merged = Shop.merge_missing_builtin_filters(saved)
+
+      assert List.first(merged) == List.first(saved)
+      search = Enum.find(merged, &(&1["key"] == "search"))
+      assert search["type"] == "search"
+      refute search["enabled"]
+    end
+
+    test "merge_missing_builtin_filters/1 leaves a complete config untouched" do
+      complete = Shop.default_storefront_filters()
+      assert Shop.merge_missing_builtin_filters(complete) == complete
     end
   end
 

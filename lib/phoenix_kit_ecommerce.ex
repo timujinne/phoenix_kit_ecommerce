@@ -543,20 +543,46 @@ defmodule PhoenixKitEcommerce do
   def default_storefront_filters do
     [
       %{
+        "key" => "search",
+        "type" => "search",
+        "label" => "Search",
+        "enabled" => true,
+        "position" => 0
+      },
+      %{
         "key" => "price",
         "type" => "price_range",
         "label" => "Price",
         "enabled" => true,
-        "position" => 0
+        "position" => 1
       },
       %{
         "key" => "vendor",
         "type" => "vendor",
         "label" => "Vendor",
         "enabled" => false,
-        "position" => 1
+        "position" => 2
       }
     ]
+  end
+
+  @doc """
+  Appends built-in default filters missing from a saved filter config.
+
+  Configs saved before a built-in filter existed (e.g. `search`) never
+  gain it on their own; this merges the absent built-ins in as disabled
+  so admins can discover and enable them from the settings page without
+  changing storefront behavior until they do.
+  """
+  def merge_missing_builtin_filters(filters) do
+    existing_keys = MapSet.new(filters, & &1["key"])
+
+    missing =
+      default_storefront_filters()
+      |> Enum.reject(&MapSet.member?(existing_keys, &1["key"]))
+      |> Enum.map(&Map.put(&1, "enabled", false))
+
+    filters ++ missing
   end
 
   @doc """
@@ -2602,17 +2628,28 @@ defmodule PhoenixKitEcommerce do
     default_lang = Translations.default_language()
 
     # Search in JSONB localized fields using PostgreSQL operators
-    # Searches in default language and falls back to any language match
+    # Searches in default language and falls back to any language match,
+    # plus SKU (metadata->>'sku') and tags. Columns are bound through the
+    # product binding so the query stays valid when other filters join
+    # additional tables (e.g. :exclude_hidden_categories).
     where(
       query,
       [p],
       fragment(
-        "(COALESCE(title->>?, '') ILIKE ? OR COALESCE(description->>?, '') ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_each_text(title) WHERE value ILIKE ?) OR EXISTS (SELECT 1 FROM jsonb_each_text(description) WHERE value ILIKE ?))",
+        "(COALESCE(?->>?, '') ILIKE ? OR COALESCE(?->>?, '') ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_each_text(?) WHERE value ILIKE ?) OR EXISTS (SELECT 1 FROM jsonb_each_text(?) WHERE value ILIKE ?) OR COALESCE(?->>'sku', '') ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(?, '[]'::jsonb)) AS tag WHERE tag ILIKE ?))",
+        p.title,
         ^default_lang,
         ^search_term,
+        p.description,
         ^default_lang,
         ^search_term,
+        p.title,
         ^search_term,
+        p.description,
+        ^search_term,
+        p.metadata,
+        ^search_term,
+        p.tags,
         ^search_term
       )
     )

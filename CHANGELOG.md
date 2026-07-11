@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+- **Storefront product search.** A new built-in `search` filter type lets
+  customers search the public catalog (main page and category pages) by
+  product name, description, SKU (`metadata->>'sku'`), and tags — matching
+  in any configured language. Renders as a search box at the top of the
+  storefront filter sidebar, driven by a `?search=` URL param so results
+  are shareable and survive navigation. Enabled by default for new
+  installs; existing installs discover it on the Settings page (merged in
+  disabled via `merge_missing_builtin_filters/1`) and enable it with one
+  toggle.
+- Context: `list_products/1` `:search` now also matches SKU and tags
+  (previously title/description only), so admin product search finds
+  products by article number too.
+
+### Fixed
+- **Storefront search no longer raises `ambiguous_column`.** The `:search`
+  SQL fragment referenced unqualified `title`/`description` columns, which
+  turn ambiguous the moment `:exclude_hidden_categories` joins the
+  categories table — the exact combination every public catalog query
+  uses. Columns are now bound through the product binding. Pinned by a
+  regression test.
+
 ## 0.1.8 - 2026-06-08
 
 ### Added

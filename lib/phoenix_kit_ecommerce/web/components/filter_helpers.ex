@@ -60,6 +60,19 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpers do
     end
   end
 
+  defp parse_single_filter(%{"type" => "search", "key" => key}, params) do
+    case params[key] do
+      value when is_binary(value) ->
+        case String.trim(value) do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      _ ->
+        nil
+    end
+  end
+
   defp parse_single_filter(_filter, _params), do: nil
 
   @doc """
@@ -83,6 +96,11 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpers do
 
   defp apply_filter_to_opts(values, filter, opts) when is_list(values) and values != [] do
     apply_list_filter(filter["type"], filter, values, opts)
+  end
+
+  defp apply_filter_to_opts(value, %{"type" => "search"}, opts)
+       when is_binary(value) and value != "" do
+    Keyword.put(opts, :search, value)
   end
 
   defp apply_filter_to_opts(_, _filter, opts), do: opts
@@ -143,6 +161,9 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpers do
         values when is_list(values) and values != [] ->
           Map.put(acc, filter["key"], Enum.join(values, ","))
 
+        value when is_binary(value) and value != "" ->
+          Map.put(acc, filter["key"], value)
+
         _ ->
           acc
       end
@@ -173,6 +194,9 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpers do
       {_key, values}, count when is_list(values) ->
         count + length(values)
 
+      {_key, value}, count when is_binary(value) and value != "" ->
+        count + 1
+
       _, count ->
         count
     end)
@@ -196,6 +220,23 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpers do
       Map.delete(active_filters, filter_key)
     else
       Map.put(active_filters, filter_key, updated)
+    end
+  end
+
+  @doc """
+  Updates a text search filter.
+  Returns updated active_filters map; a blank term removes the filter.
+  """
+  def update_search_filter(active_filters, filter_key, value) do
+    case value do
+      value when is_binary(value) ->
+        case String.trim(value) do
+          "" -> Map.delete(active_filters, filter_key)
+          trimmed -> Map.put(active_filters, filter_key, trimmed)
+        end
+
+      _ ->
+        Map.delete(active_filters, filter_key)
     end
   end
 
