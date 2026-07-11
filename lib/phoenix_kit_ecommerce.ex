@@ -567,22 +567,39 @@ defmodule PhoenixKitEcommerce do
   end
 
   @doc """
-  Appends built-in default filters missing from a saved filter config.
+  Merges built-in default filters missing from a saved filter config.
 
   Configs saved before a built-in filter existed (e.g. `search`) never
   gain it on their own; this merges the absent built-ins in as disabled
   so admins can discover and enable them from the settings page without
   changing storefront behavior until they do.
+
+  Missing filters are positioned below every saved filter's `"position"`
+  (preserving their relative order from `default_storefront_filters/0`)
+  rather than reusing their default position outright — a saved config
+  predating the new filter can already hold that same position number, and
+  a tie would fall back to list order once enabled, silently overriding
+  the intended placement (e.g. `search` no longer sorting first).
   """
   def merge_missing_builtin_filters(filters) do
     existing_keys = MapSet.new(filters, & &1["key"])
+    min_position = filters |> Enum.map(&(&1["position"] || 0)) |> Enum.min(fn -> 0 end)
 
     missing =
       default_storefront_filters()
       |> Enum.reject(&MapSet.member?(existing_keys, &1["key"]))
       |> Enum.map(&Map.put(&1, "enabled", false))
 
-    filters ++ missing
+    missing_count = length(missing)
+
+    missing =
+      missing
+      |> Enum.with_index()
+      |> Enum.map(fn {filter, index} ->
+        Map.put(filter, "position", min_position - missing_count + index)
+      end)
+
+    missing ++ filters
   end
 
   @doc """

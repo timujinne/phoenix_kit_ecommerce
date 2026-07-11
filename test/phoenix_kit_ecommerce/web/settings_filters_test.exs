@@ -52,5 +52,32 @@ defmodule PhoenixKitEcommerce.Web.SettingsFiltersTest do
       search = Enum.find(saved, &(&1["key"] == "search"))
       assert search["enabled"]
     end
+
+    test "the merged-in search filter still sorts first on the storefront once enabled", %{
+      conn: conn
+    } do
+      # Regression: the pre-search config's "price" already sits at
+      # position 0, matching `search`'s default position — a naive merge
+      # ties on position and, once enabled, `search` falls after `price`
+      # instead of leading the sidebar as designed.
+      {:ok, _} =
+        Shop.update_storefront_filters([
+          %{
+            "key" => "price",
+            "type" => "price_range",
+            "label" => "Price",
+            "enabled" => true,
+            "position" => 0
+          }
+        ])
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+
+      view
+      |> element(~s{input[phx-click="toggle_storefront_filter"][phx-value-key="search"]})
+      |> render_click()
+
+      assert [%{"key" => "search"} | _] = Shop.get_enabled_storefront_filters()
+    end
   end
 end

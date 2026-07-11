@@ -254,14 +254,40 @@ defmodule PhoenixKitEcommerce.Integration.ContextTest do
                Enum.sort_by(Shop.default_storefront_filters(), & &1["position"])
     end
 
-    test "merge_missing_builtin_filters/1 appends absent built-ins as disabled" do
+    test "merge_missing_builtin_filters/1 adds absent built-ins as disabled" do
       saved = [%{"key" => "price", "type" => "price_range", "enabled" => true}]
       merged = Shop.merge_missing_builtin_filters(saved)
 
-      assert List.first(merged) == List.first(saved)
+      price = Enum.find(merged, &(&1["key"] == "price"))
+      assert price == List.first(saved)
       search = Enum.find(merged, &(&1["key"] == "search"))
       assert search["type"] == "search"
       refute search["enabled"]
+    end
+
+    test "merge_missing_builtin_filters/1 sorts the merged-in filter before saved ones" do
+      # Regression: a config saved under the pre-`search` position numbering
+      # already holds "price" at position 0. Reusing `search`'s default
+      # position (also 0) would tie, and the stable sort in
+      # `get_enabled_storefront_filters/0` would then keep list order —
+      # silently placing `search` after `price` once enabled, instead of
+      # first as the storefront sidebar expects.
+      saved = [
+        %{"key" => "price", "type" => "price_range", "enabled" => true, "position" => 0}
+      ]
+
+      merged =
+        saved
+        |> Shop.merge_missing_builtin_filters()
+        |> Enum.map(fn f -> if f["key"] == "search", do: Map.put(f, "enabled", true), else: f end)
+
+      sorted_keys =
+        merged
+        |> Enum.filter(& &1["enabled"])
+        |> Enum.sort_by(& &1["position"])
+        |> Enum.map(& &1["key"])
+
+      assert sorted_keys == ["search", "price"]
     end
 
     test "merge_missing_builtin_filters/1 leaves a complete config untouched" do

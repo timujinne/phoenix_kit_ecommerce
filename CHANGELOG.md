@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.1.9 - 2026-07-11
 
 ### Added
 - **Storefront product search.** A new built-in `search` filter type lets
@@ -27,6 +27,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   categories table — the exact combination every public catalog query
   uses. Columns are now bound through the product binding. Pinned by a
   regression test.
+- **`merge_missing_builtin_filters/1` no longer collides positions.** A
+  saved config from before `search` existed can already hold another
+  filter at the same default position (e.g. `price` at `0`); the merged-in
+  filter now sorts strictly below every saved filter's position instead of
+  reusing its default position outright, so it renders first once enabled
+  as intended, even on upgraded installs.
 
 ## 0.1.8 - 2026-06-08
 
