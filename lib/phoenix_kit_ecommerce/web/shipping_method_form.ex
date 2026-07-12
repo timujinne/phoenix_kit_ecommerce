@@ -301,13 +301,17 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                   <label class="label">
                     <span class="label-text font-medium">Status</span>
                   </label>
-                  <.checkbox
-                    name="shipping_method[active]"
-                    checked={Ecto.Changeset.get_field(@changeset, :active)}
-                    label="Active"
-                    class="toggle toggle-success"
-                    wrapper_class="h-12"
-                  />
+                  <label class="label cursor-pointer justify-start gap-3 h-12">
+                    <input type="hidden" name="shipping_method[active]" value="false" />
+                    <input
+                      type="checkbox"
+                      name="shipping_method[active]"
+                      value="true"
+                      checked={Ecto.Changeset.get_field(@changeset, :active)}
+                      class="toggle toggle-success"
+                    />
+                    <span class="label-text">Active</span>
+                  </label>
                 </div>
               </div>
 
