@@ -301,34 +301,25 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                   <label class="label">
                     <span class="label-text font-medium">Status</span>
                   </label>
-                  <label class="label cursor-pointer justify-start gap-3 h-12">
-                    <input type="hidden" name="shipping_method[active]" value="false" />
-                    <input
-                      type="checkbox"
-                      name="shipping_method[active]"
-                      value="true"
-                      checked={Ecto.Changeset.get_field(@changeset, :active)}
-                      class="toggle toggle-success"
-                    />
-                    <span class="label-text">Active</span>
-                  </label>
+                  <.checkbox
+                    name="shipping_method[active]"
+                    checked={Ecto.Changeset.get_field(@changeset, :active)}
+                    label="Active"
+                    class="toggle toggle-success"
+                    wrapper_class="h-12"
+                  />
                 </div>
               </div>
 
               <div class="divider my-2"></div>
 
               <div class="form-control">
-                <label class="label cursor-pointer justify-start gap-3">
-                  <input type="hidden" name="shipping_method[tracking_supported]" value="false" />
-                  <input
-                    type="checkbox"
-                    name="shipping_method[tracking_supported]"
-                    value="true"
-                    checked={Ecto.Changeset.get_field(@changeset, :tracking_supported)}
-                    class="checkbox checkbox-primary"
-                  />
-                  <span class="label-text font-medium">Tracking supported</span>
-                </label>
+                <.checkbox
+                  name="shipping_method[tracking_supported]"
+                  checked={Ecto.Changeset.get_field(@changeset, :tracking_supported)}
+                >
+                  <span class="font-medium">Tracking supported</span>
+                </.checkbox>
               </div>
             </div>
           </div>

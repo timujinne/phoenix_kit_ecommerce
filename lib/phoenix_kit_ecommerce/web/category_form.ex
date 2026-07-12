@@ -826,16 +826,11 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
               </div>
 
               <div class="form-control">
-                <label class="label cursor-pointer justify-start gap-3">
-                  <input
-                    type="checkbox"
-                    name="option[required]"
-                    value="true"
-                    checked={@opt_form_data.required}
-                    class="checkbox checkbox-primary"
-                  />
-                  <span class="label-text">Required field</span>
-                </label>
+                <.checkbox
+                  name="option[required]"
+                  checked={@opt_form_data.required}
+                  label="Required field"
+                />
               </div>
 
               <div class="modal-action">

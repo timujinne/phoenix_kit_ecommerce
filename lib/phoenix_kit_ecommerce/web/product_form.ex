@@ -851,16 +851,12 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <label class="label">
                     <span class="label-text font-medium">Tax Settings</span>
                   </label>
-                  <label class="label cursor-pointer justify-start gap-3 h-12 px-4 bg-base-200 rounded-lg">
-                    <input
-                      type="checkbox"
-                      name="product[taxable]"
-                      value="true"
-                      checked={Ecto.Changeset.get_field(@changeset, :taxable)}
-                      class="checkbox checkbox-primary"
-                    />
-                    <span class="label-text">Charge tax on this product</span>
-                  </label>
+                  <.checkbox
+                    name="product[taxable]"
+                    checked={Ecto.Changeset.get_field(@changeset, :taxable)}
+                    label="Charge tax on this product"
+                    wrapper_class="h-12 px-4 bg-base-200 rounded-lg"
+                  />
                 </div>
               </div>
             </div>
@@ -1849,21 +1845,13 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
             placeholder={@opt["label"]}
           />
         <% "boolean" -> %>
-          <div class="flex items-center h-12">
-            <input
-              type="hidden"
-              name={"product[metadata][#{@opt["key"]}]"}
-              value="false"
-            />
-            <input
-              type="checkbox"
-              name={"product[metadata][#{@opt["key"]}]"}
-              value="true"
-              checked={@value == true or @value == "true"}
-              class="checkbox checkbox-primary"
-            />
-            <span class="ml-2 text-sm text-base-content/70">Yes</span>
-          </div>
+          <.checkbox
+            name={"product[metadata][#{@opt["key"]}]"}
+            checked={@value == true or @value == "true"}
+            wrapper_class="h-12"
+          >
+            <span class="text-sm text-base-content/70">Yes</span>
+          </.checkbox>
         <% "select" -> %>
           <select
             name={"product[metadata][#{@opt["key"]}]"}
