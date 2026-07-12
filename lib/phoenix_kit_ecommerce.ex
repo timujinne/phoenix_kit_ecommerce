@@ -582,6 +582,13 @@ defmodule PhoenixKitEcommerce do
   the intended placement (e.g. `search` no longer sorting first).
   """
   def merge_missing_builtin_filters(filters) do
+    # NOTE: the below-minimum positioning preserves default relative order
+    # only within a single merge pass. If a future release adds a built-in
+    # defined AFTER an already-merged one in default_storefront_filters/0,
+    # a later pass will stack it above the earlier merge (more-negative
+    # position), inverting their intended order. If a second sidebar-leading
+    # built-in is ever added, renormalize positions on save instead of
+    # extending this scheme.
     existing_keys = MapSet.new(filters, & &1["key"])
     min_position = filters |> Enum.map(&(&1["position"] || 0)) |> Enum.min(fn -> 0 end)
 
@@ -2128,7 +2135,7 @@ defmodule PhoenixKitEcommerce do
 
     base_query =
       if search && search != "" do
-        search_term = "%#{search}%"
+        search_term = search_like_pattern(search)
 
         base_query
         |> join(:left, [c], u in assoc(c, :user))
@@ -2637,11 +2644,34 @@ defmodule PhoenixKitEcommerce do
     end)
   end
 
+  # Max length for a user-supplied search term. Anything longer is
+  # truncated: ILIKE against unindexed JSONB expansions is linear in both
+  # pattern and row count, so an unbounded public `?search=` param would be
+  # a cheap seq-scan amplifier.
+  @max_search_term_length 100
+
+  # Builds a safe `%term%` ILIKE pattern from raw user input: caps the
+  # length, strips NUL bytes (Postgres rejects them in text params), and
+  # escapes LIKE metacharacters so `%`, `_`, and `\` match literally —
+  # a search for "100%" must not match every "100", and SKUs routinely
+  # contain underscores.
+  defp search_like_pattern(search) do
+    escaped =
+      search
+      |> String.replace(<<0>>, "")
+      |> String.slice(0, @max_search_term_length)
+      |> String.replace("\\", "\\\\")
+      |> String.replace("%", "\\%")
+      |> String.replace("_", "\\_")
+
+    "%#{escaped}%"
+  end
+
   defp filter_by_product_search(query, nil), do: query
   defp filter_by_product_search(query, ""), do: query
 
   defp filter_by_product_search(query, search) do
-    search_term = "%#{search}%"
+    search_term = search_like_pattern(search)
     default_lang = Translations.default_language()
 
     # Search in JSONB localized fields using PostgreSQL operators
@@ -2698,7 +2728,7 @@ defmodule PhoenixKitEcommerce do
   defp filter_by_category_search(query, ""), do: query
 
   defp filter_by_category_search(query, search) do
-    search_term = "%#{search}%"
+    search_term = search_like_pattern(search)
     default_lang = Translations.default_language()
 
     # Search in JSONB localized name field using PostgreSQL operators
