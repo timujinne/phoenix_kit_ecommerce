@@ -5,6 +5,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  import PhoenixKitWeb.Components.Core.BulkSelect
   import PhoenixKitWeb.Components.Core.TableDefault
   import PhoenixKitWeb.Components.Core.TableRowMenu
 
@@ -51,7 +52,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
       |> assign(:category_filter, nil)
       |> assign(:categories, categories)
       |> assign(:currency, currency)
-      |> assign(:selected_uuids, MapSet.new())
+      |> assign(:bulk_uuids, [])
       |> assign(:show_bulk_modal, nil)
       |> assign(:current_language, current_language)
       |> assign(:delete_target, nil)
@@ -257,56 +258,49 @@ defmodule PhoenixKitEcommerce.Web.Products do
     end
   end
 
-  # Bulk selection events
+  # Bulk action modals — capture-then-act. Selection lives client-side in the
+  # BulkSelectScope hook; each of these events is fired by a distinct
+  # `data-bulk-action` button and carries the hook's currently-selected UUIDs
+  # in the payload. We "capture" them into `@bulk_uuids` here so the modal's
+  # own `phx-submit` handler (a normal server round-trip) has something to
+  # read at submit time, since by then the browser selection may have moved on.
   @impl true
-  def handle_event("toggle_select", %{"uuid" => uuid}, socket) do
-    selected = socket.assigns.selected_uuids
-
-    selected =
-      if MapSet.member?(selected, uuid) do
-        MapSet.delete(selected, uuid)
-      else
-        MapSet.put(selected, uuid)
-      end
-
-    {:noreply, assign(socket, :selected_uuids, selected)}
+  def handle_event("open_status_modal", %{"uuids" => uuids}, socket) do
+    {:noreply,
+     socket
+     |> assign(:bulk_uuids, uuids)
+     |> assign(:show_bulk_modal, "status")}
   end
 
   @impl true
-  def handle_event("select_all", _params, socket) do
-    all_uuids = Enum.map(socket.assigns.products, & &1.uuid) |> MapSet.new()
-    current = socket.assigns.selected_uuids
-
-    selected =
-      if MapSet.subset?(all_uuids, current) do
-        MapSet.difference(current, all_uuids)
-      else
-        MapSet.union(current, all_uuids)
-      end
-
-    {:noreply, assign(socket, :selected_uuids, selected)}
+  def handle_event("open_category_modal", %{"uuids" => uuids}, socket) do
+    {:noreply,
+     socket
+     |> assign(:bulk_uuids, uuids)
+     |> assign(:show_bulk_modal, "category")}
   end
 
   @impl true
-  def handle_event("clear_selection", _params, socket) do
-    {:noreply, assign(socket, :selected_uuids, MapSet.new())}
-  end
-
-  # Bulk action modals
-  @impl true
-  def handle_event("show_bulk_modal", %{"action" => action}, socket) do
-    {:noreply, assign(socket, :show_bulk_modal, action)}
+  def handle_event("confirm_bulk_delete", %{"uuids" => uuids}, socket) do
+    {:noreply,
+     socket
+     |> assign(:bulk_uuids, uuids)
+     |> assign(:show_bulk_modal, "delete")}
   end
 
   @impl true
   def handle_event("close_bulk_modal", _params, socket) do
-    {:noreply, assign(socket, :show_bulk_modal, nil)}
+    {:noreply,
+     socket
+     |> assign(:show_bulk_modal, nil)
+     |> assign(:bulk_uuids, [])
+     |> assign(:bulk_delete_media, false)}
   end
 
   # Bulk actions
   @impl true
   def handle_event("bulk_change_status", %{"status" => status}, socket) do
-    uuids = MapSet.to_list(socket.assigns.selected_uuids)
+    uuids = socket.assigns.bulk_uuids
     count = Shop.bulk_update_product_status(uuids, status)
 
     Activity.log("shop.products_status_changed",
@@ -320,14 +314,14 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
     {:noreply,
      socket
-     |> assign(:selected_uuids, MapSet.new())
+     |> assign(:bulk_uuids, [])
      |> assign(:show_bulk_modal, nil)
      |> put_flash(:info, "#{count} products updated to #{status}")}
   end
 
   @impl true
   def handle_event("bulk_change_category", %{"category_uuid" => category_uuid}, socket) do
-    uuids = MapSet.to_list(socket.assigns.selected_uuids)
+    uuids = socket.assigns.bulk_uuids
     category_uuid = if category_uuid == "", do: nil, else: category_uuid
     count = Shop.bulk_update_product_category(uuids, category_uuid)
 
@@ -335,7 +329,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
     {:noreply,
      socket
-     |> assign(:selected_uuids, MapSet.new())
+     |> assign(:bulk_uuids, [])
      |> assign(:show_bulk_modal, nil)
      |> put_flash(:info, "#{count} products moved")}
   end
@@ -347,7 +341,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
   @impl true
   def handle_event("bulk_delete", _params, socket) do
-    uuids = MapSet.to_list(socket.assigns.selected_uuids)
+    uuids = socket.assigns.bulk_uuids
 
     file_uuids =
       if socket.assigns.bulk_delete_media,
@@ -368,7 +362,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
     {:noreply,
      socket
-     |> assign(:selected_uuids, MapSet.new())
+     |> assign(:bulk_uuids, [])
      |> assign(:show_bulk_modal, nil)
      |> assign(:bulk_delete_media, false)
      |> put_flash(:info, "#{count} products deleted")}
@@ -499,36 +493,40 @@ defmodule PhoenixKitEcommerce.Web.Products do
           </div>
         </div>
 
-        <%!-- Bulk Actions Bar --%>
-        <%= if MapSet.size(@selected_uuids) > 0 do %>
-          <div class="bg-primary/10 border border-primary/30 rounded-lg p-4 mb-6">
+        <.bulk_select_scope id="products-bulk" total_count={length(@products)}>
+          <%!-- Bulk Actions Bar --%>
+          <div
+            class="bg-primary/10 border border-primary/30 rounded-lg p-4 mb-6"
+            data-bulk-show="has-selection"
+            style="display: none;"
+          >
             <div class="flex flex-wrap items-center justify-between gap-4">
               <div class="flex items-center gap-2">
-                <span class="badge badge-primary badge-lg">
-                  {MapSet.size(@selected_uuids)} selected
+                <span class="badge badge-primary badge-lg" data-bulk-text-template="%{count} selected">
+                  0 selected
                 </span>
-                <button phx-click="clear_selection" class="btn btn-ghost btn-sm">
+                <button type="button" data-bulk-clear="true" class="btn btn-ghost btn-sm">
                   Clear selection
                 </button>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button
-                  phx-click="show_bulk_modal"
-                  phx-value-action="status"
+                  type="button"
+                  data-bulk-action="open_status_modal"
                   class="btn btn-sm btn-outline"
                 >
                   <.icon name="hero-arrow-path" class="w-4 h-4 mr-1" /> Change Status
                 </button>
                 <button
-                  phx-click="show_bulk_modal"
-                  phx-value-action="category"
+                  type="button"
+                  data-bulk-action="open_category_modal"
                   class="btn btn-sm btn-outline"
                 >
                   <.icon name="hero-folder" class="w-4 h-4 mr-1" /> Move to Category
                 </button>
                 <button
-                  phx-click="show_bulk_modal"
-                  phx-value-action="delete"
+                  type="button"
+                  data-bulk-action="confirm_bulk_delete"
                   class="btn btn-sm btn-outline btn-error"
                 >
                   <.icon name="hero-trash" class="w-4 h-4 mr-1" /> Delete
@@ -536,215 +534,193 @@ defmodule PhoenixKitEcommerce.Web.Products do
               </div>
             </div>
           </div>
-        <% end %>
 
-        <%!-- Products Table --%>
-        <.table_default
-          id="products-table"
-          variant="zebra"
-          toggleable={true}
-          items={@products}
-          card_fields={fn product ->
-            [
-              %{label: "Status", value: product.status},
-              %{label: "Type", value: product.product_type},
-              %{
-                label: "Category",
-                value:
-                  if(product.category,
-                    do: Translations.get(product.category, :name, @current_language),
-                    else: "—"
-                  )
-              },
-              %{label: "Price", value: format_price(product.price, @currency)}
-            ]
-          end}
-        >
-          <:card_header :let={product}>
-            <div class="flex items-start gap-3">
-              <input
-                type="checkbox"
-                class="checkbox checkbox-sm mt-1"
-                checked={MapSet.member?(@selected_uuids, product.uuid)}
-                phx-click="toggle_select"
-                phx-value-uuid={product.uuid}
-              />
-              <% product_title = Translations.get(product, :title, @current_language) %>
-              <div class="avatar placeholder">
-                <div class="bg-base-300 text-base-content/50 w-10 h-10 rounded">
-                  <%= if thumb_url = get_product_thumbnail(product) do %>
-                    <img src={thumb_url} alt={product_title} />
-                  <% else %>
-                    <.icon name="hero-cube" class="w-5 h-5" />
-                  <% end %>
-                </div>
-              </div>
-              <div>
-                <div class="font-bold text-sm">{product_title}</div>
-                <div class="text-xs text-base-content/60">
-                  {Translations.get(product, :slug, @current_language)}
-                </div>
-              </div>
-            </div>
-          </:card_header>
-
-          <:card_actions :let={product}>
-            <.table_row_menu id={"card-menu-#{product.uuid}"}>
-              <.table_row_menu_link
-                navigate={Routes.path("/admin/shop/products/#{product.uuid}")}
-                icon="hero-eye"
-                label={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
-              />
-              <.table_row_menu_link
-                navigate={Routes.path("/admin/shop/products/#{product.uuid}/edit")}
-                icon="hero-pencil"
-                label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
-              />
-              <.table_row_menu_divider />
-              <.table_row_menu_button
-                phx-click="confirm_delete"
-                phx-value-uuid={product.uuid}
-                icon="hero-trash"
-                label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
-                variant="error"
-              />
-            </.table_row_menu>
-          </:card_actions>
-
-          <.table_default_header>
-            <.table_default_row hover={false}>
-              <.table_default_header_cell class="w-12">
-                <label class="cursor-pointer">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-sm"
-                    phx-click="select_all"
-                    checked={all_selected?(@products, @selected_uuids)}
-                  />
-                </label>
-              </.table_default_header_cell>
-              <.table_default_header_cell>Product</.table_default_header_cell>
-              <.table_default_header_cell>Status</.table_default_header_cell>
-              <.table_default_header_cell>Type</.table_default_header_cell>
-              <.table_default_header_cell>Category</.table_default_header_cell>
-              <.table_default_header_cell class="text-right">Price</.table_default_header_cell>
-              <.table_default_header_cell class="text-right">Actions</.table_default_header_cell>
-            </.table_default_row>
-          </.table_default_header>
-
-          <.table_default_body>
-            <%= if Enum.empty?(@products) do %>
-              <.table_default_row hover={false}>
-                <.table_default_cell colspan={7} class="text-center py-12 text-base-content/50">
-                  <.icon name="hero-cube" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p class="text-lg">No products found</p>
-                  <p class="text-sm">Create your first product to get started</p>
-                </.table_default_cell>
-              </.table_default_row>
-            <% else %>
-              <%= for product <- @products do %>
-                <.table_default_row class={
-                  if MapSet.member?(@selected_uuids, product.uuid), do: "bg-primary/5", else: ""
-                }>
-                  <.table_default_cell>
-                    <label class="cursor-pointer">
-                      <input
-                        type="checkbox"
-                        class="checkbox checkbox-sm"
-                        phx-click="toggle_select"
-                        phx-value-uuid={product.uuid}
-                        checked={MapSet.member?(@selected_uuids, product.uuid)}
-                      />
-                    </label>
-                  </.table_default_cell>
-                  <.table_default_cell
-                    class="cursor-pointer"
-                    phx-click="view_product"
-                    phx-value-uuid={product.uuid}
-                  >
-                    <div class="flex items-center gap-3">
-                      <% product_title = Translations.get(product, :title, @current_language) %>
-                      <% product_slug = Translations.get(product, :slug, @current_language) %>
-                      <div class="avatar placeholder">
-                        <div class="bg-base-300 text-base-content/50 w-12 h-12 rounded">
-                          <%= if thumb_url = get_product_thumbnail(product) do %>
-                            <img src={thumb_url} alt={product_title} />
-                          <% else %>
-                            <.icon name="hero-cube" class="w-6 h-6" />
-                          <% end %>
-                        </div>
-                      </div>
-                      <div>
-                        <div class="font-bold">{product_title}</div>
-                        <div class="text-sm text-base-content/60">{product_slug}</div>
-                      </div>
-                    </div>
-                  </.table_default_cell>
-                  <.table_default_cell
-                    class="cursor-pointer"
-                    phx-click="view_product"
-                    phx-value-uuid={product.uuid}
-                  >
-                    <span class={status_badge_class(product.status)}>{product.status}</span>
-                  </.table_default_cell>
-                  <.table_default_cell
-                    class="cursor-pointer"
-                    phx-click="view_product"
-                    phx-value-uuid={product.uuid}
-                  >
-                    <span class={type_badge_class(product.product_type)}>
-                      {product.product_type}
-                    </span>
-                  </.table_default_cell>
-                  <.table_default_cell
-                    class="cursor-pointer"
-                    phx-click="view_product"
-                    phx-value-uuid={product.uuid}
-                  >
-                    <%= if product.category do %>
-                      <span class="badge badge-ghost">
-                        {Translations.get(product.category, :name, @current_language)}
-                      </span>
+          <%!-- Products Table --%>
+          <.table_default
+            id="products-table"
+            variant="zebra"
+            toggleable={true}
+            items={@products}
+            card_fields={fn product ->
+              [
+                %{label: "Status", value: product.status},
+                %{label: "Type", value: product.product_type},
+                %{
+                  label: "Category",
+                  value:
+                    if(product.category,
+                      do: Translations.get(product.category, :name, @current_language),
+                      else: "—"
+                    )
+                },
+                %{label: "Price", value: format_price(product.price, @currency)}
+              ]
+            end}
+          >
+            <:card_header :let={product}>
+              <div class="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-sm mt-1"
+                  data-bulk-role="row"
+                  data-uuid={product.uuid}
+                />
+                <% product_title = Translations.get(product, :title, @current_language) %>
+                <div class="avatar placeholder">
+                  <div class="bg-base-300 text-base-content/50 w-10 h-10 rounded">
+                    <%= if thumb_url = get_product_thumbnail(product) do %>
+                      <img src={thumb_url} alt={product_title} />
                     <% else %>
-                      <span class="text-base-content/40">—</span>
+                      <.icon name="hero-cube" class="w-5 h-5" />
                     <% end %>
-                  </.table_default_cell>
-                  <.table_default_cell
-                    class="text-right font-mono cursor-pointer"
-                    phx-click="view_product"
-                    phx-value-uuid={product.uuid}
-                  >
-                    {format_price(product.price, @currency)}
-                  </.table_default_cell>
-                  <.table_default_cell class="text-right">
-                    <div class="flex justify-end">
-                      <.table_row_menu id={"menu-#{product.uuid}"}>
-                        <.table_row_menu_link
-                          navigate={Routes.path("/admin/shop/products/#{product.uuid}")}
-                          icon="hero-eye"
-                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
-                        />
-                        <.table_row_menu_link
-                          navigate={Routes.path("/admin/shop/products/#{product.uuid}/edit")}
-                          icon="hero-pencil"
-                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
-                        />
-                        <.table_row_menu_divider />
-                        <.table_row_menu_button
-                          phx-click="confirm_delete"
-                          phx-value-uuid={product.uuid}
-                          icon="hero-trash"
-                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
-                          variant="error"
-                        />
-                      </.table_row_menu>
-                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div class="font-bold text-sm">{product_title}</div>
+                  <div class="text-xs text-base-content/60">
+                    {Translations.get(product, :slug, @current_language)}
+                  </div>
+                </div>
+              </div>
+            </:card_header>
+
+            <:card_actions :let={product}>
+              <.table_row_menu id={"card-menu-#{product.uuid}"}>
+                <.table_row_menu_link
+                  navigate={Routes.path("/admin/shop/products/#{product.uuid}")}
+                  icon="hero-eye"
+                  label={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
+                />
+                <.table_row_menu_link
+                  navigate={Routes.path("/admin/shop/products/#{product.uuid}/edit")}
+                  icon="hero-pencil"
+                  label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
+                />
+                <.table_row_menu_divider />
+                <.table_row_menu_button
+                  phx-click="confirm_delete"
+                  phx-value-uuid={product.uuid}
+                  icon="hero-trash"
+                  label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
+                  variant="error"
+                />
+              </.table_row_menu>
+            </:card_actions>
+
+            <.table_default_header>
+              <.table_default_row hover={false}>
+                <.bulk_select_header_cell id="products-select-all" aria_label="Select all products" />
+                <.table_default_header_cell>Product</.table_default_header_cell>
+                <.table_default_header_cell>Status</.table_default_header_cell>
+                <.table_default_header_cell>Type</.table_default_header_cell>
+                <.table_default_header_cell>Category</.table_default_header_cell>
+                <.table_default_header_cell class="text-right">Price</.table_default_header_cell>
+                <.table_default_header_cell class="text-right">Actions</.table_default_header_cell>
+              </.table_default_row>
+            </.table_default_header>
+
+            <.table_default_body>
+              <%= if Enum.empty?(@products) do %>
+                <.table_default_row hover={false}>
+                  <.table_default_cell colspan={7} class="text-center py-12 text-base-content/50">
+                    <.icon name="hero-cube" class="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p class="text-lg">No products found</p>
+                    <p class="text-sm">Create your first product to get started</p>
                   </.table_default_cell>
                 </.table_default_row>
+              <% else %>
+                <%= for product <- @products do %>
+                  <.table_default_row class="has-[input:checked]:bg-primary/5">
+                    <.bulk_select_cell value={product.uuid} />
+                    <.table_default_cell
+                      class="cursor-pointer"
+                      phx-click="view_product"
+                      phx-value-uuid={product.uuid}
+                    >
+                      <div class="flex items-center gap-3">
+                        <% product_title = Translations.get(product, :title, @current_language) %>
+                        <% product_slug = Translations.get(product, :slug, @current_language) %>
+                        <div class="avatar placeholder">
+                          <div class="bg-base-300 text-base-content/50 w-12 h-12 rounded">
+                            <%= if thumb_url = get_product_thumbnail(product) do %>
+                              <img src={thumb_url} alt={product_title} />
+                            <% else %>
+                              <.icon name="hero-cube" class="w-6 h-6" />
+                            <% end %>
+                          </div>
+                        </div>
+                        <div>
+                          <div class="font-bold">{product_title}</div>
+                          <div class="text-sm text-base-content/60">{product_slug}</div>
+                        </div>
+                      </div>
+                    </.table_default_cell>
+                    <.table_default_cell
+                      class="cursor-pointer"
+                      phx-click="view_product"
+                      phx-value-uuid={product.uuid}
+                    >
+                      <span class={status_badge_class(product.status)}>{product.status}</span>
+                    </.table_default_cell>
+                    <.table_default_cell
+                      class="cursor-pointer"
+                      phx-click="view_product"
+                      phx-value-uuid={product.uuid}
+                    >
+                      <span class={type_badge_class(product.product_type)}>
+                        {product.product_type}
+                      </span>
+                    </.table_default_cell>
+                    <.table_default_cell
+                      class="cursor-pointer"
+                      phx-click="view_product"
+                      phx-value-uuid={product.uuid}
+                    >
+                      <%= if product.category do %>
+                        <span class="badge badge-ghost">
+                          {Translations.get(product.category, :name, @current_language)}
+                        </span>
+                      <% else %>
+                        <span class="text-base-content/40">—</span>
+                      <% end %>
+                    </.table_default_cell>
+                    <.table_default_cell
+                      class="text-right font-mono cursor-pointer"
+                      phx-click="view_product"
+                      phx-value-uuid={product.uuid}
+                    >
+                      {format_price(product.price, @currency)}
+                    </.table_default_cell>
+                    <.table_default_cell class="text-right">
+                      <div class="flex justify-end">
+                        <.table_row_menu id={"menu-#{product.uuid}"}>
+                          <.table_row_menu_link
+                            navigate={Routes.path("/admin/shop/products/#{product.uuid}")}
+                            icon="hero-eye"
+                            label={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
+                          />
+                          <.table_row_menu_link
+                            navigate={Routes.path("/admin/shop/products/#{product.uuid}/edit")}
+                            icon="hero-pencil"
+                            label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
+                          />
+                          <.table_row_menu_divider />
+                          <.table_row_menu_button
+                            phx-click="confirm_delete"
+                            phx-value-uuid={product.uuid}
+                            icon="hero-trash"
+                            label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
+                            variant="error"
+                          />
+                        </.table_row_menu>
+                      </div>
+                    </.table_default_cell>
+                  </.table_default_row>
+                <% end %>
               <% end %>
-            <% end %>
-          </.table_default_body>
-        </.table_default>
+            </.table_default_body>
+          </.table_default>
+        </.bulk_select_scope>
 
         <%!-- Pagination --%>
         <%= if @total > @per_page do %>
@@ -772,7 +748,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
           <div class="modal-box">
             <h3 class="font-bold text-lg mb-4">Change Status</h3>
             <p class="text-base-content/70 mb-4">
-              Update status for {MapSet.size(@selected_uuids)} selected products
+              Update status for {length(@bulk_uuids)} selected products
             </p>
             <div class="flex flex-col gap-2">
               <button
@@ -811,7 +787,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
           <div class="modal-box">
             <h3 class="font-bold text-lg mb-4">Move to Category</h3>
             <p class="text-base-content/70 mb-4">
-              Move {MapSet.size(@selected_uuids)} selected products to a category
+              Move {length(@bulk_uuids)} selected products to a category
             </p>
             <div class="flex flex-col gap-2">
               <button
@@ -849,7 +825,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
           <div class="modal-box">
             <h3 class="font-bold text-lg text-error mb-4">Delete Products</h3>
             <p class="text-base-content/70 mb-4">
-              Are you sure you want to delete {MapSet.size(@selected_uuids)} products?
+              Are you sure you want to delete {length(@bulk_uuids)} products?
               This action cannot be undone.
             </p>
             <label class="label cursor-pointer justify-start gap-3">
@@ -896,11 +872,6 @@ defmodule PhoenixKitEcommerce.Web.Products do
         </div>
       <% end %>
     """
-  end
-
-  defp all_selected?(products, selected_uuids) do
-    products != [] and
-      Enum.all?(products, fn p -> MapSet.member?(selected_uuids, p.uuid) end)
   end
 
   defp parse_category_uuid(nil), do: nil
