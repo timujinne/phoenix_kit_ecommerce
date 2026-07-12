@@ -36,9 +36,12 @@ defmodule PhoenixKitEcommerce.Test.Router do
       layout: {PhoenixKitEcommerce.Test.Layouts, :app},
       on_mount: {PhoenixKitEcommerce.Test.Hooks, :assign_scope} do
       live("/shop", ShopCatalog, :index, as: :shop_catalog)
+      live("/shop/category/:slug", CatalogCategory, :show, as: :shop_category)
       # `Shop.catalog_url/1` resolves to the locale-prefixed form in the
       # test env, so patches from filter events land here.
       live("/:locale/shop", ShopCatalog, :index, as: :shop_catalog_localized)
+
+      live("/:locale/shop/category/:slug", CatalogCategory, :show, as: :shop_category_localized)
     end
   end
 

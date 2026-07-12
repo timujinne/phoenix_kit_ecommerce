@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Fixed
+- **Search terms are escaped before hitting ILIKE.** User input flowed
+  into the `%term%` pattern raw, so `%`/`_`/`\` acted as wildcards on a
+  route open to unauthenticated visitors: searching `100%` matched every
+  product containing "100", an SKU search for `AB_100` also matched
+  `ABX100`, and a term ending in `\` silently corrupted the pattern into
+  requiring a literal `%`. Terms are now length-capped (100 chars),
+  NUL-stripped (a crafted `%00` raised `Postgrex.Error`), and
+  LIKE-escaped in one choke point (`search_like_pattern/1`) shared by the
+  product, category, and admin-cart search filters. The cap also closes a
+  cheap unauthenticated seq-scan amplifier (unbounded multi-KB patterns
+  against six ILIKE evaluations per row, two of them `jsonb_each_text`
+  expansions).
+- **Category pages now show a filters-aware zero-result state.** With an
+  active search (or price/vendor filter) matching nothing, the category
+  page claimed "No products in this category — check back soon" even
+  though the category has products; it now says the filters matched
+  nothing and offers a clear-filters affordance, matching the main
+  catalog page. Both the guest and authenticated layouts share one
+  `category_empty_state` component now.
+- Documented (code comment) the cross-release ordering limitation of
+  `merge_missing_builtin_filters/1`'s below-minimum positioning scheme:
+  it holds within one merge pass; a hypothetical second sidebar-leading
+  built-in added in a future release should renormalize positions on
+  save instead of extending the scheme.
+
 ## 0.1.9 - 2026-07-11
 
 ### Added

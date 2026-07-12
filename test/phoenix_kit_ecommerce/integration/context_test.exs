@@ -110,6 +110,54 @@ defmodule PhoenixKitEcommerce.Integration.ContextTest do
       assert product.uuid in uuids
       refute other.uuid in uuids
     end
+
+    test "list_products/1 :search treats % as a literal character" do
+      {:ok, cotton} =
+        Shop.create_product(product_attrs(%{"title" => %{"en" => "100% Cotton Shirt"}}))
+
+      {:ok, decoy} =
+        Shop.create_product(product_attrs(%{"title" => %{"en" => "100 Count Wool Socks"}}))
+
+      uuids = Enum.map(Shop.list_products(search: "100%"), & &1.uuid)
+      assert cotton.uuid in uuids
+      refute decoy.uuid in uuids
+    end
+
+    test "list_products/1 :search treats _ in an SKU as a literal character" do
+      {:ok, target} = Shop.create_product(product_attrs(%{"metadata" => %{"sku" => "AB_100"}}))
+      {:ok, decoy} = Shop.create_product(product_attrs(%{"metadata" => %{"sku" => "ABX100"}}))
+
+      uuids = Enum.map(Shop.list_products(search: "AB_100"), & &1.uuid)
+      assert target.uuid in uuids
+      refute decoy.uuid in uuids
+    end
+
+    test "list_products/1 :search with a trailing backslash still substring-matches" do
+      {:ok, product} =
+        Shop.create_product(product_attrs(%{"title" => %{"en" => "path foo\\bar demo"}}))
+
+      uuids = Enum.map(Shop.list_products(search: "foo\\"), & &1.uuid)
+      assert product.uuid in uuids
+    end
+
+    test "list_products/1 :search survives pathological terms" do
+      {:ok, _} = Shop.create_product(product_attrs())
+
+      # Unbounded-length pattern must not blow up (term is capped)
+      assert Shop.list_products(search: String.duplicate("a%_", 5_000)) == []
+
+      # NUL byte would raise in Postgres text params unless stripped
+      assert Shop.list_products(search: "abc" <> <<0>> <> "def") == []
+    end
+
+    test "list_categories/1 :search treats % as a literal character" do
+      {:ok, sale} = Shop.create_category(%{"name" => %{"en" => "50% Off Corner"}})
+      {:ok, decoy} = Shop.create_category(%{"name" => %{"en" => "50 Shades of Grey Paint"}})
+
+      uuids = Enum.map(Shop.list_categories(search: "50%"), & &1.uuid)
+      assert sale.uuid in uuids
+      refute decoy.uuid in uuids
+    end
   end
 
   describe "categories" do
