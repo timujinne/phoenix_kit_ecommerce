@@ -26,7 +26,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
     socket =
       socket
-      |> assign(:page_title, "E-Commerce Settings")
+      |> assign(:page_title, gettext("E-Commerce Settings"))
       |> assign(:enabled, config.enabled)
       |> assign(:inventory_tracking, config.inventory_tracking)
       |> assign(:billing_enabled, billing_enabled?())
@@ -63,11 +63,14 @@ defmodule PhoenixKitEcommerce.Web.Settings do
          |> assign(:inventory_tracking, new_value)
          |> put_flash(
            :info,
-           if(new_value, do: "Inventory tracking enabled", else: "Inventory tracking disabled")
+           if(new_value,
+             do: gettext("Inventory tracking enabled"),
+             else: gettext("Inventory tracking disabled")
+           )
          )}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update inventory setting")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update inventory setting"))}
     end
   end
 
@@ -78,10 +81,11 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply,
          socket
          |> assign(:category_name_display, display)
-         |> put_flash(:info, "Category display setting updated")}
+         |> put_flash(:info, gettext("Category display setting updated"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update category display setting")}
+        {:noreply,
+         put_flash(socket, :error, gettext("Failed to update category display setting"))}
     end
   end
 
@@ -98,13 +102,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
          |> put_flash(
            :info,
            if(new_value,
-             do: "Categories in shop enabled",
-             else: "Categories in shop disabled"
+             do: gettext("Categories in shop enabled"),
+             else: gettext("Categories in shop disabled")
            )
          )}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update setting")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update setting"))}
     end
   end
 
@@ -115,10 +119,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply,
          socket
          |> assign(:category_icon_mode, mode)
-         |> put_flash(:info, "Category icon setting updated")}
+         |> put_flash(:info, gettext("Category icon setting updated"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update category icon setting")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update category icon setting"))}
     end
   end
 
@@ -134,10 +138,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply,
          socket
          |> assign(:storefront_filters, filters)
-         |> put_flash(:info, "Storefront filter updated")}
+         |> put_flash(:info, gettext("Storefront filter updated"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update filter")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update filter"))}
     end
   end
 
@@ -153,7 +157,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply, assign(socket, :storefront_filters, filters)}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update filter label")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update filter label"))}
     end
   end
 
@@ -162,7 +166,8 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     existing_keys = Enum.map(socket.assigns.storefront_filters, & &1["key"])
 
     if option_key in existing_keys do
-      {:noreply, put_flash(socket, :error, "Filter for '#{option_key}' already exists")}
+      {:noreply,
+       put_flash(socket, :error, gettext("Filter for '%{key}' already exists", key: option_key))}
     else
       max_pos =
         socket.assigns.storefront_filters
@@ -185,10 +190,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           {:noreply,
            socket
            |> assign(:storefront_filters, filters)
-           |> put_flash(:info, "Filter '#{option_key}' added")}
+           |> put_flash(:info, gettext("Filter '%{key}' added", key: option_key))}
 
         {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Failed to add filter")}
+          {:noreply, put_flash(socket, :error, gettext("Failed to add filter"))}
       end
     end
   end
@@ -202,10 +207,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply,
          socket
          |> assign(:storefront_filters, filters)
-         |> put_flash(:info, "Filter removed")}
+         |> put_flash(:info, gettext("Filter removed"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to remove filter")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to remove filter"))}
     end
   end
 
@@ -218,10 +223,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:noreply,
          socket
          |> assign(:storefront_filters, filters)
-         |> put_flash(:info, "Filters reset to defaults")}
+         |> put_flash(:info, gettext("Filters reset to defaults"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to reset filters")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to reset filters"))}
     end
   end
 
@@ -231,8 +236,8 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
         <.admin_page_header
           back={Routes.path("/admin/shop")}
-          title="E-Commerce Settings"
-          subtitle="Configure your e-commerce store"
+          title={gettext("E-Commerce Settings")}
+          subtitle={gettext("Configure your e-commerce store")}
         />
 
         <%!-- Inventory Settings (toggle pattern) --%>
@@ -245,9 +250,9 @@ defmodule PhoenixKitEcommerce.Web.Settings do
             <div class="form-control">
               <label class="label cursor-pointer justify-between">
                 <span class="label-text text-lg">
-                  <span class="font-semibold">Track Inventory</span>
+                  <span class="font-semibold">{gettext("Track Inventory")}</span>
                   <div class="text-sm text-base-content/70 mt-1">
-                    Enable stock tracking for products (Phase 2)
+                    {gettext("Enable stock tracking for products (Phase 2)")}
                   </div>
                 </span>
                 <input
@@ -265,11 +270,11 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         <div class="alert alert-info mb-6">
           <.icon name="hero-information-circle" class="w-6 h-6" />
           <div>
-            <h3 class="font-bold">Currency & Tax Settings</h3>
+            <h3 class="font-bold">{gettext("Currency & Tax Settings")}</h3>
             <p class="text-sm">
-              Currency and tax configuration is managed in the
+              {gettext("Currency and tax configuration is managed in the")}
               <.link navigate={Routes.path("/admin/settings/billing")} class="link font-medium">
-                Billing module settings
+                {gettext("Billing module settings")}
               </.link>
             </p>
           </div>
@@ -279,25 +284,25 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         <div class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">
             <h2 class="card-title text-xl mb-6">
-              <.icon name="hero-tag" class="w-6 h-6" /> Product Options
+              <.icon name="hero-tag" class="w-6 h-6" /> {gettext("Product Options")}
             </h2>
 
             <div class="form-control">
               <label class="label cursor-pointer justify-between">
                 <span class="label-text text-lg">
-                  <span class="font-semibold">Global Product Options</span>
+                  <span class="font-semibold">{gettext("Global Product Options")}</span>
                   <div class="text-sm text-base-content/70 mt-1">
-                    Define options that apply to all products (size, color, material, etc.)
+                    {gettext("Define options that apply to all products (size, color, material, etc.)")}
                   </div>
                   <div class="text-xs text-base-content/50 mt-1">
-                    Price override is configured per-option in the options settings.
+                    {gettext("Price override is configured per-option in the options settings.")}
                   </div>
                 </span>
                 <.link
                   navigate={Routes.path("/admin/shop/settings/options")}
                   class="btn btn-primary"
                 >
-                  <.icon name="hero-cog-6-tooth" class="w-4 h-4 mr-2" /> Configure
+                  <.icon name="hero-cog-6-tooth" class="w-4 h-4 mr-2" /> {gettext("Configure")}
                 </.link>
               </label>
             </div>
@@ -308,22 +313,22 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         <div class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">
             <h2 class="card-title text-xl mb-6">
-              <.icon name="hero-funnel" class="w-6 h-6" /> Import Configurations
+              <.icon name="hero-funnel" class="w-6 h-6" /> {gettext("Import Configurations")}
             </h2>
 
             <div class="form-control">
               <label class="label cursor-pointer justify-between">
                 <span class="label-text text-lg">
-                  <span class="font-semibold">CSV Import Filters</span>
+                  <span class="font-semibold">{gettext("CSV Import Filters")}</span>
                   <div class="text-sm text-base-content/70 mt-1">
-                    Configure keyword filters and category rules for CSV product imports
+                    {gettext("Configure keyword filters and category rules for CSV product imports")}
                   </div>
                 </span>
                 <.link
                   navigate={Routes.path("/admin/shop/settings/import-configs")}
                   class="btn btn-primary"
                 >
-                  <.icon name="hero-cog-6-tooth" class="w-4 h-4 mr-2" /> Configure
+                  <.icon name="hero-cog-6-tooth" class="w-4 h-4 mr-2" /> {gettext("Configure")}
                 </.link>
               </label>
             </div>
@@ -335,17 +340,17 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           <div class="card-body">
             <div class="flex items-center justify-between mb-6">
               <h2 class="card-title text-xl">
-                <.icon name="hero-funnel" class="w-6 h-6" /> Storefront Filters
+                <.icon name="hero-funnel" class="w-6 h-6" /> {gettext("Storefront Filters")}
               </h2>
               <button phx-click="reset_default_filters" class="btn btn-ghost btn-xs">
-                Reset to defaults
+                {gettext("Reset to defaults")}
               </button>
             </div>
 
             <p class="text-sm text-base-content/70 mb-4">
-              Configure product filters shown on the storefront sidebar.
-              Customers can search by name, SKU, or tags, and filter by
-              price, vendor, and product options.
+              {gettext(
+                "Configure product filters shown on the storefront sidebar. Customers can search by name, SKU, or tags, and filter by price, vendor, and product options."
+              )}
             </p>
 
             <%!-- Current Filters Table --%>
@@ -353,10 +358,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
               <table class="table table-sm">
                 <thead>
                   <tr>
-                    <th>Filter</th>
-                    <th>Type</th>
-                    <th>Label</th>
-                    <th>Enabled</th>
+                    <th>{gettext("Filter")}</th>
+                    <th>{gettext("Type")}</th>
+                    <th>{gettext("Label")}</th>
+                    <th>{gettext("Enabled")}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -393,11 +398,11 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                             phx-click="remove_filter"
                             phx-value-key={filter["key"]}
                             class="btn btn-outline btn-error btn-xs tooltip tooltip-bottom"
-                            data-tip={Gettext.gettext(PhoenixKitWeb.Gettext, "Remove")}
-                            data-confirm="Remove this filter?"
+                            data-tip={gettext("Remove")}
+                            data-confirm={gettext("Remove this filter?")}
                           >
                             <.icon name="hero-trash" class="w-4 h-4 hidden sm:inline" />
-                            <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "Remove")}</span>
+                            <span class="sm:hidden whitespace-nowrap">{gettext("Remove")}</span>
                           </button>
                         <% end %>
                       </td>
@@ -409,9 +414,9 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
             <%!-- Auto-discovered option keys --%>
             <%= if @discovered_options != [] do %>
-              <div class="divider">Available Product Options</div>
+              <div class="divider">{gettext("Available Product Options")}</div>
               <p class="text-sm text-base-content/70 mb-3">
-                These option keys were found in product metadata. Click to add as a filter.
+                {gettext("These option keys were found in product metadata. Click to add as a filter.")}
               </p>
               <div class="flex flex-wrap gap-2">
                 <% existing_keys = Enum.map(@storefront_filters, & &1["key"]) %>
@@ -437,16 +442,16 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         <div class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">
             <h2 class="card-title text-xl mb-6">
-              <.icon name="hero-bars-3" class="w-6 h-6" /> Sidebar Display
+              <.icon name="hero-bars-3" class="w-6 h-6" /> {gettext("Sidebar Display")}
             </h2>
 
             <%!-- Show Categories in Shop --%>
             <div class="form-control mb-6">
               <label class="label cursor-pointer justify-between">
                 <span class="label-text text-lg">
-                  <span class="font-semibold">Show Categories in Shop</span>
+                  <span class="font-semibold">{gettext("Show Categories in Shop")}</span>
                   <div class="text-sm text-base-content/70 mt-1">
-                    Display category cards above products in the main shop page
+                    {gettext("Display category cards above products in the main shop page")}
                   </div>
                 </span>
                 <input
@@ -463,10 +468,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
             <%!-- Category Name Display --%>
             <div class="form-control mb-6">
               <label class="label">
-                <span class="label-text text-lg font-semibold">Category Name Display</span>
+                <span class="label-text text-lg font-semibold">{gettext("Category Name Display")}</span>
               </label>
               <p class="text-sm text-base-content/70 mb-3">
-                How category names should be displayed in the sidebar
+                {gettext("How category names should be displayed in the sidebar")}
               </p>
               <div class="flex gap-4">
                 <label class="label cursor-pointer gap-2">
@@ -479,7 +484,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_category_display"
                     phx-value-display="truncate"
                   />
-                  <span class="label-text">Truncate (single line)</span>
+                  <span class="label-text">{gettext("Truncate (single line)")}</span>
                 </label>
                 <label class="label cursor-pointer gap-2">
                   <input
@@ -491,7 +496,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_category_display"
                     phx-value-display="wrap"
                   />
-                  <span class="label-text">Wrap (multi-line)</span>
+                  <span class="label-text">{gettext("Wrap (multi-line)")}</span>
                 </label>
               </div>
             </div>
@@ -501,10 +506,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
             <%!-- Category Icon Mode --%>
             <div class="form-control">
               <label class="label">
-                <span class="label-text text-lg font-semibold">Category Icons</span>
+                <span class="label-text text-lg font-semibold">{gettext("Category Icons")}</span>
               </label>
               <p class="text-sm text-base-content/70 mb-3">
-                Show icons next to category names in sidebar
+                {gettext("Show icons next to category names in sidebar")}
               </p>
               <div class="flex gap-4">
                 <label class="label cursor-pointer gap-2">
@@ -517,7 +522,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_category_icon"
                     phx-value-mode="none"
                   />
-                  <span class="label-text">No icons</span>
+                  <span class="label-text">{gettext("No icons")}</span>
                 </label>
                 <label class="label cursor-pointer gap-2">
                   <input
@@ -529,7 +534,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_category_icon"
                     phx-value-mode="folder"
                   />
-                  <span class="label-text">Folder icon</span>
+                  <span class="label-text">{gettext("Folder icon")}</span>
                 </label>
                 <label class="label cursor-pointer gap-2">
                   <input
@@ -541,7 +546,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_category_icon"
                     phx-value-mode="category"
                   />
-                  <span class="label-text">Category image</span>
+                  <span class="label-text">{gettext("Category image")}</span>
                 </label>
               </div>
             </div>

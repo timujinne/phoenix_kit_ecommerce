@@ -122,11 +122,11 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
 
         {:noreply,
          socket
-         |> put_flash(:info, "Product deleted")
+         |> put_flash(:info, gettext("Product deleted"))
          |> push_navigate(to: Routes.path("/admin/shop/products"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to delete product")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to delete product"))}
     end
   end
 
@@ -191,7 +191,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             <%!-- Language Preview Switcher --%>
             <div class="flex items-center gap-2">
               <span class="text-sm text-base-content/70">
-                <.icon name="hero-eye" class="w-4 h-4 inline mr-1" /> Preview:
+                <.icon name="hero-eye" class="w-4 h-4 inline mr-1" /> {gettext("Preview:")}
               </span>
               <div class="join">
                 <%= for lang <- @available_languages do %>
@@ -217,13 +217,13 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
                 navigate={Routes.path("/admin/shop/products/#{@product.uuid}/edit")}
                 class="btn btn-primary"
               >
-                <.icon name="hero-pencil" class="w-4 h-4 mr-2" /> Edit
+                <.icon name="hero-pencil" class="w-4 h-4 mr-2" /> {gettext("Edit")}
               </.link>
               <button
                 phx-click="confirm_delete"
                 class="btn btn-outline btn-error"
               >
-                <.icon name="hero-trash" class="w-4 h-4 mr-2" /> Delete
+                <.icon name="hero-trash" class="w-4 h-4 mr-2" /> {gettext("Delete")}
               </button>
             </div>
           </div>
@@ -235,7 +235,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             <%!-- Product Image --%>
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
-                <h2 class="card-title">Image</h2>
+                <h2 class="card-title">{gettext("Image")}</h2>
                 <% selected_url = get_image_url_by_uuid(@product, @selected_image_uuid) %>
                 <div class="aspect-video bg-base-200 rounded-lg overflow-hidden">
                   <%= if selected_url do %>
@@ -247,7 +247,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
                   <% else %>
                     <div class="w-full h-full flex items-center justify-center">
                       <.icon name="hero-photo" class="w-16 h-16 opacity-30" />
-                      <span class="ml-2 text-base-content/50">No image</span>
+                      <span class="ml-2 text-base-content/50">{gettext("No image")}</span>
                     </div>
                   <% end %>
                 </div>
@@ -279,7 +279,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
               <div class="card bg-base-100 shadow-xl">
                 <div class="card-body">
                   <h2 class="card-title">
-                    <.icon name="hero-adjustments-horizontal" class="w-5 h-5" /> Available Options
+                    <.icon name="hero-adjustments-horizontal" class="w-5 h-5" /> {gettext("Available Options")}
                   </h2>
                   <div class="space-y-3">
                     <%= for attr <- @selectable_specs do %>
@@ -325,7 +325,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             <%!-- Details --%>
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
-                <h2 class="card-title">Product Details</h2>
+                <h2 class="card-title">{gettext("Product Details")}</h2>
 
                 <%= if @product_description do %>
                   <.markdown
@@ -340,31 +340,31 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
 
                 <div class="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <span class="text-base-content/60">Type:</span>
+                    <span class="text-base-content/60">{gettext("Type:")}</span>
                     <span class="ml-2 font-medium capitalize">{@product.product_type}</span>
                   </div>
                   <div>
-                    <span class="text-base-content/60">Vendor:</span>
+                    <span class="text-base-content/60">{gettext("Vendor:")}</span>
                     <span class="ml-2 font-medium">{@product.vendor || "—"}</span>
                   </div>
                   <div>
-                    <span class="text-base-content/60">Taxable:</span>
-                    <span class="ml-2 font-medium">{if @product.taxable, do: "Yes", else: "No"}</span>
+                    <span class="text-base-content/60">{gettext("Taxable:")}</span>
+                    <span class="ml-2 font-medium">{if @product.taxable, do: gettext("Yes"), else: gettext("No")}</span>
                   </div>
                   <div>
-                    <span class="text-base-content/60">Weight:</span>
+                    <span class="text-base-content/60">{gettext("Weight:")}</span>
                     <span class="ml-2 font-medium">{@product.weight_grams || 0}g</span>
                   </div>
                   <div>
-                    <span class="text-base-content/60">Requires Shipping:</span>
+                    <span class="text-base-content/60">{gettext("Requires Shipping:")}</span>
                     <span class="ml-2 font-medium">
-                      {if @product.requires_shipping, do: "Yes", else: "No"}
+                      {if @product.requires_shipping, do: gettext("Yes"), else: gettext("No")}
                     </span>
                   </div>
                   <div>
-                    <span class="text-base-content/60">Made to Order:</span>
+                    <span class="text-base-content/60">{gettext("Made to Order:")}</span>
                     <span class="ml-2 font-medium">
-                      {if @product.made_to_order, do: "Yes", else: "No"}
+                      {if @product.made_to_order, do: gettext("Yes"), else: gettext("No")}
                     </span>
                   </div>
                 </div>
@@ -373,7 +373,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
                 <%= if @product.tags && @product.tags != [] do %>
                   <div class="divider"></div>
                   <div>
-                    <span class="text-base-content/60 text-sm">Tags:</span>
+                    <span class="text-base-content/60 text-sm">{gettext("Tags:")}</span>
                     <div class="flex flex-wrap gap-1 mt-2">
                       <%= for tag <- @product.tags do %>
                         <span class="badge badge-outline badge-sm">{tag}</span>
@@ -386,7 +386,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
                 <%= if @product_body_html && @product_body_html != "" do %>
                   <div class="divider"></div>
                   <div>
-                    <span class="text-base-content/60 text-sm">Full Description:</span>
+                    <span class="text-base-content/60 text-sm">{gettext("Full Description:")}</span>
                     <div class="prose prose-sm mt-2 max-w-none">
                       {Phoenix.HTML.raw(@product_body_html)}
                     </div>
@@ -399,13 +399,13 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
                 <div class="flex items-center justify-between">
-                  <h2 class="card-title">Pricing</h2>
+                  <h2 class="card-title">{gettext("Pricing")}</h2>
                   <span class="badge badge-outline">{(@currency && @currency.code) || "—"}</span>
                 </div>
 
                 <div class="grid grid-cols-3 gap-4 mt-4">
                   <div class="stat p-0">
-                    <div class="stat-title">Price</div>
+                    <div class="stat-title">{gettext("Price")}</div>
                     <div class="stat-value text-2xl">
                       {format_price(@product.price, @currency)}
                     </div>
@@ -413,7 +413,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
 
                   <%= if @product.compare_at_price do %>
                     <div class="stat p-0">
-                      <div class="stat-title">Compare At</div>
+                      <div class="stat-title">{gettext("Compare At")}</div>
                       <div class="stat-value text-2xl text-base-content/50 line-through">
                         {format_price(@product.compare_at_price, @currency)}
                       </div>
@@ -422,7 +422,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
 
                   <%= if @product.cost_per_item do %>
                     <div class="stat p-0">
-                      <div class="stat-title">Cost</div>
+                      <div class="stat-title">{gettext("Cost")}</div>
                       <div class="stat-value text-2xl text-base-content/70">
                         {format_price(@product.cost_per_item, @currency)}
                       </div>
@@ -437,13 +437,13 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
               <div class="card bg-base-100 shadow-xl">
                 <div class="card-body">
                   <h2 class="card-title">
-                    <.icon name="hero-calculator" class="w-5 h-5" /> Price Calculation
+                    <.icon name="hero-calculator" class="w-5 h-5" /> {gettext("Price Calculation")}
                   </h2>
 
                   <div class="bg-base-200 rounded-lg p-4 text-sm space-y-3">
                     <%!-- Base Price --%>
                     <div class="flex justify-between">
-                      <span class="text-base-content/70">Base Price</span>
+                      <span class="text-base-content/70">{gettext("Base Price")}</span>
                       <span class="font-medium">{format_price(@product.price, @currency)}</span>
                     </div>
 
@@ -481,7 +481,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
                     <%!-- Price Range --%>
                     <div class="divider my-2"></div>
                     <div class="flex justify-between font-bold">
-                      <span>Price Range</span>
+                      <span>{gettext("Price Range")}</span>
                       <span class="text-primary">
                         <%= if Decimal.compare(@min_price, @max_price) == :eq do %>
                           {format_price(@min_price, @currency)}
@@ -501,7 +501,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             <%!-- Status --%>
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
-                <h2 class="card-title">Status</h2>
+                <h2 class="card-title">{gettext("Status")}</h2>
                 <div class="flex items-center gap-2">
                   <span class={status_badge_class(@product.status)}>
                     {String.capitalize(@product.status)}
@@ -513,13 +513,13 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             <%!-- Category --%>
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
-                <h2 class="card-title">Category</h2>
+                <h2 class="card-title">{gettext("Category")}</h2>
                 <%= if @product.category do %>
                   <span class="badge badge-lg">
                     {Translations.get(@product.category, :name, @current_language)}
                   </span>
                 <% else %>
-                  <span class="text-base-content/50">No category</span>
+                  <span class="text-base-content/50">{gettext("No category")}</span>
                 <% end %>
               </div>
             </div>
@@ -528,24 +528,24 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             <%= if @product.product_type == "digital" do %>
               <div class="card bg-base-100 shadow-xl">
                 <div class="card-body text-sm">
-                  <h2 class="card-title">Digital Product</h2>
+                  <h2 class="card-title">{gettext("Digital Product")}</h2>
                   <div class="space-y-2 text-base-content/70">
                     <div>
-                      <span>File:</span>
+                      <span>{gettext("File:")}</span>
                       <span class="ml-2">
-                        {if @product.file_uuid, do: "Attached", else: "—"}
+                        {if @product.file_uuid, do: gettext("Attached"), else: "—"}
                       </span>
                     </div>
                     <div>
-                      <span>Download Limit:</span>
-                      <span class="ml-2">{@product.download_limit || "Unlimited"}</span>
+                      <span>{gettext("Download Limit:")}</span>
+                      <span class="ml-2">{@product.download_limit || gettext("Unlimited")}</span>
                     </div>
                     <div>
-                      <span>Expiry:</span>
+                      <span>{gettext("Expiry:")}</span>
                       <span class="ml-2">
                         {if @product.download_expiry_days,
-                          do: "#{@product.download_expiry_days} days",
-                          else: "Never"}
+                          do: ngettext("1 day", "%{count} days", @product.download_expiry_days, count: @product.download_expiry_days),
+                          else: gettext("Never")}
                       </span>
                     </div>
                   </div>
@@ -557,17 +557,17 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             <%= if @product_seo_title || @product_seo_description do %>
               <div class="card bg-base-100 shadow-xl">
                 <div class="card-body text-sm">
-                  <h2 class="card-title">SEO</h2>
+                  <h2 class="card-title">{gettext("SEO")}</h2>
                   <div class="space-y-2">
                     <%= if @product_seo_title do %>
                       <div>
-                        <span class="text-base-content/60">Title:</span>
+                        <span class="text-base-content/60">{gettext("Title:")}</span>
                         <p class="font-medium">{@product_seo_title}</p>
                       </div>
                     <% end %>
                     <%= if @product_seo_description do %>
                       <div>
-                        <span class="text-base-content/60">Description:</span>
+                        <span class="text-base-content/60">{gettext("Description:")}</span>
                         <p class="text-base-content/70">{@product_seo_description}</p>
                       </div>
                     <% end %>
@@ -579,16 +579,16 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             <%!-- Timestamps --%>
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body text-sm">
-                <h2 class="card-title">Timestamps</h2>
+                <h2 class="card-title">{gettext("Timestamps")}</h2>
                 <div class="space-y-2 text-base-content/70">
                   <div>
-                    <span>Created:</span>
+                    <span>{gettext("Created:")}</span>
                     <span class="ml-2">
                       {Calendar.strftime(@product.inserted_at, "%Y-%m-%d %H:%M")}
                     </span>
                   </div>
                   <div>
-                    <span>Updated:</span>
+                    <span>{gettext("Updated:")}</span>
                     <span class="ml-2">
                       {Calendar.strftime(@product.updated_at, "%Y-%m-%d %H:%M")}
                     </span>
@@ -603,9 +603,9 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
       <%= if @show_delete_modal do %>
         <div class="modal modal-open">
           <div class="modal-box">
-            <h3 class="font-bold text-lg text-error mb-4">Delete Product</h3>
+            <h3 class="font-bold text-lg text-error mb-4">{gettext("Delete Product")}</h3>
             <p class="mb-4">
-              Are you sure you want to delete this product? This action cannot be undone.
+              {gettext("Are you sure you want to delete this product? This action cannot be undone.")}
             </p>
             <label class="label cursor-pointer justify-start gap-3">
               <input
@@ -614,12 +614,12 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
                 phx-click="toggle_delete_media"
                 checked={@delete_media_checked}
               />
-              <span class="label-text">Delete associated media files (orphaned only)</span>
+              <span class="label-text">{gettext("Delete associated media files (orphaned only)")}</span>
             </label>
             <div class="modal-action">
-              <button phx-click="cancel_delete" class="btn">Cancel</button>
+              <button phx-click="cancel_delete" class="btn">{gettext("Cancel")}</button>
               <button phx-click="delete" class="btn btn-error">
-                <.icon name="hero-trash" class="w-4 h-4 mr-2" /> Delete
+                <.icon name="hero-trash" class="w-4 h-4 mr-2" /> {gettext("Delete")}
               </button>
             </div>
           </div>

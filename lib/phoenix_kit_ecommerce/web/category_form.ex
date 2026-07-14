@@ -23,7 +23,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   def mount(_params, _session, socket) do
     socket =
       socket
-      |> assign(:page_title, "New Category")
+      |> assign(:page_title, gettext("New Category"))
       |> assign(:supported_types, OptionTypes.supported_types())
       |> assign(:show_media_selector, false)
       |> assign(:image_uuid, nil)
@@ -44,7 +44,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     global_options = Options.get_enabled_global_options()
 
     socket
-    |> assign(:page_title, "New Category")
+    |> assign(:page_title, gettext("New Category"))
     |> assign(:category, category)
     |> assign_form(changeset)
     |> assign(:parent_options, parent_options)
@@ -76,7 +76,9 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     socket
     |> assign(
       :page_title,
-      "Edit #{Translations.get(category, :name, TranslationTabs.get_default_language())}"
+      gettext("Edit %{name}",
+        name: Translations.get(category, :name, TranslationTabs.get_default_language())
+      )
     )
     |> assign(:category, category)
     |> assign_form(changeset)
@@ -254,7 +256,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
       e ->
         require Logger
         Logger.error("Category option save failed: #{Exception.message(e)}")
-        {:noreply, put_flash(socket, :error, "Something went wrong. Please try again.")}
+        {:noreply, put_flash(socket, :error, gettext("Something went wrong. Please try again."))}
     end
   end
 
@@ -271,10 +273,11 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          |> assign(:category, updated_category)
          |> assign(:category_options, updated_opts)
          |> assign(:merged_preview, merged)
-         |> put_flash(:info, "Option removed")}
+         |> put_flash(:info, gettext("Option removed"))}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Error: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, gettext("Error: %{reason}", reason: inspect(reason)))}
     end
   end
 
@@ -302,7 +305,8 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          |> assign(:merged_preview, merged)}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Reorder failed: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, gettext("Reorder failed: %{reason}", reason: inspect(reason)))}
     end
   end
 
@@ -345,10 +349,14 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          |> assign(:show_opt_modal, false)
          |> assign(:editing_opt, nil)
          |> assign(:opt_form_data, initial_opt_form_data())
-         |> put_flash(:info, if(editing, do: "Option updated", else: "Option added"))}
+         |> put_flash(
+           :info,
+           if(editing, do: gettext("Option updated"), else: gettext("Option added"))
+         )}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Error: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(socket, :error, gettext("Error: %{reason}", reason: inspect(reason)))}
     end
   end
 
@@ -376,7 +384,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
         <.admin_page_header back={Routes.path("/admin/shop/categories")}>
           <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{@page_title}</h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
-            {if @live_action == :new, do: "Create a new category", else: "Edit category details"}
+            {if @live_action == :new, do: gettext("Create a new category"), else: gettext("Edit category details")}
           </p>
         </.admin_page_header>
 
@@ -389,12 +397,12 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
         >
           <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
-              <h2 class="card-title text-xl mb-6">Basic Information</h2>
+              <h2 class="card-title text-xl mb-6">{gettext("Basic Information")}</h2>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Name *</span>
+                    <span class="label-text font-medium">{gettext("Name")} *</span>
                     <%= if @show_translation_tabs do %>
                       <span class="label-text-alt text-base-content/50">
                         {String.upcase(@default_language)}
@@ -409,7 +417,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                       "input input-bordered w-full focus:input-primary",
                       @changeset.errors[:name] && "input-error"
                     ]}
-                    placeholder="Category name"
+                    placeholder={gettext("Category name")}
                     required
                   />
                   <%= if @changeset.errors[:name] do %>
@@ -423,7 +431,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
                 <div class="form-control w-full">
                   <label class="label">
-                    <span class="label-text font-medium">Slug</span>
+                    <span class="label-text font-medium">{gettext("Slug")}</span>
                     <%= if @show_translation_tabs do %>
                       <span class="label-text-alt text-base-content/50">
                         {String.upcase(@default_language)}
@@ -435,15 +443,15 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                     name="category[slug]"
                     value={TranslationTabs.get_localized_value(@changeset, :slug, @default_language)}
                     class="input input-bordered w-full focus:input-primary"
-                    placeholder="Auto-generated from name"
+                    placeholder={gettext("Auto-generated from name")}
                   />
                 </div>
 
                 <div class="form-control w-full">
                   <.select
                     field={@form[:parent_uuid]}
-                    label="Parent Category"
-                    prompt="No parent (root category)"
+                    label={gettext("Parent Category")}
+                    prompt={gettext("No parent (root category)")}
                     options={@parent_options}
                   />
                 </div>
@@ -452,7 +460,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                   <.input
                     field={@form[:position]}
                     type="number"
-                    label="Position"
+                    label={gettext("Position")}
                     value={@form[:position].value || 0}
                     min="0"
                     placeholder="0"
@@ -462,23 +470,23 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                 <div class="form-control w-full">
                   <.select
                     field={@form[:status]}
-                    label="Status"
+                    label={gettext("Status")}
                     options={[
-                      {"Active — Category and products visible", "active"},
-                      {"Unlisted — Category hidden, products still visible", "unlisted"},
-                      {"Hidden — Category and products hidden", "hidden"}
+                      {gettext("Active — Category and products visible"), "active"},
+                      {gettext("Unlisted — Category hidden, products still visible"), "unlisted"},
+                      {gettext("Hidden — Category and products hidden"), "hidden"}
                     ]}
                   />
                   <label class="label">
                     <span class="label-text-alt text-base-content/50">
-                      Unlisted: products appear in search/catalog but category not in menu
+                      {gettext("Unlisted: products appear in search/catalog but category not in menu")}
                     </span>
                   </label>
                 </div>
 
                 <div class="form-control w-full md:col-span-2">
                   <label class="label">
-                    <span class="label-text font-medium">Description</span>
+                    <span class="label-text font-medium">{gettext("Description")}</span>
                     <%= if @show_translation_tabs do %>
                       <span class="label-text-alt text-base-content/50">
                         {String.upcase(@default_language)}
@@ -488,14 +496,14 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                   <textarea
                     name="category[description]"
                     class="textarea textarea-bordered w-full focus:textarea-primary h-24"
-                    placeholder="Category description"
+                    placeholder={gettext("Category description")}
                   >{TranslationTabs.get_localized_value(@changeset, :description, @default_language)}</textarea>
                 </div>
 
                 <%!-- Category Image Section --%>
                 <div class="form-control w-full md:col-span-2">
                   <label class="label">
-                    <span class="label-text font-medium">Category Image</span>
+                    <span class="label-text font-medium">{gettext("Category Image")}</span>
                   </label>
                   <div class="flex items-start gap-4">
                     <%!-- Image Preview --%>
@@ -528,7 +536,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                         class="btn btn-sm btn-primary"
                       >
                         <.icon name="hero-photo" class="w-4 h-4 mr-1" />
-                        {if @image_uuid, do: "Change Image", else: "Select from Storage"}
+                        {if @image_uuid, do: gettext("Change Image"), else: gettext("Select from Storage")}
                       </button>
                     </div>
                   </div>
@@ -538,27 +546,27 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                 <%= if @live_action == :edit do %>
                   <div class="form-control w-full md:col-span-2">
                     <label class="label">
-                      <span class="label-text font-medium">Featured Product (image fallback)</span>
+                      <span class="label-text font-medium">{gettext("Featured Product (image fallback)")}</span>
                       <%= if @image_uuid do %>
-                        <span class="label-text-alt text-warning">Storage image has priority</span>
+                        <span class="label-text-alt text-warning">{gettext("Storage image has priority")}</span>
                       <% end %>
                     </label>
                     <%= if @product_options != [] do %>
                       <.select
                         field={@form[:featured_product_uuid]}
-                        prompt="Auto-detect (first product with image)"
+                        prompt={gettext("Auto-detect (first product with image)")}
                         options={@product_options}
                         class={@image_uuid && "opacity-50"}
                       />
                     <% else %>
                       <div class="text-sm text-base-content/50 py-2">
                         <.icon name="hero-information-circle" class="w-4 h-4 inline mr-1" />
-                        No products with images in this category. Add product images to enable this option.
+                        {gettext("No products with images in this category. Add product images to enable this option.")}
                       </div>
                     <% end %>
                     <label class="label">
                       <span class="label-text-alt text-base-content/50">
-                        Used as category image when no Storage image is selected
+                        {gettext("Used as category image when no Storage image is selected")}
                       </span>
                     </label>
                   </div>
@@ -571,9 +579,9 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
           <%= if @show_translation_tabs do %>
             <div class="card bg-base-100 shadow-xl">
               <div class="card-body">
-                <h2 class="card-title text-xl mb-4">Translations</h2>
+                <h2 class="card-title text-xl mb-4">{gettext("Translations")}</h2>
                 <p class="text-base-content/60 text-sm mb-4">
-                  Translate category content for different languages. The default language uses the main fields above.
+                  {gettext("Translate category content for different languages. The default language uses the main fields above.")}
                 </p>
 
                 <%!-- Language Tabs --%>
@@ -595,22 +603,22 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                     fields={[
                       %{
                         key: :name,
-                        label: "Name",
+                        label: gettext("Name"),
                         type: :text,
-                        placeholder: "Translated category name"
+                        placeholder: gettext("Translated category name")
                       },
                       %{
                         key: :slug,
-                        label: "URL Slug",
+                        label: gettext("URL Slug"),
                         type: :text,
                         placeholder: "translated-url-slug",
-                        hint: "SEO-friendly URL for this language"
+                        hint: gettext("SEO-friendly URL for this language")
                       },
                       %{
                         key: :description,
-                        label: "Description",
+                        label: gettext("Description"),
                         type: :textarea,
-                        placeholder: "Translated description"
+                        placeholder: gettext("Translated description")
                       }
                     ]}
                   />
@@ -625,26 +633,25 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
               <div class="card-body">
                 <div class="flex items-center justify-between mb-6">
                   <h2 class="card-title text-xl">
-                    <.icon name="hero-tag" class="w-5 h-5" /> Category Options
+                    <.icon name="hero-tag" class="w-5 h-5" /> {gettext("Category Options")}
                   </h2>
                   <button
                     type="button"
                     phx-click="show_add_opt_modal"
                     class="btn btn-ghost btn-sm"
                   >
-                    <.icon name="hero-plus" class="w-4 h-4 mr-1" /> Add Option
+                    <.icon name="hero-plus" class="w-4 h-4 mr-1" /> {gettext("Add Option")}
                   </button>
                 </div>
 
                 <p class="text-sm text-base-content/60 mb-4">
-                  Define options specific to this category.
-                  These override global options with the same key.
+                  {gettext("Define options specific to this category. These override global options with the same key.")}
                 </p>
 
                 <%= if @category_options == [] do %>
                   <div class="text-center py-6 text-base-content/50">
-                    <p>No category-specific options</p>
-                    <p class="text-sm">Products will use global options only</p>
+                    <p>{gettext("No category-specific options")}</p>
+                    <p class="text-sm">{gettext("Products will use global options only")}</p>
                   </div>
                 <% else %>
                   <div class="flex flex-col gap-2">
@@ -655,7 +662,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                             <span class="font-medium text-sm">{opt["label"]}</span>
                             <span class="badge badge-ghost badge-xs">{opt["type"]}</span>
                             <%= if opt["required"] do %>
-                              <span class="badge badge-warning badge-xs">Required</span>
+                              <span class="badge badge-warning badge-xs">{gettext("Required")}</span>
                             <% end %>
                           </div>
                           <div class="text-xs text-base-content/50">
@@ -689,10 +696,10 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                 <%!-- Merged Preview --%>
                 <div class="mt-4 p-3 bg-base-200/50 rounded-lg border border-base-300">
                   <h4 class="font-medium text-sm mb-2">
-                    <.icon name="hero-eye" class="w-4 h-4 inline" /> Preview: Merged Schema
+                    <.icon name="hero-eye" class="w-4 h-4 inline" /> {gettext("Preview: Merged Schema")}
                   </h4>
                   <p class="text-xs text-base-content/60 mb-2">
-                    Products in this category will show these options:
+                    {gettext("Products in this category will show these options:")}
                   </p>
                   <div class="flex flex-wrap gap-1">
                     <%= for opt <- @merged_preview do %>
@@ -707,13 +714,13 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                       </span>
                     <% end %>
                     <%= if @merged_preview == [] do %>
-                      <span class="text-xs text-base-content/50">No options defined</span>
+                      <span class="text-xs text-base-content/50">{gettext("No options defined")}</span>
                     <% end %>
                   </div>
                   <p class="text-xs text-base-content/50 mt-2">
-                    <span class="badge badge-primary badge-xs">Blue</span>
-                    = Category specific, <span class="badge badge-ghost badge-xs">Gray</span>
-                    = Global
+                    <span class="badge badge-primary badge-xs">{gettext("Blue")}</span>
+                    {gettext("= Category specific,")} <span class="badge badge-ghost badge-xs">{gettext("Gray")}</span>
+                    {gettext("= Global")}
                   </p>
                 </div>
               </div>
@@ -723,11 +730,11 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
           <%!-- Submit --%>
           <div class="flex justify-end gap-4">
             <.link navigate={Routes.path("/admin/shop/categories")} class="btn btn-outline">
-              Cancel
+              {gettext("Cancel")}
             </.link>
             <button type="submit" class="btn btn-primary">
               <.icon name="hero-check" class="w-4 h-4 mr-2" />
-              {if @live_action == :new, do: "Create Category", else: "Update Category"}
+              {if @live_action == :new, do: gettext("Create Category"), else: gettext("Update Category")}
             </button>
           </div>
         </.form>
@@ -738,7 +745,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
         <div class="modal modal-open">
           <div class="modal-box max-w-lg">
             <h3 class="font-bold text-lg mb-4">
-              {if @editing_opt, do: "Edit Option", else: "Add Category Option"}
+              {if @editing_opt, do: gettext("Edit Option"), else: gettext("Add Category Option")}
             </h3>
 
             <.form
@@ -748,31 +755,31 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
               class="space-y-4"
             >
               <div class="form-control">
-                <label class="label"><span class="label-text">Label *</span></label>
+                <label class="label"><span class="label-text">{gettext("Label")} *</span></label>
                 <input
                   type="text"
                   name="option[label]"
                   value={@opt_form_data.label}
                   class="input input-bordered"
-                  placeholder="e.g., Mounting Type"
+                  placeholder={gettext("e.g., Mounting Type")}
                   required
                 />
               </div>
 
               <div class="form-control">
-                <label class="label"><span class="label-text">Key</span></label>
+                <label class="label"><span class="label-text">{gettext("Key")}</span></label>
                 <input
                   type="text"
                   name="option[key]"
                   value={@opt_form_data.key}
                   class="input input-bordered font-mono"
-                  placeholder="Auto-generated"
+                  placeholder={gettext("Auto-generated")}
                   disabled={@editing_opt != nil}
                 />
               </div>
 
               <div class="form-control">
-                <label class="label"><span class="label-text">Type *</span></label>
+                <label class="label"><span class="label-text">{gettext("Type")} *</span></label>
                 <select name="option[type]" class="select select-bordered">
                   <%= for type <- @supported_types do %>
                     <option value={type} selected={@opt_form_data.type == type}>
@@ -785,9 +792,9 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
               <%= if @opt_form_data.type in ["select", "multiselect"] do %>
                 <div class="form-control">
                   <label class="label">
-                    <span class="label-text">Options *</span>
+                    <span class="label-text">{gettext("Options")} *</span>
                     <button type="button" phx-click="add_opt_option" class="btn btn-ghost btn-xs">
-                      <.icon name="hero-plus" class="w-4 h-4" /> Add
+                      <.icon name="hero-plus" class="w-4 h-4" /> {gettext("Add")}
                     </button>
                   </label>
                   <div class="space-y-2">
@@ -798,7 +805,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                           name={"option[options][#{idx}]"}
                           value={opt}
                           class="input input-bordered input-sm flex-1"
-                          placeholder="Option value"
+                          placeholder={gettext("Option value")}
                         />
                         <button
                           type="button"
@@ -815,13 +822,13 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
               <% end %>
 
               <div class="form-control">
-                <label class="label"><span class="label-text">Unit (optional)</span></label>
+                <label class="label"><span class="label-text">{gettext("Unit (optional)")}</span></label>
                 <input
                   type="text"
                   name="option[unit]"
                   value={@opt_form_data.unit}
                   class="input input-bordered input-sm w-32"
-                  placeholder="e.g., cm"
+                  placeholder={gettext("e.g., cm")}
                 />
               </div>
 
@@ -829,16 +836,16 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                 <.checkbox
                   name="option[required]"
                   checked={@opt_form_data.required}
-                  label="Required field"
+                  label={gettext("Required field")}
                 />
               </div>
 
               <div class="modal-action">
                 <button type="button" phx-click="close_opt_modal" class="btn btn-ghost">
-                  Cancel
+                  {gettext("Cancel")}
                 </button>
                 <button type="submit" class="btn btn-primary">
-                  {if @editing_opt, do: "Update", else: "Add"}
+                  {if @editing_opt, do: gettext("Update"), else: gettext("Add")}
                 </button>
               </div>
             </.form>
@@ -874,7 +881,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
         {:noreply,
          socket
-         |> put_flash(:info, "Category created")
+         |> put_flash(:info, gettext("Category created"))
          |> push_navigate(to: Routes.path("/admin/shop/categories"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -895,7 +902,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
         {:noreply,
          socket
-         |> put_flash(:info, "Category updated")
+         |> put_flash(:info, gettext("Category updated"))
          |> push_navigate(to: Routes.path("/admin/shop/categories"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->

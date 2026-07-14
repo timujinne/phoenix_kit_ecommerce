@@ -17,7 +17,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
 
     socket =
       socket
-      |> assign(:page_title, "Shipping Methods")
+      |> assign(:page_title, gettext("Shipping Methods"))
       |> assign(:methods, methods)
       |> assign(:currency, currency)
 
@@ -64,10 +64,10 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
         {:noreply,
          socket
          |> assign(:methods, methods)
-         |> put_flash(:info, "Shipping method deleted")}
+         |> put_flash(:info, gettext("Shipping method deleted"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to delete shipping method")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to delete shipping method"))}
     end
   end
 
@@ -77,14 +77,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
       <div class="p-6 max-w-6xl mx-auto">
         <.admin_page_header back={Routes.path("/admin/shop")}>
           <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">
-            Shipping Methods
+            {gettext("Shipping Methods")}
           </h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
-            {length(@methods)} methods configured
+            {gettext("%{count} methods configured", count: length(@methods))}
           </p>
           <:actions>
             <.link navigate={Routes.path("/admin/shop/shipping/new")} class="btn btn-primary btn-sm">
-              <.icon name="hero-plus" class="w-4 h-4 mr-2" /> Add Method
+              <.icon name="hero-plus" class="w-4 h-4 mr-2" /> {gettext("Add Method")}
             </.link>
           </:actions>
         </.admin_page_header>
@@ -118,15 +118,15 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
               <.table_row_menu_link
                 navigate={Routes.path("/admin/shop/shipping/#{method.uuid}/edit")}
                 icon="hero-pencil"
-                label="Edit"
+                label={gettext("Edit")}
               />
               <.table_row_menu_divider />
               <.table_row_menu_button
                 phx-click="delete"
                 phx-value-uuid={method.uuid}
-                data-confirm="Delete this shipping method?"
+                data-confirm={gettext("Delete this shipping method?")}
                 icon="hero-trash"
-                label="Delete"
+                label={gettext("Delete")}
                 variant="error"
               />
             </.table_row_menu>
@@ -134,12 +134,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
 
           <.table_default_header>
             <.table_default_row>
-              <.table_default_header_cell>Method</.table_default_header_cell>
-              <.table_default_header_cell>Price</.table_default_header_cell>
-              <.table_default_header_cell>Constraints</.table_default_header_cell>
-              <.table_default_header_cell>Delivery</.table_default_header_cell>
-              <.table_default_header_cell>Status</.table_default_header_cell>
-              <.table_default_header_cell class="text-right">Actions</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Method")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Price")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Constraints")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Delivery")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
+              <.table_default_header_cell class="text-right">{gettext("Actions")}</.table_default_header_cell>
             </.table_default_row>
           </.table_default_header>
 
@@ -148,8 +148,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
               <.table_default_row>
                 <.table_default_cell colspan={6} class="text-center py-12 text-base-content/50">
                   <.icon name="hero-truck" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p class="text-lg">No shipping methods</p>
-                  <p class="text-sm">Create your first shipping method to get started</p>
+                  <p class="text-lg">{gettext("No shipping methods")}</p>
+                  <p class="text-sm">{gettext("Create your first shipping method to get started")}</p>
                 </.table_default_cell>
               </.table_default_row>
             <% else %>
@@ -184,7 +184,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
                         </span>
                       <% end %>
                       <%= if method.countries == [] && is_nil(method.max_weight_grams) do %>
-                        <span class="text-base-content/50 text-sm">No limits</span>
+                        <span class="text-base-content/50 text-sm">{gettext("No limits")}</span>
                       <% end %>
                     </div>
                   </.table_default_cell>
@@ -210,15 +210,15 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
                         <.table_row_menu_link
                           navigate={Routes.path("/admin/shop/shipping/#{method.uuid}/edit")}
                           icon="hero-pencil"
-                          label="Edit"
+                          label={gettext("Edit")}
                         />
                         <.table_row_menu_divider />
                         <.table_row_menu_button
                           phx-click="delete"
                           phx-value-uuid={method.uuid}
-                          data-confirm="Delete this shipping method?"
+                          data-confirm={gettext("Delete this shipping method?")}
                           icon="hero-trash"
-                          label="Delete"
+                          label={gettext("Delete")}
                           variant="error"
                         />
                       </.table_row_menu>

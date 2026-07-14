@@ -60,7 +60,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
     socket =
       socket
-      |> assign(:page_title, "CSV Import")
+      |> assign(:page_title, gettext("CSV Import"))
       |> assign(:imports, list_imports())
       |> assign(:current_import, nil)
       |> assign(:import_progress, nil)
@@ -122,7 +122,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         handle_detected_format(socket, dest_path, filename)
 
       [] ->
-        {:noreply, put_flash(socket, :error, "Please select a CSV file first")}
+        {:noreply, put_flash(socket, :error, gettext("Please select a CSV file first"))}
     end
   end
 
@@ -201,7 +201,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         do_retry_import(import_uuid, socket)
 
       :error ->
-        {:noreply, put_flash(socket, :error, "Invalid import ID")}
+        {:noreply, put_flash(socket, :error, gettext("Invalid import ID"))}
     end
   end
 
@@ -212,7 +212,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         do_delete_import(import_uuid, socket)
 
       :error ->
-        {:noreply, put_flash(socket, :error, "Invalid import ID")}
+        {:noreply, put_flash(socket, :error, gettext("Invalid import ID"))}
     end
   end
 
@@ -264,7 +264,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       socket
       |> assign(:migration_in_progress, true)
       |> assign(:migration_stats, ImageMigration.migration_stats())
-      |> put_flash(:info, "Started migration for #{count} products")
+      |> put_flash(:info, gettext("Started migration for %{count} products", count: count))
 
     {:noreply, socket}
   end
@@ -277,7 +277,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
           socket
           |> assign(:migration_in_progress, false)
           |> assign(:migration_stats, ImageMigration.migration_stats())
-          |> put_flash(:info, "Cancelled #{count} pending migration jobs")
+          |> put_flash(:info, gettext("Cancelled %{count} pending migration jobs", count: count))
 
         {:noreply, socket}
     end
@@ -310,7 +310,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
       {:error, _reason} ->
         File.rm(dest_path)
-        {:noreply, put_flash(socket, :error, "Failed to read CSV file headers")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to read CSV file headers"))}
     end
   end
 
@@ -345,7 +345,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       |> assign(:uploaded_filename, nil)
       |> assign(:confirm_product_count, nil)
       |> assign(:imports, list_imports())
-      |> put_flash(:info, "Import completed successfully!")
+      |> put_flash(:info, gettext("Import completed successfully!"))
 
     {:noreply, socket}
   end
@@ -365,7 +365,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       |> assign(:uploaded_filename, nil)
       |> assign(:confirm_product_count, nil)
       |> assign(:imports, list_imports())
-      |> put_flash(:error, "Import failed: #{reason}")
+      |> put_flash(:error, gettext("Import failed: %{reason}", reason: reason))
 
     {:noreply, socket}
   end
@@ -448,13 +448,13 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   defp do_retry_import(import_uuid, socket) do
     case Shop.get_import_log(import_uuid) do
       nil ->
-        {:noreply, put_flash(socket, :error, "Import not found")}
+        {:noreply, put_flash(socket, :error, gettext("Import not found"))}
 
       import_log ->
         if retryable?(import_log) do
           enqueue_retry(import_log, socket)
         else
-          {:noreply, put_flash(socket, :error, "Cannot retry: file no longer exists")}
+          {:noreply, put_flash(socket, :error, gettext("Cannot retry: file no longer exists"))}
         end
     end
   end
@@ -498,7 +498,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       |> assign(:current_import, updated_log)
       |> assign(:import_progress, %{percent: 0, current: 0, total: 0})
       |> assign(:imports, list_imports())
-      |> put_flash(:info, "Retrying import: #{import_log.filename}")
+      |> put_flash(:info, gettext("Retrying import: %{filename}", filename: import_log.filename))
 
     {:noreply, socket}
   end
@@ -506,7 +506,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   defp do_delete_import(import_uuid, socket) do
     case Shop.get_import_log(import_uuid) do
       nil ->
-        {:noreply, put_flash(socket, :error, "Import not found")}
+        {:noreply, put_flash(socket, :error, gettext("Import not found"))}
 
       import_log ->
         case Shop.delete_import_log(import_log) do
@@ -522,12 +522,12 @@ defmodule PhoenixKitEcommerce.Web.Imports do
             socket =
               socket
               |> assign(:imports, list_imports())
-              |> put_flash(:info, "Import log deleted")
+              |> put_flash(:info, gettext("Import log deleted"))
 
             {:noreply, socket}
 
           {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Failed to delete import log")}
+            {:noreply, put_flash(socket, :error, gettext("Failed to delete import log"))}
         end
     end
   end
@@ -595,12 +595,12 @@ defmodule PhoenixKitEcommerce.Web.Imports do
           |> assign(:import_progress, %{percent: 0, current: 0, total: 0})
           |> assign(:imports, list_imports())
           |> assign(:import_step, :importing)
-          |> put_flash(:info, "Import started: #{filename}")
+          |> put_flash(:info, gettext("Import started: %{filename}", filename: filename))
 
         {:noreply, socket}
 
       {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Failed to create import log")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to create import log"))}
     end
   end
 
@@ -811,9 +811,9 @@ defmodule PhoenixKitEcommerce.Web.Imports do
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-6xl">
         <.admin_page_header back={Routes.path("/admin/shop")}>
-          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">CSV Import</h1>
+          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{gettext("CSV Import")}</h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
-            Import products from CSV files
+            {gettext("Import products from CSV files")}
             <%= if @format_name do %>
               <span class="badge badge-primary badge-outline badge-sm ml-2">{@format_name}</span>
             <% end %>
@@ -831,16 +831,16 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                   "step",
                   if(@import_step in [:upload, :confirm, :importing], do: "step-primary")
                 ]}>
-                  Upload
+                  {gettext("Upload")}
                 </li>
                 <li class={[
                   "step",
                   if(@import_step in [:confirm, :importing], do: "step-primary")
                 ]}>
-                  Confirm
+                  {gettext("Confirm")}
                 </li>
                 <li class={["step", if(@import_step == :importing, do: "step-primary")]}>
-                  Import
+                  {gettext("Import")}
                 </li>
               </ul>
             <% else %>
@@ -850,16 +850,16 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                   "step",
                   if(@import_step in [:upload, :configure, :importing], do: "step-primary")
                 ]}>
-                  Upload
+                  {gettext("Upload")}
                 </li>
                 <li class={[
                   "step",
                   if(@import_step in [:configure, :importing], do: "step-primary")
                 ]}>
-                  Configure
+                  {gettext("Configure")}
                 </li>
                 <li class={["step", if(@import_step == :importing, do: "step-primary")]}>
-                  Import
+                  {gettext("Import")}
                 </li>
               </ul>
             <% end %>
@@ -910,53 +910,53 @@ defmodule PhoenixKitEcommerce.Web.Imports do
           <div class="card-body">
             <div class="flex items-center justify-between">
               <h2 class="card-title text-xl">
-                <.icon name="hero-photo" class="w-6 h-6" /> Image Migration
+                <.icon name="hero-photo" class="w-6 h-6" /> {gettext("Image Migration")}
               </h2>
               <button
                 type="button"
                 phx-click="refresh_migration_stats"
                 class="btn btn-ghost btn-sm"
-                title="Refresh stats"
+                title={gettext("Refresh stats")}
               >
                 <.icon name="hero-arrow-path" class="w-4 h-4" />
               </button>
             </div>
 
             <p class="text-base-content/70 text-sm mt-2">
-              Migrate product images from external CDN URLs to the Storage module for better control and reliability.
+              {gettext("Migrate product images from external CDN URLs to the Storage module for better control and reliability.")}
             </p>
 
             <%!-- Migration Stats --%>
             <div class="stats stats-horizontal shadow mt-4 w-full">
               <div class="stat place-items-center py-3">
-                <div class="stat-title text-xs">Total Products</div>
+                <div class="stat-title text-xs">{gettext("Total Products")}</div>
                 <div class="stat-value text-2xl">{@migration_stats.total}</div>
-                <div class="stat-desc text-xs">with images</div>
+                <div class="stat-desc text-xs">{gettext("with images")}</div>
               </div>
 
               <div class="stat place-items-center py-3">
-                <div class="stat-title text-xs">Migrated</div>
+                <div class="stat-title text-xs">{gettext("Migrated")}</div>
                 <div class="stat-value text-2xl text-success">{@migration_stats.migrated}</div>
-                <div class="stat-desc text-xs">in Storage</div>
+                <div class="stat-desc text-xs">{gettext("in Storage")}</div>
               </div>
 
               <div class="stat place-items-center py-3">
-                <div class="stat-title text-xs">Pending</div>
+                <div class="stat-title text-xs">{gettext("Pending")}</div>
                 <div class="stat-value text-2xl text-warning">{@migration_stats.pending}</div>
-                <div class="stat-desc text-xs">legacy URLs</div>
+                <div class="stat-desc text-xs">{gettext("legacy URLs")}</div>
               </div>
 
               <div class="stat place-items-center py-3">
-                <div class="stat-title text-xs">In Progress</div>
+                <div class="stat-title text-xs">{gettext("In Progress")}</div>
                 <div class="stat-value text-2xl text-info">{@migration_stats.in_progress}</div>
-                <div class="stat-desc text-xs">jobs</div>
+                <div class="stat-desc text-xs">{gettext("jobs")}</div>
               </div>
 
               <%= if @migration_stats.failed > 0 do %>
                 <div class="stat place-items-center py-3">
-                  <div class="stat-title text-xs">Failed</div>
+                  <div class="stat-title text-xs">{gettext("Failed")}</div>
                   <div class="stat-value text-2xl text-error">{@migration_stats.failed}</div>
-                  <div class="stat-desc text-xs">errors</div>
+                  <div class="stat-desc text-xs">{gettext("errors")}</div>
                 </div>
               <% end %>
             </div>
@@ -987,7 +987,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                   phx-click="cancel_image_migration"
                   class="btn btn-outline btn-error"
                 >
-                  <.icon name="hero-stop" class="w-4 h-4 mr-2" /> Cancel Migration
+                  <.icon name="hero-stop" class="w-4 h-4 mr-2" /> {gettext("Cancel Migration")}
                 </button>
               <% else %>
                 <%= if @migration_stats.pending > 0 do %>
@@ -997,11 +997,11 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                     class="btn btn-primary"
                   >
                     <.icon name="hero-arrow-down-on-square-stack" class="w-4 h-4 mr-2" />
-                    Migrate {@migration_stats.pending} Products
+                    {gettext("Migrate %{count} Products", count: @migration_stats.pending)}
                   </button>
                 <% else %>
                   <button type="button" class="btn btn-disabled" disabled>
-                    <.icon name="hero-check-circle" class="w-4 h-4 mr-2" /> All Images Migrated
+                    <.icon name="hero-check-circle" class="w-4 h-4 mr-2" /> {gettext("All Images Migrated")}
                   </button>
                 <% end %>
               <% end %>
@@ -1013,24 +1013,24 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         <div class="card bg-base-100 shadow-xl">
           <div class="card-body">
             <h2 class="card-title text-xl mb-4">
-              <.icon name="hero-clock" class="w-6 h-6" /> Import History
+              <.icon name="hero-clock" class="w-6 h-6" /> {gettext("Import History")}
             </h2>
 
             <%= if Enum.empty?(@imports) do %>
               <div class="text-center py-8 text-base-content/70">
                 <.icon name="hero-inbox" class="w-12 h-12 mx-auto mb-2 opacity-50" />
-                <p>No imports yet</p>
+                <p>{gettext("No imports yet")}</p>
               </div>
             <% else %>
               <div class="overflow-x-auto">
                 <table class="table">
                   <thead>
                     <tr>
-                      <th>File</th>
-                      <th>Status</th>
-                      <th>Progress</th>
-                      <th>Results</th>
-                      <th>Date</th>
+                      <th>{gettext("File")}</th>
+                      <th>{gettext("Status")}</th>
+                      <th>{gettext("Progress")}</th>
+                      <th>{gettext("Results")}</th>
+                      <th>{gettext("Date")}</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -1097,11 +1097,11 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                                 phx-click="delete_import"
                                 phx-value-id={import.uuid}
                                 class="btn btn-xs btn-outline btn-error tooltip tooltip-bottom"
-                                data-tip={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
-                                data-confirm="Are you sure you want to delete this import log?"
+                                data-tip={gettext("Delete")}
+                                data-confirm={gettext("Are you sure you want to delete this import log?")}
                               >
                                 <.icon name="hero-trash" class="w-4 h-4 hidden sm:inline" />
-                                <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}</span>
+                                <span class="sm:hidden whitespace-nowrap">{gettext("Delete")}</span>
                               </button>
                             <% end %>
                           </div>
@@ -1119,12 +1119,12 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         <div class="alert alert-info mt-6">
           <.icon name="hero-information-circle" class="w-6 h-6" />
           <div>
-            <h3 class="font-bold">About CSV Import</h3>
+            <h3 class="font-bold">{gettext("About CSV Import")}</h3>
             <ul class="text-sm mt-1 list-disc list-inside">
-              <li>Supported formats: Shopify, Prom.ua (auto-detected from file headers)</li>
-              <li>Products are automatically categorized based on title or category name</li>
-              <li>Existing products with the same slug are updated</li>
-              <li>Import runs in the background — you can leave this page</li>
+              <li>{gettext("Supported formats: Shopify, Prom.ua (auto-detected from file headers)")}</li>
+              <li>{gettext("Products are automatically categorized based on title or category name")}</li>
+              <li>{gettext("Existing products with the same slug are updated")}</li>
+              <li>{gettext("Import runs in the background — you can leave this page")}</li>
             </ul>
           </div>
         </div>
@@ -1139,7 +1139,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   defp render_upload_step(assigns) do
     ~H"""
     <h2 class="card-title text-xl mb-4">
-      <.icon name="hero-cloud-arrow-up" class="w-6 h-6" /> Upload CSV File
+      <.icon name="hero-cloud-arrow-up" class="w-6 h-6" /> {gettext("Upload CSV File")}
     </h2>
 
     <%!-- Language Selection --%>
@@ -1147,7 +1147,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       <div class="form-control mb-4">
         <label class="label">
           <span class="label-text font-medium">
-            <.icon name="hero-language" class="w-4 h-4 inline mr-1" /> Import Language
+            <.icon name="hero-language" class="w-4 h-4 inline mr-1" /> {gettext("Import Language")}
           </span>
         </label>
         <div class="flex flex-wrap gap-2">
@@ -1167,14 +1167,14 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         </div>
         <label class="label">
           <span class="label-text-alt text-base-content/60">
-            Text fields will be imported to this language
+            {gettext("Text fields will be imported to this language")}
           </span>
         </label>
       </div>
     <% else %>
       <div class="flex items-center gap-2 text-sm text-base-content/70 mb-4">
         <.icon name="hero-language" class="w-4 h-4" />
-        <span>Import language: <strong>{String.upcase(@current_language)}</strong></span>
+        <span>{gettext("Import language:")} <strong>{String.upcase(@current_language)}</strong></span>
       </div>
     <% end %>
 
@@ -1183,7 +1183,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       <div class="form-control mb-4">
         <label class="label">
           <span class="label-text font-medium">
-            <.icon name="hero-funnel" class="w-4 h-4 inline mr-1" /> Import Filter
+            <.icon name="hero-funnel" class="w-4 h-4 inline mr-1" /> {gettext("Import Filter")}
           </span>
         </label>
         <select
@@ -1191,7 +1191,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
           phx-change="select_config"
           name="config_uuid"
         >
-          <option value="">No filter (import all products)</option>
+          <option value="">{gettext("No filter (import all products)")}</option>
           <%= for config <- @import_configs do %>
             <option value={config.uuid} selected={@selected_config_uuid == config.uuid}>
               {config.name}{if config.is_default, do: " (default)"}
@@ -1229,10 +1229,10 @@ defmodule PhoenixKitEcommerce.Web.Imports do
             <.icon name="hero-document-arrow-up" class="w-12 h-12 text-primary" />
             <div>
               <p class="font-semibold text-base-content">
-                Drag CSV file here or click to browse
+                {gettext("Drag CSV file here or click to browse")}
               </p>
               <p class="text-sm text-base-content/70 mt-1">
-                Shopify or Prom.ua CSV format, max 50MB
+                {gettext("Shopify or Prom.ua CSV format, max 50MB")}
               </p>
             </div>
           </div>
@@ -1276,9 +1276,9 @@ defmodule PhoenixKitEcommerce.Web.Imports do
             phx-click="toggle_download_images"
           />
           <span class="label-text">
-            <span class="font-medium">Download images to Storage</span>
+            <span class="font-medium">{gettext("Download images to Storage")}</span>
             <span class="block text-xs text-base-content/60">
-              Images will be downloaded from CDN URLs and stored in the Storage module
+              {gettext("Images will be downloaded from CDN URLs and stored in the Storage module")}
             </span>
           </span>
         </label>
@@ -1293,9 +1293,9 @@ defmodule PhoenixKitEcommerce.Web.Imports do
             phx-click="toggle_skip_empty_categories"
           />
           <span class="label-text">
-            <span class="font-medium">Skip empty categories</span>
+            <span class="font-medium">{gettext("Skip empty categories")}</span>
             <span class="block text-xs text-base-content/60">
-              Remove auto-created categories that have no products after import
+              {gettext("Remove auto-created categories that have no products after import")}
             </span>
           </span>
         </label>
@@ -1306,7 +1306,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         <% entry = List.first(@uploads.csv_file.entries) %>
         <%= if entry.done? do %>
           <button type="submit" class="btn btn-primary btn-block mt-4">
-            <.icon name="hero-arrow-right" class="w-5 h-5 mr-2" /> Analyze & Configure
+            <.icon name="hero-arrow-right" class="w-5 h-5 mr-2" /> {gettext("Analyze & Configure")}
           </button>
         <% end %>
       <% end %>
@@ -1317,7 +1317,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   defp render_configure_step(assigns) do
     ~H"""
     <h2 class="card-title text-xl mb-4">
-      <.icon name="hero-adjustments-horizontal" class="w-6 h-6" /> Configure Option Mappings
+      <.icon name="hero-adjustments-horizontal" class="w-6 h-6" /> {gettext("Configure Option Mappings")}
       <%= if @format_name do %>
         <span class="badge badge-primary badge-outline badge-sm">{@format_name}</span>
       <% end %>
@@ -1328,7 +1328,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       <div class="form-control mb-4">
         <label class="label">
           <span class="label-text font-medium">
-            <.icon name="hero-funnel" class="w-4 h-4 inline mr-1" /> Import Filter
+            <.icon name="hero-funnel" class="w-4 h-4 inline mr-1" /> {gettext("Import Filter")}
           </span>
         </label>
         <select
@@ -1336,7 +1336,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
           phx-change="select_config"
           name="config_uuid"
         >
-          <option value="">No filter (import all products)</option>
+          <option value="">{gettext("No filter (import all products)")}</option>
           <%= for config <- @import_configs do %>
             <option value={config.uuid} selected={@selected_config_uuid == config.uuid}>
               {config.name}{if config.is_default, do: " (default)"}
@@ -1399,11 +1399,11 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       <div class="flex-1"></div>
       <%= if @option_mappings != [] do %>
         <button type="button" phx-click="skip_mapping" class="btn btn-ghost">
-          Skip Mapping
+          {gettext("Skip Mapping")}
         </button>
       <% end %>
       <button type="button" phx-click="run_import" class="btn btn-primary">
-        <.icon name="hero-arrow-down-tray" class="w-4 h-4 mr-2" /> Start Import
+        <.icon name="hero-arrow-down-tray" class="w-4 h-4 mr-2" /> {gettext("Start Import")}
       </button>
     </div>
     """
@@ -1436,7 +1436,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
           <div class="flex-1">
             <label class="form-control">
               <div class="label py-1">
-                <span class="label-text text-xs">Link to Global Option</span>
+                <span class="label-text text-xs">{gettext("Link to Global Option")}</span>
               </div>
               <select
                 class="select select-bordered select-sm w-full"
@@ -1444,7 +1444,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                 phx-value-index={@index}
                 name="source_key"
               >
-                <option value="">— Standalone (no mapping) —</option>
+                <option value="">{gettext("— Standalone (no mapping) —")}</option>
                 <%= for opt <- @global_options do %>
                   <option value={opt["key"]} selected={@mapping.source_key == opt["key"]}>
                     {opt["key"]} - {get_global_option_label(opt)}
@@ -1456,7 +1456,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
             <%= if @mapping.source_key do %>
               <label class="form-control mt-2">
                 <div class="label py-1">
-                  <span class="label-text text-xs">Slot Key</span>
+                  <span class="label-text text-xs">{gettext("Slot Key")}</span>
                 </div>
                 <input
                   type="text"
@@ -1465,7 +1465,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                   phx-blur="update_mapping"
                   phx-value-index={@index}
                   name="slot_key"
-                  placeholder="e.g., cup_color"
+                  placeholder={gettext("e.g., cup_color")}
                 />
               </label>
             <% end %>
@@ -1491,7 +1491,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
               </div>
             </div>
             <label class="label cursor-pointer gap-2">
-              <span class="label-text text-sm">Auto-add</span>
+              <span class="label-text text-sm">{gettext("Auto-add")}</span>
               <input
                 type="checkbox"
                 class="toggle toggle-primary toggle-sm"
@@ -1510,7 +1510,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   defp render_confirm_step(assigns) do
     ~H"""
     <h2 class="card-title text-xl mb-4">
-      <.icon name="hero-check-circle" class="w-6 h-6" /> Confirm Import
+      <.icon name="hero-check-circle" class="w-6 h-6" /> {gettext("Confirm Import")}
       <span class="badge badge-primary badge-outline badge-sm">{@format_name}</span>
     </h2>
 
@@ -1555,7 +1555,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
           phx-click="toggle_skip_empty_categories"
         />
         <span class="label-text">
-          Skip empty categories (remove categories with no products after import)
+          {gettext("Skip empty categories (remove categories with no products after import)")}
         </span>
       </label>
     </div>
@@ -1566,7 +1566,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       </button>
       <div class="flex-1"></div>
       <button type="button" phx-click="confirm_import" class="btn btn-primary">
-        <.icon name="hero-arrow-down-tray" class="w-4 h-4 mr-2" /> Start Import
+        <.icon name="hero-arrow-down-tray" class="w-4 h-4 mr-2" /> {gettext("Start Import")}
       </button>
     </div>
     """
@@ -1575,7 +1575,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   defp render_importing_step(assigns) do
     ~H"""
     <h2 class="card-title text-xl mb-4">
-      <.icon name="hero-arrow-path" class="w-6 h-6 animate-spin" /> Import in Progress
+      <.icon name="hero-arrow-path" class="w-6 h-6 animate-spin" /> {gettext("Import in Progress")}
     </h2>
 
     <%= if @current_import do %>
@@ -1594,7 +1594,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
               </p>
             </div>
           <% else %>
-            <p class="text-sm">Preparing import...</p>
+            <p class="text-sm">{gettext("Preparing import...")}</p>
           <% end %>
         </div>
       </div>
@@ -1632,8 +1632,8 @@ defmodule PhoenixKitEcommerce.Web.Imports do
     Calendar.strftime(datetime, "%b %d, %Y %H:%M")
   end
 
-  defp error_to_string(:too_large), do: "File is too large (max 50MB)"
-  defp error_to_string(:not_accepted), do: "Only CSV files are accepted"
-  defp error_to_string(:too_many_files), do: "Only one file at a time"
+  defp error_to_string(:too_large), do: gettext("File is too large (max 50MB)")
+  defp error_to_string(:not_accepted), do: gettext("Only CSV files are accepted")
+  defp error_to_string(:too_many_files), do: gettext("Only one file at a time")
   defp error_to_string(err), do: inspect(err)
 end
