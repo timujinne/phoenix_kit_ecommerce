@@ -89,8 +89,8 @@ msgstr "%{count} methods configured"
 #, elixir-autogen, elixir-format
 msgid "%{count} order"
 msgid_plural "%{count} orders"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "%{count} order"
+msgstr[1] "%{count} orders"
 
 #: lib/phoenix_kit_ecommerce/web/products.ex:371
 #, elixir-autogen, elixir-format
@@ -117,15 +117,15 @@ msgstr "%{count} selected"
 #, elixir-autogen, elixir-format
 msgid "1 category"
 msgid_plural "%{count} categories"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "1 category"
+msgstr[1] "%{count} categories"
 
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:547
 #, elixir-autogen, elixir-format
 msgid "1 day"
 msgid_plural "%{count} days"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "1 day"
+msgstr[1] "%{count} days"
 
 #: lib/phoenix_kit_ecommerce/web/products.ex:424
 #, elixir-autogen, elixir-format
@@ -2521,8 +2521,8 @@ msgstr "in Storage"
 #, elixir-autogen, elixir-format
 msgid "item"
 msgid_plural "items"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "item"
+msgstr[1] "items"
 
 #: lib/phoenix_kit_ecommerce/web/imports.ex:952
 #, elixir-autogen, elixir-format

@@ -226,7 +226,7 @@ msgstr "Lisa uus väärtus..."
 #: lib/phoenix_kit_ecommerce/web/products.ex:476
 #, elixir-autogen, elixir-format
 msgid "All Categories"
-msgstr "Kategooriad"
+msgstr "Kõik kategooriad"
 
 #: lib/phoenix_kit_ecommerce/web/imports.ex:1004
 #, elixir-autogen, elixir-format
@@ -393,7 +393,7 @@ msgstr "Sirvi poodi"
 #: lib/phoenix_kit_ecommerce/web/settings.ex:322
 #, elixir-autogen, elixir-format
 msgid "CSV Import Filters"
-msgstr "CSV-import"
+msgstr "CSV-impordi filtrid"
 
 #: lib/phoenix_kit_ecommerce/web/categories.ex:608
 #: lib/phoenix_kit_ecommerce/web/categories.ex:647
@@ -453,7 +453,7 @@ msgstr "Kategooriad poes lubatud"
 #: lib/phoenix_kit_ecommerce/web/products.ex:619
 #, elixir-autogen, elixir-format
 msgid "Category"
-msgstr "Kategooriad"
+msgstr "Kategooria"
 
 #: lib/phoenix_kit_ecommerce/web/settings.ex:509
 #, elixir-autogen, elixir-format
@@ -473,7 +473,7 @@ msgstr "Kategooria nime kuvamine"
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:636
 #, elixir-autogen, elixir-format
 msgid "Category Options"
-msgstr "Kategooriad"
+msgstr "Kategooria valikud"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:884
 #, elixir-autogen, elixir-format
@@ -503,12 +503,12 @@ msgstr "Kategooria ikooni säe uuendatud"
 #: lib/phoenix_kit_ecommerce/web/settings.ex:549
 #, elixir-autogen, elixir-format
 msgid "Category image"
-msgstr "Kategooriad"
+msgstr "Kategooria pilt"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:420
 #, elixir-autogen, elixir-format
 msgid "Category name"
-msgstr "Kategooriad"
+msgstr "Kategooria nimi"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:905
 #, elixir-autogen, elixir-format
@@ -867,7 +867,7 @@ msgstr "Lohista CSV-fail siia või kliki sirvimiseks"
 #: lib/phoenix_kit_ecommerce/web/settings.ex:239
 #, elixir-autogen, elixir-format
 msgid "E-Commerce Settings"
-msgstr "E-kaubandus"
+msgstr "E-kaubanduse seaded"
 
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:220
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:121
@@ -1181,7 +1181,7 @@ msgstr "Pildid laaditakse CDN-ist alla ja salvestatakse Salvestusmoodulisse"
 #: lib/phoenix_kit_ecommerce/web/imports.ex:862
 #, elixir-autogen, elixir-format
 msgid "Import"
-msgstr "CSV-import"
+msgstr "Import"
 
 #: lib/phoenix_kit_ecommerce/web/settings.ex:316
 #, elixir-autogen, elixir-format
@@ -1437,12 +1437,12 @@ msgstr "Uus kategooria"
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:45
 #, elixir-autogen, elixir-format
 msgid "New Product"
-msgstr "Tooted"
+msgstr "Uus toode"
 
 #: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:34
 #, elixir-autogen, elixir-format
 msgid "New Shipping Method"
-msgstr "Tarne"
+msgstr "Uus tarneviis"
 
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:352
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:361
@@ -1783,7 +1783,7 @@ msgstr "Töötlemisel"
 #: lib/phoenix_kit_ecommerce/web/products.ex:616
 #, elixir-autogen, elixir-format
 msgid "Product"
-msgstr "Tooted"
+msgstr "Toode"
 
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:328
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:712
@@ -1794,7 +1794,7 @@ msgstr "Toote üksikasjad"
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1595
 #, elixir-autogen, elixir-format
 msgid "Product Images"
-msgstr "Tooted"
+msgstr "Toote pildid"
 
 #: lib/phoenix_kit_ecommerce/web/settings.ex:287
 #, elixir-autogen, elixir-format
@@ -1804,7 +1804,7 @@ msgstr "Toote valikud"
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:789
 #, elixir-autogen, elixir-format
 msgid "Product Type"
-msgstr "Tooted"
+msgstr "Toote tüüp"
 
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:629
 #, elixir-autogen, elixir-format
@@ -1821,7 +1821,7 @@ msgstr "Toode kustutatud"
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:733
 #, elixir-autogen, elixir-format
 msgid "Product title"
-msgstr "Tooted"
+msgstr "Toote pealkiri"
 
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:659
 #, elixir-autogen, elixir-format
@@ -2012,7 +2012,7 @@ msgstr "Saadetud"
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:80
 #, elixir-autogen, elixir-format
 msgid "Shipping Methods"
-msgstr "Tarne"
+msgstr "Tarneviisid"
 
 #: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:83
 #, elixir-autogen, elixir-format
@@ -2063,7 +2063,7 @@ msgstr "Külgriba kuvamine"
 #: lib/phoenix_kit_ecommerce/web/imports.ex:1402
 #, elixir-autogen, elixir-format
 msgid "Skip Mapping"
-msgstr "Tarne"
+msgstr "Jäta vastendamine vahele"
 
 #: lib/phoenix_kit_ecommerce/web/imports.ex:1296
 #, elixir-autogen, elixir-format
@@ -2313,7 +2313,7 @@ msgstr "Piiramatu"
 #: lib/phoenix_kit_ecommerce/web/categories.ex:351
 #, elixir-autogen, elixir-format
 msgid "Unlisted"
-msgstr "Peidetud"
+msgstr "Loetlemata"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:476
 #, elixir-autogen, elixir-format
@@ -2536,7 +2536,7 @@ msgstr "aegunud URL-e"
 #: lib/phoenix_kit_ecommerce/web/import_show.ex:124
 #, elixir-autogen, elixir-format
 msgid "new products"
-msgstr "Tooted"
+msgstr "uued tooted"
 
 #: lib/phoenix_kit_ecommerce/web/imports.ex:934
 #, elixir-autogen, elixir-format
