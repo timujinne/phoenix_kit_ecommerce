@@ -344,6 +344,19 @@ The sweep completed most of the initially-deferred items. **Completed:**
    switching the `__using__` injection and extracting/translating
    hundreds of msgids — a separate, larger PR.
 
+## Research & Design Notes
+
+Non-PR research / strategic-assessment docs live flat under `dev_docs/`:
+
+- **`dev_docs/agentic_commerce_acp_research.md`** — Agentic Commerce / ACP
+  assessment (2026-06-14). Triggered by the "Visa plugs into ChatGPT" news.
+  Covers the Agentic Commerce Protocol (OpenAI + Stripe), what a merchant must
+  implement (product feed + checkout REST endpoints + payment), how it maps onto
+  this module's `Cart`/`convert_cart_to_order/2` + `phoenix_kit_billing`'s Stripe
+  `Provider`, feasibility, and the **verdict: watch-item, no build yet** (build
+  triggers + a proposed `phoenix_kit_acp` bridge-plugin shape are in the doc).
+  Payment-leg companion: `phoenix_kit_billing/dev_docs/agentic_commerce_payments.md`.
+
 ## Pull Requests
 
 ### Commit Message Rules

@@ -8,6 +8,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  import PhoenixKitWeb.Components.Core.BulkSelect
   import PhoenixKitWeb.Components.Core.TableDefault
   import PhoenixKitWeb.Components.Core.TableRowMenu
 
@@ -38,7 +39,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
       |> assign(:status_filter, nil)
       |> assign(:parent_filter, nil)
       |> assign(:current_language, current_language)
-      |> assign(:selected_uuids, MapSet.new())
+      |> assign(:bulk_uuids, [])
       |> assign(:show_bulk_modal, nil)
       |> load_static_category_data()
       |> load_filtered_categories()
@@ -128,52 +129,33 @@ defmodule PhoenixKitEcommerce.Web.Categories do
     end
   end
 
-  # Bulk selection events
-
-  @impl true
-  def handle_event("toggle_select", %{"uuid" => uuid}, socket) do
-    selected = socket.assigns.selected_uuids
-
-    selected =
-      if MapSet.member?(selected, uuid) do
-        MapSet.delete(selected, uuid)
-      else
-        MapSet.put(selected, uuid)
-      end
-
-    {:noreply, assign(socket, :selected_uuids, selected)}
-  end
-
-  @impl true
-  def handle_event("select_all", _params, socket) do
-    all_uuids = Enum.map(socket.assigns.categories, & &1.uuid) |> MapSet.new()
-    current = socket.assigns.selected_uuids
-
-    selected =
-      if MapSet.subset?(all_uuids, current) do
-        MapSet.difference(current, all_uuids)
-      else
-        MapSet.union(current, all_uuids)
-      end
-
-    {:noreply, assign(socket, :selected_uuids, selected)}
-  end
-
-  @impl true
-  def handle_event("clear_selection", _params, socket) do
-    {:noreply, assign(socket, :selected_uuids, MapSet.new())}
-  end
-
   # Bulk action modals
+  #
+  # Selection lives client-side (BulkSelectScope JS hook). Each of these
+  # three handlers is the "capture" step: it fires when a toolbar button
+  # is clicked, receives the currently-selected uuids from the hook, and
+  # stashes them in `@bulk_uuids` for the modal that opens next. The
+  # modal's own form/buttons submit later (a normal LV round trip, not
+  # through the hook) and read `@bulk_uuids` at that point.
 
   @impl true
-  def handle_event("show_bulk_modal", %{"action" => action}, socket) do
-    {:noreply, assign(socket, :show_bulk_modal, action)}
+  def handle_event("open_status_modal", %{"uuids" => uuids}, socket) do
+    {:noreply, assign(socket, show_bulk_modal: "status", bulk_uuids: uuids)}
+  end
+
+  @impl true
+  def handle_event("open_parent_modal", %{"uuids" => uuids}, socket) do
+    {:noreply, assign(socket, show_bulk_modal: "parent", bulk_uuids: uuids)}
+  end
+
+  @impl true
+  def handle_event("confirm_bulk_delete", %{"uuids" => uuids}, socket) do
+    {:noreply, assign(socket, show_bulk_modal: "delete", bulk_uuids: uuids)}
   end
 
   @impl true
   def handle_event("close_bulk_modal", _params, socket) do
-    {:noreply, assign(socket, :show_bulk_modal, nil)}
+    {:noreply, assign(socket, show_bulk_modal: nil, bulk_uuids: [])}
   end
 
   # Bulk actions (require admin role)
@@ -181,7 +163,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
   @impl true
   def handle_event("bulk_change_status", %{"status" => status}, socket) do
     if Scope.admin?(socket.assigns.phoenix_kit_current_scope) do
-      uuids = MapSet.to_list(socket.assigns.selected_uuids)
+      uuids = socket.assigns.bulk_uuids
       count = Shop.bulk_update_category_status(uuids, status)
 
       Activity.log("shop.categories_status_changed",
@@ -195,7 +177,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
        socket
        |> load_static_category_data()
        |> load_filtered_categories()
-       |> assign(:selected_uuids, MapSet.new())
+       |> assign(:bulk_uuids, [])
        |> assign(:show_bulk_modal, nil)
        |> put_flash(
          :info,
@@ -209,7 +191,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
   @impl true
   def handle_event("bulk_change_parent", %{"parent_uuid" => parent_uuid}, socket) do
     if Scope.admin?(socket.assigns.phoenix_kit_current_scope) do
-      uuids = MapSet.to_list(socket.assigns.selected_uuids)
+      uuids = socket.assigns.bulk_uuids
       parent_uuid = if parent_uuid == "", do: nil, else: parent_uuid
       count = Shop.bulk_update_category_parent(uuids, parent_uuid)
 
@@ -217,7 +199,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
        socket
        |> load_static_category_data()
        |> load_filtered_categories()
-       |> assign(:selected_uuids, MapSet.new())
+       |> assign(:bulk_uuids, [])
        |> assign(:show_bulk_modal, nil)
        |> put_flash(:info, gettext("%{count} categories updated", count: count))}
     else
@@ -228,7 +210,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
   @impl true
   def handle_event("bulk_delete", _params, socket) do
     if Scope.admin?(socket.assigns.phoenix_kit_current_scope) do
-      uuids = MapSet.to_list(socket.assigns.selected_uuids)
+      uuids = socket.assigns.bulk_uuids
       count = Shop.bulk_delete_categories(uuids)
 
       Activity.log("shop.categories_bulk_deleted",
@@ -242,7 +224,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
        socket
        |> load_static_category_data()
        |> load_filtered_categories()
-       |> assign(:selected_uuids, MapSet.new())
+       |> assign(:bulk_uuids, [])
        |> assign(:show_bulk_modal, nil)
        |> put_flash(:info, gettext("%{count} categories deleted", count: count))}
     else
@@ -319,11 +301,6 @@ defmodule PhoenixKitEcommerce.Web.Categories do
     socket
     |> assign(:categories, categories)
     |> assign(:total, total)
-  end
-
-  defp all_selected?(categories, selected_uuids) do
-    categories != [] and
-      Enum.all?(categories, fn c -> MapSet.member?(selected_uuids, c.uuid) end)
   end
 
   defp status_badge_class("active"), do: "badge badge-success"
@@ -406,36 +383,40 @@ defmodule PhoenixKitEcommerce.Web.Categories do
           </div>
         </div>
 
-        <%!-- Bulk Actions Bar --%>
-        <%= if MapSet.size(@selected_uuids) > 0 do %>
-          <div class="bg-primary/10 border border-primary/30 rounded-lg p-4 mb-6">
+        <.bulk_select_scope id="categories-bulk" total_count={length(@categories)}>
+          <%!-- Bulk Actions Bar --%>
+          <div
+            class="bg-primary/10 border border-primary/30 rounded-lg p-4 mb-6"
+            data-bulk-show="has-selection"
+            style="display: none;"
+          >
             <div class="flex flex-wrap items-center justify-between gap-4">
               <div class="flex items-center gap-2">
                 <span class="badge badge-primary badge-lg">
-                  {gettext("%{count} selected", count: MapSet.size(@selected_uuids))}
+                  <span data-bulk-count>0</span> {gettext("selected")}
                 </span>
-                <button phx-click="clear_selection" class="btn btn-ghost btn-sm">
+                <button type="button" data-bulk-clear="true" class="btn btn-ghost btn-sm">
                   {gettext("Clear selection")}
                 </button>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button
-                  phx-click="show_bulk_modal"
-                  phx-value-action="status"
+                  type="button"
+                  data-bulk-action="open_status_modal"
                   class="btn btn-sm btn-outline"
                 >
                   <.icon name="hero-arrow-path" class="w-4 h-4 mr-1" /> {gettext("Change Status")}
                 </button>
                 <button
-                  phx-click="show_bulk_modal"
-                  phx-value-action="parent"
+                  type="button"
+                  data-bulk-action="open_parent_modal"
                   class="btn btn-sm btn-outline"
                 >
                   <.icon name="hero-folder" class="w-4 h-4 mr-1" /> {gettext("Change Parent")}
                 </button>
                 <button
-                  phx-click="show_bulk_modal"
-                  phx-value-action="delete"
+                  type="button"
+                  data-bulk-action="confirm_bulk_delete"
                   class="btn btn-sm btn-outline btn-error"
                 >
                   <.icon name="hero-trash" class="w-4 h-4 mr-1" /> {gettext("Delete")}
@@ -443,14 +424,13 @@ defmodule PhoenixKitEcommerce.Web.Categories do
               </div>
             </div>
           </div>
-        <% end %>
 
-        <%!-- Categories Table --%>
-        <.table_default id="categories-table" variant="zebra" class="w-full" toggleable={true} items={@categories}
-          card_fields={fn category -> [
-            %{label: gettext("Status"), value: category.status || "active"},
-            %{label: gettext("Position"), value: category.position}
-          ] end}>
+          <%!-- Categories Table --%>
+          <.table_default id="categories-table" variant="zebra" class="w-full" toggleable={true} items={@categories}
+            card_fields={fn category -> [
+              %{label: gettext("Status"), value: category.status || "active"},
+              %{label: gettext("Position"), value: category.position}
+            ] end}>
 
           <:card_header :let={category}>
             <div class="font-bold">{Translations.get(category, :name, @current_language)}</div>
@@ -480,16 +460,11 @@ defmodule PhoenixKitEcommerce.Web.Categories do
 
           <.table_default_header>
             <.table_default_row>
-              <.table_default_header_cell class="w-12">
-                <label class="cursor-pointer">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-sm"
-                    phx-click="select_all"
-                    checked={all_selected?(@categories, @selected_uuids)}
-                  />
-                </label>
-              </.table_default_header_cell>
+              <.bulk_select_header_cell
+                id="categories-select-all"
+                class="w-12"
+                aria_label={gettext("Select all categories")}
+              />
               <.table_default_header_cell>{gettext("Name")}</.table_default_header_cell>
               <.table_default_header_cell>{gettext("Slug")}</.table_default_header_cell>
               <.table_default_header_cell>{gettext("Parent")}</.table_default_header_cell>
@@ -513,18 +488,8 @@ defmodule PhoenixKitEcommerce.Web.Categories do
               <%= for category <- @categories do %>
                 <% cat_name = Translations.get(category, :name, @current_language) %>
                 <% cat_slug = Translations.get(category, :slug, @current_language) %>
-                <.table_default_row class={"hover #{if MapSet.member?(@selected_uuids, category.uuid), do: "bg-primary/5", else: ""}"}>
-                  <.table_default_cell>
-                    <label class="cursor-pointer">
-                      <input
-                        type="checkbox"
-                        class="checkbox checkbox-sm"
-                        phx-click="toggle_select"
-                        phx-value-uuid={category.uuid}
-                        checked={MapSet.member?(@selected_uuids, category.uuid)}
-                      />
-                    </label>
-                  </.table_default_cell>
+                <.table_default_row class="hover has-[input:checked]:bg-primary/5">
+                  <.bulk_select_cell value={category.uuid} />
                   <.table_default_cell>
                     <div class="flex items-center gap-3">
                       <div class="avatar placeholder">
@@ -585,6 +550,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
             <% end %>
           </.table_default_body>
         </.table_default>
+        </.bulk_select_scope>
 
         <%!-- Pagination --%>
         <%= if @total > @per_page do %>
@@ -613,7 +579,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
           <div class="modal-box">
             <h3 class="font-bold text-lg mb-4">{gettext("Change Status")}</h3>
             <p class="text-base-content/70 mb-4">
-              {gettext("Update status for %{count} selected categories", count: MapSet.size(@selected_uuids))}
+              {gettext("Update status for %{count} selected categories", count: length(@bulk_uuids))}
             </p>
             <div class="flex flex-col gap-2">
               <button
@@ -652,7 +618,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
           <div class="modal-box">
             <h3 class="font-bold text-lg mb-4">{gettext("Change Parent")}</h3>
             <p class="text-base-content/70 mb-4">
-              {gettext("Set parent for %{count} selected categories", count: MapSet.size(@selected_uuids))}
+              {gettext("Set parent for %{count} selected categories", count: length(@bulk_uuids))}
             </p>
             <div class="flex flex-col gap-2 max-h-96 overflow-y-auto">
               <button
@@ -663,7 +629,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                 <.icon name="hero-x-mark" class="w-5 h-5 mr-2" /> {gettext("Make Root (No Parent)")}
               </button>
               <%= for category <- @all_categories,
-                      !MapSet.member?(@selected_uuids, category.uuid) do %>
+                      category.uuid not in @bulk_uuids do %>
                 <button
                   phx-click="bulk_change_parent"
                   phx-value-parent_uuid={category.uuid}
@@ -691,7 +657,10 @@ defmodule PhoenixKitEcommerce.Web.Categories do
           <div class="modal-box">
             <h3 class="font-bold text-lg text-error mb-4">{gettext("Delete Categories")}</h3>
             <p class="text-base-content/70 mb-4">
-              {gettext("Are you sure you want to delete %{count} categories? This action cannot be undone.", count: MapSet.size(@selected_uuids))}
+              {gettext(
+                "Are you sure you want to delete %{count} categories? This action cannot be undone.",
+                count: length(@bulk_uuids)
+              )}
             </p>
             <div class="modal-action">
               <button phx-click="close_bulk_modal" class="btn">{gettext("Cancel")}</button>

@@ -58,6 +58,108 @@ defmodule PhoenixKitEcommerce.Integration.ContextTest do
     end
   end
 
+  describe "product search" do
+    test "list_products/1 :search matches localized title" do
+      {:ok, product} =
+        Shop.create_product(product_attrs(%{"title" => %{"en" => "Skeleton Wall Mask"}}))
+
+      uuids = Enum.map(Shop.list_products(search: "skeleton wall"), & &1.uuid)
+      assert product.uuid in uuids
+
+      assert Shop.list_products(search: "no-such-product-anywhere") == []
+    end
+
+    test "list_products/1 :search matches metadata sku" do
+      {:ok, product} =
+        Shop.create_product(product_attrs(%{"metadata" => %{"sku" => "MASK-042-BLK"}}))
+
+      {:ok, other} = Shop.create_product(product_attrs())
+
+      uuids = Enum.map(Shop.list_products(search: "mask-042"), & &1.uuid)
+      assert product.uuid in uuids
+      refute other.uuid in uuids
+    end
+
+    test "list_products/1 :search composes with :exclude_hidden_categories" do
+      # Regression: the search fragment referenced unqualified columns
+      # (title/description), which turn ambiguous once the hidden-category
+      # left join is applied — the exact combination the public storefront
+      # always uses.
+      {:ok, product} =
+        Shop.create_product(product_attrs(%{"title" => %{"en" => "Skeleton Wall Mask"}}))
+
+      {products, total} =
+        Shop.list_products_with_count(
+          search: "skeleton",
+          exclude_hidden_categories: true,
+          status: "active"
+        )
+
+      assert total == 1
+      assert [%{uuid: uuid}] = products
+      assert uuid == product.uuid
+    end
+
+    test "list_products/1 :search matches tags" do
+      {:ok, product} =
+        Shop.create_product(product_attrs(%{"tags" => ["halloween", "wall-decor"]}))
+
+      {:ok, other} = Shop.create_product(product_attrs())
+
+      uuids = Enum.map(Shop.list_products(search: "hallowee"), & &1.uuid)
+      assert product.uuid in uuids
+      refute other.uuid in uuids
+    end
+
+    test "list_products/1 :search treats % as a literal character" do
+      {:ok, cotton} =
+        Shop.create_product(product_attrs(%{"title" => %{"en" => "100% Cotton Shirt"}}))
+
+      {:ok, decoy} =
+        Shop.create_product(product_attrs(%{"title" => %{"en" => "100 Count Wool Socks"}}))
+
+      uuids = Enum.map(Shop.list_products(search: "100%"), & &1.uuid)
+      assert cotton.uuid in uuids
+      refute decoy.uuid in uuids
+    end
+
+    test "list_products/1 :search treats _ in an SKU as a literal character" do
+      {:ok, target} = Shop.create_product(product_attrs(%{"metadata" => %{"sku" => "AB_100"}}))
+      {:ok, decoy} = Shop.create_product(product_attrs(%{"metadata" => %{"sku" => "ABX100"}}))
+
+      uuids = Enum.map(Shop.list_products(search: "AB_100"), & &1.uuid)
+      assert target.uuid in uuids
+      refute decoy.uuid in uuids
+    end
+
+    test "list_products/1 :search with a trailing backslash still substring-matches" do
+      {:ok, product} =
+        Shop.create_product(product_attrs(%{"title" => %{"en" => "path foo\\bar demo"}}))
+
+      uuids = Enum.map(Shop.list_products(search: "foo\\"), & &1.uuid)
+      assert product.uuid in uuids
+    end
+
+    test "list_products/1 :search survives pathological terms" do
+      {:ok, _} = Shop.create_product(product_attrs())
+
+      # Unbounded-length pattern must not blow up (term is capped)
+      assert Shop.list_products(search: String.duplicate("a%_", 5_000)) == []
+
+      # NUL byte would raise in Postgres text params unless stripped
+      assert Shop.list_products(search: "abc" <> <<0>> <> "def") == []
+    end
+
+    test "list_categories/1 :search treats % as a literal character" do
+      {:ok, sale} = Shop.create_category(%{"name" => %{"en" => "50% Off Corner"}})
+      {:ok, decoy} = Shop.create_category(%{"name" => %{"en" => "50 Shades of Grey Paint"}})
+
+      uuids = Enum.map(Shop.list_categories(search: "50%"), & &1.uuid)
+      assert sale.uuid in uuids
+      refute decoy.uuid in uuids
+    end
+  end
+
   describe "categories" do
     test "create_category/1 and get_category/1" do
       assert {:ok, cat} = Shop.create_category(%{"name" => %{"en" => "Books"}})
@@ -193,6 +295,52 @@ defmodule PhoenixKitEcommerce.Integration.ContextTest do
       filters = [%{"type" => "vendor", "enabled" => true}]
       assert {:ok, _} = Shop.update_storefront_filters(filters)
       assert Shop.get_storefront_filters() == filters
+    end
+
+    test "default_storefront_filters/0 includes an enabled search filter first" do
+      assert [%{"key" => "search", "type" => "search", "enabled" => true} | _] =
+               Enum.sort_by(Shop.default_storefront_filters(), & &1["position"])
+    end
+
+    test "merge_missing_builtin_filters/1 adds absent built-ins as disabled" do
+      saved = [%{"key" => "price", "type" => "price_range", "enabled" => true}]
+      merged = Shop.merge_missing_builtin_filters(saved)
+
+      price = Enum.find(merged, &(&1["key"] == "price"))
+      assert price == List.first(saved)
+      search = Enum.find(merged, &(&1["key"] == "search"))
+      assert search["type"] == "search"
+      refute search["enabled"]
+    end
+
+    test "merge_missing_builtin_filters/1 sorts the merged-in filter before saved ones" do
+      # Regression: a config saved under the pre-`search` position numbering
+      # already holds "price" at position 0. Reusing `search`'s default
+      # position (also 0) would tie, and the stable sort in
+      # `get_enabled_storefront_filters/0` would then keep list order —
+      # silently placing `search` after `price` once enabled, instead of
+      # first as the storefront sidebar expects.
+      saved = [
+        %{"key" => "price", "type" => "price_range", "enabled" => true, "position" => 0}
+      ]
+
+      merged =
+        saved
+        |> Shop.merge_missing_builtin_filters()
+        |> Enum.map(fn f -> if f["key"] == "search", do: Map.put(f, "enabled", true), else: f end)
+
+      sorted_keys =
+        merged
+        |> Enum.filter(& &1["enabled"])
+        |> Enum.sort_by(& &1["position"])
+        |> Enum.map(& &1["key"])
+
+      assert sorted_keys == ["search", "price"]
+    end
+
+    test "merge_missing_builtin_filters/1 leaves a complete config untouched" do
+      complete = Shop.default_storefront_filters()
+      assert Shop.merge_missing_builtin_filters(complete) == complete
     end
   end
 

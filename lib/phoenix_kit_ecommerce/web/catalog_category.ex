@@ -216,6 +216,15 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
   end
 
   @impl true
+  def handle_event("filter_search", %{"filter_key" => key} = params, socket) do
+    active_filters =
+      FilterHelpers.update_search_filter(socket.assigns.active_filters, key, params[key])
+
+    path = build_filter_path(socket.assigns, active_filters)
+    {:noreply, push_patch(socket, to: path)}
+  end
+
+  @impl true
   def handle_event("clear_filters", _params, socket) do
     base_path = Shop.category_url(socket.assigns.category, socket.assigns.current_language)
     {:noreply, push_patch(socket, to: base_path)}
@@ -309,23 +318,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
 
           <%!-- Full-width Products Grid --%>
           <%= if @products == [] do %>
-            <div class="card bg-base-100 shadow-lg">
-              <div class="card-body text-center py-16">
-                <.icon name="hero-cube" class="w-16 h-16 mx-auto mb-4 opacity-30" />
-                <h3 class="text-xl font-medium text-base-content/60">
-                  No products in this category
-                </h3>
-                <p class="text-base-content/50 mb-4">
-                  Check back soon or browse other categories
-                </p>
-                <.link
-                  navigate={Shop.catalog_url(@current_language) <> @filter_qs}
-                  class="btn btn-primary"
-                >
-                  Browse All Products
-                </.link>
-              </div>
-            </div>
+            <.category_empty_state
+              active_filters={@active_filters}
+              current_language={@current_language}
+              filter_qs={@filter_qs}
+            />
           <% else %>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               <%= for product <- @products do %>
@@ -385,23 +382,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
 
               <%!-- Products Grid --%>
               <%= if @products == [] do %>
-                <div class="card bg-base-100 shadow-lg">
-                  <div class="card-body text-center py-16">
-                    <.icon name="hero-cube" class="w-16 h-16 mx-auto mb-4 opacity-30" />
-                    <h3 class="text-xl font-medium text-base-content/60">
-                      No products in this category
-                    </h3>
-                    <p class="text-base-content/50 mb-4">
-                      Check back soon or browse other categories
-                    </p>
-                    <.link
-                      navigate={Shop.catalog_url(@current_language) <> @filter_qs}
-                      class="btn btn-primary"
-                    >
-                      Browse All Products
-                    </.link>
-                  </div>
-                </div>
+                <.category_empty_state
+                  active_filters={@active_filters}
+                  current_language={@current_language}
+                  filter_qs={@filter_qs}
+                />
               <% else %>
                 <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
                   <%= for product <- @products do %>
@@ -454,5 +439,46 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
     page = Keyword.get(opts, :page)
 
     FilterHelpers.build_filter_url(base_path, active_filters, assigns.enabled_filters, page: page)
+  end
+
+  # Empty-products state, aware of active filters: a category that has
+  # products but a search/filter combination matching none must say so
+  # (with a clear-filters affordance) instead of claiming the category
+  # is empty.
+  attr :active_filters, :map, required: true
+  attr :current_language, :string, required: true
+  attr :filter_qs, :string, required: true
+
+  defp category_empty_state(assigns) do
+    ~H"""
+    <div class="card bg-base-100 shadow-lg">
+      <div class="card-body text-center py-16">
+        <.icon name="hero-cube" class="w-16 h-16 mx-auto mb-4 opacity-30" />
+        <%= if FilterHelpers.has_active_filters?(@active_filters) do %>
+          <h3 class="text-xl font-medium text-base-content/60">
+            No products match your filters
+          </h3>
+          <p class="text-base-content/50 mb-4">
+            <button phx-click="clear_filters" class="link link-primary">
+              Clear filters
+            </button>
+          </p>
+        <% else %>
+          <h3 class="text-xl font-medium text-base-content/60">
+            No products in this category
+          </h3>
+          <p class="text-base-content/50 mb-4">
+            Check back soon or browse other categories
+          </p>
+        <% end %>
+        <.link
+          navigate={Shop.catalog_url(@current_language) <> @filter_qs}
+          class="btn btn-primary"
+        >
+          Browse All Products
+        </.link>
+      </div>
+    </div>
+    """
   end
 end

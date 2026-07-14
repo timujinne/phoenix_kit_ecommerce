@@ -4,6 +4,64 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.10 - 2026-07-12
+
+### Fixed
+- **Search terms are escaped before hitting ILIKE.** User input flowed
+  into the `%term%` pattern raw, so `%`/`_`/`\` acted as wildcards on a
+  route open to unauthenticated visitors: searching `100%` matched every
+  product containing "100", an SKU search for `AB_100` also matched
+  `ABX100`, and a term ending in `\` silently corrupted the pattern into
+  requiring a literal `%`. Terms are now length-capped (100 chars),
+  NUL-stripped (a crafted `%00` raised `Postgrex.Error`), and
+  LIKE-escaped in one choke point (`search_like_pattern/1`) shared by the
+  product, category, and admin-cart search filters. The cap also closes a
+  cheap unauthenticated seq-scan amplifier (unbounded multi-KB patterns
+  against six ILIKE evaluations per row, two of them `jsonb_each_text`
+  expansions).
+- **Category pages now show a filters-aware zero-result state.** With an
+  active search (or price/vendor filter) matching nothing, the category
+  page claimed "No products in this category — check back soon" even
+  though the category has products; it now says the filters matched
+  nothing and offers a clear-filters affordance, matching the main
+  catalog page. Both the guest and authenticated layouts share one
+  `category_empty_state` component now.
+- Documented (code comment) the cross-release ordering limitation of
+  `merge_missing_builtin_filters/1`'s below-minimum positioning scheme:
+  it holds within one merge pass; a hypothetical second sidebar-leading
+  built-in added in a future release should renormalize positions on
+  save instead of extending the scheme.
+
+## 0.1.9 - 2026-07-11
+
+### Added
+- **Storefront product search.** A new built-in `search` filter type lets
+  customers search the public catalog (main page and category pages) by
+  product name, description, SKU (`metadata->>'sku'`), and tags — matching
+  in any configured language. Renders as a search box at the top of the
+  storefront filter sidebar, driven by a `?search=` URL param so results
+  are shareable and survive navigation. Enabled by default for new
+  installs; existing installs discover it on the Settings page (merged in
+  disabled via `merge_missing_builtin_filters/1`) and enable it with one
+  toggle.
+- Context: `list_products/1` `:search` now also matches SKU and tags
+  (previously title/description only), so admin product search finds
+  products by article number too.
+
+### Fixed
+- **Storefront search no longer raises `ambiguous_column`.** The `:search`
+  SQL fragment referenced unqualified `title`/`description` columns, which
+  turn ambiguous the moment `:exclude_hidden_categories` joins the
+  categories table — the exact combination every public catalog query
+  uses. Columns are now bound through the product binding. Pinned by a
+  regression test.
+- **`merge_missing_builtin_filters/1` no longer collides positions.** A
+  saved config from before `search` existed can already hold another
+  filter at the same default position (e.g. `price` at `0`); the merged-in
+  filter now sorts strictly below every saved filter's position instead of
+  reusing its default position outright, so it renders first once enabled
+  as intended, even on upgraded installs.
+
 ## 0.1.8 - 2026-06-08
 
 ### Added

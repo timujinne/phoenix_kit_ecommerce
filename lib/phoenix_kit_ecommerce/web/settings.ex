@@ -16,8 +16,12 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   def mount(_params, _session, socket) do
     config = Shop.get_config()
 
-    # Load storefront filter configuration
-    storefront_filters = Shop.get_storefront_filters()
+    # Load storefront filter configuration; surface built-in filters
+    # (e.g. search) missing from configs saved before they existed
+    storefront_filters =
+      Shop.get_storefront_filters()
+      |> Shop.merge_missing_builtin_filters()
+
     discovered_options = Shop.discover_filterable_options()
 
     socket =
@@ -344,7 +348,9 @@ defmodule PhoenixKitEcommerce.Web.Settings do
             </div>
 
             <p class="text-sm text-base-content/70 mb-4">
-              {gettext("Configure product filters shown on the storefront sidebar. Customers can filter by price, vendor, and product options.")}
+              {gettext(
+                "Configure product filters shown on the storefront sidebar. Customers can search by name, SKU, or tags, and filter by price, vendor, and product options."
+              )}
             </p>
 
             <%!-- Current Filters Table --%>

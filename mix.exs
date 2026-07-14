@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.MixProject do
   use Mix.Project
 
-  @version "0.1.8"
+  @version "0.1.10"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_ecommerce"
 
   def project do
@@ -103,7 +103,10 @@ defmodule PhoenixKitEcommerce.MixProject do
   defp deps do
     [
       # PhoenixKit provides the Module behaviour and Settings API.
-      pk_dep(:phoenix_kit, "~> 1.7"),
+      # hackney 4.x override mirrors core: stripity_stripe/ex_aws_sqs still pin 1.x,
+      # but core (>= 1.7.189) requires hackney ~> 4.0 and overrides only apply from the root project.
+      {:hackney, "~> 4.0", override: true},
+      pk_dep(:phoenix_kit, "~> 1.7.189"),
 
       # Gettext for per-module i18n of sidebar tab labels.
       {:gettext, "~> 1.0"},

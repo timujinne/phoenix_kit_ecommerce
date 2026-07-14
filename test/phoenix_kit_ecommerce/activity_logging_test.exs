@@ -75,7 +75,7 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/products")
 
-      render_click(view, "toggle_select", %{"uuid" => product.uuid})
+      render_click(view, "open_status_modal", %{"uuids" => [product.uuid]})
       render_click(view, "bulk_change_status", %{"status" => "active"})
 
       assert_activity_logged("shop.products_status_changed",
@@ -163,7 +163,7 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/categories")
 
-      render_click(view, "toggle_select", %{"uuid" => category.uuid})
+      render_click(view, "open_status_modal", %{"uuids" => [category.uuid]})
       render_click(view, "bulk_change_status", %{"status" => "hidden"})
 
       assert_activity_logged("shop.categories_status_changed",

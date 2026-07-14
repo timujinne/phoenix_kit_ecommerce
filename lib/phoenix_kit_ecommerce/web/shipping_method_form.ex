@@ -318,17 +318,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
               <div class="divider my-2"></div>
 
               <div class="form-control">
-                <label class="label cursor-pointer justify-start gap-3">
-                  <input type="hidden" name="shipping_method[tracking_supported]" value="false" />
-                  <input
-                    type="checkbox"
-                    name="shipping_method[tracking_supported]"
-                    value="true"
-                    checked={Ecto.Changeset.get_field(@changeset, :tracking_supported)}
-                    class="checkbox checkbox-primary"
-                  />
-                  <span class="label-text font-medium">{gettext("Tracking supported")}</span>
-                </label>
+                <.checkbox
+                  name="shipping_method[tracking_supported]"
+                  checked={Ecto.Changeset.get_field(@changeset, :tracking_supported)}
+                >
+                  <span class="font-medium">{gettext("Tracking supported")}</span>
+                </.checkbox>
               </div>
             </div>
           </div>

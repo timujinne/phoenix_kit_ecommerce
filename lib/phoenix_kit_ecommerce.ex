@@ -543,20 +543,70 @@ defmodule PhoenixKitEcommerce do
   def default_storefront_filters do
     [
       %{
+        "key" => "search",
+        "type" => "search",
+        "label" => "Search",
+        "enabled" => true,
+        "position" => 0
+      },
+      %{
         "key" => "price",
         "type" => "price_range",
         "label" => "Price",
         "enabled" => true,
-        "position" => 0
+        "position" => 1
       },
       %{
         "key" => "vendor",
         "type" => "vendor",
         "label" => "Vendor",
         "enabled" => false,
-        "position" => 1
+        "position" => 2
       }
     ]
+  end
+
+  @doc """
+  Merges built-in default filters missing from a saved filter config.
+
+  Configs saved before a built-in filter existed (e.g. `search`) never
+  gain it on their own; this merges the absent built-ins in as disabled
+  so admins can discover and enable them from the settings page without
+  changing storefront behavior until they do.
+
+  Missing filters are positioned below every saved filter's `"position"`
+  (preserving their relative order from `default_storefront_filters/0`)
+  rather than reusing their default position outright — a saved config
+  predating the new filter can already hold that same position number, and
+  a tie would fall back to list order once enabled, silently overriding
+  the intended placement (e.g. `search` no longer sorting first).
+  """
+  def merge_missing_builtin_filters(filters) do
+    # NOTE: the below-minimum positioning preserves default relative order
+    # only within a single merge pass. If a future release adds a built-in
+    # defined AFTER an already-merged one in default_storefront_filters/0,
+    # a later pass will stack it above the earlier merge (more-negative
+    # position), inverting their intended order. If a second sidebar-leading
+    # built-in is ever added, renormalize positions on save instead of
+    # extending this scheme.
+    existing_keys = MapSet.new(filters, & &1["key"])
+    min_position = filters |> Enum.map(&(&1["position"] || 0)) |> Enum.min(fn -> 0 end)
+
+    missing =
+      default_storefront_filters()
+      |> Enum.reject(&MapSet.member?(existing_keys, &1["key"]))
+      |> Enum.map(&Map.put(&1, "enabled", false))
+
+    missing_count = length(missing)
+
+    missing =
+      missing
+      |> Enum.with_index()
+      |> Enum.map(fn {filter, index} ->
+        Map.put(filter, "position", min_position - missing_count + index)
+      end)
+
+    missing ++ filters
   end
 
   @doc """
@@ -2085,7 +2135,7 @@ defmodule PhoenixKitEcommerce do
 
     base_query =
       if search && search != "" do
-        search_term = "%#{search}%"
+        search_term = search_like_pattern(search)
 
         base_query
         |> join(:left, [c], u in assoc(c, :user))
@@ -2594,25 +2644,59 @@ defmodule PhoenixKitEcommerce do
     end)
   end
 
+  # Max length for a user-supplied search term. Anything longer is
+  # truncated: ILIKE against unindexed JSONB expansions is linear in both
+  # pattern and row count, so an unbounded public `?search=` param would be
+  # a cheap seq-scan amplifier.
+  @max_search_term_length 100
+
+  # Builds a safe `%term%` ILIKE pattern from raw user input: caps the
+  # length, strips NUL bytes (Postgres rejects them in text params), and
+  # escapes LIKE metacharacters so `%`, `_`, and `\` match literally —
+  # a search for "100%" must not match every "100", and SKUs routinely
+  # contain underscores.
+  defp search_like_pattern(search) do
+    escaped =
+      search
+      |> String.replace(<<0>>, "")
+      |> String.slice(0, @max_search_term_length)
+      |> String.replace("\\", "\\\\")
+      |> String.replace("%", "\\%")
+      |> String.replace("_", "\\_")
+
+    "%#{escaped}%"
+  end
+
   defp filter_by_product_search(query, nil), do: query
   defp filter_by_product_search(query, ""), do: query
 
   defp filter_by_product_search(query, search) do
-    search_term = "%#{search}%"
+    search_term = search_like_pattern(search)
     default_lang = Translations.default_language()
 
     # Search in JSONB localized fields using PostgreSQL operators
-    # Searches in default language and falls back to any language match
+    # Searches in default language and falls back to any language match,
+    # plus SKU (metadata->>'sku') and tags. Columns are bound through the
+    # product binding so the query stays valid when other filters join
+    # additional tables (e.g. :exclude_hidden_categories).
     where(
       query,
       [p],
       fragment(
-        "(COALESCE(title->>?, '') ILIKE ? OR COALESCE(description->>?, '') ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_each_text(title) WHERE value ILIKE ?) OR EXISTS (SELECT 1 FROM jsonb_each_text(description) WHERE value ILIKE ?))",
+        "(COALESCE(?->>?, '') ILIKE ? OR COALESCE(?->>?, '') ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_each_text(?) WHERE value ILIKE ?) OR EXISTS (SELECT 1 FROM jsonb_each_text(?) WHERE value ILIKE ?) OR COALESCE(?->>'sku', '') ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(?, '[]'::jsonb)) AS tag WHERE tag ILIKE ?))",
+        p.title,
         ^default_lang,
         ^search_term,
+        p.description,
         ^default_lang,
         ^search_term,
+        p.title,
         ^search_term,
+        p.description,
+        ^search_term,
+        p.metadata,
+        ^search_term,
+        p.tags,
         ^search_term
       )
     )
@@ -2644,7 +2728,7 @@ defmodule PhoenixKitEcommerce do
   defp filter_by_category_search(query, ""), do: query
 
   defp filter_by_category_search(query, search) do
-    search_term = "%#{search}%"
+    search_term = search_like_pattern(search)
     default_lang = Translations.default_language()
 
     # Search in JSONB localized name field using PostgreSQL operators
