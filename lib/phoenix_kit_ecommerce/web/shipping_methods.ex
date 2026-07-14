@@ -80,7 +80,9 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
             {gettext("Shipping Methods")}
           </h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
-            {gettext("%{count} methods configured", count: length(@methods))}
+            {ngettext("1 method configured", "%{count} methods configured", length(@methods),
+              count: length(@methods)
+            )}
           </p>
           <:actions>
             <.link navigate={Routes.path("/admin/shop/shipping/new")} class="btn btn-primary btn-sm">

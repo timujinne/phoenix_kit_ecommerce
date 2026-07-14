@@ -882,7 +882,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
               <div class="card-body">
                 <h2 class="card-title text-xl mb-4">{gettext("Translations")}</h2>
                 <p class="text-base-content/60 text-sm mb-4">
-                  Translate product content for different languages. The default language uses the main fields above.
+                  {gettext(
+                    "Translate product content for different languages. The default language uses the main fields above."
+                  )}
                 </p>
 
                 <%!-- Language Tabs --%>
@@ -904,40 +906,40 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     fields={[
                       %{
                         key: :title,
-                        label: "Title",
+                        label: gettext("Title"),
                         type: :text,
-                        placeholder: "Translated product title"
+                        placeholder: gettext("Translated product title")
                       },
                       %{
                         key: :slug,
-                        label: "URL Slug",
+                        label: gettext("URL Slug"),
                         type: :text,
                         placeholder: "translated-url-slug",
-                        hint: "SEO-friendly URL for this language"
+                        hint: gettext("SEO-friendly URL for this language")
                       },
                       %{
                         key: :description,
-                        label: "Description",
+                        label: gettext("Description"),
                         type: :textarea,
-                        placeholder: "Short translated description"
+                        placeholder: gettext("Short translated description")
                       },
                       %{
                         key: :body_html,
-                        label: "Full Description (HTML)",
+                        label: gettext("Full Description (HTML)"),
                         type: :html,
-                        placeholder: "<p>Full translated description...</p>"
+                        placeholder: gettext("<p>Full translated description...</p>")
                       },
                       %{
                         key: :seo_title,
-                        label: "SEO Title",
+                        label: gettext("SEO Title"),
                         type: :text,
-                        placeholder: "Page title for search engines (max 60 chars)"
+                        placeholder: gettext("Page title for search engines (max 60 chars)")
                       },
                       %{
                         key: :seo_description,
-                        label: "SEO Description",
+                        label: gettext("SEO Description"),
                         type: :text,
-                        placeholder: "Meta description for search engines (max 160 chars)"
+                        placeholder: gettext("Meta description for search engines (max 160 chars)")
                       }
                     ]}
                   />
@@ -1001,9 +1003,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
                   <%= if all_select_options != [] do %>
-                    Select which option values are available for this product.
+                    {gettext("Select which option values are available for this product.")}
                   <% else %>
-                    Add custom options for this product.
+                    {gettext("Add custom options for this product.")}
                   <% end %>
                 </p>
 
@@ -1235,7 +1237,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                       {gettext("Per-product price modifiers")}
                     </h3>
                     <p class="text-xs text-base-content/60 mb-3">
-                      Leave as "Default" to use global option values, or set custom values per-product.
+                      {gettext(
+                        "Leave as \"Default\" to use global option values, or set custom values per-product."
+                      )}
                     </p>
                     <div class="space-y-4">
                       <%= for option <- editable_options do %>
@@ -1414,7 +1418,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 <%= if @live_action == :edit && assigns[:min_price] && assigns[:max_price] do %>
                   <div class="mt-4 p-3 bg-base-200 rounded-lg">
                     <div class="flex justify-between items-center">
-                      <span class="text-sm">Price Range:</span>
+                      <span class="text-sm">{gettext("Price Range:")}</span>
                       <span class="font-bold text-lg">
                         {format_price(@min_price, @currency)} — {format_price(@max_price, @currency)}
                       </span>
@@ -1533,7 +1537,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <.icon name="hero-photo" class="w-5 h-5" /> {gettext("Variant Images")}
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
-                  Link images to option values. When a customer selects an option, the corresponding image displays.
+                  {gettext(
+                    "Link images to option values. When a customer selects an option, the corresponding image displays."
+                  )}
                 </p>
 
                 <%= for {option_key, option_values} <- get_mappable_options(assigns) do %>
@@ -1595,7 +1601,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 <.icon name="hero-photo" class="w-5 h-5" /> {gettext("Product Images")}
               </h2>
               <p class="text-sm text-base-content/60 mb-4">
-                Drag images to reorder. First image is the featured (main) image.
+                {gettext("Drag images to reorder. First image is the featured (main) image.")}
               </p>
 
               <.draggable_list
@@ -1656,7 +1662,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <.icon name="hero-tag" class="w-5 h-5" /> {gettext("Specifications")}
                 </h2>
                 <p class="text-sm text-base-content/60 mb-4">
-                  Fill in the product specifications based on global and category options.
+                  {gettext("Fill in the product specifications based on global and category options.")}
                 </p>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

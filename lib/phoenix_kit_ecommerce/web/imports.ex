@@ -1381,7 +1381,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
     <%= if @option_mappings == [] do %>
       <div class="alert alert-warning mb-4">
         <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
-        <span>No options found in CSV file. You can proceed with basic import.</span>
+        <span>{gettext("No options found in CSV file. You can proceed with basic import.")}</span>
       </div>
     <% else %>
       <div class="space-y-4 mb-6">
@@ -1525,23 +1525,23 @@ defmodule PhoenixKitEcommerce.Web.Imports do
     </div>
 
     <div class="bg-base-200 rounded-lg p-4 mb-4">
-      <h3 class="font-medium mb-2">Import details:</h3>
+      <h3 class="font-medium mb-2">{gettext("Import details:")}</h3>
       <ul class="text-sm space-y-1 text-base-content/80">
         <li>
-          <.icon name="hero-document-text" class="w-4 h-4 inline mr-1" /> Format:
+          <.icon name="hero-document-text" class="w-4 h-4 inline mr-1" /> {gettext("Format:")}
           <strong>{@format_name}</strong>
         </li>
         <li>
-          <.icon name="hero-cube" class="w-4 h-4 inline mr-1" /> Products:
+          <.icon name="hero-cube" class="w-4 h-4 inline mr-1" /> {gettext("Products:")}
           <strong>{@confirm_product_count}</strong>
         </li>
         <li>
-          <.icon name="hero-photo" class="w-4 h-4 inline mr-1" /> Download images:
-          <strong>{if @download_images, do: "Yes", else: "No"}</strong>
+          <.icon name="hero-photo" class="w-4 h-4 inline mr-1" /> {gettext("Download images:")}
+          <strong>{if @download_images, do: gettext("Yes"), else: gettext("No")}</strong>
         </li>
         <li>
-          <.icon name="hero-folder" class="w-4 h-4 inline mr-1" /> Skip empty categories:
-          <strong>{if @skip_empty_categories, do: "Yes", else: "No"}</strong>
+          <.icon name="hero-folder" class="w-4 h-4 inline mr-1" /> {gettext("Skip empty categories:")}
+          <strong>{if @skip_empty_categories, do: gettext("Yes"), else: gettext("No")}</strong>
         </li>
       </ul>
     </div>

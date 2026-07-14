@@ -682,7 +682,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                             type="button"
                             phx-click="delete_category_option"
                             phx-value-key={opt["key"]}
-                            data-confirm="Remove this option?"
+                            data-confirm={gettext("Remove this option?")}
                             class="btn btn-ghost btn-xs text-error"
                           >
                             <.icon name="hero-trash" class="w-3 h-3" />

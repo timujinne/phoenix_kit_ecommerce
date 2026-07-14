@@ -211,7 +211,9 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
           <div class="alert mb-6">
             <.icon name="hero-information-circle" class="w-6 h-6" />
             <span>
-              No products tracked for this import. Product tracking was added in a later version.
+              {gettext(
+                "No products tracked for this import. Product tracking was added in a later version."
+              )}
             </span>
           </div>
         <% end %>

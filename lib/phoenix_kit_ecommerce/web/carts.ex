@@ -96,7 +96,7 @@ defmodule PhoenixKitEcommerce.Web.Carts do
       <div class="container flex-col mx-auto px-4 py-6 max-w-7xl">
         <.admin_page_header back={Routes.path("/admin/shop")}>
           <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{gettext("Shopping Carts")}</h1>
-          <p class="text-sm sm:text-base text-base-content/60 mt-0.5">{gettext("%{count} carts total", count: @total)}</p>
+          <p class="text-sm sm:text-base text-base-content/60 mt-0.5">{ngettext("1 cart total", "%{count} carts total", @total, count: @total)}</p>
         </.admin_page_header>
 
         <%!-- Controls Bar --%>

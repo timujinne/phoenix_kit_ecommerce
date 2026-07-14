@@ -627,8 +627,8 @@ defmodule PhoenixKitEcommerce.Web.Products do
                 <.table_default_row hover={false}>
                   <.table_default_cell colspan={7} class="text-center py-12 text-base-content/50">
                     <.icon name="hero-cube" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p class="text-lg">No products found</p>
-                    <p class="text-sm">Create your first product to get started</p>
+                    <p class="text-lg">{gettext("No products found")}</p>
+                    <p class="text-sm">{gettext("Create your first product to get started")}</p>
                   </.table_default_cell>
                 </.table_default_row>
               <% else %>
