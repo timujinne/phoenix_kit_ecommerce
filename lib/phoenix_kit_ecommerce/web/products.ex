@@ -505,7 +505,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
           >
             <div class="flex flex-wrap items-center justify-between gap-4">
               <div class="flex items-center gap-2">
-                <span class="badge badge-primary badge-lg" data-bulk-text-template={gettext("%{count} selected")}>
+                <span class="badge badge-primary badge-lg" data-bulk-text-template={gettext("%{count} selected", count: "%{count}")}>
                   {gettext("%{count} selected", count: 0)}
                 </span>
                 <button type="button" data-bulk-clear="true" class="btn btn-ghost btn-sm">

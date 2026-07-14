@@ -431,7 +431,7 @@ msgstr "Tühistati %{count} migreerimistehtust"
 msgid "Cannot retry: file no longer exists"
 msgstr "Kordamine pole võimalik: fail puudub"
 
-#: lib/phoenix_kit_ecommerce/web/carts.ex:174
+#: lib/phoenix_kit_ecommerce/web/carts.ex:178
 #, elixir-autogen, elixir-format
 msgid "Carts will appear here when customers add items"
 msgstr "Ostukorvid ilmuvad siia, kui kliendid lisavad tooteid"
@@ -698,7 +698,7 @@ msgstr "Kohandatud hind"
 msgid "Custom selection"
 msgstr "Kohandatud valik"
 
-#: lib/phoenix_kit_ecommerce/web/carts.ex:160
+#: lib/phoenix_kit_ecommerce/web/carts.ex:164
 #, elixir-autogen, elixir-format
 msgid "Customer"
 msgstr "Klient"
@@ -725,6 +725,7 @@ msgstr "Määrake kõigile toodetele kehtivad valikud (suurus, värv, materjal j
 
 #: lib/phoenix_kit_ecommerce/web/categories.ex:422
 #: lib/phoenix_kit_ecommerce/web/imports.ex:1100
+#: lib/phoenix_kit_ecommerce/web/imports.ex:1104
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:226
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:622
 #: lib/phoenix_kit_ecommerce/web/products.ex:535
@@ -1130,8 +1131,8 @@ msgstr "Globaalsed tootevalikud"
 msgid "Gray"
 msgstr "Hall"
 
-#: lib/phoenix_kit_ecommerce/web/carts.ex:153
-#: lib/phoenix_kit_ecommerce/web/carts.ex:185
+#: lib/phoenix_kit_ecommerce/web/carts.ex:157
+#: lib/phoenix_kit_ecommerce/web/carts.ex:189
 #, elixir-autogen, elixir-format
 msgid "Guest"
 msgstr "Külaline"
@@ -1304,7 +1305,7 @@ msgid "Inventory tracking enabled"
 msgstr "Laoarvestus lubatud"
 
 #: lib/phoenix_kit_ecommerce/web/carts.ex:142
-#: lib/phoenix_kit_ecommerce/web/carts.ex:161
+#: lib/phoenix_kit_ecommerce/web/carts.ex:165
 #: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:166
 #, elixir-autogen, elixir-format
 msgid "Items"
@@ -1460,7 +1461,7 @@ msgstr "Kategooriata"
 msgid "No billing information available"
 msgstr "Arveldusteave pole saadaval"
 
-#: lib/phoenix_kit_ecommerce/web/carts.ex:173
+#: lib/phoenix_kit_ecommerce/web/carts.ex:177
 #, elixir-autogen, elixir-format
 msgid "No carts found"
 msgstr "Ostukorve ei leitud"
@@ -1863,6 +1864,7 @@ msgid "Refresh stats"
 msgstr "Värskenda statistikat"
 
 #: lib/phoenix_kit_ecommerce/web/settings.ex:401
+#: lib/phoenix_kit_ecommerce/web/settings.ex:405
 #, elixir-autogen, elixir-format
 msgid "Remove"
 msgstr "Eemalda"
@@ -2131,8 +2133,8 @@ msgid "Started migration for %{count} products"
 msgstr "Alustati migreerimist %{count} toote jaoks"
 
 #: lib/phoenix_kit_ecommerce/web/carts.ex:122
-#: lib/phoenix_kit_ecommerce/web/carts.ex:144
-#: lib/phoenix_kit_ecommerce/web/carts.ex:163
+#: lib/phoenix_kit_ecommerce/web/carts.ex:148
+#: lib/phoenix_kit_ecommerce/web/carts.ex:167
 #: lib/phoenix_kit_ecommerce/web/categories.ex:346
 #: lib/phoenix_kit_ecommerce/web/categories.ex:431
 #: lib/phoenix_kit_ecommerce/web/categories.ex:471
@@ -2230,8 +2232,8 @@ msgstr "Pealkiri"
 msgid "Title:"
 msgstr "Pealkiri:"
 
-#: lib/phoenix_kit_ecommerce/web/carts.ex:143
-#: lib/phoenix_kit_ecommerce/web/carts.ex:162
+#: lib/phoenix_kit_ecommerce/web/carts.ex:147
+#: lib/phoenix_kit_ecommerce/web/carts.ex:166
 #, elixir-autogen, elixir-format
 msgid "Total"
 msgstr "Kokku"
@@ -2353,8 +2355,8 @@ msgstr "Uuenda %{count} valitud kategooria olekut"
 msgid "Update status for %{count} selected products"
 msgstr "Uuenda %{count} valitud toote olekut"
 
-#: lib/phoenix_kit_ecommerce/web/carts.ex:145
-#: lib/phoenix_kit_ecommerce/web/carts.ex:164
+#: lib/phoenix_kit_ecommerce/web/carts.ex:149
+#: lib/phoenix_kit_ecommerce/web/carts.ex:168
 #: lib/phoenix_kit_ecommerce/web/import_show.ex:131
 #, elixir-autogen, elixir-format
 msgid "Updated"
@@ -2520,12 +2522,6 @@ msgid "item"
 msgid_plural "items"
 msgstr[0] "1 ese"
 msgstr[1] "%{count} eset"
-
-#: lib/phoenix_kit_ecommerce/web/carts.ex:142
-#: lib/phoenix_kit_ecommerce/web/carts.ex:192
-#, elixir-autogen, elixir-format
-msgid "items"
-msgstr "kirjet"
 
 #: lib/phoenix_kit_ecommerce/web/imports.ex:952
 #, elixir-autogen, elixir-format
@@ -2741,3 +2737,11 @@ msgstr "nt cup_color"
 #, elixir-autogen, elixir-format
 msgid "selected"
 msgstr "valitud"
+
+#: lib/phoenix_kit_ecommerce/web/carts.ex:144
+#: lib/phoenix_kit_ecommerce/web/carts.ex:197
+#, elixir-autogen, elixir-format
+msgid "1 item"
+msgid_plural "%{count} items"
+msgstr[0] "%{count} kirje"
+msgstr[1] "%{count} kirjet"

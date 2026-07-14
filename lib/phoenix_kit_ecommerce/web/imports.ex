@@ -1101,7 +1101,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                                 data-confirm={gettext("Are you sure you want to delete this import log?")}
                               >
                                 <.icon name="hero-trash" class="w-4 h-4 hidden sm:inline" />
-                                <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}</span>
+                                <span class="sm:hidden whitespace-nowrap">{gettext("Delete")}</span>
                               </button>
                             <% end %>
                           </div>

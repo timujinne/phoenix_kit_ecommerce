@@ -139,7 +139,11 @@ defmodule PhoenixKitEcommerce.Web.Carts do
         <%!-- Carts Table --%>
         <.table_default id="carts-table" variant="zebra" class="w-full" toggleable={true} items={@carts}
           card_fields={fn cart -> [
-            %{label: gettext("Items"), value: "#{cart.items_count || 0} #{gettext("items")}"},
+            %{label: gettext("Items"),
+              value:
+                ngettext("1 item", "%{count} items", cart.items_count || 0,
+                  count: cart.items_count || 0
+                )},
             %{label: gettext("Total"), value: if(cart.total, do: Decimal.to_string(Decimal.round(cart.total, 2)), else: "-")},
             %{label: gettext("Status"), value: cart.status || "-"},
             %{label: gettext("Updated"), value: Calendar.strftime(cart.updated_at, "%Y-%m-%d %H:%M")}
@@ -189,7 +193,11 @@ defmodule PhoenixKitEcommerce.Web.Carts do
                     <% end %>
                   </.table_default_cell>
                   <.table_default_cell>
-                    <span class="badge badge-neutral">{cart.items_count || 0} {gettext("items")}</span>
+                    <span class="badge badge-neutral">
+                      {ngettext("1 item", "%{count} items", cart.items_count || 0,
+                        count: cart.items_count || 0
+                      )}
+                    </span>
                     <%= if cart.total_weight_grams && cart.total_weight_grams > 0 do %>
                       <span class="text-xs text-base-content/50 ml-2">
                         {format_weight(cart.total_weight_grams)}
