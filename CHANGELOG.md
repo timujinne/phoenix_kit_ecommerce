@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.11 - 2026-07-16
+
+### Added
+- **Admin i18n wave.** All 12 admin LiveViews (carts, categories, category
+  form, dashboard, import show, imports, product detail, product form,
+  products, settings, shipping method form, shipping methods) are now
+  fully gettext-wrapped, using the module-owned `PhoenixKitEcommerce.Gettext`
+  backend consistently (replacing leftover `PhoenixKitWeb.Gettext` calls).
+  The `ru`/`et` catalogs were extended from 483 to 2,500+ msgids.
+
+### Fixed
+- **Gaps in the i18n wave above, found in post-merge review.** The
+  product-form Translations tab (title/slug/description/SEO field labels
+  and placeholders), several product-form help strings, the products-list
+  empty state, the CSV-import confirm-step summary, an import-details
+  notice, and a category-option delete confirmation were left unwrapped
+  and rendered in English regardless of locale — not caught by
+  `mix gettext.extract --check-up-to-date`, since that check only verifies
+  already-wrapped calls, not coverage. All wrapped and translated
+  (en/ru/et).
+- **Cart and shipping-method page-header counts pluralize correctly.**
+  `carts.ex` and `shipping_methods.ex` used plain `gettext` for their
+  "%{count} ... total/configured" headers instead of `ngettext`, so the
+  Russian translation hardcoded a genitive-plural noun regardless of
+  count — rendering "1 корзин всего" / "1 методов настроено" at
+  `count = 1`. Converted to `ngettext`, matching the categories/products
+  pattern, with correct 3-form ru and 2-form et translations.
+- Corrected 12 catalog entries gettext's fuzzy-matcher mis-filled from an
+  unrelated adjacent label while merging the strings above (e.g. "No
+  products found" pre-filled with the Russian/Estonian translation of "No
+  categories found").
+
+See `dev_docs/pull_requests/2026/11-admin-i18n-wave/CLAUDE_REVIEW.md` for
+the full review.
+
 ## 0.1.10 - 2026-07-12
 
 ### Fixed
