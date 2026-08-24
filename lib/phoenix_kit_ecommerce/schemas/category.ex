@@ -28,7 +28,7 @@ defmodule PhoenixKitEcommerce.Category do
   import Ecto.Changeset
 
   alias PhoenixKit.Modules.Storage.URLSigner
-  alias PhoenixKit.Utils.Slug
+  alias PhoenixKitEcommerce.LocalizedSlug
 
   @type t :: %__MODULE__{}
 
@@ -93,9 +93,10 @@ defmodule PhoenixKitEcommerce.Category do
     |> validate_localized_required(:name)
     |> validate_number(:position, greater_than_or_equal_to: 0)
     |> validate_inclusion(:status, @statuses)
-    |> maybe_generate_slug()
+    |> LocalizedSlug.maybe_generate(:name)
     |> validate_no_circular_parent()
-    |> unique_constraint(:slug, name: "idx_shop_categories_slug_primary")
+    # V171's projection pkey — same shape as Product.
+    |> unique_constraint(:slug, name: "phoenix_kit_shop_category_slugs_pkey")
   end
 
   @doc """
@@ -280,28 +281,6 @@ defmodule PhoenixKitEcommerce.Category do
     end
   end
 
-  # Generate slug from name for each language
-  defp maybe_generate_slug(changeset) do
-    name_map = get_field(changeset, :name) || %{}
-    slug_map = get_field(changeset, :slug) || %{}
-
-    # For each language with a name but no slug, generate one
-    updated_slugs =
-      Enum.reduce(name_map, slug_map, fn {lang, name}, acc ->
-        if Map.get(acc, lang) in [nil, ""] and name not in [nil, ""] do
-          Map.put(acc, lang, slugify(name, lang))
-        else
-          acc
-        end
-      end)
-
-    if updated_slugs != slug_map do
-      put_change(changeset, :slug, updated_slugs)
-    else
-      changeset
-    end
-  end
-
   # Prevent category from being its own parent or creating circular references
   defp validate_no_circular_parent(changeset) do
     parent_uuid = get_change(changeset, :parent_uuid)
@@ -349,12 +328,4 @@ defmodule PhoenixKitEcommerce.Category do
       end
     end
   end
-
-  # Core's rule, not a local copy. This drifted between Product and Category twice
-  # — Cyrillic, then German — and each time the fix reached only one of them. There
-  # is now one implementation for the whole ecosystem, in `locale_slug`.
-  #
-  # `lang` is the language the name is IN, and it changes the answer: German ö -> oe,
-  # Estonian ö -> o. The reduce above had it bound and was throwing it away.
-  defp slugify(text, lang), do: Slug.slugify(text, locale: lang, transliterate: true)
 end

@@ -55,6 +55,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.ShopConfig
+  alias PhoenixKitEcommerce.Shopify.Provider, as: ShopifyProvider
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
 
@@ -74,6 +75,12 @@ defmodule PhoenixKitEcommerce do
 
   @impl PhoenixKit.Module
   def required_modules, do: ["billing"]
+
+  @impl PhoenixKit.Module
+  def required_integrations, do: ["shopify"]
+
+  @impl PhoenixKit.Module
+  def integration_providers, do: [ShopifyProvider.definition()]
 
   @impl PhoenixKit.Module
   @doc """
@@ -427,6 +434,17 @@ defmodule PhoenixKitEcommerce do
         icon: "hero-cloud-arrow-up",
         path: "shop/imports",
         priority: 536,
+        level: :admin,
+        permission: "shop.run_imports",
+        parent: :admin_shop,
+        gettext_backend: PhoenixKitEcommerce.Gettext
+      ),
+      Tab.new!(
+        id: :admin_shop_shopify_sync,
+        label: "Shopify Sync",
+        icon: "hero-arrow-path",
+        path: "shop/shopify-sync",
+        priority: 537,
         level: :admin,
         permission: "shop.run_imports",
         parent: :admin_shop,

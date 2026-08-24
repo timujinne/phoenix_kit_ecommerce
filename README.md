@@ -203,6 +203,54 @@ methods = Shop.get_available_shipping_methods(cart)
 # /admin/shop/imports/:uuid
 ```
 
+### Shopify Sync
+
+One-way, human-confirmed sync that keeps existing products current
+against a connected Shopify store — **not** a product importer. It
+updates products the shop already has (matched to Shopify by
+handle/slug); a Shopify product with no local match is skipped. To
+bring a new product in from Shopify, use [CSV Import](#csv-import)
+first, then this to keep it current.
+
+Setup (all through the UI, no environment variables):
+
+1. **In Shopify admin**: Settings → Apps and sales channels → Develop
+   apps → Create an app. Configure Admin API scopes — `read_products`
+   is the only one this needs. Install the app, then reveal and copy
+   its Admin API access token (shown once).
+2. **In your PhoenixKit host app's admin**: Settings → Integrations →
+   Add Connection → Shopify. Enter the shop domain
+   (`your-store.myshopify.com`) and the access token from step 1, then
+   save. Credentials are encrypted at rest by core's
+   `PhoenixKit.Integrations` store — this module never sees or stores
+   them itself.
+   > The generic "Test Connection" button on that page reports success
+   > without actually contacting Shopify (Shopify isn't one of core's
+   > built-in validation strategies) — the "Check for changes" button
+   > below is the real connectivity test.
+3. **In the shop admin**: Shop → Shopify Sync → "Check for changes".
+   Review the diff, then apply. Price-only changes under a 3x swing
+   can be applied in bulk; every other change — any non-price field,
+   or a >3x price swing — is applied one product at a time with an
+   explicit confirmation showing exactly what will change.
+
+Fields compared: title, description (from Shopify's `Body (HTML)`),
+vendor, tags, status, and price (the lowest current variant price).
+Not synced: new products, categories/collections, images,
+variants/options, and inventory quantity.
+
+```elixir
+alias PhoenixKitEcommerce.Shopify.Sync
+
+# integration_uuid comes from PhoenixKit.Integrations.list_connections("shopify")
+{:ok, changes} = Sync.check(integration_uuid)
+
+# Apply everything that changed for one product...
+{:ok, product} = Sync.apply_change(change)
+# ...or only specific fields:
+{:ok, product} = Sync.apply_change(change, [:price])
+```
+
 ### Real-Time Events
 
 Subscribe to shop events in your LiveViews:
@@ -436,6 +484,7 @@ lib/
 | `/admin/shop/shipping` | Shipping methods |
 | `/admin/shop/carts` | Cart analytics |
 | `/admin/shop/imports` | CSV import jobs |
+| `/admin/shop/shopify-sync` | Shopify catalog sync |
 | `/admin/shop/settings` | Shop configuration |
 | `/admin/shop/settings/options` | Global option schemas |
 | `/admin/shop/settings/import-configs` | Import profiles |

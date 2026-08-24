@@ -89,6 +89,9 @@ defmodule PhoenixKitEcommerce.Test.Router do
       # Imports
       live("/imports", Imports, :index, as: :shop_imports)
       live("/imports/:uuid", ImportShow, :show, as: :shop_import_show)
+
+      # Shopify Sync
+      live("/shopify-sync", ShopifySync, :index, as: :shop_shopify_sync)
     end
   end
 end

@@ -4,6 +4,103 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.3.0 - 2026-08-21
+
+### Added
+
+- **Shopify sync** — one-way, human-confirmed catalog sync from a
+  connected Shopify store into this shop's products. Generalizes a
+  single-store integration (custom-app OAuth, plaintext env
+  credentials, price-only) into something any PhoenixKit app can turn
+  on: credentials live in core's encrypted `PhoenixKit.Integrations`
+  store (a Shopify custom-app Admin API access token, entered through
+  the existing Integrations admin UI — no OAuth handshake, no new
+  controller/router, and no per-app env vars), and the diff now covers
+  title, description, vendor, tags, status, and price rather than
+  price alone. Matches Shopify products to local ones by handle/slug;
+  a Shopify product with no local match is skipped — creating new
+  products is still the CSV importer's job. Nothing is written without
+  an explicit click: price-only, non-extreme changes get a bulk
+  "apply all" button (a >3x price swing still forces individual
+  confirmation, as before), every other field always does.
+  `PhoenixKitEcommerce.Shopify.{Provider, AdminClient, ProductDiff,
+  Sync}`; admin UI at Shop → Shopify Sync
+  (`shop.run_imports` permission, reused rather than adding a new
+  one). See the README for setup.
+- **`PhoenixKitEcommerce.HtmlText.extract_description/2`** — the
+  HTML-to-plain-text stripper `ProductTransformer` already had,
+  pulled out so the Shopify sync's diff engine can derive the same
+  `description` from `body_html` instead of duplicating the logic.
+
+### Fixed
+
+- **`test/test_helper.exs` was missing two support files** from its
+  explicit `Code.require_file` list (`notification_assertions.ex`,
+  `checkout_fixtures.ex`) — any `DataCase`/`LiveCase`-based test failed
+  to compile with "module ... is not loaded and could not be found".
+  Unrelated to the Shopify work above; found getting a test baseline
+  for it.
+- **Post-merge review** (`dev_docs/pull_requests/2026/23-shopify-sync/CLAUDE_REVIEW.md`):
+  the new Shopify Sync LiveView's route was missing from the test
+  router, so its whole test file 404'd; the bulk "apply all price-only
+  updates" action discarded write failures and reported them as
+  applied — a product whose price update actually failed silently
+  vanished from the review list instead of staying visible for retry
+  (`Shopify.Sync.apply_changes/2` now partitions successes from
+  failures, and the LiveView keeps failed changes on screen with a
+  separate error flash); and an admin-client test simulated a network
+  failure with a bare `raise`, which doesn't produce the `{:error, _}`
+  tuple a real transport failure does and failed on its own.
+
+## 0.2.2 - 2026-08-14
+
+PR #21 plus the post-merge review in
+`dev_docs/pull_requests/2026/21-stop-empty-slugs/GROK_REVIEW.md`.
+
+**⚠️ Requires `phoenix_kit ~> 2.6`.** Shipping-method slugs call
+`Slug.put_slug/3` (core 2.4.0) and product/category unique constraints name
+V171's projection primary keys (core 2.6.0). A host still on 2.0–2.5 will not
+resolve this release.
+
+### Fixed
+
+- **Empty slugs no longer lock a shop out of its own unique index.**
+  `Slug.slugify/2` returns `""` for scripts it cannot romanize (CJK, Arabic,
+  emoji). The old `extract_primary_slug` index was partial only on
+  `IS NOT NULL`, so the first unromanizable title took the `""` key and the
+  second could not be inserted. The generator never writes an empty result.
+- **Unromanizable titles now get a storefront URL.** Skipping the empty key
+  fixed the lockout but left CJK-only products as `/shop/product/` — a
+  catalog card with nowhere to go. They now receive a stable `item-<hash>`
+  fallback, shared by Product and Category via
+  `PhoenixKitEcommerce.LocalizedSlug`. A leftover `{"en": ""}` row self-heals
+  into that fallback on its next save.
+- **Slug resolution skips stored empty strings.** `""` is truthy, so
+  `SlugResolver.product_slug/2` used to emit it into `product_url/2` for a
+  legacy CJK row and produce `/shop/product/` even when another language had
+  a real slug.
+- **Renaming a shipping method no longer moves its slug**, and a Cyrillic
+  name no longer writes `""` (which locked every later Cyrillic-named method
+  out via `phoenix_kit_shop_shipping_methods_slug_unique`). Shipping methods
+  now use core's `Slug.put_slug/3`.
+- **A CJK/Arabic/emoji shipping-method name can be saved.** `slug` is
+  `NOT NULL`, and `put_slug/3` leaves it blank when slugify returns `""`,
+  which was a failed insert. The same `item-<hash>` fallback now fills it,
+  suffixing `-2` on collision.
+- **Product and category slug collisions are changeset errors** on `:slug`,
+  not raw `Postgrex.Error`. The `unique_constraint` names follow V171's
+  projection primary keys.
+- **Admin form labels were rendering at 60% opacity under daisyUI 5.**
+  `form-control` / `label-text` / `*-bordered` / `tabs-bordered` match
+  nothing in v5; the leftover `.label` rule is `color-mix(..., 60%)`.
+  Class remaps only.
+
+### Changed
+
+- **`:phoenix_kit` floor raised `~> 2.0` → `~> 2.6`** (two-segment, so later
+  2.x still resolve). The previous floor admitted cores without `put_slug/3`
+  and without V171.
+
 ## 0.2.1 - 2026-08-11
 
 ### Changed

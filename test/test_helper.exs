@@ -29,6 +29,8 @@ support_dir = Path.expand("support", __DIR__)
   "test_router.ex",
   "test_endpoint.ex",
   "activity_log_assertions.ex",
+  "notification_assertions.ex",
+  "checkout_fixtures.ex",
   "data_case.ex",
   "live_case.ex"
 ]

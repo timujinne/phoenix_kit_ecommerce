@@ -5,21 +5,32 @@ defmodule PhoenixKitEcommerce.CorePinConformanceTest do
   Guards the `:phoenix_kit` requirement against being re-narrowed to a single
   core MINOR, and against a local path override reaching a commit.
 
-  The trap is the three-segment form: `~> 2.0.x` expands to
-  `>= 2.0.x and < 2.1.0`, so no 2.1 or later core satisfies it. The breakage
+  The trap is the three-segment form: `~> 2.6.x` expands to
+  `>= 2.6.x and < 2.7.0`, so no 2.7 or later core satisfies it. The breakage
   lands on CONSUMERS, never here — a host depending on both this module and a
   newer core minor gets an unsolvable dependency set and `mix deps.get` fails
   outright, with no degraded mode. Nothing else in this repo's own test run
   would notice, which is why the check is a test rather than a convention.
 
+  What this does NOT forbid is raising the two-segment FLOOR. `~> 2.6` still
+  admits every later 2.x. The floor tracks the oldest core that has every
+  API this module calls: `Slug.put_slug/3` (2.4.0) and V171's shop slug
+  projection pkeys (2.6.0). A floor left at 2.0 lets `mix deps.get` resolve
+  a core without those and moves the failure to the host — an
+  `UndefinedFunctionError` on shipping-method save, or a raw `Postgrex.Error`
+  on a product slug collision. Raise this alongside `mix.exs` whenever a
+  newly-adopted core API sets a higher floor.
+
   Core 1.7 is deliberately excluded: core 2.0.0 squashed the migration chain to
   a V135 floor and this module is verified only against that baseline.
   """
 
-  @must_admit ["2.0.0", "2.0.7", "2.1.0", "2.9.4"]
-  @must_reject ["1.7.189", "1.7.236", "1.9.4", "3.0.0"]
+  # Floor: core 2.6.0 (`Slug.put_slug/3` + V171 projection pkeys). Everything
+  # above it, forever, must stay admitted — that is the two-segment invariant.
+  @must_admit ["2.6.0", "2.6.9", "2.7.0", "2.9.4"]
+  @must_reject ["1.7.189", "1.7.236", "1.9.4", "2.0.0", "2.5.9", "3.0.0"]
 
-  test "the :phoenix_kit requirement admits every core 2.x and nothing else" do
+  test "the :phoenix_kit requirement admits every core >= 2.6 minor and nothing else" do
     requirement = core_requirement()
 
     assert match?({:ok, _parsed}, Version.parse_requirement(requirement)),
@@ -28,8 +39,8 @@ defmodule PhoenixKitEcommerce.CorePinConformanceTest do
     for version <- @must_admit do
       assert Version.match?(version, requirement),
              "`:phoenix_kit` requirement #{inspect(requirement)} rejects core #{version}. " <>
-               "A pin that excludes a core minor breaks `mix deps.get` for every host " <>
-               "running this module alongside that core. Keep it a two-segment `~> 2.0`."
+               "A pin that excludes a core minor at or above the floor breaks `mix deps.get` " <>
+               "for every host running this module alongside that core. Keep it two-segment."
     end
 
     for version <- @must_reject do

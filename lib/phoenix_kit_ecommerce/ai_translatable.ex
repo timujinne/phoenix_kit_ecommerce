@@ -203,11 +203,12 @@ defmodule PhoenixKitEcommerce.AITranslatable do
 
   @slug_max_len 80
 
-  # A URL slug from the translated title, capped to a sane length. Titles with
-  # no ASCII-slug characters (Cyrillic/CJK/Arabic slugify to "" under the
-  # ASCII-only rule) fall back to the default-language slug + a language
-  # suffix, so the language always gets a non-empty per-language slug instead
-  # of silently serving the default-language URL.
+  # A URL slug from the translated title, capped to a sane length. Scripts
+  # with no romanizer (CJK, Arabic, emoji) still slugify to "" — Cyrillic
+  # does not, now that transliteration is the default — and fall back to
+  # the default-language slug + a language suffix so the language always
+  # gets a non-empty per-language slug instead of silently serving the
+  # default-language URL.
   defp slug_base(translated_title, slug_map, target_lang) do
     # target_lang is the language the TRANSLATED title is in, so the slug must be
     # generated in it — a German translation wants ö -> oe, an Estonian one ö -> o.

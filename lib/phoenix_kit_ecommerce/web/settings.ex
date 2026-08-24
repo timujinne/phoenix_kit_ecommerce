@@ -732,6 +732,39 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           </div>
         </div>
 
+        <%!-- Shopify Sync --%>
+        <div class="card bg-base-100 shadow-xl mb-6">
+          <div class="card-body">
+            <h2 class="card-title text-xl mb-6">
+              <.icon name="hero-arrow-path" class="w-6 h-6" /> {gettext("Shopify Sync")}
+            </h2>
+
+            <div class="fieldset">
+              <label class="label cursor-pointer justify-between">
+                <span class="fieldset-legend text-lg">
+                  <span class="font-semibold">{gettext("One-way sync from Shopify")}</span>
+                  <div class="text-sm text-base-content/70 mt-1">
+                    {gettext(
+                      "Connect a Shopify Admin API token in Integrations settings, then review and apply catalog changes from the Shopify Sync page."
+                    )}
+                  </div>
+                </span>
+                <div class="flex gap-2">
+                  <.link
+                    navigate={Routes.path("/admin/settings/integrations/website")}
+                    class="btn btn-ghost"
+                  >
+                    {gettext("Connect")}
+                  </.link>
+                  <.link navigate={Routes.path("/admin/shop/shopify-sync")} class="btn btn-primary">
+                    <.icon name="hero-arrow-path" class="w-4 h-4 mr-2" /> {gettext("Open Sync")}
+                  </.link>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <%!-- Storefront Filters --%>
         <div class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">

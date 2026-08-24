@@ -37,6 +37,7 @@ defmodule PhoenixKitEcommerce.Product do
   import Ecto.Changeset
 
   alias PhoenixKit.Utils.Slug
+  alias PhoenixKitEcommerce.LocalizedSlug
 
   @type t :: %__MODULE__{}
 
@@ -157,13 +158,11 @@ defmodule PhoenixKitEcommerce.Product do
     |> validate_number(:download_limit, greater_than: 0)
     |> validate_number(:download_expiry_days, greater_than: 0)
     |> validate_length(:currency, is: 3)
-    |> maybe_generate_slug()
-    # Products carry the same functional unique index as categories
-    # (`extract_primary_slug(slug)`) but never declared it, so two titles that
-    # slugify the same — easy once titles are transliterated, "Ель" and "Эль"
-    # both give "el" — raised a raw ConstraintError out of the form and out of
-    # the import worker instead of a field error the operator can act on.
-    |> unique_constraint(:slug, name: "idx_shop_products_slug_primary")
+    |> LocalizedSlug.maybe_generate(:title)
+    # V171's projection pkey (base language, value). The trigger insert is
+    # what raises; Ecto matches this name so a collision is a :slug error
+    # rather than a raw Postgrex.Error.
+    |> unique_constraint(:slug, name: "phoenix_kit_shop_product_slugs_pkey")
   end
 
   @doc """
@@ -260,39 +259,17 @@ defmodule PhoenixKitEcommerce.Product do
     end
   end
 
-  # Generate slug from title for each language
-  defp maybe_generate_slug(changeset) do
-    title_map = get_field(changeset, :title) || %{}
-    slug_map = get_field(changeset, :slug) || %{}
-
-    # For each language with a title but no slug, generate one — IN that language.
-    updated_slugs =
-      Enum.reduce(title_map, slug_map, fn {lang, title}, acc ->
-        if Map.get(acc, lang) in [nil, ""] and title not in [nil, ""] do
-          Map.put(acc, lang, slugify(title, lang))
-        else
-          acc
-        end
-      end)
-
-    if updated_slugs != slug_map do
-      put_change(changeset, :slug, updated_slugs)
-    else
-      changeset
-    end
-  end
-
   @doc """
   Slug generation for per-language slugs. Public because the AI translation adapter
   (`AITranslatable.slug_base/3`) derives a slug from a translated title.
 
   `lang` is the language the text is IN, and it changes the answer: German `ö`
   expands to `oe` while Estonian `ö` folds to `o`, and Ukrainian Cyrillic follows
-  Ukraine's own romanization rather than Russian's. The reduce above had `lang`
-  bound and was discarding it, so every language got the neutral rule — a German
-  title slugged `grosse` where German orthography wants `groesse`.
+  Ukraine's own romanization rather than Russian's.
 
   Passing `nil` still produces a correct slug, just not locale-tuned.
+  Unromanizable scripts (CJK, Arabic, emoji) return `""`; callers that need a
+  URL must apply `LocalizedSlug.fallback/1` (the changeset already does).
   """
   def slugify(text, lang \\ nil),
     do: Slug.slugify(text, locale: lang, transliterate: true)

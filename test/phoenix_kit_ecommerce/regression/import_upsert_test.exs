@@ -212,12 +212,17 @@ defmodule PhoenixKitEcommerce.Regression.ImportUpsertTest do
   end
 
   describe "language spellings" do
-    test "a lookup prefers the spelling it was asked for" do
+    test "spelling twins are refused outright, so a lookup has nothing to prefer" do
+      # This test used to pin `slug_preference/2`: two products holding one
+      # slug string under different SPELLINGS of a language ("en" / "en-US"),
+      # where an OR with limit 1 returned an arbitrary row and the preference
+      # ranking made it deterministic. V171 removed the ambiguity at the
+      # source — spellings fold into one (base language, value) bucket, and
+      # the projection's primary key refuses the twin at insert, as a
+      # changeset error rather than an arbitrary winner at read time.
       suffix = System.unique_integer([:positive])
       slug = "twin-slug-#{suffix}"
 
-      # Two products can hold the same slug string under different spellings
-      # of one language — a shop that changed its language config mid-life.
       {:ok, exact} =
         Shop.create_product(%{
           "title" => %{lang() => "Exact"},
@@ -228,7 +233,7 @@ defmodule PhoenixKitEcommerce.Regression.ImportUpsertTest do
 
       other = if lang() == "en", do: "en-US", else: "en"
 
-      {:ok, _variant_spelling} =
+      {:error, changeset} =
         Shop.create_product(%{
           "title" => %{lang() => "Other spelling", other => "Other spelling"},
           "slug" => %{lang() => "#{slug}-x", other => slug},
@@ -236,10 +241,11 @@ defmodule PhoenixKitEcommerce.Regression.ImportUpsertTest do
           "status" => "active"
         })
 
-      assert {:ok, found} = Shop.get_product_by_slug_localized(slug, lang())
+      assert {"has already been taken", _} = changeset.errors[:slug]
 
-      assert found.uuid == exact.uuid,
-             "an OR across spellings with limit 1 returned an arbitrary row"
+      # And the lookup is unambiguous by construction.
+      assert {:ok, found} = Shop.get_product_by_slug_localized(slug, lang())
+      assert found.uuid == exact.uuid
     end
 
     test "the other spelling is still found when nothing matches exactly" do

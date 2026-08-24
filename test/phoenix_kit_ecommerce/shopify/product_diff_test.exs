@@ -1,0 +1,248 @@
+defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
+  use ExUnit.Case, async: true
+
+  alias PhoenixKitEcommerce.Product
+  alias PhoenixKitEcommerce.Shopify.ProductDiff
+  alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
+
+  @base_locale "en"
+
+  defp product(overrides) do
+    defaults = %Product{
+      uuid: Ecto.UUID.generate(),
+      slug: %{"en" => "planter"},
+      title: %{"en" => "Planter"},
+      body_html: %{"en" => "<p>Original</p>"},
+      description: %{"en" => "Original"},
+      vendor: "Acme",
+      tags: ["clay", "garden"],
+      status: "active",
+      price: Decimal.new("20.00")
+    }
+
+    struct(defaults, overrides)
+  end
+
+  defp shopify_product(overrides) do
+    Map.merge(
+      %{
+        "handle" => "planter",
+        "title" => "Planter",
+        "body_html" => "<p>Original</p>",
+        "vendor" => "Acme",
+        "tags" => "clay, garden",
+        "status" => "active",
+        "variants" => [%{"price" => "20.00"}]
+      },
+      overrides
+    )
+  end
+
+  defp diff(local, shopify) do
+    ProductDiff.diff(local, shopify, @base_locale)
+  end
+
+  describe "matching" do
+    test "a Shopify product with no local handle match is skipped" do
+      local = [product(slug: %{"en" => "planter"})]
+      shopify = [shopify_product(%{"handle" => "unmatched-handle", "title" => "Something else"})]
+
+      assert diff(local, shopify) == []
+    end
+
+    test "an identical matched product produces no change" do
+      local = [product([])]
+      shopify = [shopify_product(%{})]
+
+      assert diff(local, shopify) == []
+    end
+
+    test "the returned Change carries the product uuid, handle, and a display title" do
+      p = product(uuid: "fixed-uuid")
+      local = [p]
+      shopify = [shopify_product(%{"title" => "New Title"})]
+
+      assert [%Change{} = change] = diff(local, shopify)
+      assert change.product_uuid == "fixed-uuid"
+      assert change.handle == "planter"
+      assert change.title == "Planter"
+    end
+  end
+
+  describe "field: title" do
+    test "changed title is included in changes" do
+      local = [product(title: %{"en" => "Old Title"})]
+      shopify = [shopify_product(%{"title" => "New Title"})]
+
+      assert [%Change{changes: %{title: %{current: "Old Title", incoming: "New Title"}}}] =
+               diff(local, shopify)
+    end
+
+    test "unchanged title does not appear in changes" do
+      local = [product(title: %{"en" => "Same"})]
+      shopify = [shopify_product(%{"title" => "Same"})]
+
+      assert diff(local, shopify) == []
+    end
+  end
+
+  describe "field: body_html" do
+    test "changed body_html is included" do
+      local = [product(body_html: %{"en" => "<p>Old</p>"})]
+      shopify = [shopify_product(%{"body_html" => "<p>New</p>"})]
+
+      assert [%Change{changes: %{body_html: %{current: "<p>Old</p>", incoming: "<p>New</p>"}}}] =
+               diff(local, shopify)
+    end
+
+    test "unchanged body_html does not appear in changes" do
+      local = [
+        product(body_html: %{"en" => "<p>Same</p>"}, description: %{"en" => "Same"})
+      ]
+
+      shopify = [shopify_product(%{"body_html" => "<p>Same</p>"})]
+
+      assert diff(local, shopify) == []
+    end
+  end
+
+  describe "field: description" do
+    test "description is derived by stripping the incoming body_html and compared to the local description" do
+      local = [product(description: %{"en" => "Old description"})]
+      shopify = [shopify_product(%{"body_html" => "<p>New description</p>"})]
+
+      assert [
+               %Change{
+                 changes: %{
+                   description: %{current: "Old description", incoming: "New description"}
+                 }
+               }
+             ] =
+               diff(local, shopify)
+    end
+
+    test "unchanged description does not appear in changes" do
+      local = [product(description: %{"en" => "Same"}, body_html: %{"en" => "<p>Same</p>"})]
+      shopify = [shopify_product(%{"body_html" => "<p>Same</p>"})]
+
+      assert diff(local, shopify) == []
+    end
+  end
+
+  describe "field: vendor" do
+    test "changed vendor is included" do
+      local = [product(vendor: "Old Co")]
+      shopify = [shopify_product(%{"vendor" => "New Co"})]
+
+      assert [%Change{changes: %{vendor: %{current: "Old Co", incoming: "New Co"}}}] =
+               diff(local, shopify)
+    end
+
+    test "unchanged vendor does not appear in changes" do
+      local = [product(vendor: "Same Co")]
+      shopify = [shopify_product(%{"vendor" => "Same Co"})]
+
+      assert diff(local, shopify) == []
+    end
+  end
+
+  describe "field: status" do
+    test "changed status is included" do
+      local = [product(status: "draft")]
+      shopify = [shopify_product(%{"status" => "active"})]
+
+      assert [%Change{changes: %{status: %{current: "draft", incoming: "active"}}}] =
+               diff(local, shopify)
+    end
+
+    test "unchanged status does not appear in changes" do
+      local = [product(status: "archived")]
+      shopify = [shopify_product(%{"status" => "archived"})]
+
+      assert diff(local, shopify) == []
+    end
+  end
+
+  describe "field: tags" do
+    test "a real tag-set difference is included, with parsed incoming tags" do
+      local = [product(tags: ["clay"])]
+      shopify = [shopify_product(%{"tags" => "clay, garden"})]
+
+      assert [%Change{changes: %{tags: %{current: ["clay"], incoming: ["clay", "garden"]}}}] =
+               diff(local, shopify)
+    end
+
+    test "same tags in a different order produce no diff" do
+      local = [product(tags: ["clay", "garden"])]
+      shopify = [shopify_product(%{"tags" => "garden, clay"})]
+
+      assert diff(local, shopify) == []
+    end
+
+    test "extra whitespace around incoming tags does not create a false diff" do
+      local = [product(tags: ["clay", "garden"])]
+      shopify = [shopify_product(%{"tags" => "  clay ,  garden  "})]
+
+      assert diff(local, shopify) == []
+    end
+  end
+
+  describe "field: price" do
+    test "a changed price is included, using the minimum variant price" do
+      local = [product(price: Decimal.new("20.00"))]
+
+      shopify = [
+        shopify_product(%{
+          "variants" => [%{"price" => "30.00"}, %{"price" => "25.00"}]
+        })
+      ]
+
+      assert [%Change{changes: %{price: %{current: current, incoming: incoming}}}] =
+               diff(local, shopify)
+
+      assert Decimal.eq?(current, "20.00")
+      assert Decimal.eq?(incoming, "25.00")
+    end
+
+    test "unchanged price does not appear in changes" do
+      local = [product(price: Decimal.new("20.00"))]
+      shopify = [shopify_product(%{"variants" => [%{"price" => "20.00"}]})]
+
+      assert diff(local, shopify) == []
+    end
+
+    test "no variants means price is not compared at all" do
+      local = [product(price: Decimal.new("20.00"))]
+      shopify = [shopify_product(%{"variants" => []})]
+
+      assert diff(local, shopify) == []
+    end
+  end
+
+  describe "price_extreme?" do
+    test "flags a price change whose ratio exceeds 3x" do
+      local = [product(price: Decimal.new("10.00"))]
+      shopify = [shopify_product(%{"variants" => [%{"price" => "40.00"}]})]
+
+      assert [%Change{price_extreme?: true}] = diff(local, shopify)
+    end
+
+    test "does not flag a price change within 3x" do
+      local = [product(price: Decimal.new("10.00"))]
+      shopify = [shopify_product(%{"variants" => [%{"price" => "25.00"}]})]
+
+      assert [%Change{price_extreme?: false}] = diff(local, shopify)
+    end
+
+    test "is false when price did not change, even if other fields did" do
+      local = [product(price: Decimal.new("10.00"), vendor: "Old Co")]
+
+      shopify = [
+        shopify_product(%{"vendor" => "New Co", "variants" => [%{"price" => "10.00"}]})
+      ]
+
+      assert [%Change{price_extreme?: false, changes: changes}] = diff(local, shopify)
+      refute Map.has_key?(changes, :price)
+    end
+  end
+end

@@ -619,19 +619,22 @@ defmodule PhoenixKitEcommerce.SlugResolver do
   end
 
   defp localized_slug(slug_map, language) do
-    Enum.find_value(language_keys(language), &slug_map[&1]) ||
-      Enum.find_value(language_keys(default_language()), &slug_map[&1]) ||
-      first_slug(slug_map)
+    Enum.find_value(language_keys(language), &present_slug(slug_map[&1])) ||
+      Enum.find_value(language_keys(default_language()), &present_slug(slug_map[&1])) ||
+      first_present_slug(slug_map)
   end
 
   defp default_language do
     Translations.default_language()
   end
 
-  defp first_slug(map) when map == %{}, do: nil
+  # `""` is truthy, so a bare Map.get would emit an empty slug into
+  # `product_url/2` and produce `/shop/product/` for a legacy CJK row.
+  defp present_slug(slug) when is_binary(slug) and slug != "", do: slug
+  defp present_slug(_), do: nil
 
-  defp first_slug(map) do
-    map |> Map.values() |> List.first()
+  defp first_present_slug(map) do
+    Enum.find_value(map, fn {_lang, slug} -> present_slug(slug) end)
   end
 
   defp repo, do: PhoenixKit.RepoHelper.repo()

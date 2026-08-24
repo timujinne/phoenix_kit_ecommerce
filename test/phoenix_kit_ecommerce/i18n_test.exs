@@ -37,8 +37,8 @@ defmodule PhoenixKitEcommerce.I18nTest do
           PhoenixKitEcommerce.settings_tabs() ++
           PhoenixKitEcommerce.user_dashboard_tabs()
 
-      # Sanity: 7 admin + 1 settings + 2 user-dashboard = 10 sites.
-      assert length(tabs) == 10
+      # Sanity: 8 admin + 1 settings + 2 user-dashboard = 11 sites.
+      assert length(tabs) == 11
 
       for tab <- tabs do
         assert tab.gettext_backend == EcommerceGettext,

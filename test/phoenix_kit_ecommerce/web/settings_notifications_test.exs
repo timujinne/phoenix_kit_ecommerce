@@ -7,6 +7,9 @@ defmodule PhoenixKitEcommerce.Web.SettingsNotificationsTest do
 
   use PhoenixKitEcommerce.LiveCase, async: false
 
+  alias PhoenixKit.Users.Permissions
+  alias PhoenixKit.Users.Roles
+
   setup %{conn: conn} do
     {:ok, conn: put_test_scope(conn, fake_scope())}
   end
@@ -31,11 +34,17 @@ defmodule PhoenixKitEcommerce.Web.SettingsNotificationsTest do
   end
 
   test "recipient checkboxes persist the JSON list", %{conn: conn} do
-    # First registered user in this sandboxed transaction is auto-promoted
-    # to Owner by core, which is what makes it a candidate recipient (see
-    # `Notifications.admin_recipients/1` and the same convention used in
-    # notifications_test.exs / checkout_signal_test.exs).
+    # Explicit grant rather than relying on being first-in-database: Sandbox
+    # only rolls back this test's own transaction, so a committed Owner from
+    # outside it (a shared test database's seed account, say) silently skips
+    # the auto-promotion this used to lean on. `Roles.assign_role/2` refuses
+    # "Owner" directly (owner_role_protected), so grant "Admin" plus the
+    # permission `admin_recipients/1` actually unions over — same pattern as
+    # `create_admin_user/0` in notifications_test.exs.
     admin = PhoenixKitEcommerce.DataCase.fixture_user()
+    admin_role = Roles.get_role_by_name("Admin")
+    {:ok, _} = Roles.assign_role(admin, "Admin")
+    {:ok, _} = Permissions.grant_permission(admin_role.uuid, "shop.manage_carts")
 
     {:ok, view, html} = live(conn, "/en/admin/shop/settings")
     assert html =~ admin.email

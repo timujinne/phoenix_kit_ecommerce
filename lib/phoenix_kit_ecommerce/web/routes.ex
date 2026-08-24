@@ -122,6 +122,9 @@ defmodule PhoenixKitEcommerce.Web.Routes do
       live "/admin/shop/imports/:uuid", PhoenixKitEcommerce.Web.ImportShow, :show,
         as: :shop_import_show
 
+      live "/admin/shop/shopify-sync", PhoenixKitEcommerce.Web.ShopifySync, :index,
+        as: :shop_shopify_sync
+
       live "/admin/shop/test", PhoenixKitEcommerce.Web.TestShop, :index, as: :shop_test
     end
   end

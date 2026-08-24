@@ -28,7 +28,9 @@ defmodule PhoenixKitEcommerce.SlugifyParityTest do
     "Видеопродакшн",
     "Corporate Video",
     "Öl",
-    "Müük"
+    "Müük",
+    # unromanizable: both must apply the same hash fallback, not omit the key
+    "日本語"
   ]
 
   test "both schemas slug identically for every case that has drifted" do

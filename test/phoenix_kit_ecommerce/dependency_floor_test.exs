@@ -32,6 +32,20 @@ defmodule PhoenixKitEcommerce.DependencyFloorTest do
     assert function_exported?(PhoenixKit.Migrations.Postgres, :migrated_version_runtime, 1)
   end
 
+  test "the phoenix_kit floor ships Slug.put_slug/3" do
+    # ShippingMethod.changeset/2 calls it. Against 2.0–2.3 this is an
+    # UndefinedFunctionError on every shipping-method save, in the host.
+    assert Code.ensure_loaded?(PhoenixKit.Utils.Slug)
+    assert function_exported?(PhoenixKit.Utils.Slug, :put_slug, 3)
+  end
+
+  test "the phoenix_kit floor ships the V171 shop slug projection" do
+    # Product/Category unique_constraint names are the projection pkeys.
+    # Without V171 those names do not exist and a collision is a raw
+    # Postgrex.Error instead of a changeset error on :slug.
+    assert Code.ensure_loaded?(PhoenixKit.Migrations.Postgres.ShopSlugProjection)
+  end
+
   test "the phoenix_kit_billing floor ships Order.payment_option_uuid" do
     # `maybe_put_payment_option/2` writes this attr once core is at V162.
     # `cast/3` ignores a key the schema does not declare, so against an older

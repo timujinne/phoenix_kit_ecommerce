@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.MixProject do
   use Mix.Project
 
-  @version "0.2.1"
+  @version "0.3.0"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_ecommerce"
 
   def project do
@@ -102,15 +102,14 @@ defmodule PhoenixKitEcommerce.MixProject do
 
   defp deps do
     [
-      # PhoenixKit provides the Module behaviour and Settings API.
-      # 1.7.214+ required: Scope.can_access_admin_area?/1 (the rename of the
-      # now-`@deprecated` Scope.admin?/1) — an older core has no such function,
-      # so this is an UndefinedFunctionError at runtime, not a warning.
-      # 1.7.231 is the floor: that release ships
-      # `PhoenixKitWeb.Live.UrlState`, which 2 LiveView files in this
-      # module `use`. Anything below it resolves a core with no such
-      # module, and the failure surfaces in the consumer's build.
-      pk_dep(:phoenix_kit, "~> 2.0"),
+      # 2.6 is a hard floor, not a preference. ShippingMethod.changeset/2
+      # calls `Slug.put_slug/3` (added in 2.4.0), and Product/Category name
+      # V171's projection pkeys (`phoenix_kit_shop_{product,category}_slugs_pkey`,
+      # added in 2.6.0). Under the previous `~> 2.0` a host resolving 2.0–2.5
+      # either raised UndefinedFunctionError on every shipping-method save
+      # or turned slug collisions back into raw Postgrex errors. Two-segment
+      # so every later 2.x still resolves.
+      pk_dep(:phoenix_kit, "~> 2.6"),
 
       # Gettext for per-module i18n of sidebar tab labels.
       {:gettext, "~> 1.0"},

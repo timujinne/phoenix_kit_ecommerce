@@ -63,8 +63,8 @@ defmodule PhoenixKitEcommerce.Schemas.CategoryTest do
         })
         |> Repo.insert()
 
-      # Schema declares unique_constraint(:slug, name: "idx_shop_categories_slug_primary"),
-      # which matches the partial UNIQUE INDEX on extract_primary_slug(slug).
+      # Schema names V171's projection pkey so Ecto turns the trigger's
+      # insert collision into a :slug changeset error.
       assert %{slug: [_ | _]} = errors_on(cs)
     end
   end

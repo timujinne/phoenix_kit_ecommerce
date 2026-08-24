@@ -19,6 +19,7 @@ defmodule PhoenixKitEcommerce.Import.ProductTransformer do
   """
 
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.HtmlText
   alias PhoenixKitEcommerce.Import.{Filter, OptionBuilder}
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
@@ -60,7 +61,7 @@ defmodule PhoenixKitEcommerce.Import.ProductTransformer do
 
     # Extract non-localized values
     body_html_raw = first_row["Body (HTML)"]
-    description_raw = extract_description(body_html_raw)
+    description_raw = HtmlText.extract_description(body_html_raw)
     seo_title_raw = get_non_empty(first_row, "SEO Title")
     seo_description_raw = get_non_empty(first_row, "SEO Description")
 
@@ -245,7 +246,7 @@ defmodule PhoenixKitEcommerce.Import.ProductTransformer do
 
     # Extract non-localized values
     body_html_raw = first_row["Body (HTML)"]
-    description_raw = extract_description(body_html_raw)
+    description_raw = HtmlText.extract_description(body_html_raw)
     seo_title_raw = get_non_empty(first_row, "SEO Title")
     seo_description_raw = get_non_empty(first_row, "SEO Description")
 
@@ -464,18 +465,6 @@ defmodule PhoenixKitEcommerce.Import.ProductTransformer do
   defp parse_status("true"), do: "active"
   defp parse_status("TRUE"), do: "active"
   defp parse_status(_), do: "draft"
-
-  defp extract_description(nil), do: nil
-  defp extract_description(""), do: nil
-
-  defp extract_description(html) do
-    # Extract first paragraph as description (strip HTML tags)
-    html
-    |> String.replace(~r/<[^>]+>/, " ")
-    |> String.replace(~r/\s+/, " ")
-    |> String.trim()
-    |> String.slice(0, 500)
-  end
 
   defp find_featured_image(rows) do
     # Find image with position 1, or first image
