@@ -63,15 +63,25 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
   Pass it when the incoming Shopify data only ever carries some fields —
   e.g. a public-storefront fallback source that reads price alone — so the
   fields it doesn't carry aren't reported (and later applied) as deletions.
+  An unknown key in `opts` raises, so a typo (e.g. `onlyy:`) can't silently
+  fall back to comparing every field.
+
+  `base_locale` must be a string. This guards against the easy mistake of
+  passing `opts` as the third argument and dropping `base_locale` entirely
+  (`diff(local, shopify, only: [:price])`) — without the guard that silently
+  matches nothing and returns `[]`, instead of raising.
   """
+  @spec diff([Product.t()], [map()], String.t()) :: [Change.t()]
   @spec diff([Product.t()], [map()], String.t(), keyword()) :: [Change.t()]
   def diff(
         local_products,
         shopify_products,
         base_locale \\ Translations.default_language(),
         opts \\ []
-      ) do
-    only = Keyword.get(opts, :only, @comparable_fields)
+      )
+      when is_binary(base_locale) do
+    opts = Keyword.validate!(opts, only: @comparable_fields)
+    only = Keyword.fetch!(opts, :only)
     index = index_by_handle(local_products, base_locale)
 
     shopify_products

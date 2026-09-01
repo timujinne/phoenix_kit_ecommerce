@@ -185,6 +185,14 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
 
       assert diff(local, shopify) == []
     end
+
+    test "a nil local tags list is treated as empty, not a crash" do
+      local = [product(tags: nil)]
+      shopify = [shopify_product(%{"tags" => "clay, garden"})]
+
+      assert [%Change{changes: %{tags: %{current: [], incoming: ["clay", "garden"]}}}] =
+               diff(local, shopify)
+    end
   end
 
   describe "field: price" do
@@ -216,6 +224,16 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
       shopify = [shopify_product(%{"variants" => []})]
 
       assert diff(local, shopify) == []
+    end
+
+    test "a nil local price against an incoming price is reported as a change, not a crash" do
+      local = [product(price: nil)]
+      shopify = [shopify_product(%{"variants" => [%{"price" => "20.00"}]})]
+
+      assert [%Change{changes: %{price: %{current: nil, incoming: incoming}}}] =
+               diff(local, shopify)
+
+      assert Decimal.eq?(incoming, "20.00")
     end
   end
 
@@ -254,7 +272,7 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
 
       assert [change] = ProductDiff.diff(local, shopify, @base_locale, only: [:price])
 
-      assert Map.keys(change.changes) == [:price]
+      assert Enum.sort(Map.keys(change.changes)) == [:price]
       assert Decimal.eq?(change.changes.price.incoming, Decimal.new("12.00"))
     end
 
@@ -274,6 +292,24 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
       shopify = [%{"handle" => "planter", "variants" => [%{"price" => "12.00"}]}]
 
       assert ProductDiff.diff(local, shopify, @base_locale, only: []) == []
+    end
+
+    test "an unknown opts key raises instead of silently comparing every field" do
+      local = [product(title: %{"en" => "Real title"}, price: Decimal.new("10.00"))]
+      shopify = [%{"handle" => "planter", "variants" => [%{"price" => "12.00"}]}]
+
+      assert_raise ArgumentError, fn ->
+        ProductDiff.diff(local, shopify, @base_locale, onlyy: [:price])
+      end
+    end
+
+    test "a non-string base_locale raises instead of silently matching nothing" do
+      local = [product([])]
+      shopify = [shopify_product(%{})]
+
+      assert_raise FunctionClauseError, fn ->
+        ProductDiff.diff(local, shopify, only: [:price])
+      end
     end
   end
 end
