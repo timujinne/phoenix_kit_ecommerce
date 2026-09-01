@@ -243,7 +243,13 @@ variants/options, and inventory quantity.
 alias PhoenixKitEcommerce.Shopify.Sync
 
 # integration_uuid comes from PhoenixKit.Integrations.list_connections("shopify")
-{:ok, changes} = Sync.check(integration_uuid)
+{:ok, %{changes: changes, source: source, fallback_reason: reason}} =
+  Sync.check(integration_uuid)
+
+# `source` is :admin (the full diff above) or :storefront — a price-only
+# fallback used when the Admin API token was rejected, with `reason`
+# saying why (e.g. :unauthorized). Always check `source` before treating
+# `changes` as a complete diff.
 
 # Apply everything that changed for one product...
 {:ok, product} = Sync.apply_change(change)

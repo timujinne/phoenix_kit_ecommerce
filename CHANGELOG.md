@@ -6,10 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+
+- **`PhoenixKitEcommerce.Shopify.Source`** — picks where a sync reads
+  Shopify product data from: the Admin API (primary, full-fidelity) or
+  the public storefront JSON endpoint (fallback, price-only), when the
+  Admin API connection's credentials are rejected. `decide/2` is the
+  pure fallback/abort decision core; `fetch/2` is the I/O shell
+  `Sync.check/2` calls. Falling back is only correct for a credential
+  failure (`:unauthorized`, `:forbidden`, `:missing_credentials`) with a
+  usable shop domain available — a rate limit, a 5xx, or a timeout
+  aborts instead, so a transient Admin API problem never gets silently
+  narrowed to a price-only report.
+- **`PhoenixKitEcommerce.Shopify.StorefrontClient`** — reads prices from
+  a store's public storefront JSON endpoint (`/products.json`), no
+  Admin API token required. This is `Source`'s fallback transport;
+  deliberately narrow (`"handle"` and `"variants"`/`"price"` only, never
+  title/body_html) so a fallback can never be mistaken for the full
+  Admin diff. Handles its own 429 retry-after and page-based pagination
+  (`?page=N` until an empty page), since the storefront endpoint has no
+  `Link: rel="next"` header to follow.
+- **`PhoenixKitEcommerce.Shopify.ProductDiff.comparable_fields/0`** —
+  the full field set `diff/4` can compare
+  (`[:title, :body_html, :description, :vendor, :tags, :status,
+  :price]`); what a caller passes as `diff/4`'s `:only` for a
+  full-fidelity source such as the Admin API.
+- **`ProductDiff.diff/4`'s `:only` option** — restricts the comparison
+  to a chosen field subset, so a source that only ever carries some
+  fields (e.g. the storefront fallback's price-only data) doesn't get
+  its absent fields reported — and later applied — as deletions.
+- **`Sync.check/2`'s `:base_locale` option** — the locale read for
+  matching/diffing localized fields, defaulting to
+  `Translations.default_language/0`. Mainly useful for tests that want
+  to pin the locale without touching the host app's language settings.
+
 ### Changed
 
-- **⚠️ `PhoenixKitEcommerce.Shopify.Sync.check/1` is now `check/2` and its
-  success return changed shape.** It fetches through `Source.fetch/2`
+- **⚠️ `Sync.check/2`'s success return changed shape (the arity did
+  not — `check/1` still resolves via the `opts \\ []` default; the
+  break is the return value).** It fetches through `Source.fetch/2`
   now, which can serve a price-only diff from the public storefront when
   the Admin API token is rejected instead of failing outright — a plain
   `[Change.t()]` list can't say whether a result is a full diff or a
@@ -19,7 +54,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fallback_reason: term() | nil}}` instead. Migration: replace
   `{:ok, changes}` with `{:ok, %{changes: changes}}` at the call site (or
   branch on `:source`/`:fallback_reason` to surface the fallback, as
-  `PhoenixKitEcommerce.Web.ShopifySync` now does).
+  `PhoenixKitEcommerce.Web.ShopifySync` now does — including keeping its
+  "shop matches Shopify" success alert and its storefront-fallback
+  banner mutually exclusive, since a `:storefront` result with no price
+  differences is not the same claim as a clean `:admin` diff).
+- **`AdminClient.fetch_products/2` now returns `{:error, :forbidden}`
+  on a Shopify 403** (previously fell through to the generic
+  `{:error, {:unexpected_status, 403}}`). A 403 is what Shopify returns
+  for a token installed without the `read_products` scope — this is
+  what lets `Source` recognize it as a credential failure and fall back
+  to the storefront instead of aborting.
 
 ## 0.3.0 - 2026-08-21
 

@@ -220,7 +220,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   end
 
   defp format_fallback_reason(:missing_credentials) do
-    gettext("the connection is missing its shop domain or access token")
+    # Reaching this path at all requires a usable shop domain (Source's
+    # fallback guard), so this specific reason can only mean the access
+    # token itself is blank — never the domain.
+    gettext("the connection is missing its access token")
   end
 
   defp format_fallback_reason(reason) do
@@ -273,8 +276,18 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
           </span>
         </div>
 
-        <div :if={@diff == []} class="alert alert-success">
+        <div :if={@diff == [] && @source == :admin} class="alert alert-success">
           {gettext("No changes — the shop matches Shopify.")}
+        </div>
+
+        <div
+          :if={@diff == [] && @source == :storefront}
+          id="storefront-no-price-changes"
+          class="alert alert-info"
+        >
+          {gettext(
+            "No price differences found. Other fields were not compared — see the notice above."
+          )}
         </div>
 
         <div :if={@diff not in [nil, []]} class="space-y-8">

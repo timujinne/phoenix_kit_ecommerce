@@ -136,6 +136,51 @@ defmodule PhoenixKitEcommerce.Shopify.SyncTest do
     end
   end
 
+  describe "check/2 — :base_locale opt" do
+    test "matches and diffs against the given locale, not a hardcoded one" do
+      uuid = connect_shopify()
+
+      # The product schema requires an "en" title regardless of what this
+      # test is pinning, so both locales are present — but the "ru" slug
+      # is set explicitly to "kashpo" while the "en" slug is left to
+      # auto-generate from the "en" title (landing nowhere near
+      # "kashpo"). A hardcoded "en" (instead of threading
+      # opts[:base_locale] through to ProductDiff.diff/4) would read the
+      # wrong slug, fail the handle match entirely, and report zero
+      # changes regardless of what Shopify sends back.
+      product =
+        create_product(%{
+          "title" => %{"en" => "Old Title", "ru" => "Старое название"},
+          "slug" => %{"ru" => "kashpo"},
+          "price" => "10.00",
+          "vendor" => nil
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{
+          "products" => [
+            %{
+              "handle" => "kashpo",
+              "title" => "Новое название",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            }
+          ]
+        })
+      end)
+
+      assert {:ok, %{source: :admin, changes: [change]}} =
+               Sync.check(uuid, check_opts(base_locale: "ru"))
+
+      assert change.product_uuid == product.uuid
+
+      assert change.changes.title == %{
+               current: "Старое название",
+               incoming: "Новое название"
+             }
+    end
+  end
+
   describe "apply_change/2 field selection" do
     test "applies only the explicitly requested fields, leaving others untouched" do
       product = create_product(%{})

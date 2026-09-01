@@ -31,8 +31,12 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   `:unauthorized`). Treating it as a full diff would report "no changes"
   for text fields that were never actually compared.
 
-  `opts` is forwarded to `Source.fetch/2` (`:admin_options`,
-  `:storefront_options`).
+  `opts[:base_locale]` is the locale read for matching/diffing localized
+  fields, defaulting to `Translations.default_language/0` — pass it
+  explicitly to keep a call free of that default's database access
+  (e.g. in tests), same reason `ProductDiff.diff/4` takes it. The rest
+  of `opts` (`:admin_options`, `:storefront_options`) is forwarded to
+  `Source.fetch/2`.
   """
   @spec check(String.t(), keyword()) ::
           {:ok,
@@ -43,12 +47,12 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
            }}
           | {:error, term()}
   def check(integration_uuid, opts \\ []) do
+    {base_locale, source_opts} =
+      Keyword.pop(opts, :base_locale, Translations.default_language())
+
     with {:ok, %{source: source, products: products, only: only, fallback_reason: reason}} <-
-           Source.fetch(integration_uuid, opts) do
-      changes =
-        ProductDiff.diff(Shop.list_products(), products, Translations.default_language(),
-          only: only
-        )
+           Source.fetch(integration_uuid, source_opts) do
+      changes = ProductDiff.diff(Shop.list_products(), products, base_locale, only: only)
 
       {:ok, %{changes: changes, source: source, fallback_reason: reason}}
     end
