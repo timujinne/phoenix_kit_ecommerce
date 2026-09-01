@@ -56,18 +56,26 @@ defmodule PhoenixKitEcommerce.Shopify.SourceTest do
     # back on these would silently narrow the report to price-only and
     # claim "no text changes" when the truth is "we could not check".
     #
-    # These are the actual atoms `AdminClient.fetch_products/2` emits for
-    # non-credential failures (:shop_not_found from a 404, :rate_limited
-    # once its own retry budget is exhausted, {:unexpected_status, _} as
-    # its catch-all, and any raw `Req` error term) — not a hypothetical
-    # list. Pinning these specific values, not just synthetic ones like
-    # `:timeout`, is what stops `@credential_errors` in `Source` from
-    # silently growing to include one of them.
+    # These are actual atoms `AdminClient.fetch_products/2` can emit for
+    # non-credential failures — not a hypothetical list, though it is not
+    # exhaustive either: :shop_not_found (404), :rate_limited (its own
+    # retry budget exhausted), {:unexpected_status, _} (its catch-all),
+    # any raw `Req` error term, and :not_configured / :deleted (passed
+    # straight through from `PhoenixKit.Integrations.get_credentials/1`
+    # at admin_client.ex:46-47 whenever the connection lookup itself
+    # fails — `Source.shop_domain/1` calls the same function, so in
+    # practice that failure aborts via the no-domain-available path
+    # regardless of whether it is credential-listed). Pinning these
+    # specific values, not just synthetic ones like `:timeout`, is what
+    # stops `@credential_errors` in `Source` from silently growing to
+    # include one of them.
     for reason <- [
           :shop_not_found,
           :rate_limited,
           {:unexpected_status, 500},
-          %Req.TransportError{reason: :closed}
+          %Req.TransportError{reason: :closed},
+          :not_configured,
+          :deleted
         ] do
       test "#{inspect(reason)} aborts even though a domain is available" do
         assert Source.decide({:error, unquote(Macro.escape(reason))}, {:ok, @domain}) ==

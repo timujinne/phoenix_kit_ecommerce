@@ -264,6 +264,48 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
     end
   end
 
+  describe "comparable_fields/0" do
+    test "returns the exact field list diff/4 compares by default" do
+      # Pinned literally, not derived from the module's own attribute —
+      # `Source` treats this function as the source of truth for "every
+      # field", so its return value needs a real assertion, not a
+      # tautology (`@x ProductDiff.comparable_fields()` followed by
+      # `assert ... == @x` proves nothing about what it actually returns).
+      assert ProductDiff.comparable_fields() ==
+               [:title, :body_html, :description, :vendor, :tags, :status, :price]
+    end
+
+    test "is genuinely equivalent to diff/4's implicit default, on a product differing in every field" do
+      local = [product([])]
+
+      shopify = [
+        %{
+          "handle" => "planter",
+          "title" => "New Title",
+          "body_html" => "<p>New body</p>",
+          "vendor" => "NewVendor",
+          "tags" => "new, tags",
+          "status" => "draft",
+          "variants" => [%{"price" => "99.00"}]
+        }
+      ]
+
+      explicit =
+        ProductDiff.diff(local, shopify, @base_locale, only: ProductDiff.comparable_fields())
+
+      # `diff/2` (this file's helper) already omits `only:` — the case
+      # that matters is that passing the function's own output back in
+      # behaves exactly like never having passed `only:` at all.
+      assert explicit == diff(local, shopify)
+
+      # Guards against a vacuous pass: confirm every comparable field
+      # actually differed, so a `comparable_fields/0` missing one of them
+      # would make this fail rather than silently pass on 6 out of 7.
+      assert [change] = explicit
+      assert Enum.sort(Map.keys(change.changes)) == Enum.sort(ProductDiff.comparable_fields())
+    end
+  end
+
   describe "diff/4 with :only" do
     test "compares just the listed fields and ignores the rest" do
       local = [product(title: %{"en" => "Real title"}, price: Decimal.new("10.00"))]

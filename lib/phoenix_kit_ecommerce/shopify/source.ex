@@ -93,9 +93,11 @@ defmodule PhoenixKitEcommerce.Shopify.Source do
   `ProductDiff.diff/4`'s `:only` option.
 
   The shop domain is only looked up when the Admin API actually failed —
-  `decide/2` never needs it on the success path, so a successful sync
-  pays for exactly one `PhoenixKit.Integrations.get_credentials/1` call
-  (the one already inside `AdminClient.fetch_products/2`), not two.
+  `decide/2` never needs it on the success path (see its first clause),
+  so this is meant to spare a successful sync a second
+  `PhoenixKit.Integrations.get_credentials/1` call it would otherwise
+  make and discard. That is the intent, not a pinned guarantee: nothing
+  in this suite currently asserts the call count.
 
   ## Options
 
