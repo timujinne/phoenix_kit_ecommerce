@@ -50,6 +50,16 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
   end
 
   @doc """
+  The full set of fields `diff/4` can compare — its `opts[:only]` default,
+  and what a caller (e.g. `PhoenixKitEcommerce.Shopify.Source`) should pass
+  for a source that carries every field, such as the Admin API. There is no
+  `:all` sentinel accepted by `opts[:only]` — passing this list explicitly
+  is the correct way to ask for "everything".
+  """
+  @spec comparable_fields() :: [atom()]
+  def comparable_fields, do: @comparable_fields
+
+  @doc """
   Matches `shopify_products` to `local_products` by handle and returns one
   `Change` per match that has at least one real difference. Shopify
   products without a matching local product are skipped.

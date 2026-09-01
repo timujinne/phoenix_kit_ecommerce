@@ -79,6 +79,9 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClient do
       {:ok, %{status: 401}} ->
         {:error, :unauthorized}
 
+      {:ok, %{status: 403}} ->
+        {:error, :forbidden}
+
       {:ok, %{status: 404}} ->
         {:error, :shop_not_found}
 

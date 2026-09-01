@@ -68,6 +68,16 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
       assert {:error, :unauthorized} = AdminClient.fetch_products(uuid, req_options())
     end
 
+    test "returns :forbidden on a 403 response" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 403, %{"errors" => "This action requires merchant approval"})
+      end)
+
+      assert {:error, :forbidden} = AdminClient.fetch_products(uuid, req_options())
+    end
+
     test "returns an error on a network failure" do
       uuid = connect_shopify()
 
