@@ -10,9 +10,18 @@ defmodule PhoenixKitEcommerce.Shopify.TextDiff do
   Both functions are pure. `summary/2` needs an exact changed-fragment
   count, which means it runs the same `List.myers_difference/2` pass as
   `words/2` internally — it is not a cheap approximation, just a smaller
-  return value. Callers rendering many rows (a section listing 500
-  products, say) should budget for that cost per row rather than assume
-  `summary/2` is free.
+  return value.
+
+  Myers is O(N*D), so the cost tracks how DIFFERENT the two texts are, not
+  how long they are. Measured on a 1.7 KB `body_html`:
+
+      small edit          0.55 ms
+      half the text       2.33 ms
+      wholly rewritten   12.0  ms
+
+  A caller listing many rows must bound how many it renders at once: 529
+  rows of the last kind is 6.3 seconds inside the LiveView process. Page
+  the rows and call this only for the page being shown.
   """
 
   @type fragment :: {:eq | :del | :ins, String.t()}
