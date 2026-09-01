@@ -27,7 +27,7 @@ defmodule PhoenixKitEcommerce.Shopify.Provider do
   in core and not externally extensible. This provider deliberately omits
   `:validation`, so "Test Connection" always reports success without
   actually checking anything. The real connectivity check is the sync
-  feature itself (`PhoenixKitEcommerce.Shopify.Sync.check/1`), which either
+  feature itself (`PhoenixKitEcommerce.Shopify.Sync.check/2`), which either
   fetches products successfully or surfaces a real error.
   """
 

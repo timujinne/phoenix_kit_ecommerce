@@ -4,8 +4,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   Fetches products from the Shopify Admin API connection registered in
   `PhoenixKitEcommerce.Shopify.Provider`, diffs them against the local
-  catalog (`PhoenixKitEcommerce.Shopify.Sync.check/1`), and lets an
+  catalog (`PhoenixKitEcommerce.Shopify.Sync.check/2`), and lets an
   operator apply changes — nothing is written without an explicit click.
+  When the Admin API token is rejected, `Sync.check/2` falls back to a
+  price-only storefront read instead of failing outright; this LiveView
+  surfaces that with a banner so an operator never mistakes a price-only
+  report for a complete one.
   Price-only, non-extreme changes get a bulk "apply all" button (the
   proven shape from the single-store implementation this generalizes);
   every other change — any non-price field, or an extreme price swing —
@@ -45,7 +49,9 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
      |> assign(:connection, shopify_connection())
      |> assign(:checking, false)
      |> assign(:diff, nil)
-     |> assign(:error, nil)}
+     |> assign(:error, nil)
+     |> assign(:source, nil)
+     |> assign(:fallback_reason, nil)}
   end
 
   @impl true
@@ -58,7 +64,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         %{uuid: uuid} ->
           {:noreply,
            socket
-           |> assign(checking: true, diff: nil, error: nil)
+           |> assign(checking: true, diff: nil, error: nil, source: nil, fallback_reason: nil)
            |> start_async(:check_diff, fn -> Sync.check(uuid) end)}
       end
     end)
@@ -120,8 +126,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   end
 
   @impl true
-  def handle_async(:check_diff, {:ok, {:ok, diff}}, socket) do
-    {:noreply, assign(socket, checking: false, diff: diff)}
+  def handle_async(
+        :check_diff,
+        {:ok, {:ok, %{changes: diff, source: source, fallback_reason: reason}}},
+        socket
+      ) do
+    {:noreply,
+     assign(socket, checking: false, diff: diff, source: source, fallback_reason: reason)}
   end
 
   def handle_async(:check_diff, {:ok, {:error, reason}}, socket) do
@@ -200,6 +211,22 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     gettext("Could not reach Shopify: %{reason}", reason: inspect(reason))
   end
 
+  defp format_fallback_reason(:unauthorized) do
+    gettext("the access token was rejected")
+  end
+
+  defp format_fallback_reason(:forbidden) do
+    gettext("the access token is missing the required scope")
+  end
+
+  defp format_fallback_reason(:missing_credentials) do
+    gettext("the connection is missing its shop domain or access token")
+  end
+
+  defp format_fallback_reason(reason) do
+    gettext("the Admin API request was rejected (%{reason})", reason: inspect(reason))
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -235,6 +262,15 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
         <div :if={@error} class="alert alert-error">
           <span>{@error}</span>
+        </div>
+
+        <div :if={@source == :storefront} id="storefront-fallback-notice" class="alert alert-warning">
+          <span>
+            {gettext(
+              "Showing price-only changes — %{reason}. Connect a valid Admin API token to see the full diff.",
+              reason: format_fallback_reason(@fallback_reason)
+            )}
+          </span>
         </div>
 
         <div :if={@diff == []} class="alert alert-success">

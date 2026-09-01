@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Changed
+
+- **⚠️ `PhoenixKitEcommerce.Shopify.Sync.check/1` is now `check/2` and its
+  success return changed shape.** It fetches through `Source.fetch/2`
+  now, which can serve a price-only diff from the public storefront when
+  the Admin API token is rejected instead of failing outright — a plain
+  `[Change.t()]` list can't say whether a result is a full diff or a
+  price-only fallback, so a caller could show a price-only report as if
+  it were complete. `check/2` returns
+  `{:ok, %{changes: [Change.t()], source: :admin | :storefront,
+  fallback_reason: term() | nil}}` instead. Migration: replace
+  `{:ok, changes}` with `{:ok, %{changes: changes}}` at the call site (or
+  branch on `:source`/`:fallback_reason` to surface the fallback, as
+  `PhoenixKitEcommerce.Web.ShopifySync` now does).
+
 ## 0.3.0 - 2026-08-21
 
 ### Added

@@ -1,9 +1,12 @@
 defmodule PhoenixKitEcommerce.Shopify.SyncTest do
   use PhoenixKitEcommerce.DataCase, async: true
 
+  alias PhoenixKit.Integrations
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
   alias PhoenixKitEcommerce.Shopify.Sync
+
+  @stub __MODULE__
 
   defp create_product(attrs) do
     defaults = %{"title" => %{"en" => "Old Title"}, "price" => "10.00", "vendor" => "Old Co"}
@@ -18,6 +21,119 @@ defmodule PhoenixKitEcommerce.Shopify.SyncTest do
       title: "Old Title",
       changes: changes
     }
+  end
+
+  defp connect_shopify(attrs \\ %{}) do
+    {:ok, %{uuid: uuid}} =
+      Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
+
+    {:ok, _} =
+      Integrations.save_setup(
+        uuid,
+        Map.merge(
+          %{"shop_domain" => "test-shop.myshopify.com", "access_token" => "shpat_test_token"},
+          attrs
+        )
+      )
+
+    uuid
+  end
+
+  defp check_opts(extra \\ []) do
+    Keyword.merge(
+      [
+        admin_options: [req_options: [plug: {Req.Test, @stub}]],
+        storefront_options: [req_options: [plug: {Req.Test, @stub}], page_delay_ms: 0]
+      ],
+      extra
+    )
+  end
+
+  defp json_response(conn, status, body) do
+    conn
+    |> Plug.Conn.put_resp_content_type("application/json")
+    |> Plug.Conn.send_resp(status, JSON.encode!(body))
+  end
+
+  defp admin_request?(conn), do: String.starts_with?(conn.request_path, "/admin/")
+
+  defp storefront_page(conn) do
+    conn |> Plug.Conn.fetch_query_params() |> Map.fetch!(:query_params) |> Map.get("page")
+  end
+
+  # Storefront pagination must terminate itself (empty page once page 1 is
+  # served) or StorefrontClient pages until :too_many_pages.
+  defp storefront_first_page(conn, body) do
+    if storefront_page(conn) == "1" do
+      json_response(conn, 200, body)
+    else
+      json_response(conn, 200, %{"products" => []})
+    end
+  end
+
+  describe "check/2 — admin path" do
+    test "reports a full-field diff, tagged with the admin source and no fallback reason" do
+      uuid = connect_shopify()
+
+      product =
+        create_product(%{
+          "slug" => %{"en" => "planter"},
+          "vendor" => "Old Co",
+          "price" => "10.00"
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{
+          "products" => [
+            %{
+              "handle" => "planter",
+              "title" => "New Title",
+              "vendor" => "New Co",
+              "status" => "draft",
+              "variants" => [%{"price" => "15.00"}]
+            }
+          ]
+        })
+      end)
+
+      assert {:ok, %{source: :admin, fallback_reason: nil, changes: [change]}} =
+               Sync.check(uuid, check_opts())
+
+      assert change.product_uuid == product.uuid
+      assert Map.keys(change.changes) |> Enum.sort() == [:price, :title, :vendor]
+      assert change.changes.title == %{current: "Old Title", incoming: "New Title"}
+      assert Decimal.eq?(change.changes.price.incoming, Decimal.new("15.00"))
+    end
+  end
+
+  describe "check/2 — storefront fallback path" do
+    test "reports only price changes, and no text field appears as a deletion" do
+      uuid = connect_shopify()
+
+      product =
+        create_product(%{
+          "slug" => %{"en" => "planter"},
+          "price" => "10.00"
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        if admin_request?(conn) do
+          json_response(conn, 401, %{"errors" => "Invalid API key"})
+        else
+          storefront_first_page(conn, %{
+            "products" => [%{"handle" => "planter", "variants" => [%{"price" => "15.00"}]}]
+          })
+        end
+      end)
+
+      assert {:ok, %{source: :storefront, fallback_reason: :unauthorized, changes: [change]}} =
+               Sync.check(uuid, check_opts())
+
+      assert change.product_uuid == product.uuid
+      assert Map.keys(change.changes) == [:price]
+      refute Map.has_key?(change.changes, :title)
+      assert Decimal.eq?(change.changes.price.incoming, Decimal.new("15.00"))
+    end
   end
 
   describe "apply_change/2 field selection" do

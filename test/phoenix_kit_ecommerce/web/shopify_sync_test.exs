@@ -3,9 +3,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
   Covers render states and permission gating. The fetch → diff → apply
   path itself is already covered end-to-end (with a stubbed HTTP
   transport) by `PhoenixKitEcommerce.Shopify.SyncTest` and
-  `AdminClientTest` — `Sync.check/1` doesn't take a transport override,
-  so exercising the live network call from here would just be a slower,
-  less deterministic copy of that coverage.
+  `AdminClientTest` — this LiveView calls `Sync.check/2` with no `opts`,
+  so it has no way to stub the transport, and exercising the live
+  network call from here would just be a slower, less deterministic
+  copy of that coverage.
   """
 
   use PhoenixKitEcommerce.LiveCase, async: false

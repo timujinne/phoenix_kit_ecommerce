@@ -5,26 +5,52 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
 
   This is the domain layer only — no LiveView/UI wiring here (see
   `PhoenixKitEcommerce.Shopify.Provider` moduledoc for why "Test Connection"
-  doesn't exercise this; that's this module's job instead, via `check/1`).
+  doesn't exercise this; that's this module's job instead, via `check/2`).
   """
 
   alias PhoenixKitEcommerce, as: Shop
-  alias PhoenixKitEcommerce.Shopify.AdminClient
   alias PhoenixKitEcommerce.Shopify.ProductDiff
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
+  alias PhoenixKitEcommerce.Shopify.Source
   alias PhoenixKitEcommerce.Translations
 
   @localized_fields [:title, :body_html, :description]
 
   @doc """
-  Fetches Shopify products for `integration_uuid`, diffs them against the
-  local catalog, and returns the list of changes an operator can review.
+  Fetches Shopify products for `integration_uuid` via `Source.fetch/2`
+  (Admin API primary, public storefront fallback — see that module's
+  moduledoc for the fallback/abort rules), diffs them against the local
+  catalog, and returns the changes an operator can review.
+
+  The result carries `:source` (`:admin` or `:storefront`) and
+  `:fallback_reason` alongside `:changes` — a caller MUST branch on
+  `:source` before presenting the result as a complete diff. A
+  `:storefront` result only ever contains price changes (see
+  `Source`/`StorefrontClient`), because the Admin API rejected the
+  connection's credentials; `:fallback_reason` carries why (e.g.
+  `:unauthorized`). Treating it as a full diff would report "no changes"
+  for text fields that were never actually compared.
+
+  `opts` is forwarded to `Source.fetch/2` (`:admin_options`,
+  `:storefront_options`).
   """
-  @spec check(String.t()) :: {:ok, [Change.t()]} | {:error, term()}
-  def check(integration_uuid) do
-    with {:ok, shopify_products} <- AdminClient.fetch_products(integration_uuid) do
-      local_products = Shop.list_products()
-      {:ok, ProductDiff.diff(local_products, shopify_products)}
+  @spec check(String.t(), keyword()) ::
+          {:ok,
+           %{
+             changes: [Change.t()],
+             source: :admin | :storefront,
+             fallback_reason: term() | nil
+           }}
+          | {:error, term()}
+  def check(integration_uuid, opts \\ []) do
+    with {:ok, %{source: source, products: products, only: only, fallback_reason: reason}} <-
+           Source.fetch(integration_uuid, opts) do
+      changes =
+        ProductDiff.diff(Shop.list_products(), products, Translations.default_language(),
+          only: only
+        )
+
+      {:ok, %{changes: changes, source: source, fallback_reason: reason}}
     end
   end
 
