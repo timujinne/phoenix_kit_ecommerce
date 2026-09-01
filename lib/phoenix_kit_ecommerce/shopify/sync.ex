@@ -48,7 +48,7 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
           | {:error, term()}
   def check(integration_uuid, opts \\ []) do
     {base_locale, source_opts} =
-      Keyword.pop(opts, :base_locale, Translations.default_language())
+      Keyword.pop_lazy(opts, :base_locale, &Translations.default_language/0)
 
     with {:ok, %{source: source, products: products, only: only, fallback_reason: reason}} <-
            Source.fetch(integration_uuid, source_opts) do

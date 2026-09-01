@@ -179,6 +179,54 @@ defmodule PhoenixKitEcommerce.Shopify.SyncTest do
                incoming: "Новое название"
              }
     end
+
+    # `Keyword.pop/3`'s default argument is evaluated eagerly regardless of
+    # whether the key is present — a prior version of `check/2` called
+    # `Keyword.pop(opts, :base_locale, Translations.default_language())`
+    # and paid for a `Translations.default_language/0` DB read on every
+    # call, even one that passed `base_locale:` explicitly. Detected here
+    # not by making `default_language/0` itself raise (it reads through
+    # `PhoenixKit.Cache`, which isn't started in this test environment and
+    # falls through to a real query on every call — there's no clean hook
+    # to break just that one call otherwise), but by listening for the
+    # settings key it reads (`"languages_enabled"`, its first read — see
+    # `Translations.default_language/0`) via repo telemetry: with
+    # `base_locale:` given, `Keyword.pop_lazy/3` must never invoke the
+    # default fun, so that key is never queried. `phoenix_kit_settings`
+    # itself isn't a safe-enough signal on its own — `Sync.check/2` also
+    # reads an integration's credentials from the same table (by `uuid`, a
+    # structurally different query) on every call; matching on the bound
+    # `"languages_enabled"` parameter instead of the table name is what
+    # tells the two apart.
+    test "does not read default_language when :base_locale is given explicitly" do
+      uuid = connect_shopify()
+      create_product(%{"slug" => %{"ru" => "kashpo"}, "price" => "10.00"})
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{
+          "products" => [
+            %{"handle" => "kashpo", "variants" => [%{"price" => "10.00"}]}
+          ]
+        })
+      end)
+
+      test_pid = self()
+      handler_id = "sync-base-locale-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler_id,
+        [:phoenix_kit_ecommerce, :test, :repo, :query],
+        fn _event, _measurements, %{params: params}, _config ->
+          if "languages_enabled" in params, do: send(test_pid, :default_language_queried)
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      assert {:ok, _result} = Sync.check(uuid, check_opts(base_locale: "ru"))
+      refute_received :default_language_queried
+    end
   end
 
   describe "apply_change/2 field selection" do
