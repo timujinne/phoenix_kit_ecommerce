@@ -79,6 +79,18 @@ defmodule PhoenixKitEcommerce.Shopify.TextDiffTest do
                {:ins, "c"}
              ]
     end
+
+    test "keeps a common whitespace run and the del-before-ins order" do
+      # Pins the tokenizer's `trim: true`. Round-trip cannot catch this:
+      # BOTH the correct and the degraded tokenizer rejoin correctly, yet the
+      # degraded one loses the shared "\n\t" run and emits [ins, del] instead
+      # of [del, ins] — flipping which side the sync page renders first.
+      assert TextDiff.words("b\n\t", "\n\ta") == [
+               {:del, "b"},
+               {:eq, "\n\t"},
+               {:ins, "a"}
+             ]
+    end
   end
 
   describe "summary/2" do
