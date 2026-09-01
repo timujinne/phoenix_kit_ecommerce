@@ -26,26 +26,57 @@ defmodule PhoenixKitEcommerce.Shopify.TextDiffTest do
              ]
     end
 
-    test "rejoining every fragment reproduces the inputs" do
-      current = "The 3D printed <b>snowflake</b> pack, 10 pieces."
-      incoming = "The 3D printed <b>snowflake</b> set, 12 pieces."
-      fragments = TextDiff.words(current, incoming)
+    test "rejoining fragments reproduces the inputs across adversarial pairs" do
+      pairs = [
+        {nil, nil},
+        {"", ""},
+        {" a", "a "},
+        {"a  b", "a b"},
+        {"\n\n", "\n"},
+        {"   ", ""},
+        {"ёлка синяя", "ёлка красная"},
+        {"The 3D printed <b>snowflake</b> pack, 10 pieces.",
+         "The 3D printed <b>snowflake</b> set, 12 pieces."}
+      ]
 
-      rebuilt_current =
-        fragments |> Enum.reject(&(elem(&1, 0) == :ins)) |> Enum.map_join(&elem(&1, 1))
+      for {current, incoming} = pair <- pairs do
+        fragments = TextDiff.words(current, incoming)
 
-      rebuilt_incoming =
-        fragments |> Enum.reject(&(elem(&1, 0) == :del)) |> Enum.map_join(&elem(&1, 1))
+        rebuilt_current =
+          fragments |> Enum.reject(&(elem(&1, 0) == :ins)) |> Enum.map_join(&elem(&1, 1))
 
-      assert rebuilt_current == current
-      assert rebuilt_incoming == incoming
+        rebuilt_incoming =
+          fragments |> Enum.reject(&(elem(&1, 0) == :del)) |> Enum.map_join(&elem(&1, 1))
+
+        assert rebuilt_current == (current || ""), "current mismatch for #{inspect(pair)}"
+        assert rebuilt_incoming == (incoming || ""), "incoming mismatch for #{inspect(pair)}"
+      end
     end
 
-    test "handles unicode without splitting graphemes" do
+    test "handles multi-byte unicode text" do
       assert TextDiff.words("ёлка синяя", "ёлка красная") == [
                {:eq, "ёлка "},
                {:del, "синяя"},
                {:ins, "красная"}
+             ]
+    end
+
+    test "does not split a multi-codepoint grapheme cluster (emoji ZWJ sequence)" do
+      family = "👨‍👩‍👧‍👦"
+
+      assert TextDiff.words("before " <> family <> " after", "before " <> family <> " later") ==
+               [{:eq, "before " <> family <> " "}, {:del, "after"}, {:ins, "later"}]
+    end
+
+    test "treats a non-breaking space as whitespace" do
+      # Shopify body_html routinely uses &nbsp; (U+00A0), which plain ASCII
+      # \s does not match without the /u regex flag.
+      nbsp = "\u00A0"
+
+      assert TextDiff.words("a#{nbsp}b", "a#{nbsp}c") == [
+               {:eq, "a#{nbsp}"},
+               {:del, "b"},
+               {:ins, "c"}
              ]
     end
   end
@@ -64,6 +95,12 @@ defmodule PhoenixKitEcommerce.Shopify.TextDiffTest do
 
     test "nil current counts as an insertion of the whole incoming text" do
       assert TextDiff.summary(nil, "abc") == %{fragments: 1, length_delta: 3}
+    end
+
+    test "length_delta counts graphemes, not bytes" do
+      # "ёлка" is 4 graphemes but 8 bytes in UTF-8 - byte_size/1 here would
+      # give -8, not -4. Most of this shop's product text is Cyrillic.
+      assert TextDiff.summary("ёлка", "") == %{fragments: 1, length_delta: -4}
     end
   end
 end

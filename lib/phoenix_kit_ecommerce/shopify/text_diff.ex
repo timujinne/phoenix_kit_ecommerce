@@ -7,10 +7,12 @@ defmodule PhoenixKitEcommerce.Shopify.TextDiff do
   inputs exactly — the view relies on that to render "before" and "after"
   from one pass.
 
-  Both functions are pure. `summary/2` is cheap enough to call for every
-  row a section renders; `words/2` is only called for the one row an
-  operator expanded (a 1.6 KB body_html times 500 products is not
-  something to compute, or send to a browser, up front).
+  Both functions are pure. `summary/2` needs an exact changed-fragment
+  count, which means it runs the same `List.myers_difference/2` pass as
+  `words/2` internally — it is not a cheap approximation, just a smaller
+  return value. Callers rendering many rows (a section listing 500
+  products, say) should budget for that cost per row rather than assume
+  `summary/2` is free.
   """
 
   @type fragment :: {:eq | :del | :ins, String.t()}
@@ -41,8 +43,10 @@ defmodule PhoenixKitEcommerce.Shopify.TextDiff do
   end
 
   @doc """
-  Cheap shape of the change: how many non-equal fragments, and how much
-  longer or shorter the text became.
+  Small-payload shape of the change: how many changed regions, and how
+  much longer or shorter the text became. Getting an exact count still
+  requires running the full diff (see the module doc) — this is smaller
+  to return and to render, not cheaper to compute.
   """
   @spec summary(String.t() | nil, String.t() | nil) :: %{
           fragments: non_neg_integer(),
@@ -68,8 +72,6 @@ defmodule PhoenixKitEcommerce.Shopify.TextDiff do
   defp tokenize(""), do: [""]
 
   defp tokenize(text) do
-    ~r/(\s+)/u
-    |> Regex.split(text, include_captures: true, trim: false)
-    |> Enum.reject(&(&1 == ""))
+    Regex.split(~r/(\s+)/u, text, include_captures: true, trim: true)
   end
 end
