@@ -10,10 +10,16 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
   Compared fields: `title`, `body_html`, `description`, `vendor`, `tags`,
   `status`, `price`. `title`/`body_html`/`description` are localized fields;
   only the base locale is read/compared here (writing them back is
-  `Shopify.Sync.apply_change/2`'s job).
+  `Shopify.Sync.apply_change/2`'s job). `diff/4`'s `opts[:only]` narrows this
+  set to a chosen list of fields — needed because some Shopify data sources
+  (e.g. a public storefront fallback) only ever carry a subset of fields,
+  such as price alone. Comparing an absent field against a present local
+  value would otherwise be reported as a deletion, and applying such a
+  change would erase real data.
 
-  `diff/3` is pure — no network or database access — so it can be tested
-  directly with in-memory product structs and Shopify API response maps.
+  `diff/4` (and its `diff/2`/`diff/3` arities) is pure — no network or
+  database access — so it can be tested directly with in-memory product
+  structs and Shopify API response maps.
   """
 
   alias PhoenixKitEcommerce.HtmlText
@@ -21,6 +27,7 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
   alias PhoenixKitEcommerce.Translations
 
   @extreme_ratio Decimal.new("3")
+  @comparable_fields [:title, :body_html, :description, :vendor, :tags, :status, :price]
 
   defmodule Change do
     @moduledoc """
@@ -50,16 +57,28 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
   `base_locale` defaults to `Translations.default_language/0`, which reads
   through `PhoenixKit.Settings` — pass it explicitly to keep a call free of
   database access (e.g. in tests).
+
+  `opts[:only]` restricts the comparison to the given list of field atoms
+  (a subset of #{inspect(@comparable_fields)}), defaulting to all of them.
+  Pass it when the incoming Shopify data only ever carries some fields —
+  e.g. a public-storefront fallback source that reads price alone — so the
+  fields it doesn't carry aren't reported (and later applied) as deletions.
   """
-  @spec diff([Product.t()], [map()], String.t()) :: [Change.t()]
-  def diff(local_products, shopify_products, base_locale \\ Translations.default_language()) do
+  @spec diff([Product.t()], [map()], String.t(), keyword()) :: [Change.t()]
+  def diff(
+        local_products,
+        shopify_products,
+        base_locale \\ Translations.default_language(),
+        opts \\ []
+      ) do
+    only = Keyword.get(opts, :only, @comparable_fields)
     index = index_by_handle(local_products, base_locale)
 
     shopify_products
     |> Enum.map(&{Map.get(index, &1["handle"]), &1})
     |> Enum.reject(fn {product, _shopify_product} -> is_nil(product) end)
     |> Enum.map(fn {product, shopify_product} ->
-      build_change(product, shopify_product, base_locale)
+      build_change(product, shopify_product, base_locale, only)
     end)
     |> Enum.reject(fn change -> change.changes == %{} end)
   end
@@ -73,26 +92,28 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
     end)
   end
 
-  defp build_change(product, shopify_product, base_locale) do
+  defp build_change(product, shopify_product, base_locale, only) do
     current_title = local(product, :title, base_locale)
 
     changes =
       %{}
-      |> maybe_put(:title, current_title, shopify_product["title"])
+      |> maybe_put(:title, current_title, shopify_product["title"], only)
       |> maybe_put(
         :body_html,
         local(product, :body_html, base_locale),
-        shopify_product["body_html"]
+        shopify_product["body_html"],
+        only
       )
       |> maybe_put(
         :description,
         local(product, :description, base_locale),
-        HtmlText.extract_description(shopify_product["body_html"])
+        HtmlText.extract_description(shopify_product["body_html"]),
+        only
       )
-      |> maybe_put(:vendor, product.vendor, shopify_product["vendor"])
-      |> maybe_put_tags(product.tags, shopify_product["tags"])
-      |> maybe_put(:status, product.status, shopify_product["status"])
-      |> maybe_put_price(product.price, shopify_product["variants"])
+      |> maybe_put(:vendor, product.vendor, shopify_product["vendor"], only)
+      |> maybe_put_tags(product.tags, shopify_product["tags"], only)
+      |> maybe_put(:status, product.status, shopify_product["status"], only)
+      |> maybe_put_price(product.price, shopify_product["variants"], only)
 
     %Change{
       product_uuid: product.uuid,
@@ -105,25 +126,29 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
 
   defp local(product, field, base_locale), do: (Map.get(product, field) || %{})[base_locale]
 
-  defp maybe_put(changes, field, current, incoming) do
-    if normalize(current) == normalize(incoming) do
-      changes
-    else
-      Map.put(changes, field, %{current: current, incoming: incoming})
+  defp maybe_put(changes, field, current, incoming, only) do
+    cond do
+      field not in only -> changes
+      normalize(current) == normalize(incoming) -> changes
+      true -> Map.put(changes, field, %{current: current, incoming: incoming})
     end
   end
 
   defp normalize(nil), do: ""
   defp normalize(value), do: value
 
-  defp maybe_put_tags(changes, current_tags, incoming_raw) do
-    current = current_tags || []
-    incoming = parse_tags(incoming_raw)
+  defp maybe_put_tags(changes, current_tags, incoming_raw, only) do
+    if :tags in only do
+      current = current_tags || []
+      incoming = parse_tags(incoming_raw)
 
-    if MapSet.new(current) == MapSet.new(incoming) do
-      changes
+      if MapSet.new(current) == MapSet.new(incoming) do
+        changes
+      else
+        Map.put(changes, :tags, %{current: current, incoming: incoming})
+      end
     else
-      Map.put(changes, :tags, %{current: current, incoming: incoming})
+      changes
     end
   end
 
@@ -136,17 +161,21 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
     |> Enum.reject(&(&1 == ""))
   end
 
-  defp maybe_put_price(changes, current_price, variants) do
-    case min_variant_price(variants) do
-      nil ->
-        changes
+  defp maybe_put_price(changes, current_price, variants, only) do
+    if :price in only do
+      put_price_change(changes, current_price, min_variant_price(variants))
+    else
+      changes
+    end
+  end
 
-      incoming_price ->
-        if current_price && Decimal.eq?(current_price, incoming_price) do
-          changes
-        else
-          Map.put(changes, :price, %{current: current_price, incoming: incoming_price})
-        end
+  defp put_price_change(changes, _current_price, nil), do: changes
+
+  defp put_price_change(changes, current_price, incoming_price) do
+    if current_price && Decimal.eq?(current_price, incoming_price) do
+      changes
+    else
+      Map.put(changes, :price, %{current: current_price, incoming: incoming_price})
     end
   end
 

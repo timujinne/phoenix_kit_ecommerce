@@ -245,4 +245,35 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
       refute Map.has_key?(changes, :price)
     end
   end
+
+  describe "diff/4 with :only" do
+    test "compares just the listed fields and ignores the rest" do
+      local = [product(title: %{"en" => "Real title"}, price: Decimal.new("10.00"))]
+      # Storefront-shaped product: handle and variants only, no title key.
+      shopify = [%{"handle" => "planter", "variants" => [%{"price" => "12.00"}]}]
+
+      assert [change] = ProductDiff.diff(local, shopify, @base_locale, only: [:price])
+
+      assert Map.keys(change.changes) == [:price]
+      assert Decimal.eq?(change.changes.price.incoming, Decimal.new("12.00"))
+    end
+
+    test "without :only the same input reports a bogus title deletion" do
+      local = [product(title: %{"en" => "Real title"}, price: Decimal.new("10.00"))]
+      shopify = [%{"handle" => "planter", "variants" => [%{"price" => "12.00"}]}]
+
+      assert [change] = ProductDiff.diff(local, shopify, @base_locale)
+
+      # This is the trap :only exists to avoid. Asserted so the reason this
+      # option exists cannot be refactored away silently.
+      assert change.changes.title.incoming == nil
+    end
+
+    test "only: [] filters out every field, so no changes are ever reported" do
+      local = [product(title: %{"en" => "Real title"}, price: Decimal.new("10.00"))]
+      shopify = [%{"handle" => "planter", "variants" => [%{"price" => "12.00"}]}]
+
+      assert ProductDiff.diff(local, shopify, @base_locale, only: []) == []
+    end
+  end
 end
