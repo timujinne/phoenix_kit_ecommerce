@@ -66,7 +66,6 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   alias PhoenixKit.Integrations
   alias PhoenixKit.Utils.Routes
-  alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
   alias PhoenixKitEcommerce.Shopify.Sync
@@ -125,7 +124,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
      |> assign(:source, nil)
      |> assign(:fallback_reason, nil)
      |> assign(:total_shopify_products, nil)
-     |> assign(:total_local_products, nil)
+     |> assign(:matched_local_products, nil)
      |> assign(:expanded_sections, MapSet.new())
      |> assign(:expanded_rows, MapSet.new())
      |> assign(:page, %{})
@@ -150,7 +149,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
              source: nil,
              fallback_reason: nil,
              total_shopify_products: nil,
-             total_local_products: nil,
+             matched_local_products: nil,
              expanded_sections: MapSet.new(),
              expanded_rows: MapSet.new(),
              page: %{},
@@ -218,7 +217,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
         field ->
           changes = socket.assigns.changes || []
-          section_changes = Enum.filter(changes, &Map.has_key?(&1.changes, field))
+          section_changes = visible_field_changes(changes, socket.assigns.source, field)
           {eligible, _excluded} = split_bulk_eligible(section_changes, field)
           open_pending(socket, eligible, %{scope: :section, field: field})
       end
@@ -248,13 +247,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         field ->
           uuid_set = MapSet.new(uuids)
           changes = socket.assigns.changes || []
-
-          matching =
-            Enum.filter(
-              changes,
-              &(MapSet.member?(uuid_set, &1.product_uuid) and Map.has_key?(&1.changes, field))
-            )
-
+          field_changes = visible_field_changes(changes, socket.assigns.source, field)
+          matching = Enum.filter(field_changes, &MapSet.member?(uuid_set, &1.product_uuid))
           {eligible, excluded} = split_bulk_eligible(matching, field)
 
           open_pending(socket, eligible, %{
@@ -308,14 +302,16 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   defp confirm_selection_apply(socket, %{field: field, uuids: uuids}) do
     changes = socket.assigns.changes || []
+    field_changes = visible_field_changes(changes, socket.assigns.source, field)
+    matching = Enum.filter(field_changes, &MapSet.member?(uuids, &1.product_uuid))
 
-    matching =
-      Enum.filter(
-        changes,
-        &(MapSet.member?(uuids, &1.product_uuid) and Map.has_key?(&1.changes, field))
-      )
-
-    %{succeeded: succeeded, failed: failed} = Sync.apply_changes(matching, [field])
+    # Re-run the extreme-price guard rather than trusting `uuids` (already
+    # excluded once, at request time): a Change struct is never mutated
+    # in place today, so this is currently a no-op re-check — but making
+    # it an explicit re-check instead of an implicit invariant means the
+    # guard survives even if that stops being true.
+    {eligible, _excluded} = split_bulk_eligible(matching, field)
+    %{succeeded: succeeded, failed: failed} = Sync.apply_changes(eligible, [field])
 
     socket =
       if succeeded != [] do
@@ -387,7 +383,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             changes: changes,
             source: source,
             fallback_reason: reason,
-            total_shopify_products: total_shopify_products
+            total_shopify_products: total_shopify_products,
+            matched_local_products: matched_local_products
           }}},
         socket
       ) do
@@ -398,7 +395,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
        source: source,
        fallback_reason: reason,
        total_shopify_products: total_shopify_products,
-       total_local_products: Shop.get_dashboard_stats().total_products
+       matched_local_products: matched_local_products
      )}
   end
 
@@ -448,7 +445,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   defp apply_section_changes(socket, field) do
     changes = socket.assigns.changes || []
-    section_changes = Enum.filter(changes, &Map.has_key?(&1.changes, field))
+    section_changes = visible_field_changes(changes, socket.assigns.source, field)
     {eligible, _excluded} = split_bulk_eligible(section_changes, field)
     %{succeeded: succeeded, failed: failed} = Sync.apply_changes(eligible, [field])
 
@@ -508,6 +505,29 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     |> visible_sections(source)
     |> Enum.flat_map(fn {_field, matching} -> matching end)
     |> Enum.uniq_by(& &1.product_uuid)
+  end
+
+  @doc false
+  # Public (not documented as API), same reason as `visible_sections/2`
+  # above: a real check → render flow can't reach the branch this
+  # protects either (a `:storefront` result structurally can't carry a
+  # non-`:price` field), so only a direct test with synthetic data can
+  # ever catch a mutation that deletes this filtering.
+  #
+  # The rows a bulk write to one `field` may touch — every change
+  # `visible_sections/2` would actually render for that field. "Apply
+  # section" and "Apply selection" both need this, not just
+  # `apply_everything`: the same failure `visible_changes/2`'s doc warns
+  # about (a broken upstream guarantee letting a write reach a section
+  # the page is hiding) is just as reachable through either of them —
+  # `Map.has_key?(&1.changes, field)` alone doesn't know `field` is
+  # hidden for the current `source`.
+  @spec visible_field_changes([Change.t()], :admin | :storefront | nil, atom()) :: [Change.t()]
+  def visible_field_changes(changes, source, field) do
+    changes
+    |> visible_sections(source)
+    |> List.keyfind(field, 0, {field, []})
+    |> elem(1)
   end
 
   # Drops `field` from every change whose product_uuid is in `succeeded`
@@ -608,7 +628,15 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
       field ->
         current = Map.get(socket.assigns.page, field, 1)
-        assign(socket, :page, Map.put(socket.assigns.page, field, current + delta))
+
+        # A pending confirmation is scoped to the rows visible when it was
+        # opened (a row's or a selection's uuids belong to THAT page) — see
+        # the moduledoc's note that selection deliberately doesn't persist
+        # across pages. Paging away must not leave a modal open that could
+        # still confirm into a write for rows no longer on screen.
+        socket
+        |> assign(:page, Map.put(socket.assigns.page, field, current + delta))
+        |> assign(:pending, nil)
     end
   end
 
@@ -819,8 +847,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     end
   end
 
-  defp pending_modal(%{pending: %{scope: :section, field: field}, changes: changes}) do
-    section_changes = Enum.filter(changes || [], &Map.has_key?(&1.changes, field))
+  defp pending_modal(%{
+         pending: %{scope: :section, field: field},
+         changes: changes,
+         source: source
+       }) do
+    section_changes = visible_field_changes(changes || [], source, field)
     {eligible, excluded} = split_bulk_eligible(section_changes, field)
 
     %{
@@ -926,27 +958,64 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     gettext("No price differences found. Other fields were not compared — see the notice above.")
   end
 
-  # Header stat row: total pending changes, price changes among them, and
-  # how much of the Shopify catalog this check actually covered. `nil`
-  # before the first successful check (mirrors `build_sections/1`'s and
-  # `build_everything/1`'s own `%{changes: nil}` clauses) so the template
-  # can gate the whole row on `@changes != nil` without a separate flag.
+  # Header stat row, first two cards: total pending changes, and how many
+  # of those are price changes. Both are just counts over `@changes`, so
+  # they're meaningful on either source (`:admin` or `:storefront`) — a
+  # storefront fallback just naturally has few/no non-price changes.
+  # `nil` before the first successful check (mirrors `build_sections/1`'s
+  # and `build_everything/1`'s own `%{changes: nil}` clauses) so the
+  # template can gate on `@stats != nil` without a separate flag.
+  defp build_change_stats(%{changes: nil}), do: nil
+
+  defp build_change_stats(assigns) do
+    %{
+      total_changes: length(assigns.changes),
+      price_changes: Enum.count(assigns.changes, &Map.has_key?(&1.changes, :price))
+    }
+  end
+
+  # Header stat row, third card: how much of the Shopify catalog this
+  # check can even see. `matched_local_products` (from
+  # `Sync.check/2` / `ProductDiff.matched_count/3`) is the numerator —
+  # NOT `length(@changes)` (undercounts: a matched-but-identical product
+  # is matched with no change to show) and NOT the local catalog's total
+  # size (overcounts: a local product with no Shopify handle match was
+  # never in this check's reach at all).
+  #
+  # `nil` — no card at all — whenever the source isn't `:admin`. The
+  # storefront fallback's `total_shopify_products` only counts products
+  # published to the Online Store (see `Sync.check/2`'s moduledoc): a
+  # narrower population than the Admin API's full catalog, so a
+  # percentage computed from it would silently mean something different
+  # from the admin-path number right next to it on a later check.
   defp build_coverage(%{changes: nil}), do: nil
+  defp build_coverage(%{source: source}) when source != :admin, do: nil
 
   defp build_coverage(assigns) do
     %{
-      total_changes: length(assigns.changes),
-      price_changes: Enum.count(assigns.changes, &Map.has_key?(&1.changes, :price)),
-      local: assigns.total_local_products,
+      matched: assigns.matched_local_products,
       shopify: assigns.total_shopify_products,
-      percent: coverage_percent(assigns.total_local_products, assigns.total_shopify_products)
+      percent: coverage_percent(assigns.matched_local_products, assigns.total_shopify_products)
     }
   end
 
   # A Shopify catalog of 0 products is a 0% (not undefined) coverage —
-  # there's nothing to be missing from.
-  defp coverage_percent(_local, 0), do: 0
-  defp coverage_percent(local, shopify), do: round(local / shopify * 100)
+  # there's nothing to be missing from. Otherwise clamped to 100 — matched
+  # can't exceed the Shopify total under normal operation, but nothing
+  # forces that invariant across two independently-counted values, and a
+  # coverage stat printing above 100% is a worse failure mode than one
+  # quietly capped at it.
+  #
+  # Public for the same reason as `visible_sections/2` and
+  # `visible_field_changes/3` above: `matched` structurally can't exceed
+  # `shopify` through a real `Sync.check/2` result (it's a subset count
+  # of it), so no end-to-end scenario can ever reach — or prove the
+  # necessity of — the clamp. Only a direct call with synthetic numbers
+  # can pin it.
+  @doc false
+  @spec coverage_percent(non_neg_integer(), non_neg_integer()) :: 0..100
+  def coverage_percent(_matched, 0), do: 0
+  def coverage_percent(matched, shopify), do: min(100, round(matched / shopify * 100))
 
   defp coverage_subtitle(percent) do
     gettext("%{percent}% of the Shopify catalogue", percent: percent)
@@ -1060,6 +1129,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       |> assign(:sections, build_sections(assigns))
       |> assign(:everything, build_everything(assigns))
       |> assign(:modal, pending_modal(assigns))
+      |> assign(:stats, build_change_stats(assigns))
       |> assign(:coverage, build_coverage(assigns))
 
     ~H"""
@@ -1110,10 +1180,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
           </span>
         </div>
 
-        <div :if={@changes != nil} class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div :if={@stats} class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div id="stat-total-changes">
             <.stat_card
-              value={@coverage.total_changes}
+              value={@stats.total_changes}
               title={gettext("Pending changes")}
               subtitle={gettext("Products with at least one field to review")}
               color="primary"
@@ -1124,7 +1194,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
           </div>
           <div id="stat-price-changes">
             <.stat_card
-              value={@coverage.price_changes}
+              value={@stats.price_changes}
               title={gettext("Price changes")}
               subtitle={gettext("Products whose price differs from Shopify")}
               color="warning"
@@ -1133,9 +1203,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
               <:icon><.icon name="hero-currency-dollar" class="w-5 h-5" /></:icon>
             </.stat_card>
           </div>
-          <div id="stat-coverage">
+          <%!-- Admin-source only — see `build_coverage/1`'s moduledoc note:
+               the storefront fallback's product total is a narrower,
+               not-comparable population, so no percentage is shown for it. --%>
+          <div :if={@coverage} id="stat-coverage">
             <.stat_card
-              value={"#{@coverage.local}/#{@coverage.shopify}"}
+              value={"#{@coverage.matched}/#{@coverage.shopify}"}
               title={gettext("Catalogue coverage")}
               subtitle={coverage_subtitle(@coverage.percent)}
               color="info"
@@ -1318,13 +1391,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                 >
                   « {gettext("Prev")}
                 </button>
-                <span id={"page-info-#{section.field}"}>
+                <div id={"page-info-#{section.field}"}>
                   <.pagination_info
                     page={section.page}
                     per_page={section.per_page}
                     total_count={section.count}
                   />
-                </span>
+                </div>
                 <button
                   type="button"
                   id={"page-next-#{section.field}"}

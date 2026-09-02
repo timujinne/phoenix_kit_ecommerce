@@ -354,4 +354,71 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
       end
     end
   end
+
+  describe "matched_count/3" do
+    test "counts a match with no field difference — diff/4 would report zero changes for it" do
+      local = [product(slug: %{"en" => "planter"})]
+      shopify = [shopify_product(%{})]
+
+      assert ProductDiff.diff(local, shopify, @base_locale) == []
+      assert ProductDiff.matched_count(local, shopify, @base_locale) == 1
+    end
+
+    test "does not count a local product with no matching Shopify handle" do
+      local = [
+        product(slug: %{"en" => "planter"}),
+        product(slug: %{"en" => "no-such-shopify-product"})
+      ]
+
+      shopify = [shopify_product(%{})]
+
+      assert ProductDiff.matched_count(local, shopify, @base_locale) == 1
+    end
+
+    test "does not count a Shopify handle with no local match" do
+      local = [product(slug: %{"en" => "planter"})]
+
+      shopify = [
+        shopify_product(%{}),
+        shopify_product(%{"handle" => "no-local-product"})
+      ]
+
+      assert ProductDiff.matched_count(local, shopify, @base_locale) == 1
+    end
+
+    # The property `Sync.check/2`'s coverage figure actually needs: the
+    # matched count is independent of how many fields differ (unlike
+    # `length(diff/4's result)`) and independent of the local catalog's
+    # total size (unlike counting every local product).
+    test "matched count is neither the diff count nor the total local product count" do
+      matched_no_diff = product(slug: %{"en" => "matched-no-diff"})
+      matched_with_diff = product(slug: %{"en" => "matched-with-diff"}, vendor: "Old Co")
+      unmatched = product(slug: %{"en" => "unmatched"})
+
+      local = [matched_no_diff, matched_with_diff, unmatched]
+
+      shopify = [
+        shopify_product(%{"handle" => "matched-no-diff"}),
+        shopify_product(%{"handle" => "matched-with-diff", "vendor" => "New Co"}),
+        shopify_product(%{"handle" => "some-shopify-only-product"})
+      ]
+
+      changes = ProductDiff.diff(local, shopify, @base_locale)
+      assert length(changes) == 1
+
+      assert ProductDiff.matched_count(local, shopify, @base_locale) == 2
+    end
+
+    # `index_by_handle/2` maps a handle to a single local product, so
+    # duplicate handles in the Shopify list can only ever point back to
+    # the SAME local product — dedup by product uuid, not by raw entry
+    # count, so a Shopify listing with a repeated handle doesn't inflate
+    # coverage.
+    test "counts a matched local product once even if the Shopify list has its handle twice" do
+      local = [product(slug: %{"en" => "planter"})]
+      shopify = [shopify_product(%{}), shopify_product(%{})]
+
+      assert ProductDiff.matched_count(local, shopify, @base_locale) == 1
+    end
+  end
 end

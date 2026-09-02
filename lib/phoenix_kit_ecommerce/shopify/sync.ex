@@ -35,9 +35,27 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   returned, BEFORE matching against the local catalog — i.e. it includes
   Shopify products with no local counterpart, which never appear in
   `:changes` (see this module's own moduledoc: matching a product with no
-  local counterpart is the CSV importer's job, not this sync's). It exists
-  so a caller can show how much of the Shopify catalog this check actually
-  covered, additively — it does not change `:changes`'/`:source`'s meaning.
+  local counterpart is the CSV importer's job, not this sync's).
+
+  `:matched_local_products` is `ProductDiff.matched_count/3` on the same
+  input — how many local products a Shopify handle actually matched,
+  independent of whether that match has any field difference (a product
+  identical to its Shopify counterpart is matched but contributes no
+  `Change`). `:total_shopify_products` and `:matched_local_products`
+  together are what "coverage" actually means: matched / Shopify total.
+  Neither `length(:changes)` (which undercounts — a matched, identical
+  product isn't a change) nor the local catalog's total size (which
+  overcounts — a local product with no Shopify counterpart at all still
+  isn't part of what this check could ever see) is that number. Both
+  fields are additive — they do not change `:changes`'/`:source`'s
+  meaning, and `:total_shopify_products` on its own says nothing about
+  coverage without `:matched_local_products` alongside it.
+
+  On the `:storefront` fallback path, `:total_shopify_products` counts
+  only products the public storefront serves (published to the Online
+  Store) — a narrower population than the Admin API's full catalog, and
+  not comparable to it. A caller computing a coverage percentage from
+  these two fields MUST do so only when `:source == :admin`.
 
   `opts[:base_locale]` is the locale read for matching/diffing localized
   fields, defaulting to `Translations.default_language/0` — pass it
@@ -52,7 +70,8 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
              changes: [Change.t()],
              source: :admin | :storefront,
              fallback_reason: term() | nil,
-             total_shopify_products: non_neg_integer()
+             total_shopify_products: non_neg_integer(),
+             matched_local_products: non_neg_integer()
            }}
           | {:error, term()}
   def check(integration_uuid, opts \\ []) do
@@ -61,14 +80,17 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
 
     with {:ok, %{source: source, products: products, only: only, fallback_reason: reason}} <-
            Source.fetch(integration_uuid, source_opts) do
-      changes = ProductDiff.diff(Shop.list_products(), products, base_locale, only: only)
+      local_products = Shop.list_products()
+      changes = ProductDiff.diff(local_products, products, base_locale, only: only)
+      matched = ProductDiff.matched_count(local_products, products, base_locale)
 
       {:ok,
        %{
          changes: changes,
          source: source,
          fallback_reason: reason,
-         total_shopify_products: length(products)
+         total_shopify_products: length(products),
+         matched_local_products: matched
        }}
     end
   end

@@ -44,6 +44,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   0 untranslated). Additive only — `en`/`et`/`ru` and all source msgids are
   untouched. Formal register (Sie / vous), interpolation tokens and plural
   forms preserved.
+- **Shopify Sync page: checkbox bulk selection, confirm modals, header
+  stats.** A checkbox column (`<.bulk_select_scope>`) per expanded
+  section lets an operator pick specific rows and apply just one field
+  to just those products via "Apply selection" — client-side selection,
+  scoped to the section's current page (25 rows), distinct from "Apply
+  section" (every row) and a single row's own "Apply". Every apply
+  affordance (row, section, selection, everything) is now request →
+  confirm through PhoenixKit's `<.confirm_modal>`, replacing every
+  `data-confirm` browser `confirm()` — the extreme-price bulk exclusion
+  is disclosed as a proper warning message instead of text glued onto a
+  native prompt. A header stat row shows pending changes, price changes,
+  and (admin source only) catalogue coverage: matched local products
+  against the Shopify total, via `ProductDiff.matched_count/3` (see
+  below). Row lists use `<.table_default>` for a free mobile card view;
+  `<.pagination_info>` and `<.empty_state>` replace the hand-rolled
+  page-info text and the two "no changes" alerts.
+- **`PhoenixKitEcommerce.Shopify.ProductDiff.matched_count/3`** — counts
+  local products matched by handle to a Shopify product list, independent
+  of whether the match has any field difference (unlike `diff/4`'s
+  result, which only carries products with an actual difference). What
+  "how much of the Shopify catalog this page can see" needs as its
+  numerator.
 
 ### Changed
 - **⚠️ `Sync.check/2`'s success return changed shape (the arity did
@@ -55,13 +77,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   price-only fallback, so a caller could show a price-only report as if
   it were complete. `check/2` returns
   `{:ok, %{changes: [Change.t()], source: :admin | :storefront,
-  fallback_reason: term() | nil}}` instead. Migration: replace
+  fallback_reason: term() | nil, total_shopify_products: non_neg_integer(),
+  matched_local_products: non_neg_integer()}}` instead. Migration: replace
   `{:ok, changes}` with `{:ok, %{changes: changes}}` at the call site (or
   branch on `:source`/`:fallback_reason` to surface the fallback, as
   `PhoenixKitEcommerce.Web.ShopifySync` now does — including keeping its
   "shop matches Shopify" success alert and its storefront-fallback
   banner mutually exclusive, since a `:storefront` result with no price
   differences is not the same claim as a clean `:admin` diff).
+  `:total_shopify_products` and `:matched_local_products` are additive —
+  together they're what a coverage figure needs (see the LiveView entry
+  above); `:total_shopify_products` alone is not comparable across
+  `:source` values, since the storefront fallback only ever sees products
+  published to the Online Store.
 - **`AdminClient.fetch_products/2` now returns `{:error, :forbidden}`
   on a Shopify 403** (previously fell through to the generic
   `{:error, {:unexpected_status, 403}}`). A 403 is what Shopify returns

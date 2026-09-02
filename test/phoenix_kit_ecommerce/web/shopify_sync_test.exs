@@ -139,6 +139,23 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     defp confirm!(view), do: render_click(view, "confirm_apply", %{})
     defp cancel!(view), do: render_click(view, "cancel_apply", %{})
 
+    # Pulls the numeric value out of a `<.stat_card compact>` by its
+    # wrapping id — the value sits in the first `.text-2xl` inside that
+    # wrapper, several lines below the id in the compact markup, so a
+    # plain `=~` substring check can't isolate WHICH card's number is
+    # WHICH the way this needs to (`stat-total-changes` and
+    # `stat-price-changes` can share the same digit by coincidence).
+    defp stat_card_value(html, wrapper_id) do
+      Regex.run(
+        ~r/id="#{wrapper_id}".*?text-2xl font-bold mb-1">\s*(\S+)\s*</s,
+        html
+      )
+      |> case do
+        [_, value] -> value
+        nil -> nil
+      end
+    end
+
     test "storefront fallback with no price differences shows the fallback banner, never the success alert",
          %{conn: conn} do
       {:ok, _product} =
@@ -200,6 +217,180 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       assert html =~ "the shop matches Shopify"
       refute html =~ ~s(id="storefront-fallback-notice")
       refute html =~ ~s(id="storefront-no-price-changes")
+    end
+
+    # Discriminates the numerator from two wrong-but-plausible ones: the
+    # local catalog's total size (overcounts — a local-only product was
+    # never in this check's reach) and `length(@changes)` (undercounts —
+    # a matched-but-identical product is matched with nothing to show).
+    # Four distinct percentages (matched/shopify=50%, all-local/shopify=
+    # 75%, changes/shopify=25%) mean any of the three wrong numerators
+    # renders visibly differently, not just a different-but-plausible
+    # number.
+    test "the coverage stat's numerator is matched products, not the local total or the diff count",
+         %{conn: conn} do
+      {:ok, _matched_with_diff} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Widget"},
+          "slug" => %{"en" => "matched-with-diff"},
+          "vendor" => "Old Co",
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      {:ok, _matched_no_diff} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Widget"},
+          "slug" => %{"en" => "matched-no-diff"},
+          "vendor" => "Acme",
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      {:ok, _unmatched_local} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Widget"},
+          "slug" => %{"en" => "no-shopify-counterpart"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{
+          "products" => [
+            %{
+              "handle" => "matched-with-diff",
+              "title" => "Widget",
+              "vendor" => "New Co",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            },
+            %{
+              "handle" => "matched-no-diff",
+              "title" => "Widget",
+              "vendor" => "Acme",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            },
+            %{
+              "handle" => "shopify-only-x",
+              "title" => "Whatever",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            },
+            %{
+              "handle" => "shopify-only-y",
+              "title" => "Whatever",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            }
+          ]
+        })
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      html = check_and_await(view)
+
+      assert html =~ ~s(id="stat-coverage")
+      assert html =~ "2/4"
+      assert html =~ "50% of the Shopify catalogue"
+      refute html =~ "75% of the Shopify catalogue"
+      refute html =~ "25% of the Shopify catalogue"
+    end
+
+    # Discriminates the field key from `:title`: P1 differs only in
+    # price, P2 and P3 only in title. If the "Price changes" card counted
+    # `:title` instead of `:price`, it would read 2, not 1.
+    test "the price-changes stat card counts the :price field, not :title",
+         %{conn: conn} do
+      {:ok, _p1} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Same Title"},
+          "slug" => %{"en" => "p1"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      {:ok, _p2} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Old Title B"},
+          "slug" => %{"en" => "p2"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      {:ok, _p3} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Old Title C"},
+          "slug" => %{"en" => "p3"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{
+          "products" => [
+            %{
+              "handle" => "p1",
+              "title" => "Same Title",
+              "status" => "draft",
+              "variants" => [%{"price" => "15.00"}]
+            },
+            %{
+              "handle" => "p2",
+              "title" => "New Title B",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            },
+            %{
+              "handle" => "p3",
+              "title" => "New Title C",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            }
+          ]
+        })
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      html = check_and_await(view)
+
+      assert stat_card_value(html, "stat-total-changes") == "3"
+      assert stat_card_value(html, "stat-price-changes") == "1"
+    end
+
+    test "the coverage stat card does not render on the storefront fallback path",
+         %{conn: conn} do
+      {:ok, _product} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Widget"},
+          "slug" => %{"en" => "widget"},
+          "price" => "10.00"
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        if admin_request?(conn) do
+          json_response(conn, 401, %{"errors" => "Invalid API key"})
+        else
+          case storefront_page(conn) do
+            "1" ->
+              json_response(conn, 200, %{
+                "products" => [%{"handle" => "widget", "variants" => [%{"price" => "15.00"}]}]
+              })
+
+            _ ->
+              json_response(conn, 200, %{"products" => []})
+          end
+        end
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      html = check_and_await(view, 3000)
+
+      assert html =~ ~s(id="stat-total-changes")
+      assert html =~ ~s(id="stat-price-changes")
+      refute html =~ ~s(id="stat-coverage")
+      refute html =~ "of the Shopify catalogue"
     end
 
     test "a multi-field change is grouped into every matching section, price first",
@@ -333,15 +524,77 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       assert html =~ ~s(id="page-info-vendor")
       assert html =~ "Showing 1 to 25 of 30 results"
 
+      # `data-bulk-total` drives the select-all checkbox's tri-state math
+      # (checked only once selected count == total) — it must be the
+      # CURRENT PAGE's row count (25), not the whole section's (30), or
+      # select-all on page 1 could never show fully checked.
+      assert html =~ ~s(data-bulk-total="25")
+      refute html =~ ~s(data-bulk-total="30")
+
       html = view |> element("#page-next-vendor") |> render_click()
 
       page_2_rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
 
       assert page_2_rows == 5
       assert html =~ "Showing 26 to 30 of 30 results"
+      assert html =~ ~s(data-bulk-total="5")
 
       last_product = List.last(products)
       assert html =~ "id=\"change-row-vendor-#{last_product.uuid}\""
+    end
+
+    # A pending confirmation belongs to the page it was opened on — a
+    # row's uuid, or a selection's uuids, are only meaningful against
+    # whatever the section was showing at request time. Paging away
+    # must close it, not leave it able to confirm into a write for a
+    # product that's no longer even on screen.
+    test "paging a section clears a pending confirmation instead of letting it survive to be confirmed",
+         %{conn: conn} do
+      products =
+        for i <- 1..30 do
+          {:ok, product} =
+            Shop.create_product(%{
+              "title" => %{"en" => "Product #{i}"},
+              "slug" => %{"en" => "product-#{i}"},
+              "vendor" => "Old Co",
+              "status" => "draft",
+              "price" => "10.00"
+            })
+
+          product
+        end
+
+      shopify_products =
+        for i <- 1..30 do
+          %{
+            "handle" => "product-#{i}",
+            "title" => "Product #{i}",
+            "vendor" => "New Co",
+            "status" => "draft",
+            "variants" => [%{"price" => "10.00"}]
+          }
+        end
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{"products" => shopify_products})
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      check_and_await(view)
+
+      view |> element("#toggle-section-vendor") |> render_click()
+
+      first_on_page_1 = List.first(products)
+      html = view |> element("#apply-row-vendor-#{first_on_page_1.uuid}") |> render_click()
+      assert html =~ "Update #{first_on_page_1.title["en"]}: Vendor"
+
+      html = view |> element("#page-next-vendor") |> render_click()
+      refute html =~ "Update #{first_on_page_1.title["en"]}: Vendor"
+
+      html = confirm!(view)
+      refute html =~ "Update #{first_on_page_1.title["en"]}: Vendor"
+
+      assert Shop.get_product!(first_on_page_1.uuid).vendor == "Old Co"
     end
 
     test "expanding a text-field row reveals the word-level diff; collapsed hides it",
@@ -1187,6 +1440,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       assert html =~ ~s(data-uuid="#{selected.uuid}")
       assert html =~ ~s(data-uuid="#{unselected.uuid}")
 
+      # The hook rewrites this element's textContent from the template
+      # client-side (`el.dataset.bulkTextTemplate.replace("%{count}", ...)`
+      # — see BulkSelectScope's own JS moduledoc) — if `%{count}` doesn't
+      # survive gettext, the selection bar shows a bare word with no
+      # number for every locale, silently.
+      assert html =~ ~s(data-bulk-text-template="%{count} selected")
+
       html = render_click(view, "request_apply_selection:price", %{"uuids" => [selected.uuid]})
 
       assert html =~ "Apply the selected Price change from Shopify?"
@@ -1297,10 +1557,15 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       html =
         render_click(view, "request_apply_selection:price", %{"uuids" => [extreme_product.uuid]})
 
-      refute html =~ "Apply the selected Price change from Shopify?"
+      # Substring, not the full singular sentence: `ngettext`'s plural
+      # form ("Apply 0 selected Price changes...") still contains
+      # "selected Price change" — asserting only the singular string lets
+      # a deleted `open_pending([], _)` guard slip through wearing the
+      # plural form instead.
+      refute html =~ "selected Price change"
 
       html = render_click(view, "request_apply_selection:price", %{"uuids" => []})
-      refute html =~ "Apply the selected Price change from Shopify?"
+      refute html =~ "selected Price change"
 
       assert Decimal.eq?(Shop.get_product!(extreme_product.uuid).price, Decimal.new("10.00"))
     end
@@ -1378,6 +1643,59 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     test "keeps every matching section, price first, for the :admin source" do
       sections = ShopifySync.visible_sections([multi_field_change()], :admin)
       assert Keyword.keys(sections) == [:price, :title, :vendor]
+    end
+  end
+
+  describe "visible_field_changes/3 — the same honesty guarantee, scoped to one bulk write" do
+    alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
+    alias PhoenixKitEcommerce.Web.ShopifySync
+
+    # Same structural impossibility as `visible_sections/2` above: a real
+    # storefront result can never carry a non-price field, so only a
+    # direct call with synthetic data can prove "Apply section"/"Apply
+    # selection" would refuse to write a field the page is hiding.
+    defp price_and_vendor_change do
+      %Change{
+        product_uuid: Ecto.UUID.generate(),
+        handle: "widget",
+        title: "Widget",
+        changes: %{
+          price: %{current: Decimal.new("10.00"), incoming: Decimal.new("12.00")},
+          vendor: %{current: "Old Co", incoming: "New Co"}
+        }
+      }
+    end
+
+    test "a hidden field (storefront source) returns no rows to write" do
+      assert ShopifySync.visible_field_changes([price_and_vendor_change()], :storefront, :vendor) ==
+               []
+    end
+
+    test "a visible field (storefront source, :price) returns the row" do
+      assert [%Change{}] =
+               ShopifySync.visible_field_changes([price_and_vendor_change()], :storefront, :price)
+    end
+
+    test "every field is visible for the :admin source" do
+      assert [%Change{}] =
+               ShopifySync.visible_field_changes([price_and_vendor_change()], :admin, :vendor)
+    end
+  end
+
+  describe "coverage_percent/2" do
+    alias PhoenixKitEcommerce.Web.ShopifySync
+
+    test "clamps to 100 even if matched somehow exceeds the Shopify total" do
+      assert ShopifySync.coverage_percent(5, 1) == 100
+    end
+
+    test "is 0, not a crash, when the Shopify total is 0" do
+      assert ShopifySync.coverage_percent(5, 0) == 0
+    end
+
+    test "matched over shopify, not the other way around" do
+      assert ShopifySync.coverage_percent(1, 4) == 25
+      refute ShopifySync.coverage_percent(1, 4) == ShopifySync.coverage_percent(4, 1)
     end
   end
 end

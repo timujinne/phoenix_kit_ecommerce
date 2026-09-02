@@ -104,6 +104,50 @@ defmodule PhoenixKitEcommerce.Shopify.SyncTest do
       assert change.changes.title == %{current: "Old Title", incoming: "New Title"}
       assert Decimal.eq?(change.changes.price.incoming, Decimal.new("15.00"))
     end
+
+    # `total_shopify_products` counts everything Source.fetch/2 returned
+    # (matched or not); `matched_local_products` counts only the handles
+    # that found a local product — and is NOT `length(changes)`, since a
+    # matched-but-identical product is matched with no reported change.
+    test "total_shopify_products counts every fetched product; matched_local_products only the matched ones",
+         %{} do
+      uuid = connect_shopify()
+
+      create_product(%{"slug" => %{"en" => "matched-with-diff"}, "vendor" => "Old Co"})
+      create_product(%{"slug" => %{"en" => "matched-no-diff"}, "vendor" => "Acme"})
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{
+          "products" => [
+            %{
+              "handle" => "matched-with-diff",
+              "title" => "Old Title",
+              "vendor" => "New Co",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            },
+            %{
+              "handle" => "matched-no-diff",
+              "title" => "Old Title",
+              "vendor" => "Acme",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            },
+            %{
+              "handle" => "shopify-only-no-local-match",
+              "title" => "Whatever",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            }
+          ]
+        })
+      end)
+
+      assert {:ok, %{changes: changes, total_shopify_products: 3, matched_local_products: 2}} =
+               Sync.check(uuid, check_opts())
+
+      assert length(changes) == 1
+    end
   end
 
   describe "check/2 — storefront fallback path" do

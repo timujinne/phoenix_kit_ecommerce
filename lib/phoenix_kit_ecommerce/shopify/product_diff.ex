@@ -103,6 +103,41 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
     |> Enum.reject(fn change -> change.changes == %{} end)
   end
 
+  @doc """
+  Counts distinct `local_products` matched by handle to a
+  `shopify_products` entry — the same matching rule `diff/4` uses
+  (`product.slug[base_locale] == shopify_product["handle"]`), but
+  independent of whether the match has any actual field difference.
+
+  This is "how much of the Shopify catalog a sync can even see": every
+  local product with no matching Shopify handle is invisible to `diff/4`
+  regardless of `:only` (see this module's moduledoc — a Shopify product
+  with no local match is skipped, and the reverse is equally true: a
+  local product with no Shopify-side handle never reaches `build_change/4`
+  at all). Reuses `diff/4`'s own `index_by_handle/2`, so this can never
+  drift from what `diff/4` actually matches.
+
+  `base_locale` defaults to `Translations.default_language/0`, same as
+  `diff/4` — pass it explicitly to keep a call free of that default's
+  database access.
+  """
+  @spec matched_count([Product.t()], [map()]) :: non_neg_integer()
+  @spec matched_count([Product.t()], [map()], String.t()) :: non_neg_integer()
+  def matched_count(
+        local_products,
+        shopify_products,
+        base_locale \\ Translations.default_language()
+      )
+      when is_binary(base_locale) do
+    index = index_by_handle(local_products, base_locale)
+
+    shopify_products
+    |> Enum.map(&Map.get(index, &1["handle"]))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq_by(& &1.uuid)
+    |> length()
+  end
+
   defp index_by_handle(products, base_locale) do
     Enum.reduce(products, %{}, fn product, acc ->
       case get_in(product.slug || %{}, [base_locale]) do
