@@ -39,9 +39,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   matching/diffing localized fields, defaulting to
   `Translations.default_language/0`. Mainly useful for tests that want
   to pin the locale without touching the host app's language settings.
+- **German and French storefront translations.** Complete `de` and `fr`
+  gettext catalogues for the storefront/cart/checkout UI (783 msgids each,
+  0 untranslated). Additive only — `en`/`et`/`ru` and all source msgids are
+  untouched. Formal register (Sie / vous), interpolation tokens and plural
+  forms preserved.
 
 ### Changed
-
 - **⚠️ `Sync.check/2`'s success return changed shape (the arity did
   not — `check/1` still resolves via the `opts \\ []` default; the
   break is the return value).** It fetches through `Source.fetch/2`
@@ -64,6 +68,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   for a token installed without the `read_products` scope — this is
   what lets `Source` recognize it as a credential failure and fall back
   to the storefront instead of aborting.
+
+### Fixed
+
+- **Storefront filter labels no longer translate admin-entered text.**
+  `CatalogSidebar` used to run every filter's stored `label` through
+  Gettext by string alone, so any label an admin typed — or the
+  auto-capitalized label `add_metadata_filter` generates from an option
+  key — that happened to collide with an unrelated catalogue msgid (e.g.
+  `"Cost"` → `"Kosten"`) silently rewrote the shopkeeper's own copy on the
+  storefront, with no warning and no migration; new msgids added in later
+  releases could widen the collision set at any time. `translate_label/1`
+  now only translates a label that still matches the `{key, label}` pair
+  shipped by `default_storefront_filters/0` — a renamed built-in or any
+  custom label renders verbatim. Also stops labels containing `%{...}`
+  from hitting Gettext's interpolation and logging `missing Gettext
+  bindings` on every render.
 
 ## 0.3.0 - 2026-08-21
 

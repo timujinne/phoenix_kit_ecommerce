@@ -226,7 +226,7 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
     >
       <summary class="cursor-pointer font-semibold text-sm py-2 select-none flex items-center gap-1">
         <.icon name="hero-chevron-right" class="w-3 h-3 transition-transform group-open:rotate-90" />
-        {translate_label(@filter["label"])}
+        {translate_label(@filter)}
       </summary>
       <div class="pt-1 pb-2">
         <form phx-submit="filter_price" class="space-y-2">
@@ -287,7 +287,7 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
     >
       <summary class="cursor-pointer font-semibold text-sm py-2 select-none flex items-center gap-1">
         <.icon name="hero-chevron-right" class="w-3 h-3 transition-transform group-open:rotate-90" />
-        {translate_label(@filter["label"])}
+        {translate_label(@filter)}
         <%= if @active_list != [] do %>
           <span class="badge badge-primary badge-xs ml-1">{length(@active_list)}</span>
         <% end %>
@@ -324,7 +324,7 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
     >
       <summary class="cursor-pointer font-semibold text-sm py-2 select-none flex items-center gap-1">
         <.icon name="hero-chevron-right" class="w-3 h-3 transition-transform group-open:rotate-90" />
-        {translate_label(@filter["label"])}
+        {translate_label(@filter)}
       </summary>
       <div class="pt-1 pb-2">
         <form phx-submit="filter_search" class="join w-full">
@@ -333,7 +333,7 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
             type="search"
             name={@filter["key"]}
             value={@active}
-            placeholder={translate_label(@filter["label"])}
+            placeholder={translate_label(@filter)}
             class="input input-sm join-item w-full"
             autocomplete="off"
           />
@@ -351,18 +351,28 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
     """
   end
 
-  # Storefront filter labels come from the (default or admin-configured) filter
-  # config as plain strings, so they bypass compile-time gettext extraction.
-  # Translate them at render time against the ecommerce catalogue: the built-in
-  # labels ("Search", "Price", "Vendor") resolve to the active locale, and any
-  # custom label with no catalogue entry falls back to itself unchanged.
-  defp translate_label(nil), do: nil
-
-  defp translate_label(label) when is_binary(label) do
-    Gettext.gettext(PhoenixKitEcommerce.Gettext, label)
+  # Storefront filter labels live in the filter config as plain strings, so
+  # they bypass compile-time gettext extraction. Only the *built-in* labels are
+  # translated, and only while they still carry the value shipped by
+  # `default_storefront_filters/0` — matched as a {key, label} pair. Anything an
+  # admin typed (a renamed built-in, or a custom metadata filter) renders
+  # verbatim. Translating by label alone would rewrite admin data that collides
+  # with a catalogue msgid ("Cost" -> "Kosten"), and that collision set grows
+  # with every msgid a later release adds, silently changing live storefronts.
+  defp translate_label(%{"key" => key, "label" => label}) when is_binary(label) do
+    if {key, label} in builtin_labels() do
+      Gettext.gettext(PhoenixKitEcommerce.Gettext, label)
+    else
+      label
+    end
   end
 
-  defp translate_label(label), do: label
+  defp translate_label(%{"label" => label}) when is_binary(label), do: label
+  defp translate_label(_filter), do: nil
+
+  defp builtin_labels do
+    for f <- Shop.default_storefront_filters(), do: {f["key"], f["label"]}
+  end
 
   @doc """
   Renders a compact filter list for the dashboard sidebar.
