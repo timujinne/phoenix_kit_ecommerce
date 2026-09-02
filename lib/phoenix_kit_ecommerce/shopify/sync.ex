@@ -31,6 +31,14 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   `:unauthorized`). Treating it as a full diff would report "no changes"
   for text fields that were never actually compared.
 
+  `:total_shopify_products` is the raw count of products `Source.fetch/2`
+  returned, BEFORE matching against the local catalog — i.e. it includes
+  Shopify products with no local counterpart, which never appear in
+  `:changes` (see this module's own moduledoc: matching a product with no
+  local counterpart is the CSV importer's job, not this sync's). It exists
+  so a caller can show how much of the Shopify catalog this check actually
+  covered, additively — it does not change `:changes`'/`:source`'s meaning.
+
   `opts[:base_locale]` is the locale read for matching/diffing localized
   fields, defaulting to `Translations.default_language/0` — pass it
   explicitly to keep a call free of that default's database access
@@ -43,7 +51,8 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
            %{
              changes: [Change.t()],
              source: :admin | :storefront,
-             fallback_reason: term() | nil
+             fallback_reason: term() | nil,
+             total_shopify_products: non_neg_integer()
            }}
           | {:error, term()}
   def check(integration_uuid, opts \\ []) do
@@ -54,7 +63,13 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
            Source.fetch(integration_uuid, source_opts) do
       changes = ProductDiff.diff(Shop.list_products(), products, base_locale, only: only)
 
-      {:ok, %{changes: changes, source: source, fallback_reason: reason}}
+      {:ok,
+       %{
+         changes: changes,
+         source: source,
+         fallback_reason: reason,
+         total_shopify_products: length(products)
+       }}
     end
   end
 

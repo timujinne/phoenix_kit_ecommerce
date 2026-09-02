@@ -19,6 +19,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
   actually bounds what gets rendered instead of merely existing as
   markup nobody's DOM-size ever tests.
 
+  Every apply affordance (row, section, selection, everything) is now
+  request → confirm through `<.confirm_modal>` (see the LiveView's own
+  moduledoc) — `confirm!/1` below drives that second step. A click on the
+  request button alone is deliberately NOT enough to prove a write
+  happened; the tests that care about the write always confirm.
+
   `Sync.check/2` is called here with no `opts`, so there is no per-call
   hook to inject a stub `plug:`. Instead: `Req.default_options/1` sets a
   process-independent default merged into every `Req.new/1` call in the
@@ -124,6 +130,14 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       view |> element("#check-shopify-changes") |> render_click()
       render_async(view, timeout)
     end
+
+    # Pushes "confirm_apply" straight to the view rather than clicking a
+    # DOM element: `<.confirm_modal>`'s own confirm button carries no id
+    # (see `deps/phoenix_kit/.../core/modal.ex`), and going through the
+    # view directly is exactly what the modal's `phx-click={@on_confirm}`
+    # does client-side anyway.
+    defp confirm!(view), do: render_click(view, "confirm_apply", %{})
+    defp cancel!(view), do: render_click(view, "cancel_apply", %{})
 
     test "storefront fallback with no price differences shows the fallback banner, never the success alert",
          %{conn: conn} do
@@ -260,7 +274,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       view |> element("#toggle-section-price") |> render_click()
       view |> element("#toggle-section-title") |> render_click()
 
-      html = view |> element("#apply-section-title") |> render_click()
+      view |> element("#apply-section-title") |> render_click()
+      html = confirm!(view)
 
       updated = Shop.get_product!(product.uuid)
       assert updated.title["en"] == "New Widget"
@@ -316,14 +331,14 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
 
       assert page_1_rows == 25
       assert html =~ ~s(id="page-info-vendor")
-      assert html =~ "1-25 of 30"
+      assert html =~ "Showing 1 to 25 of 30 results"
 
       html = view |> element("#page-next-vendor") |> render_click()
 
       page_2_rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
 
       assert page_2_rows == 5
-      assert html =~ "26-30 of 30"
+      assert html =~ "Showing 26 to 30 of 30 results"
 
       last_product = List.last(products)
       assert html =~ "id=\"change-row-vendor-#{last_product.uuid}\""
@@ -391,7 +406,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       check_and_await(view)
 
       view |> element("#toggle-section-title") |> render_click()
-      html = view |> element("#apply-row-title-#{product.uuid}") |> render_click()
+      view |> element("#apply-row-title-#{product.uuid}") |> render_click()
+      html = confirm!(view)
 
       updated = Shop.get_product!(product.uuid)
       assert updated.title["en"] == "New Title"
@@ -488,7 +504,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       check_and_await(view)
 
       view |> element("#toggle-section-price") |> render_click()
-      html = view |> element("#apply-section-price") |> render_click()
+      view |> element("#apply-section-price") |> render_click()
+      html = confirm!(view)
 
       assert Decimal.eq?(Shop.get_product!(ok_product.uuid).price, Decimal.new("15.00"))
       assert Decimal.eq?(Shop.get_product!(failing_product.uuid).price, Decimal.new("10.00"))
@@ -499,11 +516,15 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       assert html =~ "Could not update"
     end
 
-    # `data-confirm` is the only guard standing between a click and a
-    # write for every apply affordance — pinned for all three (row,
-    # section, everything), since none of them had a single assertion on
-    # it anywhere in this suite before this test.
-    test "every apply affordance carries a data-confirm guard", %{conn: conn} do
+    # `data-confirm` (a bare browser `confirm()`) is gone from this page
+    # entirely, replaced by `<.confirm_modal>` — pinned for all four apply
+    # affordances (row, section, selection, everything): requesting opens
+    # the modal with the right prompt and writes nothing; cancelling
+    # clears it, still with nothing written. A grep for the literal
+    # attribute proves the replacement is total, not just "the tests
+    # I happened to update".
+    test "every apply affordance opens the confirm modal (never data-confirm) and cancelling writes nothing",
+         %{conn: conn} do
       {:ok, product} =
         Shop.create_product(%{
           "title" => %{"en" => "Old Widget"},
@@ -528,15 +549,35 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
 
-      assert html =~ ~s(data-confirm="Apply pending changes for 1 product across all sections?")
+      refute html =~ "data-confirm"
+
+      html = view |> element("#apply-everything") |> render_click()
+      assert html =~ "Apply pending changes for 1 product across all sections?"
+      html = cancel!(view)
+      refute html =~ "Apply pending changes for 1 product across all sections?"
 
       html = view |> element("#toggle-section-title") |> render_click()
-
+      refute html =~ "data-confirm"
       assert html =~ ~s(id="apply-section-title")
-      assert html =~ ~s(data-confirm="Apply 1 Title change from Shopify?")
+
+      html = view |> element("#apply-section-title") |> render_click()
+      assert html =~ "Apply 1 Title change from Shopify?"
+      html = cancel!(view)
+      refute html =~ "Apply 1 Title change from Shopify?"
 
       assert html =~ ~s(id="apply-row-title-#{product.uuid}")
-      assert html =~ "data-confirm=\"Update #{product.title["en"]}&#39;s Title from Shopify?\""
+      html = view |> element("#apply-row-title-#{product.uuid}") |> render_click()
+      assert html =~ "Update #{product.title["en"]}&#39;s Title from Shopify?"
+      html = cancel!(view)
+      refute html =~ "Update #{product.title["en"]}&#39;s Title from Shopify?"
+
+      # Nothing above ever confirmed — every one of those requests must
+      # have written exactly nothing.
+      assert Shop.get_product!(product.uuid).title["en"] == "Old Widget"
+      assert Decimal.eq?(Shop.get_product!(product.uuid).price, Decimal.new("10.00"))
+      refute_activity_logged("shop.shopify_sync_apply")
+      refute_activity_logged("shop.shopify_sync_bulk_field_apply")
+      refute_activity_logged("shop.shopify_sync_bulk_apply_all")
     end
 
     # The two performance contracts pagination exists for (see
@@ -718,7 +759,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       check_and_await(view)
 
       view |> element("#toggle-section-vendor") |> render_click()
-      html = view |> element("#apply-section-vendor") |> render_click()
+      view |> element("#apply-section-vendor") |> render_click()
+      html = confirm!(view)
 
       assert html =~ "the shop matches Shopify"
     end
@@ -768,7 +810,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       view |> element("#page-next-vendor") |> render_click()
 
       last = List.last(products)
-      html = view |> element("#apply-row-vendor-#{last.uuid}") |> render_click()
+      view |> element("#apply-row-vendor-#{last.uuid}") |> render_click()
+      html = confirm!(view)
 
       rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
       assert rows == 25
@@ -791,7 +834,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     # write that never happened. `assert_activity_logged/2` itself proves
     # this: it flunks if it finds more than one matching row, so a second,
     # bogus entry from the stale event is exactly what it would catch.
-    test "a stale apply_row event for an already-applied field is a no-op, not a fake activity log",
+    test "a stale request_apply_row event for an already-applied field is a no-op, not a fake activity log",
          %{conn: conn} do
       {:ok, product} =
         Shop.create_product(%{
@@ -819,12 +862,18 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
 
       view |> element("#toggle-section-price") |> render_click()
       view |> element("#apply-row-price-#{product.uuid}") |> render_click()
+      confirm!(view)
 
       # The price row (and its button) is gone now — title still differs,
-      # so the underlying change is still around. Push the SAME event
-      # directly (bypassing element lookup, which would correctly fail
-      # since the button no longer exists) to simulate a stale client.
-      render_click(view, "apply_row", %{"field" => "price", "uuid" => product.uuid})
+      # so the underlying change is still around. Push the SAME request
+      # event directly (bypassing element lookup, which would correctly
+      # fail since the button no longer exists) to simulate a stale
+      # client, then try to confirm it too — `request_apply_row`'s own
+      # `Enum.any?` guard must refuse to open the modal for a field the
+      # change no longer carries, so this second confirm has nothing to
+      # act on.
+      render_click(view, "request_apply_row", %{"field" => "price", "uuid" => product.uuid})
+      confirm!(view)
 
       assert_activity_logged("shop.shopify_sync_apply",
         resource_uuid: product.uuid,
@@ -910,12 +959,18 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
 
-      html = view |> element("#toggle-section-price") |> render_click()
-
-      assert html =~
-               ~s(data-confirm="Apply 1 Price change from Shopify? 1 extreme price change is excluded and must be applied individually.")
+      view |> element("#toggle-section-price") |> render_click()
 
       html = view |> element("#apply-section-price") |> render_click()
+
+      # The base prompt and the exclusion notice are two separate
+      # `<.confirm_modal>` messages now (a `{:warning, _}` message,
+      # not text glued onto the browser-`confirm()` string the old
+      # `data-confirm` carried) — see `exclusion_messages/1`.
+      assert html =~ "Apply 1 Price change from Shopify?"
+      assert html =~ "1 extreme price change is excluded and must be applied individually."
+
+      html = confirm!(view)
 
       assert Decimal.eq?(Shop.get_product!(normal_product.uuid).price, Decimal.new("15.00"))
       assert Decimal.eq?(Shop.get_product!(extreme_product.uuid).price, Decimal.new("10.00"))
@@ -924,7 +979,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       assert html =~ "id=\"change-row-price-#{extreme_product.uuid}\""
       assert html =~ "large change"
 
-      html = view |> element("#apply-row-price-#{extreme_product.uuid}") |> render_click()
+      view |> element("#apply-row-price-#{extreme_product.uuid}") |> render_click()
+      html = confirm!(view)
       assert Decimal.eq?(Shop.get_product!(extreme_product.uuid).price, Decimal.new("50.00"))
       refute html =~ "id=\"change-row-price-#{extreme_product.uuid}\""
     end
@@ -974,7 +1030,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
 
-      html = view |> element("#apply-everything") |> render_click()
+      view |> element("#apply-everything") |> render_click()
+      html = confirm!(view)
 
       assert Decimal.eq?(Shop.get_product!(normal_product.uuid).price, Decimal.new("15.00"))
       assert Decimal.eq?(Shop.get_product!(extreme_product.uuid).price, Decimal.new("10.00"))
@@ -1016,7 +1073,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       check_and_await(view, 3000)
 
       view |> element("#toggle-section-price") |> render_click()
-      html = view |> element("#apply-row-price-#{product.uuid}") |> render_click()
+      view |> element("#apply-row-price-#{product.uuid}") |> render_click()
+      html = confirm!(view)
 
       assert html =~ ~s(id="storefront-no-price-changes")
       assert html =~ "All price changes have been applied."
@@ -1064,13 +1122,187 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
 
-      html = view |> element("#apply-everything") |> render_click()
+      view |> element("#apply-everything") |> render_click()
+      html = confirm!(view)
 
       assert Shop.get_product!(p1.uuid).title["en"] == "P1 New"
       assert Shop.get_product!(p2.uuid).vendor == "New Co"
       assert html =~ "the shop matches Shopify"
 
       assert_activity_logged("shop.shopify_sync_bulk_apply_all", metadata_has: %{"count" => 2})
+    end
+
+    # "Apply selection" is a bulk scope like "Apply section", but scoped
+    # to an explicit, closed uuid set rather than "every row matching this
+    # field" — this is the payload shape the `BulkSelectScope` JS hook
+    # actually sends (`{uuids: [...]}`, see that hook's own moduledoc):
+    # a faithful stand-in for a real checkbox click + "Apply selection"
+    # click, since LiveViewTest cannot execute the hook's JS itself.
+    test "checkboxes expose each row's uuid for the client-side selection hook, and 'apply selection' writes only the selected uuids' field",
+         %{conn: conn} do
+      {:ok, selected} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Selected Widget"},
+          "slug" => %{"en" => "selected-widget"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      {:ok, unselected} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Unselected Widget"},
+          "slug" => %{"en" => "unselected-widget"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{
+          "products" => [
+            %{
+              "handle" => "selected-widget",
+              "title" => "Selected Widget",
+              "status" => "draft",
+              "variants" => [%{"price" => "15.00"}]
+            },
+            %{
+              "handle" => "unselected-widget",
+              "title" => "Unselected Widget",
+              "status" => "draft",
+              "variants" => [%{"price" => "20.00"}]
+            }
+          ]
+        })
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      check_and_await(view)
+
+      html = view |> element("#toggle-section-price") |> render_click()
+
+      # Each row's checkbox carries the exact uuid `bulk_select_cell`
+      # renders and the hook reads on click — proof the markup would
+      # feed the hook the right identity, not just that the handler
+      # below does the right thing with a uuid handed to it directly.
+      assert html =~ ~s(data-uuid="#{selected.uuid}")
+      assert html =~ ~s(data-uuid="#{unselected.uuid}")
+
+      html = render_click(view, "request_apply_selection:price", %{"uuids" => [selected.uuid]})
+
+      assert html =~ "Apply the selected Price change from Shopify?"
+      html = confirm!(view)
+
+      assert Decimal.eq?(Shop.get_product!(selected.uuid).price, Decimal.new("15.00"))
+      assert Decimal.eq?(Shop.get_product!(unselected.uuid).price, Decimal.new("10.00"))
+
+      refute html =~ "id=\"change-row-price-#{selected.uuid}\""
+      assert html =~ "id=\"change-row-price-#{unselected.uuid}\""
+
+      assert_activity_logged("shop.shopify_sync_bulk_selection_apply",
+        metadata_has: %{"count" => 1, "field" => "price"}
+      )
+    end
+
+    # The extreme-price guard (`split_bulk_eligible/2`) applies to every
+    # bulk scope, selection included — this store has had a real
+    # price-corruption incident, and "I checked the boxes" is still a
+    # bulk write.
+    test "selection excludes an extreme price change, discloses it, and leaves it applicable per-row",
+         %{conn: conn} do
+      {:ok, extreme_product} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Extreme Widget"},
+          "slug" => %{"en" => "extreme-widget"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      {:ok, normal_product} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Normal Widget"},
+          "slug" => %{"en" => "normal-widget"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{
+          "products" => [
+            %{
+              "handle" => "extreme-widget",
+              "title" => "Extreme Widget",
+              "status" => "draft",
+              "variants" => [%{"price" => "50.00"}]
+            },
+            %{
+              "handle" => "normal-widget",
+              "title" => "Normal Widget",
+              "status" => "draft",
+              "variants" => [%{"price" => "15.00"}]
+            }
+          ]
+        })
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      check_and_await(view)
+
+      view |> element("#toggle-section-price") |> render_click()
+
+      # Both rows "checked" (as a real select-all click would do) — the
+      # extreme one must still be excluded from the bulk write.
+      html =
+        render_click(view, "request_apply_selection:price", %{
+          "uuids" => [extreme_product.uuid, normal_product.uuid]
+        })
+
+      assert html =~ "Apply the selected Price change from Shopify?"
+      assert html =~ "1 extreme price change is excluded and must be applied individually."
+
+      html = confirm!(view)
+
+      assert Decimal.eq?(Shop.get_product!(normal_product.uuid).price, Decimal.new("15.00"))
+      assert Decimal.eq?(Shop.get_product!(extreme_product.uuid).price, Decimal.new("10.00"))
+      assert html =~ "id=\"change-row-price-#{extreme_product.uuid}\""
+    end
+
+    test "a selection request with nothing eligible (all extreme, or nothing checked) opens no modal and writes nothing",
+         %{conn: conn} do
+      {:ok, extreme_product} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Extreme Widget"},
+          "slug" => %{"en" => "extreme-widget"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{
+          "products" => [
+            %{
+              "handle" => "extreme-widget",
+              "title" => "Extreme Widget",
+              "status" => "draft",
+              "variants" => [%{"price" => "50.00"}]
+            }
+          ]
+        })
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      check_and_await(view)
+
+      view |> element("#toggle-section-price") |> render_click()
+
+      html =
+        render_click(view, "request_apply_selection:price", %{"uuids" => [extreme_product.uuid]})
+
+      refute html =~ "Apply the selected Price change from Shopify?"
+
+      html = render_click(view, "request_apply_selection:price", %{"uuids" => []})
+      refute html =~ "Apply the selected Price change from Shopify?"
+
+      assert Decimal.eq?(Shop.get_product!(extreme_product.uuid).price, Decimal.new("10.00"))
     end
 
     # A storefront scenario with an actual (non-empty) price row was
@@ -1089,6 +1321,27 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     # below — which is the only way to see the *filter* fire at all, since
     # (per that function's doc) no real storefront payload can ever carry
     # a non-price field for it to filter out.
+  end
+
+  describe "no data-confirm anywhere in the page" do
+    # The runtime assertions above prove `data-confirm` is gone from every
+    # rendered state this suite exercises; this is the static counterpart
+    # — a source grep, so the guarantee holds even for a render state no
+    # test happens to reach, and a regression (someone adding a NEW apply
+    # affordance with a bare `data-confirm` instead of the request/confirm
+    # flow) fails here without needing its own scenario test first. Checks
+    # for the ATTRIBUTE form (`data-confirm=`), not the bare word — the
+    # moduledoc and code comments above legitimately mention `data-confirm`
+    # in prose explaining what this file replaced it with.
+    test "the LiveView source carries no data-confirm attribute" do
+      source =
+        [__DIR__, "..", "..", "..", "lib", "phoenix_kit_ecommerce", "web", "shopify_sync.ex"]
+        |> Path.join()
+        |> Path.expand()
+        |> File.read!()
+
+      refute source =~ "data-confirm="
+    end
   end
 
   describe "visible_sections/2 — storefront fallback stays honest" do

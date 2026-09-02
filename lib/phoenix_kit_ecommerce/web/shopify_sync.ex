@@ -28,14 +28,45 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   `handle` against the product's slug). A Shopify product with no local
   match is skipped — creating new products is the CSV import's job, not
   this sync's.
+
+  ## Applying changes: request → confirm, never a direct write
+
+  Every apply affordance (one field on one product, a whole section, the
+  checked rows in a section, or everything) is two-phase: a `request_*`
+  event validates the click and stashes what it would do in `@pending`,
+  then renders `<.confirm_modal>` describing it; only `"confirm_apply"`
+  (the modal's own confirm button) calls into `Sync.apply_change/2` /
+  `apply_changes/2`. `"cancel_apply"` — and re-deriving what to write from
+  live `@changes` at confirm time rather than trusting whatever `@pending`
+  captured at request time — both exist so a stale or cancelled
+  confirmation can never turn into a write; see `clear_pending/1` and the
+  `do_confirm_*` functions. This replaces the page's previous
+  `data-confirm` (a bare browser `confirm()`, which cannot show the
+  extreme-price exclusion notice below) with PhoenixKit's own modal.
+
+  ## Selection is a bulk scope, scoped to one section, one page
+
+  A checkbox column (`<.bulk_select_scope>` / `bulk_select_cell`) lets an
+  operator pick specific rows within one expanded section and apply just
+  that field to just those products via "Apply selection" — distinct from
+  "Apply section" (every row) and a single row's own "Apply" button.
+  Selection is client-side (see `BulkSelectScope`'s JS-hook moduledoc) and
+  scoped to the section's CURRENT PAGE of `@per_page`; paging re-renders
+  the row set, which prunes any selection that isn't on the new page — so
+  selection deliberately does not persist across pages. Like "Apply
+  section", it excludes extreme price changes (`price_extreme?`) from the
+  bulk write; see `split_bulk_eligible/2`.
   """
 
   use PhoenixKitEcommerce.Web, :live_view
 
   import PhoenixKitWeb.Components.Core.AdminPageHeader
+  import PhoenixKitWeb.Components.Core.BulkSelect
+  import PhoenixKitWeb.Components.Core.EmptyState
 
   alias PhoenixKit.Integrations
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
   alias PhoenixKitEcommerce.Shopify.Sync
@@ -93,10 +124,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
      |> assign(:error, nil)
      |> assign(:source, nil)
      |> assign(:fallback_reason, nil)
+     |> assign(:total_shopify_products, nil)
+     |> assign(:total_local_products, nil)
      |> assign(:expanded_sections, MapSet.new())
      |> assign(:expanded_rows, MapSet.new())
      |> assign(:page, %{})
-     |> assign(:applied_any?, false)}
+     |> assign(:applied_any?, false)
+     |> assign(:pending, nil)}
   end
 
   @impl true
@@ -115,10 +149,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
              error: nil,
              source: nil,
              fallback_reason: nil,
+             total_shopify_products: nil,
+             total_local_products: nil,
              expanded_sections: MapSet.new(),
              expanded_rows: MapSet.new(),
              page: %{},
-             applied_any?: false
+             applied_any?: false,
+             pending: nil
            )
            |> start_async(:check_diff, fn -> Sync.check(uuid) end)}
       end
@@ -155,66 +192,214 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     {:noreply, bump_page(socket, field_str, 1)}
   end
 
-  def handle_event("apply_row", %{"field" => field_str, "uuid" => uuid}, socket) do
+  # --- Request phase: validate the click, stash what it would do in
+  # @pending, open the confirm modal. Nothing is written here — see the
+  # moduledoc section on the request -> confirm flow.
+
+  def handle_event("request_apply_row", %{"field" => field_str, "uuid" => uuid}, socket) do
     Authz.authorize(socket, :run_imports, fn ->
       changes = socket.assigns.changes || []
 
       with field when not is_nil(field) <- to_field(field_str),
-           change when not is_nil(change) <-
-             Enum.find(changes, &(&1.product_uuid == uuid and Map.has_key?(&1.changes, field))) do
-        apply_row_change(socket, changes, change, field)
+           true <-
+             Enum.any?(changes, &(&1.product_uuid == uuid and Map.has_key?(&1.changes, field))) do
+        {:noreply, assign(socket, :pending, %{scope: :row, field: field, uuid: uuid})}
       else
         _ -> {:noreply, socket}
       end
     end)
   end
 
-  def handle_event("apply_section", %{"field" => field_str}, socket) do
+  def handle_event("request_apply_section", %{"field" => field_str}, socket) do
     Authz.authorize(socket, :run_imports, fn ->
       case to_field(field_str) do
-        nil -> {:noreply, socket}
-        field -> apply_section_changes(socket, field)
+        nil ->
+          {:noreply, socket}
+
+        field ->
+          changes = socket.assigns.changes || []
+          section_changes = Enum.filter(changes, &Map.has_key?(&1.changes, field))
+          {eligible, _excluded} = split_bulk_eligible(section_changes, field)
+          open_pending(socket, eligible, %{scope: :section, field: field})
       end
     end)
   end
 
-  def handle_event("apply_everything", _params, socket) do
+  def handle_event("request_apply_everything", _params, socket) do
     Authz.authorize(socket, :run_imports, fn ->
       changes = socket.assigns.changes || []
       {eligible, _excluded} = applicable_for_everything(changes, socket.assigns.source)
-      %{succeeded: succeeded, failed: failed} = Sync.apply_changes(eligible, :all)
-
-      socket =
-        if succeeded != [] do
-          Activity.log("shop.shopify_sync_bulk_apply_all",
-            actor_uuid: Activity.actor_uuid(socket),
-            actor_role: Activity.actor_role(socket),
-            metadata: %{"count" => length(succeeded)}
-          )
-
-          assign(socket, :applied_any?, true)
-        else
-          socket
-        end
-
-      succeeded_uuids = MapSet.new(succeeded, & &1.product_uuid)
-      remaining = Enum.reject(changes, &MapSet.member?(succeeded_uuids, &1.product_uuid))
-
-      {:noreply,
-       socket
-       |> assign(:changes, remaining)
-       |> flash_everything_result(succeeded, failed)}
+      open_pending(socket, eligible, %{scope: :everything})
     end)
   end
+
+  # Field is smuggled into the event name (not the payload) because the
+  # `BulkSelectScope` JS hook's `data-bulk-action` click handler always
+  # pushes exactly `%{"uuids" => [...]}` — it has no way to attach an
+  # extra `phx-value-*` to that payload. One event name per section field
+  # is the same technique the hook already documents for `on_open_reorder`
+  # (a single fixed event) generalised to N sections.
+  def handle_event("request_apply_selection:" <> field_str, %{"uuids" => uuids}, socket) do
+    Authz.authorize(socket, :run_imports, fn ->
+      case to_field(field_str) do
+        nil ->
+          {:noreply, socket}
+
+        field ->
+          uuid_set = MapSet.new(uuids)
+          changes = socket.assigns.changes || []
+
+          matching =
+            Enum.filter(
+              changes,
+              &(MapSet.member?(uuid_set, &1.product_uuid) and Map.has_key?(&1.changes, field))
+            )
+
+          {eligible, excluded} = split_bulk_eligible(matching, field)
+
+          open_pending(socket, eligible, %{
+            scope: :selection,
+            field: field,
+            uuids: MapSet.new(eligible, & &1.product_uuid),
+            excluded_count: length(excluded)
+          })
+      end
+    end)
+  end
+
+  # --- Confirm phase: re-derive what to write from LIVE @changes (never
+  # from @pending's own snapshot) so a stale confirmation — e.g. one of
+  # the pending rows/uuids was already applied or dropped by the time the
+  # operator clicks Confirm — can only ever act on what's still actually
+  # pending, the same principle `apply_row`'s old `Map.has_key?` guard
+  # protected before this file had a modal at all.
+
+  def handle_event("confirm_apply", _params, socket) do
+    Authz.authorize(socket, :run_imports, fn ->
+      case socket.assigns.pending do
+        nil -> {:noreply, socket}
+        %{scope: :row, field: field, uuid: uuid} -> confirm_row_apply(socket, field, uuid)
+        %{scope: :section, field: field} -> confirm_section_apply(socket, field)
+        %{scope: :selection} = pending -> confirm_selection_apply(socket, pending)
+        %{scope: :everything} -> confirm_everything_apply(socket)
+      end
+    end)
+  end
+
+  # No Authz guard: cancelling has no side effect beyond clearing UI
+  # state, and an operator whose permission was revoked mid-session must
+  # still be able to dismiss the modal.
+  def handle_event("cancel_apply", _params, socket) do
+    {:noreply, assign(socket, :pending, nil)}
+  end
+
+  defp confirm_row_apply(socket, field, uuid) do
+    changes = socket.assigns.changes || []
+
+    case Enum.find(changes, &(&1.product_uuid == uuid and Map.has_key?(&1.changes, field))) do
+      nil -> {:noreply, assign(socket, :pending, nil)}
+      change -> socket |> apply_row_change(changes, change, field) |> clear_pending()
+    end
+  end
+
+  defp confirm_section_apply(socket, field) do
+    socket |> apply_section_changes(field) |> clear_pending()
+  end
+
+  defp confirm_selection_apply(socket, %{field: field, uuids: uuids}) do
+    changes = socket.assigns.changes || []
+
+    matching =
+      Enum.filter(
+        changes,
+        &(MapSet.member?(uuids, &1.product_uuid) and Map.has_key?(&1.changes, field))
+      )
+
+    %{succeeded: succeeded, failed: failed} = Sync.apply_changes(matching, [field])
+
+    socket =
+      if succeeded != [] do
+        Activity.log("shop.shopify_sync_bulk_selection_apply",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          metadata: %{"count" => length(succeeded), "field" => to_string(field)}
+        )
+
+        assign(socket, :applied_any?, true)
+      else
+        socket
+      end
+
+    {:noreply,
+     socket
+     |> assign(:changes, remove_field_for(changes, succeeded, field))
+     |> flash_bulk_result(succeeded, failed, field)}
+    |> clear_pending()
+  end
+
+  defp confirm_everything_apply(socket) do
+    changes = socket.assigns.changes || []
+    {eligible, _excluded} = applicable_for_everything(changes, socket.assigns.source)
+    %{succeeded: succeeded, failed: failed} = Sync.apply_changes(eligible, :all)
+
+    socket =
+      if succeeded != [] do
+        Activity.log("shop.shopify_sync_bulk_apply_all",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          metadata: %{"count" => length(succeeded)}
+        )
+
+        assign(socket, :applied_any?, true)
+      else
+        socket
+      end
+
+    succeeded_uuids = MapSet.new(succeeded, & &1.product_uuid)
+    remaining = Enum.reject(changes, &MapSet.member?(succeeded_uuids, &1.product_uuid))
+
+    {:noreply,
+     socket
+     |> assign(:changes, remaining)
+     |> flash_everything_result(succeeded, failed)}
+    |> clear_pending()
+  end
+
+  # Always clears @pending, win or lose — a failed write still leaves the
+  # failing row visible in its section (see `flash_bulk_result`'s error
+  # branch), it just shouldn't leave a stale confirmation hanging open.
+  defp clear_pending({:noreply, socket}), do: {:noreply, assign(socket, :pending, nil)}
+
+  # Common guard for the three bulk request handlers: an empty eligible
+  # set (nothing pending, or everything pending is an extreme-price
+  # change) never opens the modal — matches the buttons' own `disabled`
+  # state, and stops a stale/tampered event from opening a confirmation
+  # for zero actual writes.
+  defp open_pending(socket, [], _pending), do: {:noreply, socket}
+  defp open_pending(socket, _eligible, pending), do: {:noreply, assign(socket, :pending, pending)}
 
   @impl true
   def handle_async(
         :check_diff,
-        {:ok, {:ok, %{changes: changes, source: source, fallback_reason: reason}}},
+        {:ok,
+         {:ok,
+          %{
+            changes: changes,
+            source: source,
+            fallback_reason: reason,
+            total_shopify_products: total_shopify_products
+          }}},
         socket
       ) do
     {:noreply,
-     assign(socket, checking: false, changes: changes, source: source, fallback_reason: reason)}
+     assign(socket,
+       checking: false,
+       changes: changes,
+       source: source,
+       fallback_reason: reason,
+       total_shopify_products: total_shopify_products,
+       total_local_products: Shop.get_dashboard_stats().total_products
+     )}
   end
 
   def handle_async(:check_diff, {:ok, {:error, reason}}, socket) do
@@ -504,6 +689,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       bulk_excluded_count: length(excluded),
       expanded?: expanded?,
       page: page,
+      per_page: @per_page,
       total_pages: total_pages(count),
       rows: rows
     }
@@ -559,42 +745,112 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     )
   end
 
-  defp confirm_section(field, eligible_count, excluded_count) do
-    base =
-      ngettext(
-        "Apply %{count} %{field} change from Shopify?",
-        "Apply %{count} %{field} changes from Shopify?",
-        eligible_count,
-        count: eligible_count,
-        field: field_label(field)
-      )
-
-    append_excluded_notice(base, excluded_count)
+  defp confirm_section_prompt(field, eligible_count) do
+    ngettext(
+      "Apply %{count} %{field} change from Shopify?",
+      "Apply %{count} %{field} changes from Shopify?",
+      eligible_count,
+      count: eligible_count,
+      field: field_label(field)
+    )
   end
 
-  defp confirm_everything(eligible_count, excluded_count) do
-    base =
-      ngettext(
-        "Apply pending changes for %{count} product across all sections?",
-        "Apply pending changes for %{count} products across all sections?",
-        eligible_count,
-        count: eligible_count
-      )
-
-    append_excluded_notice(base, excluded_count)
+  defp confirm_selection_prompt(field, eligible_count) do
+    ngettext(
+      "Apply the selected %{field} change from Shopify?",
+      "Apply %{count} selected %{field} changes from Shopify?",
+      eligible_count,
+      count: eligible_count,
+      field: field_label(field)
+    )
   end
 
-  defp append_excluded_notice(base, 0), do: base
+  defp confirm_everything_prompt(eligible_count) do
+    ngettext(
+      "Apply pending changes for %{count} product across all sections?",
+      "Apply pending changes for %{count} products across all sections?",
+      eligible_count,
+      count: eligible_count
+    )
+  end
 
-  defp append_excluded_notice(base, excluded_count) do
-    base <>
-      " " <>
-      ngettext(
-        "%{count} extreme price change is excluded and must be applied individually.",
-        "%{count} extreme price changes are excluded and must be applied individually.",
-        excluded_count,
-        count: excluded_count
-      )
+  # A bare `confirm()` (the page's old `data-confirm`) can only ever show
+  # one flat string — there is no way to make one sentence read as a
+  # distinct warning. `<.confirm_modal>`'s `messages` list can, so the
+  # extreme-price exclusion moves out of the prompt string (see the old
+  # `append_excluded_notice/2`) and into its own `{:warning, _}` message.
+  defp exclusion_messages(0), do: []
+
+  defp exclusion_messages(excluded_count) do
+    [
+      {:warning,
+       ngettext(
+         "%{count} extreme price change is excluded and must be applied individually.",
+         "%{count} extreme price changes are excluded and must be applied individually.",
+         excluded_count,
+         count: excluded_count
+       )}
+    ]
+  end
+
+  # Builds the `<.confirm_modal>` attrs for the current `@pending` action.
+  # Always re-derives eligible/excluded counts from LIVE `@changes` (not
+  # from whatever was true when the request_* handler opened the modal —
+  # see the moduledoc), except for `:selection`, whose `@pending` already
+  # carries its own eligible uuid set and excluded count fixed at request
+  # time: a selection is an explicit, closed list of uuids the operator
+  # picked, not a re-derivable "everything currently matching field X".
+  defp pending_modal(%{pending: nil}), do: nil
+
+  defp pending_modal(%{pending: %{scope: :row, field: field, uuid: uuid}, changes: changes}) do
+    case Enum.find(changes || [], &(&1.product_uuid == uuid)) do
+      nil ->
+        nil
+
+      change ->
+        %{incoming: incoming} = Map.fetch!(change.changes, field)
+
+        %{
+          title: gettext("Apply change?"),
+          prompt: confirm_row(field, %{title: change.title, incoming: incoming}),
+          messages: [],
+          danger: false
+        }
+    end
+  end
+
+  defp pending_modal(%{pending: %{scope: :section, field: field}, changes: changes}) do
+    section_changes = Enum.filter(changes || [], &Map.has_key?(&1.changes, field))
+    {eligible, excluded} = split_bulk_eligible(section_changes, field)
+
+    %{
+      title: gettext("Apply section?"),
+      prompt: confirm_section_prompt(field, length(eligible)),
+      messages: exclusion_messages(length(excluded)),
+      danger: true
+    }
+  end
+
+  defp pending_modal(%{
+         pending: %{scope: :selection, field: field, uuids: uuids, excluded_count: excluded_count}
+       }) do
+    %{
+      title: gettext("Apply selection?"),
+      prompt: confirm_selection_prompt(field, MapSet.size(uuids)),
+      messages: exclusion_messages(excluded_count),
+      danger: true
+    }
+  end
+
+  defp pending_modal(%{pending: %{scope: :everything}, changes: changes, source: source}) do
+    {eligible, excluded} = applicable_for_everything(changes || [], source)
+
+    %{
+      title: gettext("Apply everything?"),
+      prompt: confirm_everything_prompt(length(eligible)),
+      messages: exclusion_messages(length(excluded)),
+      danger: true
+    }
   end
 
   defp row_summary_text(%{fragments: fragments, length_delta: delta}) do
@@ -623,12 +879,6 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     |> Map.get(field, 1)
     |> max(1)
     |> min(total_pages(count))
-  end
-
-  defp page_info_text(page, count) do
-    start_idx = (page - 1) * @per_page + 1
-    end_idx = min(page * @per_page, count)
-    "#{start_idx}-#{end_idx} of #{count}"
   end
 
   defp format_error(:unauthorized) do
@@ -670,12 +920,147 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     gettext("the Admin API request was rejected (%{reason})", reason: inspect(reason))
   end
 
+  defp storefront_empty_title(true), do: gettext("All price changes have been applied.")
+
+  defp storefront_empty_title(false) do
+    gettext("No price differences found. Other fields were not compared — see the notice above.")
+  end
+
+  # Header stat row: total pending changes, price changes among them, and
+  # how much of the Shopify catalog this check actually covered. `nil`
+  # before the first successful check (mirrors `build_sections/1`'s and
+  # `build_everything/1`'s own `%{changes: nil}` clauses) so the template
+  # can gate the whole row on `@changes != nil` without a separate flag.
+  defp build_coverage(%{changes: nil}), do: nil
+
+  defp build_coverage(assigns) do
+    %{
+      total_changes: length(assigns.changes),
+      price_changes: Enum.count(assigns.changes, &Map.has_key?(&1.changes, :price)),
+      local: assigns.total_local_products,
+      shopify: assigns.total_shopify_products,
+      percent: coverage_percent(assigns.total_local_products, assigns.total_shopify_products)
+    }
+  end
+
+  # A Shopify catalog of 0 products is a 0% (not undefined) coverage —
+  # there's nothing to be missing from.
+  defp coverage_percent(_local, 0), do: 0
+  defp coverage_percent(local, shopify), do: round(local / shopify * 100)
+
+  defp coverage_subtitle(percent) do
+    gettext("%{percent}% of the Shopify catalogue", percent: percent)
+  end
+
+  # The `data-bulk-text-template` attribute value: kept `%{count}` intact
+  # for the BulkSelectScope hook's own client-side substitution (same
+  # technique `bulk_actions_toolbar`'s `reorder_selected_label` uses —
+  # see that component for why `gettext_noop/1` would be wrong here).
+  defp bulk_selected_template, do: gettext("%{count} selected", count: "%{count}")
+
+  attr :words, :list, required: true
+
+  # Shared between the table row's expanded detail and the mobile card's
+  # (see `<.table_default>`'s dual table/card rendering — both views
+  # exist in the DOM at once, CSS-toggled by breakpoint, so this markup
+  # is genuinely rendered twice per expanded row either way; factoring it
+  # out at least keeps the word-level diff markup itself in one place).
+  defp diff_panel(assigns) do
+    ~H"""
+    <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <div class="text-xs font-semibold uppercase text-base-content/50 mb-1">
+          {gettext("Current")}
+        </div>
+        <pre class="whitespace-pre-wrap text-sm bg-base-200 rounded p-2 max-h-64 overflow-y-auto"><span
+            :for={{op, text} <- @words}
+            :if={op != :ins}
+            class={fragment_class(op)}
+            phx-no-curly-interpolation
+          ><%= text %></span></pre>
+      </div>
+      <div>
+        <div class="text-xs font-semibold uppercase text-base-content/50 mb-1">
+          {gettext("Incoming")}
+        </div>
+        <pre class="whitespace-pre-wrap text-sm bg-base-200 rounded p-2 max-h-64 overflow-y-auto"><span
+            :for={{op, text} <- @words}
+            :if={op != :del}
+            class={fragment_class(op)}
+            phx-no-curly-interpolation
+          ><%= text %></span></pre>
+      </div>
+    </div>
+    """
+  end
+
+  attr :row, :map, required: true
+  attr :field, :atom, required: true
+
+  # Also shared (safe to — nothing inside carries an `id`, so rendering it
+  # once in the table cell and once in the card body never collides).
+  defp row_change_summary(assigns) do
+    ~H"""
+    <div :if={@row.text?} class="text-sm text-base-content/70">
+      {row_summary_text(@row.summary)}
+    </div>
+    <div :if={not @row.text?} class="text-sm text-base-content/70 flex items-center gap-1 flex-wrap">
+      <span>{format_value(@field, @row.current)}</span>
+      <span>→</span>
+      <span>{format_value(@field, @row.incoming)}</span>
+      <span
+        :if={@field == :price && @row.change.price_extreme?}
+        class="badge badge-warning badge-sm ml-1"
+      >
+        {gettext("large change")}
+      </span>
+    </div>
+    """
+  end
+
+  attr :row, :map, required: true
+  attr :field, :atom, required: true
+
+  attr :id_suffix, :string,
+    default: "",
+    doc:
+      "`<.table_default>` renders the table AND card views into the DOM at once (CSS picks which shows per breakpoint — see its moduledoc), so this component rendered a second time for the card body would collide on id with the table row's buttons unless one instance gets a distinct suffix. The table-view call site keeps the bare (pre-existing, test-pinned) id; only the card-view call site passes a suffix."
+
+  defp row_actions(assigns) do
+    ~H"""
+    <button
+      :if={@row.text?}
+      type="button"
+      id={"toggle-diff-#{@field}-#{@row.product_uuid}#{@id_suffix}"}
+      phx-click="toggle_row"
+      phx-value-field={@field}
+      phx-value-uuid={@row.product_uuid}
+      class="btn btn-xs btn-ghost"
+    >
+      {if @row.expanded?, do: gettext("Hide diff"), else: gettext("Show diff")}
+    </button>
+
+    <button
+      type="button"
+      id={"apply-row-#{@field}-#{@row.product_uuid}#{@id_suffix}"}
+      class="btn btn-xs btn-primary"
+      phx-click="request_apply_row"
+      phx-value-field={@field}
+      phx-value-uuid={@row.product_uuid}
+    >
+      {gettext("Apply")}
+    </button>
+    """
+  end
+
   @impl true
   def render(assigns) do
     assigns =
       assigns
       |> assign(:sections, build_sections(assigns))
       |> assign(:everything, build_everything(assigns))
+      |> assign(:modal, pending_modal(assigns))
+      |> assign(:coverage, build_coverage(assigns))
 
     ~H"""
     <div class="container mx-auto px-4 py-6 max-w-5xl">
@@ -725,27 +1110,54 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
           </span>
         </div>
 
-        <%!-- Reserved: once the owner decides, a line reporting how many
-             Shopify products have no local counterpart goes here — right
-             after the connection/fallback banners, before the diff
-             results, so it reads as a summary of what this check covered. --%>
-
-        <div :if={@changes == [] && @source == :admin} class="alert alert-success">
-          {gettext("No changes — the shop matches Shopify.")}
+        <div :if={@changes != nil} class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div id="stat-total-changes">
+            <.stat_card
+              value={@coverage.total_changes}
+              title={gettext("Pending changes")}
+              subtitle={gettext("Products with at least one field to review")}
+              color="primary"
+              compact
+            >
+              <:icon><.icon name="hero-arrow-path-rounded-square" class="w-5 h-5" /></:icon>
+            </.stat_card>
+          </div>
+          <div id="stat-price-changes">
+            <.stat_card
+              value={@coverage.price_changes}
+              title={gettext("Price changes")}
+              subtitle={gettext("Products whose price differs from Shopify")}
+              color="warning"
+              compact
+            >
+              <:icon><.icon name="hero-currency-dollar" class="w-5 h-5" /></:icon>
+            </.stat_card>
+          </div>
+          <div id="stat-coverage">
+            <.stat_card
+              value={"#{@coverage.local}/#{@coverage.shopify}"}
+              title={gettext("Catalogue coverage")}
+              subtitle={coverage_subtitle(@coverage.percent)}
+              color="info"
+              compact
+            >
+              <:icon><.icon name="hero-chart-pie" class="w-5 h-5" /></:icon>
+            </.stat_card>
+          </div>
         </div>
 
-        <div
-          :if={@changes == [] && @source == :storefront}
-          id="storefront-no-price-changes"
-          class="alert alert-info"
-        >
-          <%= if @applied_any? do %>
-            {gettext("All price changes have been applied.")}
-          <% else %>
-            {gettext(
-              "No price differences found. Other fields were not compared — see the notice above."
-            )}
-          <% end %>
+        <div :if={@changes == [] && @source == :admin}>
+          <.empty_state
+            icon="hero-check-circle"
+            title={gettext("No changes — the shop matches Shopify.")}
+          />
+        </div>
+
+        <div :if={@changes == [] && @source == :storefront} id="storefront-no-price-changes">
+          <.empty_state
+            icon="hero-information-circle"
+            title={storefront_empty_title(@applied_any?)}
+          />
         </div>
 
         <div :if={@changes not in [nil, []]} class="space-y-4">
@@ -754,9 +1166,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
               type="button"
               id="apply-everything"
               class="btn btn-sm btn-primary"
-              phx-click="apply_everything"
+              phx-click="request_apply_everything"
               disabled={@everything.eligible_count == 0}
-              data-confirm={confirm_everything(@everything.eligible_count, @everything.excluded_count)}
             >
               {gettext("Apply everything")}
             </button>
@@ -791,96 +1202,107 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                 type="button"
                 id={"apply-section-#{section.field}"}
                 class="btn btn-xs btn-primary"
-                phx-click="apply_section"
+                phx-click="request_apply_section"
                 phx-value-field={section.field}
                 disabled={section.bulk_eligible_count == 0}
-                data-confirm={confirm_section(section.field, section.bulk_eligible_count, section.bulk_excluded_count)}
               >
                 {gettext("Apply section")}
               </button>
             </div>
 
-            <div :if={section.expanded?} class="border-t border-base-300 divide-y divide-base-200">
-              <div
-                :for={row <- section.rows}
-                id={"change-row-#{section.field}-#{row.product_uuid}"}
-                class="p-3"
+            <%!-- NOT <.accordion>: it's a native <details>, whose open state
+                 lives in the browser — the server never learns a section
+                 opened. That's fine for markup that's always fully
+                 rendered, but this section's rows are NOT: `build_section/2`
+                 only computes `TextDiff.summary/2` for an EXPANDED section's
+                 CURRENT PAGE (25 rows), specifically so a ~500-product catalog
+                 doesn't compute summaries for every pending row on every
+                 render (see `@per_page`'s moduledoc — that used to be a ~6.3s
+                 freeze). An <.accordion> section would have to render fully
+                 up front for the browser-only toggle to reveal it instantly,
+                 which reinstates exactly that freeze. Keep the server-driven
+                 `expanded?`/`toggle_section` pair above instead. --%>
+            <div :if={section.expanded?} class="border-t border-base-300">
+              <%!-- Everything inside one `<.bulk_select_scope>` shares one
+                   client-side selection set (see this module's moduledoc);
+                   the bar below reads that set only when the operator
+                   clicks "Apply selection" — see `request_apply_selection:`. --%>
+              <.bulk_select_scope
+                id={"bulk-select-#{section.field}"}
+                total_count={length(section.rows)}
+                class="p-3 space-y-3"
               >
-                <div class="flex items-center justify-between gap-3">
-                  <div class="min-w-0">
-                    <div class="font-medium truncate">{row.title}</div>
-
-                    <div :if={row.text?} class="text-sm text-base-content/70">
-                      {row_summary_text(row.summary)}
-                    </div>
-                    <div
-                      :if={not row.text?}
-                      class="text-sm text-base-content/70 flex items-center gap-1 flex-wrap"
-                    >
-                      <span>{format_value(section.field, row.current)}</span>
-                      <span>→</span>
-                      <span>{format_value(section.field, row.incoming)}</span>
-                      <span
-                        :if={section.field == :price && row.change.price_extreme?}
-                        class="badge badge-warning badge-sm ml-1"
-                      >
-                        {gettext("large change")}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div class="flex items-center gap-2 shrink-0">
-                    <button
-                      :if={row.text?}
-                      type="button"
-                      id={"toggle-diff-#{section.field}-#{row.product_uuid}"}
-                      phx-click="toggle_row"
-                      phx-value-field={section.field}
-                      phx-value-uuid={row.product_uuid}
-                      class="btn btn-xs btn-ghost"
-                    >
-                      {if row.expanded?, do: gettext("Hide diff"), else: gettext("Show diff")}
-                    </button>
-
-                    <button
-                      type="button"
-                      id={"apply-row-#{section.field}-#{row.product_uuid}"}
-                      class="btn btn-xs btn-primary"
-                      phx-click="apply_row"
-                      phx-value-field={section.field}
-                      phx-value-uuid={row.product_uuid}
-                      data-confirm={confirm_row(section.field, row)}
-                    >
-                      {gettext("Apply")}
-                    </button>
-                  </div>
+                <div
+                  class="hidden md:flex flex-wrap items-center gap-3 bg-base-200 rounded-lg px-3 py-2 text-sm"
+                  data-bulk-show="has-selection"
+                  style="display: none;"
+                >
+                  <span data-bulk-text-template={bulk_selected_template()}>
+                    {gettext("%{count} selected", count: 0)}
+                  </span>
+                  <button
+                    type="button"
+                    id={"apply-selection-#{section.field}"}
+                    class="btn btn-xs btn-primary ml-auto"
+                    data-bulk-action={"request_apply_selection:" <> to_string(section.field)}
+                  >
+                    {gettext("Apply selection")}
+                  </button>
+                  <button type="button" class="btn btn-xs btn-ghost" data-bulk-clear>
+                    <.icon name="hero-x-mark" class="w-4 h-4" /> {gettext("Clear")}
+                  </button>
                 </div>
 
-                <div :if={row.expanded? && row.text?} class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <div class="text-xs font-semibold uppercase text-base-content/50 mb-1">
-                      {gettext("Current")}
-                    </div>
-                    <pre class="whitespace-pre-wrap text-sm bg-base-200 rounded p-2 max-h-64 overflow-y-auto"><span
-                        :for={{op, text} <- row.words}
-                        :if={op != :ins}
-                        class={fragment_class(op)}
-                        phx-no-curly-interpolation
-                      ><%= text %></span></pre>
-                  </div>
-                  <div>
-                    <div class="text-xs font-semibold uppercase text-base-content/50 mb-1">
-                      {gettext("Incoming")}
-                    </div>
-                    <pre class="whitespace-pre-wrap text-sm bg-base-200 rounded p-2 max-h-64 overflow-y-auto"><span
-                        :for={{op, text} <- row.words}
-                        :if={op != :del}
-                        class={fragment_class(op)}
-                        phx-no-curly-interpolation
-                      ><%= text %></span></pre>
-                  </div>
-                </div>
-              </div>
+                <.table_default
+                  id={"section-table-#{section.field}"}
+                  items={section.rows}
+                  size="sm"
+                >
+                  <.table_default_header>
+                    <.table_default_row>
+                      <.bulk_select_header_cell
+                        id={"bulk-select-all-#{section.field}"}
+                        aria_label={gettext("Select all on this page")}
+                      />
+                      <.table_default_header_cell>{gettext("Product")}</.table_default_header_cell>
+                      <.table_default_header_cell>{gettext("Change")}</.table_default_header_cell>
+                      <.table_default_header_cell class="w-24" />
+                    </.table_default_row>
+                  </.table_default_header>
+                  <.table_default_body>
+                    <%= for row <- section.rows do %>
+                      <.table_default_row id={"change-row-#{section.field}-#{row.product_uuid}"}>
+                        <.bulk_select_cell value={row.product_uuid} />
+                        <.table_default_cell class="font-medium max-w-xs truncate">
+                          {row.title}
+                        </.table_default_cell>
+                        <.table_default_cell>
+                          <.row_change_summary row={row} field={section.field} />
+                        </.table_default_cell>
+                        <.table_default_cell>
+                          <div class="flex items-center gap-2 justify-end flex-wrap">
+                            <.row_actions row={row} field={section.field} />
+                          </div>
+                        </.table_default_cell>
+                      </.table_default_row>
+                      <.table_default_row :if={row.expanded? && row.text?} hover={false}>
+                        <.table_default_cell colspan={4}>
+                          <.diff_panel words={row.words} />
+                        </.table_default_cell>
+                      </.table_default_row>
+                    <% end %>
+                  </.table_default_body>
+
+                  <:card_body :let={row}>
+                    <div class="font-medium">{row.title}</div>
+                    <.row_change_summary row={row} field={section.field} />
+                    <.diff_panel :if={row.expanded? && row.text?} words={row.words} />
+                  </:card_body>
+                  <:card_actions :let={row}>
+                    <.row_actions row={row} field={section.field} id_suffix="-card" />
+                  </:card_actions>
+                </.table_default>
+              </.bulk_select_scope>
 
               <div
                 :if={section.total_pages > 1}
@@ -896,8 +1318,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                 >
                   « {gettext("Prev")}
                 </button>
-                <span id={"page-info-#{section.field}"} class="text-xs text-base-content/60">
-                  {page_info_text(section.page, section.count)}
+                <span id={"page-info-#{section.field}"}>
+                  <.pagination_info
+                    page={section.page}
+                    per_page={section.per_page}
+                    total_count={section.count}
+                  />
                 </span>
                 <button
                   type="button"
@@ -914,6 +1340,17 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
           </div>
         </div>
       </div>
+
+      <.confirm_modal
+        :if={@pending}
+        show={true}
+        on_confirm="confirm_apply"
+        on_cancel="cancel_apply"
+        title={@modal.title}
+        prompt={@modal.prompt}
+        messages={@modal.messages}
+        danger={@modal.danger}
+      />
     </div>
     """
   end
