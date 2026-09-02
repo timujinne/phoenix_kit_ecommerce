@@ -95,7 +95,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
      |> assign(:fallback_reason, nil)
      |> assign(:expanded_sections, MapSet.new())
      |> assign(:expanded_rows, MapSet.new())
-     |> assign(:page, %{})}
+     |> assign(:page, %{})
+     |> assign(:applied_any?, false)}
   end
 
   @impl true
@@ -116,7 +117,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
              fallback_reason: nil,
              expanded_sections: MapSet.new(),
              expanded_rows: MapSet.new(),
-             page: %{}
+             page: %{},
+             applied_any?: false
            )
            |> start_async(:check_diff, fn -> Sync.check(uuid) end)}
       end
@@ -179,15 +181,21 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   def handle_event("apply_everything", _params, socket) do
     Authz.authorize(socket, :run_imports, fn ->
       changes = socket.assigns.changes || []
-      %{succeeded: succeeded, failed: failed} = Sync.apply_changes(changes, :all)
+      {eligible, _excluded} = applicable_for_everything(changes, socket.assigns.source)
+      %{succeeded: succeeded, failed: failed} = Sync.apply_changes(eligible, :all)
 
-      if succeeded != [] do
-        Activity.log("shop.shopify_sync_bulk_apply_all",
-          actor_uuid: Activity.actor_uuid(socket),
-          actor_role: Activity.actor_role(socket),
-          metadata: %{"count" => length(succeeded)}
-        )
-      end
+      socket =
+        if succeeded != [] do
+          Activity.log("shop.shopify_sync_bulk_apply_all",
+            actor_uuid: Activity.actor_uuid(socket),
+            actor_role: Activity.actor_role(socket),
+            metadata: %{"count" => length(succeeded)}
+          )
+
+          assign(socket, :applied_any?, true)
+        else
+          socket
+        end
 
       succeeded_uuids = MapSet.new(succeeded, & &1.product_uuid)
       remaining = Enum.reject(changes, &MapSet.member?(succeeded_uuids, &1.product_uuid))
@@ -231,6 +239,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         {:noreply,
          socket
          |> assign(:changes, remove_field_for(changes, [change], field))
+         |> assign(:applied_any?, true)
          |> put_flash(
            :info,
            gettext("Updated %{title}'s %{field}.",
@@ -255,20 +264,65 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   defp apply_section_changes(socket, field) do
     changes = socket.assigns.changes || []
     section_changes = Enum.filter(changes, &Map.has_key?(&1.changes, field))
-    %{succeeded: succeeded, failed: failed} = Sync.apply_changes(section_changes, [field])
+    {eligible, _excluded} = split_bulk_eligible(section_changes, field)
+    %{succeeded: succeeded, failed: failed} = Sync.apply_changes(eligible, [field])
 
-    if succeeded != [] do
-      Activity.log("shop.shopify_sync_bulk_field_apply",
-        actor_uuid: Activity.actor_uuid(socket),
-        actor_role: Activity.actor_role(socket),
-        metadata: %{"count" => length(succeeded), "field" => to_string(field)}
-      )
-    end
+    socket =
+      if succeeded != [] do
+        Activity.log("shop.shopify_sync_bulk_field_apply",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          metadata: %{"count" => length(succeeded), "field" => to_string(field)}
+        )
+
+        assign(socket, :applied_any?, true)
+      else
+        socket
+      end
 
     {:noreply,
      socket
      |> assign(:changes, remove_field_for(changes, succeeded, field))
      |> flash_bulk_result(succeeded, failed, field)}
+  end
+
+  # A bulk apply (section or everything) must never write an extreme price
+  # change — that guard existed on the old page's only bulk action
+  # (`price_only_safe?/1`) and this store has had a real price-corruption
+  # incident before. It stays applicable per-row, where the "large change"
+  # badge is visible and the operator is looking at that one product.
+  # Extreme-ness is a price concept only — every other field's bulk apply
+  # passes every row through untouched (`excluded` is always `[]`).
+  defp split_bulk_eligible(section_changes, :price) do
+    Enum.split_with(section_changes, &(not &1.price_extreme?))
+  end
+
+  defp split_bulk_eligible(section_changes, _field), do: {section_changes, []}
+
+  # `apply_everything` touches every field on a change via `:all`, so a
+  # change with an extreme price component is excluded WHOLESALE here
+  # (not just its price field) — there is no per-field split available
+  # through `Sync.apply_changes/2`'s single `:all` sentinel. The operator
+  # still reaches its other fields individually, via that product's rows
+  # in their own sections.
+  defp applicable_for_everything(changes, source) do
+    changes
+    |> visible_changes(source)
+    |> Enum.split_with(&(not &1.price_extreme?))
+  end
+
+  # The set of changes `apply_everything` may touch: every change reachable
+  # through `visible_sections/2`, deduplicated (one Change struct can
+  # appear under more than one field). Going through the same filter that
+  # gates rendering is deliberate — see `visible_sections/2`'s doc: without
+  # it, a broken upstream guarantee would make the page correctly HIDE a
+  # section while `apply_everything` still WROTE it, which is exactly the
+  # failure that filter exists to prevent.
+  defp visible_changes(changes, source) do
+    changes
+    |> visible_sections(source)
+    |> Enum.flat_map(fn {_field, matching} -> matching end)
+    |> Enum.uniq_by(& &1.product_uuid)
   end
 
   # Drops `field` from every change whose product_uuid is in `succeeded`
@@ -431,6 +485,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     count = length(field_changes)
     page = current_page(assigns.page, field, count)
     expanded? = MapSet.member?(assigns.expanded_sections, field)
+    {eligible, excluded} = split_bulk_eligible(field_changes, field)
 
     rows =
       if expanded? do
@@ -445,11 +500,20 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       field: field,
       label: section_label(field),
       count: count,
+      bulk_eligible_count: length(eligible),
+      bulk_excluded_count: length(excluded),
       expanded?: expanded?,
       page: page,
       total_pages: total_pages(count),
       rows: rows
     }
+  end
+
+  defp build_everything(%{changes: nil}), do: %{eligible_count: 0, excluded_count: 0}
+
+  defp build_everything(assigns) do
+    {eligible, excluded} = applicable_for_everything(assigns.changes, assigns.source)
+    %{eligible_count: length(eligible), excluded_count: length(excluded)}
   end
 
   defp build_row(change, field, assigns) do
@@ -473,8 +537,9 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   defp section_label(field), do: Map.fetch!(@section_labels, field)
   defp field_label(field), do: Map.get(@field_labels, field, Atom.to_string(field))
 
-  defp format_value(field, value) when field in [:body_html], do: value
-
+  # `:body_html` never reaches here — it's in `@text_fields`, so its row
+  # always takes the `row.text?` branch in the template, never the
+  # `format_value/2` current/incoming line below.
   defp format_value(:tags, value) when is_list(value), do: Enum.join(value, ", ")
   defp format_value(:price, %Decimal{} = value), do: Decimal.to_string(value)
   defp format_value(_field, value), do: to_string(value)
@@ -494,23 +559,42 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     )
   end
 
-  defp confirm_section(field, count) do
-    ngettext(
-      "Apply %{count} %{field} change from Shopify?",
-      "Apply %{count} %{field} changes from Shopify?",
-      count,
-      count: count,
-      field: field_label(field)
-    )
+  defp confirm_section(field, eligible_count, excluded_count) do
+    base =
+      ngettext(
+        "Apply %{count} %{field} change from Shopify?",
+        "Apply %{count} %{field} changes from Shopify?",
+        eligible_count,
+        count: eligible_count,
+        field: field_label(field)
+      )
+
+    append_excluded_notice(base, excluded_count)
   end
 
-  defp confirm_everything(count) do
-    ngettext(
-      "Apply %{count} change from Shopify across all sections?",
-      "Apply %{count} changes from Shopify across all sections?",
-      count,
-      count: count
-    )
+  defp confirm_everything(eligible_count, excluded_count) do
+    base =
+      ngettext(
+        "Apply pending changes for %{count} product across all sections?",
+        "Apply pending changes for %{count} products across all sections?",
+        eligible_count,
+        count: eligible_count
+      )
+
+    append_excluded_notice(base, excluded_count)
+  end
+
+  defp append_excluded_notice(base, 0), do: base
+
+  defp append_excluded_notice(base, excluded_count) do
+    base <>
+      " " <>
+      ngettext(
+        "%{count} extreme price change is excluded and must be applied individually.",
+        "%{count} extreme price changes are excluded and must be applied individually.",
+        excluded_count,
+        count: excluded_count
+      )
   end
 
   defp row_summary_text(%{fragments: fragments, length_delta: delta}) do
@@ -588,7 +672,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, :sections, build_sections(assigns))
+    assigns =
+      assigns
+      |> assign(:sections, build_sections(assigns))
+      |> assign(:everything, build_everything(assigns))
 
     ~H"""
     <div class="container mx-auto px-4 py-6 max-w-5xl">
@@ -652,9 +739,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
           id="storefront-no-price-changes"
           class="alert alert-info"
         >
-          {gettext(
-            "No price differences found. Other fields were not compared — see the notice above."
-          )}
+          <%= if @applied_any? do %>
+            {gettext("All price changes have been applied.")}
+          <% else %>
+            {gettext(
+              "No price differences found. Other fields were not compared — see the notice above."
+            )}
+          <% end %>
         </div>
 
         <div :if={@changes not in [nil, []]} class="space-y-4">
@@ -664,7 +755,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
               id="apply-everything"
               class="btn btn-sm btn-primary"
               phx-click="apply_everything"
-              data-confirm={confirm_everything(length(@changes))}
+              disabled={@everything.eligible_count == 0}
+              data-confirm={confirm_everything(@everything.eligible_count, @everything.excluded_count)}
             >
               {gettext("Apply everything")}
             </button>
@@ -701,7 +793,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                 class="btn btn-xs btn-primary"
                 phx-click="apply_section"
                 phx-value-field={section.field}
-                data-confirm={confirm_section(section.field, section.count)}
+                disabled={section.bulk_eligible_count == 0}
+                data-confirm={confirm_section(section.field, section.bulk_eligible_count, section.bulk_excluded_count)}
               >
                 {gettext("Apply section")}
               </button>
