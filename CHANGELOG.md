@@ -44,6 +44,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   0 untranslated). Additive only — `en`/`et`/`ru` and all source msgids are
   untouched. Formal register (Sie / vous), interpolation tokens and plural
   forms preserved.
+- **`PhoenixKitEcommerce.Shopify.TextDiff`** — word-level diff between two
+  versions of a text field, built on `List.myers_difference/2` over
+  whitespace-preserving tokens (rejoining the fragments reproduces the
+  inputs exactly). `words/2` returns the ordered `{:eq | :del | :ins,
+  text}` fragments; `summary/2` returns a small-payload shape (changed
+  region count, length delta) without the caller having to render the
+  full fragment list. Cost tracks how DIFFERENT the two texts are, not
+  how long they are (Myers is O(N*D)) — a wholly-rewritten 1.7 KB
+  `body_html` costs ~12ms, so a caller listing many rows must bound how
+  many it renders/diffs at once (see the Shopify Sync page entry below).
+  Both functions emit `:telemetry`
+  (`[:phoenix_kit_ecommerce, :shopify, :text_diff, :words | :summary]`,
+  empty measurements/metadata) — the only externally-observable way to
+  confirm a caller's "only for the page being shown" / "only for the
+  expanded row" claims actually hold, since correct rendered output
+  looks identical whether or not they do.
 - **Shopify Sync page: checkbox bulk selection, confirm modals, header
   stats.** A checkbox column (`<.bulk_select_scope>`) per expanded
   section lets an operator pick specific rows and apply just one field
@@ -96,6 +112,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   for a token installed without the `read_products` scope — this is
   what lets `Source` recognize it as a credential failure and fall back
   to the storefront instead of aborting.
+- **Shopify Sync page rewritten from a flat, price-only needs-review
+  list into sections grouped by field** (Prices, Titles, Descriptions,
+  HTML texts, Tags, Statuses, Vendors — price first; one product can
+  appear in more than one section if it differs on more than one
+  field). Sections are collapsed by default and paginate at 25 rows
+  once expanded — not a display preference: `TextDiff`'s cost and a
+  live catalog's DOM size both scale with rows rendered at once (see
+  `TextDiff`'s entry above), and an un-paginated ~500-product diff
+  measured at several seconds per render before this. Expanding a row
+  computes its word-level diff on demand; collapsing it does not
+  discard that computation eagerly for every row, only render it.
+- **Shopify Sync's activity-log action names changed, including one
+  reused under its old name with new meaning.** `shop.shopify_sync_apply`
+  — the single-row "Apply" action — used to write and log **every**
+  differing field on the product; it now writes and logs **only the one
+  field that row is for** (a consequence of the field-grouped rewrite
+  above: a row belongs to one section, one field). Anyone reporting on
+  this action name by itself, without also checking `metadata.fields`,
+  will see a shape change with no name change to flag it.
+  `shop.shopify_sync_bulk_price_apply` (the old single "apply all
+  price-only changes" bulk action) no longer exists; the field-grouped
+  page has no single equivalent — it's replaced by three narrower
+  actions: `shop.shopify_sync_bulk_field_apply` (a whole section),
+  `shop.shopify_sync_bulk_selection_apply` (checked rows within a
+  section), and `shop.shopify_sync_bulk_apply_all` (every pending
+  change, all fields). Anyone reporting on the old name gets nothing
+  from any of these three going forward.
 
 ### Fixed
 

@@ -74,7 +74,13 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
   e.g. a public-storefront fallback source that reads price alone — so the
   fields it doesn't carry aren't reported (and later applied) as deletions.
   An unknown key in `opts` raises, so a typo (e.g. `onlyy:`) can't silently
-  fall back to comparing every field.
+  fall back to comparing every field. Every element of `opts[:only]` itself
+  is validated against #{inspect(@comparable_fields)} too — a typo'd field
+  atom there (`only: [:titel]`) fails the *opposite* way a missing `:only`
+  does: instead of comparing too much, it would compare nothing and report
+  a catalog "in sync" that was never actually checked, which is the worse
+  failure mode for a sync tool. `only: []` (compare nothing, deliberately)
+  is not an error — every element of an empty list is vacuously valid.
 
   `base_locale` must be a string. This guards against the easy mistake of
   passing `opts` as the third argument and dropping `base_locale` entirely
@@ -92,6 +98,7 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
       when is_binary(base_locale) do
     opts = Keyword.validate!(opts, only: @comparable_fields)
     only = Keyword.fetch!(opts, :only)
+    validate_only!(only)
     index = index_by_handle(local_products, base_locale)
 
     shopify_products
@@ -136,6 +143,18 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq_by(& &1.uuid)
     |> length()
+  end
+
+  defp validate_only!(only) do
+    case Enum.reject(only, &(&1 in @comparable_fields)) do
+      [] ->
+        :ok
+
+      unrecognized ->
+        raise ArgumentError,
+              "opts[:only] must be a subset of #{inspect(@comparable_fields)}, " <>
+                "got unrecognized field(s) #{inspect(unrecognized)}"
+    end
   end
 
   defp index_by_handle(products, base_locale) do

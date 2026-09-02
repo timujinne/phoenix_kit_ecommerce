@@ -234,10 +234,11 @@ Setup (all through the UI, no environment variables):
    or a >3x price swing — is applied one product at a time with an
    explicit confirmation showing exactly what will change.
 
-Fields compared: title, description (from Shopify's `Body (HTML)`),
-vendor, tags, status, and price (the lowest current variant price).
-Not synced: new products, categories/collections, images,
-variants/options, and inventory quantity.
+Fields compared: title, description (derived from Shopify's `Body
+(HTML)`), the HTML body itself, vendor, tags, status, and price (the
+lowest current variant price). Not synced: new products,
+categories/collections, images, variants/options, and inventory
+quantity.
 
 ```elixir
 alias PhoenixKitEcommerce.Shopify.Sync

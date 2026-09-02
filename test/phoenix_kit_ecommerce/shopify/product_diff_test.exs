@@ -345,6 +345,26 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
       end
     end
 
+    # A typo'd KEY (`onlyy:`, above) already raised. A typo'd VALUE inside
+    # a real `:only` (`:titel` for `:title`) is the more dangerous mistake
+    # for a sync tool: `field not in only` is true for every real field
+    # name, so every product silently reports zero changes — a catalog
+    # that was never actually compared reads as "in sync". Must raise
+    # instead, same as the key typo.
+    test "an unrecognized field atom inside :only raises instead of silently comparing nothing" do
+      local = [product(title: %{"en" => "Real title"}, price: Decimal.new("10.00"))]
+      shopify = [%{"handle" => "planter", "title" => "Different title"}]
+
+      assert_raise ArgumentError, fn ->
+        ProductDiff.diff(local, shopify, @base_locale, only: [:titel])
+      end
+
+      # Confirm the correctly-spelled field really would have reported a
+      # change — proof this is "reports nothing" going wrong, not merely
+      # a coincidence of this fixture never differing.
+      assert [_change] = ProductDiff.diff(local, shopify, @base_locale, only: [:title])
+    end
+
     test "a non-string base_locale raises instead of silently matching nothing" do
       local = [product([])]
       shopify = [shopify_product(%{})]

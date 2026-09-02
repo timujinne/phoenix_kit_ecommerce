@@ -177,6 +177,35 @@ defmodule PhoenixKitEcommerce.Shopify.StorefrontClientTest do
 
       assert {:ok, []} = StorefrontClient.fetch_products("test-shop.myshopify.com", req_options())
     end
+
+    # `priced_variants/1`'s `is_binary/1` filter is load-bearing across a
+    # module boundary and was, until this test, unpinned: relaxing it to
+    # `reject(&is_nil/1)` (which would still pass every OTHER test in
+    # this file) lets a variant with a JSON *number* price through, and
+    # `ProductDiff.min_variant_price/1` calls `Decimal.new/1` on
+    # whatever this module hands it — which raises on a float instead of
+    # a string. A real JSON round trip (not a hand-built Elixir map), so
+    # the stubbed price really does decode back as a float, not a string
+    # that merely looks numeric.
+    test "drops a variant whose price is a JSON number, not a string — the shape Decimal.new/1 cannot take" do
+      Req.Test.stub(@stub, fn conn ->
+        case page_param(conn) do
+          "1" ->
+            json_response(conn, 200, %{
+              "products" => [
+                %{"handle" => "numeric-price", "variants" => [%{"price" => 5.0}]},
+                %{"handle" => "string-price", "variants" => [%{"price" => "5.00"}]}
+              ]
+            })
+
+          "2" ->
+            json_response(conn, 200, %{"products" => []})
+        end
+      end)
+
+      assert {:ok, [%{"handle" => "string-price", "variants" => [%{"price" => "5.00"}]}]} =
+               StorefrontClient.fetch_products("test-shop.myshopify.com", req_options())
+    end
   end
 
   describe "fetch_products/2 rate limiting" do
@@ -264,6 +293,66 @@ defmodule PhoenixKitEcommerce.Shopify.StorefrontClientTest do
       # if the budget resets per page.
       assert {:ok, [%{"handle" => "p1"}, %{"handle" => "p2"}]} =
                StorefrontClient.fetch_products("test-shop.myshopify.com", req_options())
+    end
+
+    # `retry-after: -1` end to end: without the clamp, `Process.sleep(-1)`
+    # raises `FunctionClauseError` straight out of a function whose own
+    # `@spec` promises `{:ok, _} | {:error, _}` — reproduced through the
+    # real fetch path, not just the clamp math below, since that's where
+    # the review found it.
+    test "a negative Retry-After does not crash the fetch", %{} do
+      {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+      Req.Test.stub(@stub, fn conn ->
+        count = Agent.get_and_update(counter, fn c -> {c, c + 1} end)
+
+        if count == 0 do
+          conn
+          |> Plug.Conn.put_resp_header("retry-after", "-1")
+          |> Plug.Conn.send_resp(429, "")
+        else
+          case page_param(conn) do
+            "1" ->
+              json_response(conn, 200, %{
+                "products" => [%{"handle" => "survivor", "variants" => [%{"price" => "1.00"}]}]
+              })
+
+            "2" ->
+              json_response(conn, 200, %{"products" => []})
+          end
+        end
+      end)
+
+      assert {:ok, [%{"handle" => "survivor"}]} =
+               StorefrontClient.fetch_products("test-shop.myshopify.com", req_options())
+    end
+  end
+
+  describe "retry_after_seconds/1" do
+    defp response_with_header(value) do
+      %{headers: [{"retry-after", value}]}
+    end
+
+    # Both come from `Retry-After` — the ONE header value in this module
+    # that originates from an unauthenticated public endpoint, not a
+    # store operator's own data. Direct calls, not a real fetch: pinning
+    # "does not sleep more than 60s" through a real `Process.sleep` would
+    # mean actually waiting 60 real seconds in the suite.
+    test "clamps a negative value to 0 instead of crashing Process.sleep/1" do
+      assert StorefrontClient.retry_after_seconds(response_with_header("-1")) == 0
+    end
+
+    test "clamps a huge value to the 60s cap instead of sleeping unbounded" do
+      assert StorefrontClient.retry_after_seconds(response_with_header("86400")) == 60
+    end
+
+    test "passes a normal value through unclamped" do
+      assert StorefrontClient.retry_after_seconds(response_with_header("30")) == 30
+    end
+
+    test "falls back to the default when the header is absent or unparseable" do
+      assert StorefrontClient.retry_after_seconds(%{headers: []}) == 5
+      assert StorefrontClient.retry_after_seconds(response_with_header("not-a-number")) == 5
     end
   end
 

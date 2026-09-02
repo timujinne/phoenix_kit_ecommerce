@@ -38,12 +38,25 @@ defmodule PhoenixKitEcommerce.Shopify.StorefrontClient do
   published products across a dozen pages, and burst requests against it
   reliably trigger a 429 that (per the endpoint's own behavior) can take
   minutes to clear — so 429 handling here is not a hypothetical.
+
+  The `Retry-After` header this reads to decide how long to sleep on a
+  429 comes from the *unauthenticated public endpoint itself* — the one
+  input in this whole module that isn't just "a store operator's own
+  data read back." `retry_after_seconds/1` clamps it to
+  `0..60` seconds before it ever reaches
+  `Process.sleep/1`: unclamped, a negative value crashes `Process.sleep/1`
+  (which only accepts a non-negative integer or `:infinity`) instead of
+  returning the promised error tuple, and a huge one sleeps for real —
+  multiplied by up to `@max_retries` retries per page, with no timeout on
+  the `start_async` task that calls this, so the operator's only escape
+  from a hostile or misconfigured endpoint would be a page reload.
   """
 
   @page_limit 250
   @default_page_delay_ms 500
   @max_retries 5
   @default_retry_after_seconds 5
+  @max_retry_after_seconds 60
   @max_pages 200
 
   @doc """
@@ -128,10 +141,21 @@ defmodule PhoenixKitEcommerce.Shopify.StorefrontClient do
     fetch_pages(req, page + 1, acc, page_delay_ms, @max_retries)
   end
 
-  defp retry_after_seconds(response) do
+  @doc false
+  # Public (not documented as API) so the clamp itself can be pinned
+  # directly with a synthetic response — the two failure modes it guards
+  # (`Process.sleep(-1)` raising `FunctionClauseError` out of a function
+  # whose own spec promises `{:ok, _} | {:error, _}`; an unbounded real
+  # sleep on a huge header, times up to `@max_retries` per page, with no
+  # timeout on the caller's `start_async` task) both come from the ONE
+  # input in this module that's genuinely adversarial — an unauthenticated
+  # public endpoint's response header — so this is worth being certain
+  # about independent of any one fetch scenario reaching it.
+  @spec retry_after_seconds(map()) :: non_neg_integer()
+  def retry_after_seconds(response) do
     with value when is_binary(value) <- response_header(response, "retry-after"),
          {seconds, _} <- Integer.parse(value) do
-      seconds
+      seconds |> max(0) |> min(@max_retry_after_seconds)
     else
       _ -> @default_retry_after_seconds
     end

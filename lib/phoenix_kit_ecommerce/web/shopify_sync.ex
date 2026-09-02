@@ -86,9 +86,16 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   ]
   @section_labels Map.new(@sections)
 
+  # Singular wording for row/confirm text — kept in lockstep with
+  # `@sections`'s plural section headers above (drop the trailing "s").
+  # `:body_html` used to read "Description (HTML)" here while its own
+  # section header read "HTML texts" a few lines up — two different
+  # names for the same field on the same page, right next to the
+  # actually-different `:description` field's "Description"/"Descriptions".
+  # "HTML text(s)" now matches its section exactly.
   @field_labels %{
     title: "Title",
-    body_html: "Description (HTML)",
+    body_html: "HTML text",
     description: "Description",
     vendor: "Vendor",
     tags: "Tags",
@@ -493,18 +500,41 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     |> Enum.split_with(&(not &1.price_extreme?))
   end
 
-  # The set of changes `apply_everything` may touch: every change reachable
-  # through `visible_sections/2`, deduplicated (one Change struct can
-  # appear under more than one field). Going through the same filter that
-  # gates rendering is deliberate — see `visible_sections/2`'s doc: without
-  # it, a broken upstream guarantee would make the page correctly HIDE a
-  # section while `apply_everything` still WROTE it, which is exactly the
-  # failure that filter exists to prevent.
-  defp visible_changes(changes, source) do
+  @doc false
+  # Public for the same reason as `visible_sections/2` below: a real
+  # check → render flow can never carry a hidden field on a :storefront
+  # change, so only a direct call with synthetic data can prove this
+  # trims rather than merely filters — see the note below.
+  #
+  # The changes `apply_everything` may touch — deduplicated (one `Change`
+  # struct can appear under more than one field) AND, critically, each
+  # one trimmed down to ONLY the fields `field_visible?/2` allows for
+  # `source`. Trimming, not just filtering which changes survive, is the
+  # part that actually matters: `confirm_everything_apply` hands the
+  # result straight to `Sync.apply_changes(eligible, :all)`, and `:all`
+  # writes every key still present in `change.changes` — a change kept
+  # here with its full, untrimmed field map would let `:all` write a
+  # field `visible_sections/2` hides from the very same `source`, even
+  # though the change itself "passed" the filter on some OTHER, visible
+  # field. (An earlier version of this function filtered changes but
+  # left each one's `changes` map untouched — passing 634 tests while
+  # doing exactly that, because no real check → render flow can ever
+  # produce a `:storefront` change carrying a second, hidden field to
+  # catch it with. Read `field_visible?/2`'s doc before trusting an
+  # end-to-end test to prove this kind of thing again.)
+  @spec visible_changes([Change.t()], :admin | :storefront | nil) :: [Change.t()]
+  def visible_changes(changes, source) do
     changes
-    |> visible_sections(source)
-    |> Enum.flat_map(fn {_field, matching} -> matching end)
+    |> Enum.map(&trim_to_visible_fields(&1, source))
+    |> Enum.reject(&(&1.changes == %{}))
     |> Enum.uniq_by(& &1.product_uuid)
+  end
+
+  defp trim_to_visible_fields(change, source) do
+    %{
+      change
+      | changes: Map.filter(change.changes, fn {field, _} -> field_visible?(field, source) end)
+    }
   end
 
   @doc false
@@ -627,7 +657,18 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         socket
 
       field ->
-        current = Map.get(socket.assigns.page, field, 1)
+        # The CLAMPED current page, not the raw stored one: applying a
+        # section's last row shrinks its count, which can snap the
+        # DISPLAYED page back (`current_page/3`'s own clamp) while the
+        # STORED value stays at the now-out-of-range page it was on.
+        # Reading raw here would then compute the next page relative to
+        # a page the operator was never actually looking at, and a Prev
+        # click right after such an apply would silently move the
+        # stored value without moving the display — a no-op the operator
+        # has no way to explain. See the regression test for the exact
+        # 51-row repro.
+        count = field_change_count(socket, field)
+        current = current_page(socket.assigns.page, field, count)
 
         # A pending confirmation is scoped to the rows visible when it was
         # opened (a row's or a selection's uuids belong to THAT page) — see
@@ -638,6 +679,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         |> assign(:page, Map.put(socket.assigns.page, field, current + delta))
         |> assign(:pending, nil)
     end
+  end
+
+  defp field_change_count(socket, field) do
+    (socket.assigns.changes || [])
+    |> visible_field_changes(socket.assigns.source, field)
+    |> length()
   end
 
   # `phx-value-field` is always rendered from a known `@sections` field
@@ -666,6 +713,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         do: {field, matching}
   end
 
+  # Whether `field` is part of what `source` can legitimately carry — the
+  # single predicate `visible_sections/2` (which section headers render)
+  # and `visible_changes/2` (which fields a bulk write may touch) both
+  # filter through, so the two can't independently drift out of sync the
+  # way `visible_changes/2`'s own doc describes actually happening once.
+  defp field_visible?(field, source), do: source != :storefront or field == :price
+
   @doc false
   # Public (not documented as API) so it can be unit-tested directly with
   # a synthetic multi-field change list. That is not a style choice: for
@@ -683,7 +737,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   def visible_sections(changes, source) do
     changes
     |> group_by_field()
-    |> Enum.filter(fn {field, _matching} -> source != :storefront or field == :price end)
+    |> Enum.filter(fn {field, _matching} -> field_visible?(field, source) end)
   end
 
   defp build_sections(%{changes: nil}), do: []

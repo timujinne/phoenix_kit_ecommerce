@@ -633,6 +633,50 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       assert html =~ "diff-del"
     end
 
+    # `body_html`'s section header ("HTML texts") and its row/confirm
+    # label used to disagree — the label read "Description (HTML)",
+    # easily misread as belonging to the separate `:description` field's
+    # own "Descriptions" section right next to it on the page. Pinned so
+    # a future edit to one can't silently reintroduce the mismatch.
+    test "the body_html section header and its row's confirm text use the same wording",
+         %{conn: conn} do
+      {:ok, product} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Widget"},
+          "slug" => %{"en" => "widget"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{
+          "products" => [
+            %{
+              "handle" => "widget",
+              "title" => "Widget",
+              "body_html" => "<p>New body</p>",
+              "status" => "draft",
+              "variants" => [%{"price" => "10.00"}]
+            }
+          ]
+        })
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      html = check_and_await(view)
+
+      assert html =~ ~s(id="field-section-body_html")
+      assert html =~ "HTML texts"
+      refute html =~ "Description (HTML)"
+
+      view |> element("#toggle-section-body_html") |> render_click()
+      view |> element("#apply-row-body_html-#{product.uuid}") |> render_click()
+      html = confirm!(view)
+
+      assert html =~ "Updated #{product.title["en"]}&#39;s HTML text."
+      refute html =~ "Description (HTML)"
+    end
+
     test "applying one field of one product only writes that field", %{conn: conn} do
       {:ok, product} =
         Shop.create_product(%{
@@ -1076,6 +1120,61 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       # rows themselves are back, and there's no dangling prev/next.
       refute html =~ ~s(id="page-prev-vendor")
       refute html =~ ~s(id="page-next-vendor")
+    end
+
+    # `bump_page/3` must clamp against the CURRENT count, not read the raw
+    # stored page: 51 rows (pages of 25/25/1), go to page 3 (its lone
+    # row), apply it — 50 remain (pages of 25/25), the DISPLAY clamps
+    # back to page 2, but the STORED page assign would stay 3 if it read
+    # the raw value. A `Prev` click from there must land on page 1 — if
+    # it instead computed "stored 3 minus 1 = 2", the operator (looking
+    # at displayed page 2) would see no change at all.
+    test "clicking Prev right after applying a trailing page's only row still moves back a page",
+         %{conn: conn} do
+      products =
+        for i <- 1..51 do
+          {:ok, product} =
+            Shop.create_product(%{
+              "title" => %{"en" => "Product #{i}"},
+              "slug" => %{"en" => "product-#{i}"},
+              "vendor" => "Old Co",
+              "status" => "draft",
+              "price" => "10.00"
+            })
+
+          product
+        end
+
+      shopify_products =
+        for i <- 1..51 do
+          %{
+            "handle" => "product-#{i}",
+            "title" => "Product #{i}",
+            "vendor" => "New Co",
+            "status" => "draft",
+            "variants" => [%{"price" => "10.00"}]
+          }
+        end
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{"products" => shopify_products})
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      check_and_await(view)
+
+      view |> element("#toggle-section-vendor") |> render_click()
+      view |> element("#page-next-vendor") |> render_click()
+      view |> element("#page-next-vendor") |> render_click()
+
+      last = List.last(products)
+      view |> element("#apply-row-vendor-#{last.uuid}") |> render_click()
+      html = confirm!(view)
+
+      assert html =~ "Showing 26 to 50 of 50 results"
+
+      html = view |> element("#page-prev-vendor") |> render_click()
+      assert html =~ "Showing 1 to 25 of 50 results"
     end
 
     # `apply_row`'s `Map.has_key?(&1.changes, field)` guard: without it, a
@@ -1643,6 +1742,57 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     test "keeps every matching section, price first, for the :admin source" do
       sections = ShopifySync.visible_sections([multi_field_change()], :admin)
       assert Keyword.keys(sections) == [:price, :title, :vendor]
+    end
+  end
+
+  describe "visible_changes/2 — apply_everything's :all must not reach a hidden field" do
+    alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
+    alias PhoenixKitEcommerce.Web.ShopifySync
+
+    defp price_title_vendor_change do
+      %Change{
+        product_uuid: Ecto.UUID.generate(),
+        handle: "widget",
+        title: "Widget",
+        changes: %{
+          price: %{current: Decimal.new("10.00"), incoming: Decimal.new("12.00")},
+          title: %{current: "Old", incoming: "New"},
+          vendor: %{current: "Old Co", incoming: "New Co"}
+        }
+      }
+    end
+
+    # The actual defect this pins: `confirm_everything_apply` hands the
+    # result straight to `Sync.apply_changes(eligible, :all)`, and `:all`
+    # writes every key in `change.changes` — so returning a change with
+    # its ORIGINAL, untrimmed field map (merely having survived a
+    # changes-level filter) would let :all write :title and :vendor on a
+    # :storefront source, even though visible_sections/2 hides both.
+    # Filtering which CHANGES survive is not the same guarantee as
+    # trimming what EACH surviving change still carries — an earlier
+    # version of this function only did the former and passed all 634
+    # tests anyway, because no real check → render flow can produce a
+    # :storefront change with a second field to catch it with.
+    test "trims a change down to only the fields visible for :storefront, not just filters which changes survive" do
+      assert [trimmed] = ShopifySync.visible_changes([price_title_vendor_change()], :storefront)
+      assert Map.keys(trimmed.changes) == [:price]
+    end
+
+    test "keeps every field for the :admin source" do
+      assert [kept] = ShopifySync.visible_changes([price_title_vendor_change()], :admin)
+      assert Map.keys(kept.changes) |> Enum.sort() == [:price, :title, :vendor]
+    end
+
+    test "a change left with no visible fields at all is dropped entirely" do
+      price_only =
+        %Change{
+          product_uuid: Ecto.UUID.generate(),
+          handle: "widget2",
+          title: "Widget 2",
+          changes: %{vendor: %{current: "Old Co", incoming: "New Co"}}
+        }
+
+      assert ShopifySync.visible_changes([price_only], :storefront) == []
     end
   end
 
