@@ -255,13 +255,26 @@ quantity.
 alias PhoenixKitEcommerce.Shopify.Sync
 
 # integration_uuid comes from PhoenixKit.Integrations.list_connections("shopify")
-{:ok, %{changes: changes, source: source, fallback_reason: reason}} =
-  Sync.check(integration_uuid)
+{:ok,
+ %{
+   changes: changes,
+   source: source,
+   fallback_reason: reason,
+   total_shopify_products: total_shopify_products,
+   matched_local_products: matched_local_products
+ }} = Sync.check(integration_uuid)
 
 # `source` is :admin (the full diff above) or :storefront — a price-only
 # fallback used when the Admin API token was rejected, with `reason`
 # saying why (e.g. :unauthorized). Always check `source` before treating
 # `changes` as a complete diff.
+#
+# `total_shopify_products` (every product Source.fetch/2 returned) and
+# `matched_local_products` (how many of those matched a local product by
+# handle, via ProductDiff.matched_count/3) are what "how much of the
+# Shopify catalog can this sync even see" needs — only comparable to
+# each other when `source == :admin`; the storefront fallback only ever
+# sees products published to the Online Store, a narrower population.
 
 # Apply everything that changed for one product...
 {:ok, product} = Sync.apply_change(change)
@@ -425,6 +438,14 @@ lib/
     ├── services/
     │   ├── image_downloader.ex    # Download images from URLs
     │   └── image_migration.ex     # Batch image storage
+    ├── shopify/
+    │   ├── provider.ex            # PhoenixKit.Integrations provider definition
+    │   ├── admin_client.ex        # Shopify Admin API client
+    │   ├── storefront_client.ex   # Public storefront JSON client (price-only fallback)
+    │   ├── source.ex              # Admin-primary / storefront-fallback picker
+    │   ├── product_diff.ex        # Local-vs-Shopify field diff, by handle
+    │   ├── text_diff.ex           # Word-level diff for text fields
+    │   └── sync.ex                # Orchestrates fetch, diff, and apply
     ├── workers/
     │   ├── csv_import_worker.ex   # Oban: async CSV import
     │   └── image_migration_worker.ex # Oban: batch image processing
@@ -454,6 +475,7 @@ lib/
         ├── imports.ex             # Admin: import list
         ├── import_configs.ex      # Admin: import profiles
         ├── import_show.ex         # Admin: import details
+        ├── shopify_sync.ex      # Admin: Shopify catalog sync
         ├── test_shop.ex           # Admin: testing UI
         ├── option_state.ex        # Client option state
         ├── components/
