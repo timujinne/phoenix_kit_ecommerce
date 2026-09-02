@@ -27,7 +27,7 @@ Add `phoenix_kit_ecommerce` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_kit_ecommerce, "~> 0.2"}
+    {:phoenix_kit_ecommerce, "~> 0.3"}
   ]
 end
 ```
@@ -229,10 +229,21 @@ Setup (all through the UI, no environment variables):
    > built-in validation strategies) — the "Check for changes" button
    > below is the real connectivity test.
 3. **In the shop admin**: Shop → Shopify Sync → "Check for changes".
-   Review the diff, then apply. Price-only changes under a 3x swing
-   can be applied in bulk; every other change — any non-price field,
-   or a >3x price swing — is applied one product at a time with an
-   explicit confirmation showing exactly what will change.
+   Differences are grouped into one collapsed section per field —
+   Prices, Titles, Descriptions, HTML texts, Tags, Statuses, Vendors —
+   each showing how many products differ on it. Expand a section to
+   list them, 25 rows to a page; expand a row for a word-level diff of
+   what actually changed inside the text.
+
+   Apply at whichever scope fits: a single field of one product, every
+   product in one section, a checkbox selection within the current
+   page, or everything at once. Each is confirmed in a dialog that
+   states the count and the field before anything is written.
+
+   **Extreme price changes (a swing beyond 3x) are excluded from every
+   bulk scope** and must be applied per row, where the product and its
+   badge are in front of you. Nothing is written without an explicit
+   confirmation.
 
 Fields compared: title, description (derived from Shopify's `Body
 (HTML)`), the HTML body itself, vendor, tags, status, and price (the
