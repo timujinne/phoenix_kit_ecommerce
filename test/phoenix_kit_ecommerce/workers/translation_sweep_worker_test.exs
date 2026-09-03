@@ -514,15 +514,23 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
       assert job.args["resource_uuid"] == category.uuid
     end
 
-    test "the job ceiling stops selection before partially consuming a candidate's languages" do
+    test "the job ceiling stops selection before partially consuming a candidate's languages — and, being below the target-language count, this is Fix C's permanent stall, not an ordinary empty tick" do
       enable_languages!(["en", "de", "fr"])
       Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
 
       # Needs BOTH de and fr ⇒ 2 jobs, which exceeds the ceiling of 1 — the
       # whole candidate is skipped rather than enqueuing just one language.
+      # Pre-fix, this reported `:ok, enqueued: 0` — indistinguishable from a
+      # healthy idle sweep, even though a ceiling of 1 against 2 target
+      # languages can NEVER admit this (or any equally-untranslated)
+      # candidate, this tick or any future one.
       create_product(%{title: %{"en" => "Wooden Vase"}})
 
-      assert {:ok, %{enqueued: 0, candidates: 0}} = TranslationSweepWorker.run_tick()
+      assert {:sweep_stalled, info} = TranslationSweepWorker.run_tick()
+      assert info.batch_size == 3
+      assert info.max_in_flight == 1
+      assert info.target_language_count == 2
+      assert TranslationSweepWorker.last_run()["reason"] == "sweep_stalled"
       assert translate_jobs() == []
     end
 
@@ -559,6 +567,89 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
       uuids = translate_jobs() |> MapSet.new(& &1.args["resource_uuid"])
       assert MapSet.member?(uuids, active.uuid)
       assert MapSet.member?(uuids, hidden_category.uuid)
+    end
+  end
+
+  # -- structurally_stalled?/3 (Fix C) ---------------------------------
+
+  describe "structurally_stalled?/3" do
+    test "true when the batch is below 1" do
+      assert TranslationSweepWorker.structurally_stalled?(0, 6, ["de", "fr"])
+    end
+
+    test "true when the ceiling is below 1" do
+      assert TranslationSweepWorker.structurally_stalled?(3, 0, ["de"])
+    end
+
+    test "true when the ceiling is below the number of target languages" do
+      assert TranslationSweepWorker.structurally_stalled?(3, 1, ["de", "fr"])
+    end
+
+    test "false for the documented default relationship (batch 3 x 2 languages = ceiling 6, §4.6)" do
+      refute TranslationSweepWorker.structurally_stalled?(3, 6, ["de", "fr"])
+    end
+
+    test "false when the ceiling equals the target-language count exactly (the boundary is inclusive)" do
+      refute TranslationSweepWorker.structurally_stalled?(3, 2, ["de", "fr"])
+    end
+  end
+
+  # -- run_tick/0 — Fix C: a stalled sweep must not report itself healthy
+
+  describe "run_tick/0 — a stalled sweep must not report itself healthy (Fix C)" do
+    setup do
+      enable_translations!()
+      setup_ai!()
+      enable_languages!(["en", "de", "fr"])
+      :ok
+    end
+
+    test "a batch of zero is reported as a stall, never as ok" do
+      Settings.update_setting_with_module("shop_translation_batch", "0", "shop")
+      create_product(%{title: %{"en" => "Wooden Vase"}})
+
+      assert {:sweep_stalled, info} = TranslationSweepWorker.run_tick()
+      assert info.batch_size == 0
+      assert info.max_in_flight == 6
+      assert info.target_language_count == 2
+      assert TranslationSweepWorker.last_run()["reason"] == "sweep_stalled"
+      assert translate_jobs() == []
+    end
+
+    test "a ceiling of zero is reported as a stall, not the transient-sounding ceiling_reached" do
+      Settings.update_setting_with_module("shop_translation_max_in_flight", "0", "shop")
+      create_product(%{title: %{"en" => "Wooden Vase"}})
+
+      assert {:sweep_stalled, info} = TranslationSweepWorker.run_tick()
+      assert info.max_in_flight == 0
+      assert translate_jobs() == []
+    end
+
+    test "a batch/ceiling below the CONFIGURED target-language count stalls even with an empty catalog" do
+      # No product or category exists at all — this pins that the check is
+      # against the settings themselves, not against whether this
+      # particular tick happened to have a candidate to trip over.
+      Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
+
+      assert {:sweep_stalled, info} = TranslationSweepWorker.run_tick()
+      assert info.target_language_count == 2
+    end
+
+    test "a transient ceiling squeeze — config is fine, just busy right now — still just says ok" do
+      Settings.update_setting_with_module("shop_translation_max_in_flight", "3", "shop")
+
+      # Two unrelated in-flight jobs eat 2 of the 3 configured slots this
+      # tick, leaving 1 — not enough for the product below, which needs
+      # both de and fr. Unlike the ceiling-of-1 case elsewhere in this
+      # file, the CONFIGURED ceiling (3) is not below the target-language
+      # count (2), so next tick, once those jobs finish, this clears on
+      # its own — an ordinary `:ok` with nothing enqueued, not a stall.
+      seed_translate_job(AITranslatable.resource_type(), Ecto.UUID.generate(), "de")
+      seed_translate_job(AITranslatable.resource_type(), Ecto.UUID.generate(), "fr")
+      create_product(%{title: %{"en" => "Wooden Vase"}})
+
+      assert {:ok, %{enqueued: 0, candidates: 0, in_flight: 2}} =
+               TranslationSweepWorker.run_tick()
     end
   end
 end

@@ -595,6 +595,116 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       assert SweepSettings.languages() == ["de"]
     end
 
+    # -- Fix C: a stalled sweep must not report itself healthy — this half
+    # stops the bad config from ever reaching storage in the first place.
+    # `TranslationSweepWorker.structurally_stalled?/3` can only ever
+    # report a deadlock after the fact; these three settings guarantee one
+    # (`take_within_budget/3` HALTS, not skips, on the first candidate
+    # whose language count exceeds the remaining budget).
+
+    test "rejects a batch of zero — nothing is saved", %{conn: conn} do
+      before_batch = SweepSettings.batch_size()
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      html =
+        view
+        |> element("#sweep-settings-form")
+        |> render_submit(%{
+          "interval_minutes" => "60",
+          "batch_size" => "0",
+          "max_in_flight" => "6",
+          "languages" => ["de"],
+          "statuses" => ["active"]
+        })
+
+      assert html =~ "Batch size must be at least 1."
+      assert SweepSettings.batch_size() == before_batch
+
+      refute_activity_logged("shop.translation_sweep_settings_changed",
+        metadata_has: %{"batch_size" => 0}
+      )
+    end
+
+    test "rejects a ceiling of zero — nothing is saved", %{conn: conn} do
+      before_max_in_flight = SweepSettings.max_in_flight()
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      html =
+        view
+        |> element("#sweep-settings-form")
+        |> render_submit(%{
+          "interval_minutes" => "60",
+          "batch_size" => "3",
+          "max_in_flight" => "0",
+          "languages" => ["de"],
+          "statuses" => ["active"]
+        })
+
+      assert html =~ "Max in-flight jobs must be at least 1."
+      assert SweepSettings.max_in_flight() == before_max_in_flight
+    end
+
+    test "rejects a ceiling below the number of target languages just selected — and does not clamp either value",
+         %{
+           conn: conn
+         } do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      # A known-good baseline, distinct from both the default and the
+      # rejected attempt below, so a partial/clamped save of either field
+      # would show up as a changed read afterwards.
+      view
+      |> element("#sweep-settings-form")
+      |> render_submit(%{
+        "interval_minutes" => "60",
+        "batch_size" => "3",
+        "max_in_flight" => "6",
+        "languages" => ["de"],
+        "statuses" => ["active"]
+      })
+
+      assert SweepSettings.languages() == ["de"]
+
+      html =
+        view
+        |> element("#sweep-settings-form")
+        |> render_submit(%{
+          "interval_minutes" => "60",
+          "batch_size" => "3",
+          "max_in_flight" => "1",
+          "languages" => ["de", "fr"],
+          "statuses" => ["active"]
+        })
+
+      assert html =~ "Max in-flight jobs must be at least 2"
+
+      # Neither half of the rejected save persisted — accepting the
+      # language list while rejecting the ceiling (or vice versa) would
+      # be just as capable of deadlocking the sweep as saving "1" outright.
+      assert SweepSettings.max_in_flight() == 6
+      assert SweepSettings.languages() == ["de"]
+    end
+
+    test "a rejected save does not reschedule the tick", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+      before = SweepWorker.status().next_tick_at
+
+      view
+      |> element("#sweep-settings-form")
+      |> render_submit(%{
+        "interval_minutes" => "5",
+        "batch_size" => "0",
+        "max_in_flight" => "6",
+        "languages" => ["de"],
+        "statuses" => ["active"]
+      })
+
+      # A successful save with "interval_minutes" => "5" would have moved
+      # this — see the passing save test above. The rejected save must
+      # leave the already-scheduled tick exactly where it was.
+      assert SweepWorker.status().next_tick_at == before
+    end
+
     test "denied without shop.manage_settings", %{conn: conn} do
       conn = put_test_scope(conn, fake_scope(permissions: ["shop", "shop.manage_catalog"]))
       {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
@@ -653,27 +763,35 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       refute SweepSettings.sweep_enabled?()
       product = create_product()
 
-      {:ok, _job} =
-        %{
-          "resource_type" => AITranslatable.resource_type(),
-          "resource_uuid" => product.uuid,
-          "endpoint_uuid" => Ecto.UUID.generate(),
-          "prompt_uuid" => Ecto.UUID.generate(),
-          "source_lang" => "en",
-          "target_lang" => "de",
-          "actor_uuid" => nil,
-          "resource_scope" => nil
-        }
-        |> PhoenixKitAI.TranslateWorker.new()
-        |> Oban.insert()
+      # Two in-flight jobs, one per target language (`ready!/0` leaves
+      # de/fr configured) — the ceiling below matches that count exactly,
+      # so this is a genuine, self-clearing "busy right now", never Fix
+      # C's structural stall (which would fire regardless of in_flight
+      # and has its own coverage in the "operational sweep panel" and
+      # `TranslationSweepWorkerTest` describe blocks).
+      for lang <- ["de", "fr"] do
+        {:ok, _job} =
+          %{
+            "resource_type" => AITranslatable.resource_type(),
+            "resource_uuid" => product.uuid,
+            "endpoint_uuid" => Ecto.UUID.generate(),
+            "prompt_uuid" => Ecto.UUID.generate(),
+            "source_lang" => "en",
+            "target_lang" => lang,
+            "actor_uuid" => nil,
+            "resource_scope" => nil
+          }
+          |> PhoenixKitAI.TranslateWorker.new()
+          |> Oban.insert()
+      end
 
       {:ok, _} =
-        Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
+        Settings.update_setting_with_module("shop_translation_max_in_flight", "2", "shop")
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
       html = render_click(view, "run_sweep_now", %{})
 
-      assert html =~ "1 jobs already in flight (at the ceiling)"
+      assert html =~ "2 jobs already in flight (at the ceiling)"
       refute html =~ "Sweep ran"
     end
 

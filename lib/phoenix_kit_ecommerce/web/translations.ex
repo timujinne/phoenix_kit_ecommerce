@@ -611,6 +611,65 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     languages = checked_list(params["languages"], allowed_languages)
     statuses = checked_list(params["statuses"], @product_statuses)
 
+    case sweep_settings_error(batch, max_in_flight, languages) do
+      nil ->
+        persist_sweep_settings(
+          socket,
+          enabled,
+          interval,
+          batch,
+          max_in_flight,
+          languages,
+          statuses
+        )
+
+      message ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
+  # Fix C: a batch/ceiling combination that `TranslationSweepWorker.
+  # structurally_stalled?/3` would call permanently stuck must never reach
+  # storage in the first place — the tick can only ever REPORT the
+  # deadlock after it happens, never prevent it. `take_within_budget/3`
+  # HALTS (not skips) on the first candidate whose language count exceeds
+  # the remaining budget, so a ceiling below the number of target
+  # languages about to be saved would deadlock every tick forever, same
+  # as a batch or ceiling of zero. Rejecting and naming the minimum here
+  # — never clamping to it — keeps the operator in control of the actual
+  # number saved.
+  defp sweep_settings_error(batch, max_in_flight, languages) do
+    min_ceiling = max(1, length(languages))
+
+    [
+      batch < 1 && gettext("Batch size must be at least 1."),
+      max_in_flight < min_ceiling && max_in_flight_error(min_ceiling)
+    ]
+    |> Enum.filter(& &1)
+    |> case do
+      [] -> nil
+      messages -> Enum.join(messages, " ")
+    end
+  end
+
+  defp max_in_flight_error(1), do: gettext("Max in-flight jobs must be at least 1.")
+
+  defp max_in_flight_error(min_ceiling) do
+    gettext(
+      "Max in-flight jobs must be at least %{min} — the number of target languages selected. A lower ceiling can never enqueue a resource missing every language.",
+      min: min_ceiling
+    )
+  end
+
+  defp persist_sweep_settings(
+         socket,
+         enabled,
+         interval,
+         batch,
+         max_in_flight,
+         languages,
+         statuses
+       ) do
     Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", enabled, "shop")
 
     Settings.update_setting_with_module(
@@ -1117,6 +1176,20 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
   defp sweep_result_message(:ceiling_reached, %{in_flight: n}),
     do: gettext("Sweep did not run — %{count} jobs already in flight (at the ceiling).", count: n)
+
+  # Fix C: distinguishes a PERMANENT deadlock (batch or ceiling configured
+  # too low to ever select a candidate — `TranslationSweepWorker.
+  # structurally_stalled?/3`) from the ordinary, self-clearing
+  # `:ceiling_reached` above. Names the actual numbers so the operator
+  # doesn't have to scroll down to the settings panel to see what's wrong.
+  defp sweep_result_message(:sweep_stalled, info) do
+    gettext(
+      "Sweep did not run — batch %{batch} / ceiling %{ceiling} can never fit %{count} target languages. Raise them in the settings below.",
+      batch: Map.get(info, :batch_size),
+      ceiling: Map.get(info, :max_in_flight),
+      count: Map.get(info, :target_language_count)
+    )
+  end
 
   defp sweep_result_message(:no_target_languages, _info),
     do: gettext("Sweep did not run — no target languages are configured.")
@@ -1681,6 +1754,19 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     else
       base
     end
+  end
+
+  # Fix C: the persisted twin of the flash message above — same distinct
+  # reason, so a stall recorded by the SCHEDULED tick (never seen through
+  # a flash, since nobody clicked anything) is just as legible in the
+  # "Last tick" line as one provoked through the manual button.
+  defp last_run_summary(%{"reason" => "sweep_stalled"} = run) do
+    gettext(
+      "stalled — batch %{batch} / ceiling %{ceiling} can never fit %{count} target languages",
+      batch: Map.get(run, "batch_size", "?"),
+      ceiling: Map.get(run, "max_in_flight", "?"),
+      count: Map.get(run, "target_language_count", "?")
+    )
   end
 
   defp last_run_summary(%{"reason" => reason}), do: reason

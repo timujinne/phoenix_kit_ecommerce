@@ -52,13 +52,26 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
        fresh on every tick (never cached in the job) means a state
        flipped by direct SQL is honoured immediately, not on the next
        code deploy.
-    3. Stop, recording why, if the shop's incomplete `TranslateWorker`
+    3. Stop, recording why (`:sweep_stalled`), if `shop_translation_batch`
+       or `shop_translation_max_in_flight` is configured so low that NO
+       candidate could ever be selected — batch below 1, ceiling below 1,
+       or ceiling below the number of configured target languages
+       (`structurally_stalled?/3`, Fix C). Checked against the raw
+       settings, not the current in-flight count: a config this broken is
+       wrong on every tick, not just this one, and reporting it as `:ok`
+       (candidate count/enqueued both `0`, exactly the shape of a healthy
+       idle sweep) would hide a permanent deadlock behind a healthy-looking
+       status forever. The operational panel (design §4.6) refuses to save
+       a config this broken in the first place — this check is what stays
+       honest about one that reached storage anyway (a pre-fix install, a
+       hand-edited row).
+    4. Stop, recording why, if the shop's incomplete `TranslateWorker`
        jobs (`available`/`scheduled`/`executing`/`retryable` — the same
        four states `PhoenixKitAI.Translations` dedups against; a
        snoozed job is `scheduled` and still counts) are already at or
        past `shop_translation_max_in_flight`. The ceiling counts JOBS,
        not resources — a resource with N stale languages contributes N.
-    4. Select candidates: every stale/missing category first (no status
+    5. Select candidates: every stale/missing category first (no status
        filter — a hidden category would otherwise ship translated
        navigation before it's visible), then products filtered by
        `shop_translation_statuses`. Selection stops before the running
@@ -66,7 +79,7 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
        the resource count would exceed `shop_translation_batch`
        (`take_within_budget/3`) — two independent caps, combined across
        categories and products in one tick.
-    5. Enqueue `missing ∪ stale` languages per selected resource via
+    6. Enqueue `missing ∪ stale` languages per selected resource via
        `PhoenixKitAI.Translations.enqueue_all_missing/2`. That call's own
        app-level de-dup means a resource already mid-translation (manual
        action, a previous tick's snoozed job) is skipped without this
@@ -196,10 +209,13 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
   below instead, not this function.
 
   Returns `{reason, info}` — `reason` is one of `:translations_disabled`,
-  `:sweep_disabled`, `:ai_unavailable`, `:ceiling_reached`,
-  `:no_target_languages`, or `:ok` (ran; `info[:enqueued]` may still be
-  `0` if nothing needed translating or everything was already in
-  flight). Every outcome is also persisted — see `last_run/0`.
+  `:sweep_disabled`, `:ai_unavailable`, `:sweep_stalled` (Fix C: batch or
+  ceiling configured too low to ever select a candidate — see
+  `structurally_stalled?/3`), `:ceiling_reached`, `:no_target_languages`,
+  or `:ok` (ran; `info[:enqueued]` may still be `0` if nothing needed
+  translating or everything was already in flight — that `0` is never
+  ambiguous with a structural stall, which always gets its own reason
+  above). Every outcome is also persisted — see `last_run/0`.
   """
   @spec run_tick() :: {atom(), map()}
   def run_tick, do: run_tick(bypass_sweep_gate?: false)
@@ -239,39 +255,90 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
   end
 
   defp run_active_tick do
-    in_flight = count_in_flight()
-    remaining_jobs = SweepSettings.max_in_flight() - in_flight
-
-    if remaining_jobs <= 0 do
-      finish(:ceiling_reached, %{in_flight: in_flight})
-    else
-      do_sweep(remaining_jobs, in_flight)
-    end
-  end
-
-  defp do_sweep(remaining_jobs, in_flight) do
-    source_lang = Translations.default_language()
     target_langs = SweepSettings.languages()
 
     if target_langs == [] do
-      finish(:no_target_languages, %{in_flight: in_flight})
+      finish(:no_target_languages)
     else
-      selected =
-        take_within_budget(
-          candidates(source_lang, target_langs),
-          SweepSettings.batch_size(),
-          remaining_jobs
-        )
-
-      {enqueued, errors} = enqueue_selected(selected, source_lang)
-
-      finish(:ok, %{
-        candidates: length(selected),
-        enqueued: enqueued,
-        errors: length(errors),
-        in_flight: in_flight
-      })
+      check_capacity(target_langs)
     end
+  end
+
+  # Fix C, step 3 above: the structural check runs BEFORE the ordinary
+  # in-flight ceiling check and is blind to the current in-flight count —
+  # a batch/ceiling combination this broken can never admit a candidate
+  # regardless of how many (if any) jobs happen to be running right now,
+  # so basing it on `count_in_flight/0` would only make the symptom
+  # flicker between an occasional lucky `:ok` and a
+  # transient-sounding `:ceiling_reached` instead of naming the real,
+  # permanent cause once and consistently.
+  defp check_capacity(target_langs) do
+    batch_size = SweepSettings.batch_size()
+    max_in_flight = SweepSettings.max_in_flight()
+
+    if structurally_stalled?(batch_size, max_in_flight, target_langs) do
+      finish(:sweep_stalled, %{
+        batch_size: batch_size,
+        max_in_flight: max_in_flight,
+        target_language_count: length(target_langs)
+      })
+    else
+      in_flight = count_in_flight()
+      remaining_jobs = max_in_flight - in_flight
+
+      if remaining_jobs <= 0 do
+        finish(:ceiling_reached, %{in_flight: in_flight})
+      else
+        do_sweep(target_langs, batch_size, remaining_jobs, in_flight)
+      end
+    end
+  end
+
+  @doc """
+  Fix C: true when `batch_size`/`max_in_flight`, as currently configured,
+  can never let `take_within_budget/3` select a single candidate —
+  independent of any particular tick's in-flight count or candidate list.
+
+  `take_within_budget/3` HALTS — never skips — on the first candidate
+  whose language count exceeds the remaining job budget:
+
+    * `batch_size < 1` — its `resource_budget` starts at or below zero, so
+      the very first check in its `reduce_while` halts before looking at
+      any candidate at all.
+    * `max_in_flight < 1` — the in-flight ceiling can never leave a
+      positive job budget for any tick to spend, whatever is or isn't
+      currently running.
+    * `max_in_flight < length(target_langs)` — a resource missing every
+      configured target language (the worst case, and an entirely
+      ordinary one: any newly added or bulk-imported resource starts
+      there) needs `length(target_langs)` jobs; a ceiling below that can
+      never admit it, and because the scan halts rather than skips, it
+      blocks every cheaper candidate queued behind it too.
+
+  Any of the three makes the config permanently incapable of enqueueing
+  anything, for as long as it stands — the reason `run_tick/0` records
+  when this is true (`:sweep_stalled`) exists so that fact is visible
+  instead of reading as a healthy idle sweep.
+  """
+  @spec structurally_stalled?(non_neg_integer(), non_neg_integer(), [String.t()]) :: boolean()
+  def structurally_stalled?(batch_size, max_in_flight, target_langs) do
+    batch_size < 1 or max_in_flight < 1 or max_in_flight < length(target_langs)
+  end
+
+  defp do_sweep(target_langs, batch_size, remaining_jobs, in_flight) do
+    source_lang = Translations.default_language()
+
+    selected =
+      take_within_budget(candidates(source_lang, target_langs), batch_size, remaining_jobs)
+
+    {enqueued, errors} = enqueue_selected(selected, source_lang)
+
+    finish(:ok, %{
+      candidates: length(selected),
+      enqueued: enqueued,
+      errors: length(errors),
+      in_flight: in_flight
+    })
   end
 
   # Categories first (design §4.3: 7 of them, more costly a wrong
