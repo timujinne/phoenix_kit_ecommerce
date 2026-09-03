@@ -66,6 +66,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   alias PhoenixKit.Integrations
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
   alias PhoenixKitEcommerce.Shopify.Sync
@@ -112,22 +113,35 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok,
-     socket
-     |> assign(:page_title, gettext("Shopify Sync"))
-     |> assign(:connection, shopify_connection())
-     |> assign(:checking, false)
-     |> assign(:changes, nil)
-     |> assign(:error, nil)
-     |> assign(:source, nil)
-     |> assign(:fallback_reason, nil)
-     |> assign(:total_shopify_products, nil)
-     |> assign(:matched_local_products, nil)
-     |> assign(:expanded_sections, MapSet.new())
-     |> assign(:expanded_rows, MapSet.new())
-     |> assign(:page, %{})
-     |> assign(:applied_any?, false)
-     |> assign(:pending, nil)}
+    # Design §4.7: `shop_shopify_enabled` gates this page's mere reachability
+    # — a direct link to a turned-off sync must not open it, mirroring
+    # `Web.Translations`' own guard for `shop_translations_enabled`.
+    if Shop.shopify_enabled?() do
+      {:ok,
+       socket
+       |> assign(:page_title, gettext("Shopify Sync"))
+       |> assign(:connection, shopify_connection())
+       |> assign(:checking, false)
+       |> assign(:changes, nil)
+       |> assign(:error, nil)
+       |> assign(:source, nil)
+       |> assign(:fallback_reason, nil)
+       |> assign(:total_shopify_products, nil)
+       |> assign(:matched_local_products, nil)
+       |> assign(:expanded_sections, MapSet.new())
+       |> assign(:expanded_rows, MapSet.new())
+       |> assign(:page, %{})
+       |> assign(:applied_any?, false)
+       |> assign(:pending, nil)}
+    else
+      {:ok,
+       socket
+       |> put_flash(
+         :error,
+         gettext("Shopify sync is turned off. Turn it on in E-Commerce settings first.")
+       )
+       |> push_navigate(to: Routes.path("/admin/shop"))}
+    end
   end
 
   @impl true

@@ -45,6 +45,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
   use PhoenixKitEcommerce.LiveCase, async: false
 
   alias PhoenixKit.Integrations
+  alias PhoenixKit.Integrations.Providers
   alias PhoenixKitEcommerce, as: Shop
 
   @stub __MODULE__
@@ -60,6 +61,58 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       })
 
     uuid
+  end
+
+  describe "shop_shopify_enabled = false (design §4.7)" do
+    setup %{conn: conn} do
+      connect_shopify()
+
+      PhoenixKit.Settings.update_boolean_setting_with_module(
+        "shop_shopify_enabled",
+        false,
+        "shop"
+      )
+
+      # The `Settings` cache (unlike the settings TABLE row) survives the
+      # sandbox rollback, and `Integrations.Providers`' own
+      # `:persistent_term` cache is process-global — left "false", either
+      # would poison `connect_shopify()` in a LATER test (any file) with
+      # `{:error, :unknown_provider}`, since `Providers.get/1` stops
+      # seeing Shopify at all. Restore unconditionally.
+      on_exit(fn ->
+        PhoenixKit.Settings.update_boolean_setting_with_module(
+          "shop_shopify_enabled",
+          true,
+          "shop"
+        )
+
+        Providers.clear_cache()
+      end)
+
+      {:ok, conn: put_test_scope(conn, fake_scope())}
+    end
+
+    test "redirects to the shop admin dashboard with an explanation", %{conn: conn} do
+      assert {:error, {:live_redirect, %{to: to, flash: flash}}} =
+               live(conn, "/en/admin/shop/shopify-sync")
+
+      assert to =~ "/admin/shop"
+      assert flash["error"] =~ "Shopify sync is turned off"
+    end
+
+    test "a saved connection and its token are untouched — only reachability changed", %{
+      conn: conn
+    } do
+      [before_toggle] = Integrations.list_connections("shopify", owner: :system)
+
+      live(conn, "/en/admin/shop/shopify-sync")
+
+      PhoenixKit.Settings.update_boolean_setting_with_module("shop_shopify_enabled", true, "shop")
+      [after_toggle] = Integrations.list_connections("shopify", owner: :system)
+
+      assert before_toggle.uuid == after_toggle.uuid
+      assert before_toggle.data == after_toggle.data
+    end
   end
 
   describe "not connected" do

@@ -79,10 +79,39 @@ defmodule PhoenixKitEcommerce do
   def required_modules, do: ["billing"]
 
   @impl PhoenixKit.Module
-  def required_integrations, do: ["shopify"]
+  # Design §4.7: with the toggle off, this callback returning `[]` is safe
+  # — verified against core, this list is purely informational
+  # (`integrations/providers.ex:1393-1414`'s "which modules use this
+  # integration" map), nothing forces the integration on because of it.
+  def required_integrations, do: if(shopify_enabled?(), do: ["shopify"], else: [])
 
   @impl PhoenixKit.Module
-  def integration_providers, do: [ShopifyProvider.definition()]
+  def integration_providers do
+    if shopify_enabled?(), do: [ShopifyProvider.definition()], else: []
+  end
+
+  @doc """
+  Whether the Shopify sync integration exists at all (design §4.7): the
+  sidebar entry, the sync page, and the Shopify option offered on the
+  integrations page.
+
+  Defaults to `true` — Shopify sync predates this toggle, so a stand that
+  never touches `shop_shopify_enabled` keeps behaving exactly as it did
+  before this setting existed.
+
+  Turning it off does **not** touch the stored integration record or its
+  access token; re-enabling restores everything (design §4.7). Read via
+  `get_setting_cached/2` deliberately — `admin_tabs/0`'s `visible:`
+  closure for the sync tab calls this on every sidebar render.
+  """
+  @spec shopify_enabled?() :: boolean()
+  def shopify_enabled? do
+    Settings.get_setting_cached("shop_shopify_enabled", "true") == "true"
+  rescue
+    _ -> true
+  catch
+    :exit, _ -> true
+  end
 
   @impl PhoenixKit.Module
   @doc """
@@ -455,6 +484,12 @@ defmodule PhoenixKitEcommerce do
         level: :admin,
         permission: "shop.run_imports",
         parent: :admin_shop,
+        # Design §4.7: `shop_shopify_enabled` gates the entry's mere
+        # existence, the same shape as `admin_shop_translations` below —
+        # `visible:` is evaluated live on every sidebar render (per
+        # `Tab.visible?/2`'s own doc), so `shopify_enabled?/0`'s
+        # `get_setting_cached/2` read matters here — this is a hot path.
+        visible: fn _scope -> shopify_enabled?() end,
         gettext_backend: PhoenixKitEcommerce.Gettext
       ),
       Tab.new!(

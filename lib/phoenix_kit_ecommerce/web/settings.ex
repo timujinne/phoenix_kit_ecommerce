@@ -7,6 +7,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Integrations.Providers, as: IntegrationProviders
   alias PhoenixKit.Settings
   alias PhoenixKit.Users.Auth
   alias PhoenixKit.Utils.Routes
@@ -68,6 +69,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign(:shipping_selection_position, to_string(Shop.shipping_selection_position()))
       |> assign(:shop_translations_enabled, TranslationSweepSettings.translations_enabled?())
       |> assign(:ai_translations_available, ai_translations_available?())
+      |> assign(:shop_shopify_enabled, Shop.shopify_enabled?())
       |> assign_policy()
 
     {:ok, socket}
@@ -259,6 +261,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   def handle_event("toggle_shop_translations_enabled", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("toggle_shop_translations_enabled", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("toggle_shop_shopify_enabled", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("toggle_shop_shopify_enabled", params, socket)
     end)
   end
 
@@ -711,6 +720,53 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           </div>
         </div>
 
+        <%!-- Shopify sync existence toggle (design §4.7). Single key —
+             unlike translations above, the sync has no background actor to
+             pair an "autonomy" setting against (design §12.4): it only ever
+             runs from an operator on the sync page. Defaults to `true`, so
+             a stand that never touches this setting keeps behaving exactly
+             as it did before the toggle existed. Turning it off does NOT
+             touch a saved Shopify connection or its access token — it only
+             hides the sidebar entry, redirects the sync page, and drops
+             Shopify from the integrations list; re-enabling restores all
+             three immediately. --%>
+        <div class="card bg-base-100 shadow-xl mb-6" id="shop-shopify-card">
+          <div class="card-body">
+            <h2 class="card-title text-xl mb-2">
+              <.icon name="hero-arrow-path" class="w-6 h-6" />
+              {gettext("Shopify Sync")}
+            </h2>
+            <p class="text-sm text-base-content/70 mb-4">
+              {gettext(
+                "Turns off the Shopify sync page, its sidebar entry, and the Shopify option on the integrations page. A saved connection and its access token are kept — turning this back on restores them exactly as they were."
+              )}
+            </p>
+
+            <div class="fieldset">
+              <label class="label cursor-pointer justify-between">
+                <span class="fieldset-legend text-lg">
+                  <span class="font-semibold">{gettext("Enable Shopify sync")}</span>
+                </span>
+                <input
+                  id="toggle-shop-shopify-enabled"
+                  type="checkbox"
+                  class="toggle toggle-secondary"
+                  checked={@shop_shopify_enabled}
+                  phx-click="toggle_shop_shopify_enabled"
+                />
+              </label>
+            </div>
+
+            <.link
+              :if={@shop_shopify_enabled}
+              navigate={Routes.path("/admin/shop/shopify-sync")}
+              class="link link-primary text-sm"
+            >
+              {gettext("Open the Shopify sync page →")}
+            </.link>
+          </div>
+        </div>
+
         <%!-- Tax fallback --%>
         <div class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">
@@ -806,8 +862,12 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           </div>
         </div>
 
-        <%!-- Shopify Sync --%>
-        <div class="card bg-base-100 shadow-xl mb-6">
+        <%!-- Shopify Sync connection status. Design §4.7: hidden along with
+             the existence card above once `shop_shopify_enabled` is off —
+             "Connect" and "Open Sync" would otherwise dangle: Shopify has
+             already dropped out of the integrations list, and the sync
+             page itself redirects straight back here. --%>
+        <div :if={@shop_shopify_enabled} class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">
             <h2 class="card-title text-xl mb-6">
               <.icon name="hero-arrow-path" class="w-6 h-6" /> {gettext("Shopify Sync")}
@@ -1411,6 +1471,15 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     end
   end
 
+  # Design §4.7/§12.4: `shop_shopify_enabled` is a single key, unlike the
+  # translations pair above — the sync has no background actor to gate
+  # (no worker in `workers/` runs it; it only ever starts from an operator
+  # clicking the page), so there is no paired "autonomy" setting to also
+  # flip off here.
+  defp gated_event("toggle_shop_shopify_enabled", _params, socket) do
+    do_toggle_shop_shopify_enabled(!socket.assigns.shop_shopify_enabled, socket)
+  end
+
   defp gated_event("update_catalog_vocabulary", %{"vocabulary" => vocabulary}, socket) do
     if vocabulary in Vocabulary.options() do
       case Settings.update_setting(Vocabulary.setting_key(), vocabulary) do
@@ -1658,6 +1727,38 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     end
 
     socket
+  end
+
+  defp do_toggle_shop_shopify_enabled(new_value, socket) do
+    case Settings.update_boolean_setting_with_module("shop_shopify_enabled", new_value, "shop") do
+      {:ok, _} ->
+        Activity.log("shop.shopify_enabled_changed",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "setting",
+          metadata: %{"enabled" => new_value}
+        )
+
+        # Design §4.7: the provider list is cached in `:persistent_term` —
+        # without clearing it here, the integrations page and
+        # `integration_providers/0`/`required_integrations/0` would keep
+        # serving the pre-toggle answer until the node restarts.
+        IntegrationProviders.clear_cache()
+
+        {:noreply,
+         socket
+         |> assign(:shop_shopify_enabled, new_value)
+         |> put_flash(
+           :info,
+           if(new_value,
+             do: gettext("Shopify sync enabled"),
+             else: gettext("Shopify sync disabled")
+           )
+         )}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, gettext("Failed to update Shopify sync"))}
+    end
   end
 
   defp vocabulary_label("services"), do: gettext("Services")
