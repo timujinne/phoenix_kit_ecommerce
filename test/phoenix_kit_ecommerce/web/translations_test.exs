@@ -623,12 +623,58 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       {:ok, conn: put_test_scope(conn, fake_scope())}
     end
 
-    test "reports the tick's own refusal reason when the sweep is switched off", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+    test "runs even while automatic sweeping is off — the manual path bypasses that gate", %{
+      conn: conn
+    } do
+      # Owner decision (Fix B), overriding design §4.5 as written:
+      # `shop_translation_sweep_enabled` gates the SCHEDULED tick only.
+      # `ready!/0` leaves it at its default (off) — the documented
+      # manual-only mode this button exists for — so this pins that the
+      # button that mode's own badge points at ("Automatic sweep: off
+      # (manual only)") actually performs the run rather than refusing.
+      refute SweepSettings.sweep_enabled?()
+      product = create_product()
 
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
       html = render_click(view, "run_sweep_now", %{})
 
-      assert html =~ "automatic sweeping is turned off"
+      assert html =~ "Sweep ran"
+      assert jobs_for(product.uuid) != []
+    end
+
+    test "still surfaces a refusal the manual path does NOT bypass — the ceiling", %{conn: conn} do
+      # The other half of Fix B, and the coverage the bypass test above
+      # replaced: only `shop_translation_sweep_enabled` is bypassed, so a
+      # manual run that stops for any other reason must still tell the
+      # operator WHY rather than silently reporting success. Provoked
+      # through a door the page itself opens (the "Max in-flight jobs"
+      # field) with the sweep left off, so it pins the flash on the
+      # manual path specifically.
+      refute SweepSettings.sweep_enabled?()
+      product = create_product()
+
+      {:ok, _job} =
+        %{
+          "resource_type" => AITranslatable.resource_type(),
+          "resource_uuid" => product.uuid,
+          "endpoint_uuid" => Ecto.UUID.generate(),
+          "prompt_uuid" => Ecto.UUID.generate(),
+          "source_lang" => "en",
+          "target_lang" => "de",
+          "actor_uuid" => nil,
+          "resource_scope" => nil
+        }
+        |> PhoenixKitAI.TranslateWorker.new()
+        |> Oban.insert()
+
+      {:ok, _} =
+        Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+      html = render_click(view, "run_sweep_now", %{})
+
+      assert html =~ "1 jobs already in flight (at the ceiling)"
+      refute html =~ "Sweep ran"
     end
 
     test "runs the tick body directly and queues the work it finds", %{conn: conn} do

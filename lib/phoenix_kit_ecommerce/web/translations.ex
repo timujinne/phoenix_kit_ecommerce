@@ -504,9 +504,16 @@ defmodule PhoenixKitEcommerce.Web.Translations do
   # §4.5): an immediate `Oban.insert/1` would collide with the very
   # uniqueness that keeps the chain single-instance (design §4.3), and a
   # direct call gives instant feedback without touching the scheduled tick.
+  #
+  # `run_manual_tick/0`, NOT `run_tick/0` — owner decision (Fix B): this
+  # operator-initiated path bypasses the `shop_translation_sweep_enabled`
+  # gate, which governs automatic scheduling only. Using `run_tick/0`
+  # here would make this button refuse in exactly the documented
+  # manual-only mode the badge above it advertises. Every other gate (AI
+  # availability, ceiling, target languages) still applies.
   def handle_event("run_sweep_now", _params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
-      {reason, info} = SweepWorker.run_tick()
+      {reason, info} = SweepWorker.run_manual_tick()
 
       {:noreply,
        socket

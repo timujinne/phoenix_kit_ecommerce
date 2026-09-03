@@ -41,14 +41,17 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
   ## What one tick does (design §4.3 step order)
 
     1. Schedule the next tick (`ensure_scheduled/0`).
-    2. Stop, recording why, unless BOTH `shop_translations_enabled` and
-       `shop_translation_sweep_enabled` are on, AND AI is actually usable
-       (`PhoenixKitAI.Translations.available?/0` **and** a resolved
-       default endpoint — `available?/0` alone doesn't confirm the
-       configured endpoint still exists and is enabled). Checking both
-       toggles fresh on every tick (never cached in the job) means a
-       state flipped by direct SQL is honoured immediately, not on the
-       next code deploy.
+    2. Stop, recording why, unless `shop_translations_enabled` is on AND
+       AI is actually usable (`PhoenixKitAI.Translations.available?/0`
+       **and** a resolved default endpoint — `available?/0` alone doesn't
+       confirm the configured endpoint still exists and is enabled). The
+       SCHEDULED tick (`run_tick/0`) additionally requires
+       `shop_translation_sweep_enabled` — the manual "Запустить сверку"
+       button (`run_manual_tick/0`) does not, by owner decision: that
+       setting gates automatic scheduling only. Checking every toggle
+       fresh on every tick (never cached in the job) means a state
+       flipped by direct SQL is honoured immediately, not on the next
+       code deploy.
     3. Stop, recording why, if the shop's incomplete `TranslateWorker`
        jobs (`available`/`scheduled`/`executing`/`retryable` — the same
        four states `PhoenixKitAI.Translations` dedups against; a
@@ -186,11 +189,11 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
 
   @doc """
   The tick's body, with the scheduling step removed — this is what
-  `perform/1` runs after scheduling its successor, and what the
-  management page's "Запустить сверку" button (next task) calls directly
-  for immediate feedback without disturbing the scheduled tick (an
-  Oban-inserted immediate job would just collide with the same
-  uniqueness that keeps the chain single-instance).
+  `perform/1` runs after scheduling its successor. This is the
+  AUTOMATIC path: it stops (`:sweep_disabled`) when
+  `shop_translation_sweep_enabled` is off, exactly as before. The
+  management page's "Запустить сверку" button calls `run_manual_tick/0`
+  below instead, not this function.
 
   Returns `{reason, info}` — `reason` is one of `:translations_disabled`,
   `:sweep_disabled`, `:ai_unavailable`, `:ceiling_reached`,
@@ -199,12 +202,32 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
   flight). Every outcome is also persisted — see `last_run/0`.
   """
   @spec run_tick() :: {atom(), map()}
-  def run_tick do
+  def run_tick, do: run_tick(bypass_sweep_gate?: false)
+
+  @doc """
+  Manual twin of `run_tick/0`, for the management page's "Запустить
+  сверку" button — called directly for immediate feedback, without
+  disturbing the scheduled tick (an Oban-inserted immediate job would
+  just collide with the same uniqueness that keeps the chain
+  single-instance).
+
+  Owner decision overriding design §4.5 as written: `shop_translation_sweep_enabled`
+  gates AUTOMATIC scheduling only. An operator-initiated run performs
+  the tick's work regardless of that setting — the documented
+  manual-only mode (badge: "Automatic sweep: off (manual only)") would
+  otherwise make its own "Run sweep" button refuse to run. Every OTHER
+  gate (AI availability, the in-flight ceiling, target languages) still
+  applies exactly as it does for the scheduled tick.
+  """
+  @spec run_manual_tick() :: {atom(), map()}
+  def run_manual_tick, do: run_tick(bypass_sweep_gate?: true)
+
+  defp run_tick(bypass_sweep_gate?: bypass?) do
     cond do
       not SweepSettings.translations_enabled?() ->
         finish(:translations_disabled)
 
-      not SweepSettings.sweep_enabled?() ->
+      not bypass? and not SweepSettings.sweep_enabled?() ->
         finish(:sweep_disabled)
 
       not ai_available?() ->

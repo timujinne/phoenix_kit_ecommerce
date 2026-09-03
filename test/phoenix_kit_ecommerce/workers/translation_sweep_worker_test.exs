@@ -397,6 +397,58 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
     end
   end
 
+  # -- run_manual_tick/0: manual "Запустить сверку" bypasses the sweep gate,
+  # nothing else (Fix B, owner decision overriding design §4.5) ---------
+
+  describe "run_manual_tick/0" do
+    test "runs the work even when shop_translation_sweep_enabled is off" do
+      Settings.update_boolean_setting_with_module("shop_translations_enabled", true, "shop")
+      setup_ai!()
+      enable_languages!(["en", "de"])
+      refute Settings.get_boolean_setting("shop_translation_sweep_enabled", false)
+
+      product = create_product()
+
+      assert {:ok, %{enqueued: 1}} = TranslationSweepWorker.run_manual_tick()
+      jobs = translate_jobs()
+      assert Enum.any?(jobs, &(&1.args["resource_uuid"] == product.uuid))
+      assert TranslationSweepWorker.last_run()["reason"] == "ok"
+    end
+
+    test "the scheduled run_tick/0 still refuses under the same settings (only the manual path bypasses the gate)" do
+      Settings.update_boolean_setting_with_module("shop_translations_enabled", true, "shop")
+      setup_ai!()
+      enable_languages!(["en", "de"])
+      refute Settings.get_boolean_setting("shop_translation_sweep_enabled", false)
+
+      assert {:sweep_disabled, _} = TranslationSweepWorker.run_tick()
+    end
+
+    test "translations disabled ⇒ still stops (the sweep gate is the ONLY one bypassed)" do
+      assert {:translations_disabled, _} = TranslationSweepWorker.run_manual_tick()
+      assert TranslationSweepWorker.last_run()["reason"] == "translations_disabled"
+      assert translate_jobs() == []
+    end
+
+    test "AI unavailable ⇒ still stops" do
+      Settings.update_boolean_setting_with_module("shop_translations_enabled", true, "shop")
+
+      assert {:ai_unavailable, _} = TranslationSweepWorker.run_manual_tick()
+    end
+
+    test "ceiling already reached ⇒ still stops, in_flight reported" do
+      Settings.update_boolean_setting_with_module("shop_translations_enabled", true, "shop")
+      setup_ai!()
+      enable_languages!(["en", "de"])
+      Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
+
+      product = create_product()
+      seed_translate_job(AITranslatable.resource_type(), product.uuid, "de")
+
+      assert {:ceiling_reached, %{in_flight: 1}} = TranslationSweepWorker.run_manual_tick()
+    end
+  end
+
   # -- run_tick/0: candidate selection + enqueueing --------------------
 
   describe "run_tick/0 candidate selection" do
