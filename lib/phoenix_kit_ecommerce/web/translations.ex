@@ -971,8 +971,19 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     }
 
     case PhoenixKitAI.Translations.enqueue_all_missing(base, langs) do
-      {:ok, %{enqueued: n, conflicts: c}} -> {enq + n, conf + c, errs}
-      {:error, reason} -> {enq, conf, [{uuid, reason} | errs]}
+      # Per-language failures arrive INSIDE the ok tuple (`enqueue/1`
+      # refused one language, or Oban rejected its insert). Dropping them
+      # would report a bulk action whose every insert failed as
+      # "0 jobs queued" — indistinguishable from "nothing needed doing",
+      # on the operator's primary entry point. Same fold the sweep tick
+      # does (`TranslationSweepWorker.enqueue_one/6`); tolerant `Map.get`
+      # because phoenix_kit_ai is an optional dep with a `~> 0.18` floor.
+      {:ok, %{enqueued: n, conflicts: c} = result} ->
+        lang_errors = Enum.map(Map.get(result, :errors, []), &{uuid, &1})
+        {enq + n, conf + c, lang_errors ++ errs}
+
+      {:error, reason} ->
+        {enq, conf, [{uuid, reason} | errs]}
     end
   end
 
