@@ -27,8 +27,19 @@ defmodule PhoenixKitEcommerce.AITranslatable do
   lock — the exact lost-update race this adapter must prevent.
 
   Slug uniqueness within the language is checked app-side (suffix on
-  collision); there is no DB unique constraint on the JSONB slug map (core
-  migration v47 dropped it), so the check is best-effort across rows.
+  collision), not by asking the database to reject a collision: this
+  comment used to say there was no DB constraint to ask (core migration
+  v47 dropped it), which is no longer true. V171 added back a real one —
+  a `phoenix_kit_shop_product_slugs` projection table (trigger-maintained)
+  whose pkey is `unique_constraint(:slug, name:
+  "phoenix_kit_shop_product_slugs_pkey")` in `Product.changeset/2`
+  (mirrored for categories, design §4.2). This adapter still probes
+  app-side rather than relying on that constraint and catching the error —
+  changing that is out of scope here, but the probe is correctly described
+  as best-effort now for a different reason: it checks by full language
+  code (`"de-DE"`) while the projection buckets by base language (`"de"`),
+  so it can race a sibling dialect it never queried, not because nothing
+  in the database would catch the collision.
 
   ## Staleness / write-narrowing (design §4.1, §4.4)
 

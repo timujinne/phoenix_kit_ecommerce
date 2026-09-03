@@ -504,7 +504,11 @@ defmodule PhoenixKitEcommerce do
   `PhoenixKitAI.Translatables`).
   """
   def ai_translatables do
-    [{PhoenixKitEcommerce.AITranslatable.resource_type(), PhoenixKitEcommerce.AITranslatable}]
+    [
+      {PhoenixKitEcommerce.AITranslatable.resource_type(), PhoenixKitEcommerce.AITranslatable},
+      {PhoenixKitEcommerce.CategoryAITranslatable.resource_type(),
+       PhoenixKitEcommerce.CategoryAITranslatable}
+    ]
   end
 
   # ============================================
