@@ -61,13 +61,45 @@ defmodule PhoenixKitEcommerce.Web.Translations do
       would never pick up on its own.
     * **stamp** ("проштамповать") — `stamp_reference/4`, no model call.
 
+  ## Catalogue-wide stamp / reset (Fix D)
+
+  Every verb above reads its `uuids` off the bulk-select click payload,
+  which `BulkSelectScope` can only ever populate from the rows currently
+  in the DOM — one `@per_page` page (see
+  `PhoenixKitWeb.Components.Core.BulkSelect`'s own moduledoc: "purely
+  client-side"). Design §1's requirement — no capability the interface
+  can't reach — is violated by that alone for the §4.1 rollout: stamping
+  634 existing resources as reference 25 rows at a time is not a
+  capability an admin will ever actually use; the only route that could
+  do it in one shot was the CLI task, which no admin sees.
+
+  `request_stamp_all` / `request_reset_all` fix that by NOT depending on
+  any client-side selection at all. `matching_rows/1` re-queries every
+  resource the CURRENT filter (type/category/lang/state/field/search)
+  matches, across every page — the same function `load_data/1` uses to
+  build the table, so the confirmation modal's resource count can never
+  drift from what the table itself would show if it had no pagination.
+  They go through the identical request → confirm two-phase flow as
+  every other verb here (`open_pending_all/2` -> `@pending` ->
+  `<.confirm_modal>` -> `do_confirm/2`).
+
+  Deliberately just these two verbs, not a catalogue-wide "translate":
+  `stamp_reference/4` and `reset_reference/3` are metadata-only writes
+  (no model call, no Oban job) — cheap and safe to run over the whole
+  filtered set. A catalogue-wide TRANSLATE would enqueue a real
+  `TranslateWorker` job per candidate language, and design §13 is
+  explicit that a run of that size (1330 jobs at full catalogue scope,
+  design §8) happens only by the owner's own separate decision, never as
+  a button on this page.
+
   ## What is deliberately NOT here
 
   Per-field JOB scoping (design §12.2 rejected `resource_scope` for
   exactly this reason) — the field axis only narrows what gets WRITTEN
   (`put_translation/4`'s write-narrowing) and, for retranslate/stamp,
   what gets touched in `metadata`. A "translate" job always asks the
-  model for every non-empty field.
+  model for every non-empty field. Also not here: a catalogue-wide
+  "translate" button — see the section above.
   """
 
   use PhoenixKitEcommerce.Web, :live_view
@@ -210,25 +242,19 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     type = socket.assigns.type_filter
     fields = fields_for_type(type)
 
+    socket =
+      socket
+      |> assign(:source_lang, source_lang)
+      |> assign(:target_langs, target_langs)
+      |> assign(:fields, fields)
+
     {rows, total} =
-      type
-      |> fetch_resources(socket.assigns.category_filter, socket.assigns.search)
-      |> Enum.map(&build_row(&1, type, source_lang, target_langs, fields))
-      |> Enum.filter(
-        &row_matches?(
-          &1,
-          socket.assigns.lang_filter,
-          socket.assigns.state_filter,
-          socket.assigns.field_filter
-        )
-      )
+      socket
+      |> matching_rows()
       |> Enum.sort_by(& &1.title)
       |> paginate(socket.assigns.page)
 
     socket
-    |> assign(:source_lang, source_lang)
-    |> assign(:target_langs, target_langs)
-    |> assign(:fields, fields)
     |> assign(:rows, rows)
     |> assign(:total, total)
     |> assign(:coverage, load_coverage(source_lang, target_langs))
@@ -237,6 +263,38 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     |> assign(:sweep_settings, load_sweep_settings())
     |> assign(:prompt_sync, load_prompt_sync())
     |> assign(:diagnostics, recent_shop_requests(20))
+  end
+
+  # Fix D: the single source of truth for "every resource the CURRENT
+  # filter matches" — every field of the filter (type/category/lang/
+  # state/field/search), unpaginated. `load_data/1` sorts and slices this
+  # for the table; `open_pending_all/2` uses the SAME list, unsliced, so
+  # the catalogue-wide confirmation can never disagree with what the
+  # table would show if it had no pagination. Requires `:source_lang`,
+  # `:target_langs`, and `:fields` already assigned (both call sites
+  # assign them before calling this).
+  defp matching_rows(socket) do
+    type = socket.assigns.type_filter
+
+    type
+    |> fetch_resources(socket.assigns.category_filter, socket.assigns.search)
+    |> Enum.map(
+      &build_row(
+        &1,
+        type,
+        socket.assigns.source_lang,
+        socket.assigns.target_langs,
+        socket.assigns.fields
+      )
+    )
+    |> Enum.filter(
+      &row_matches?(
+        &1,
+        socket.assigns.lang_filter,
+        socket.assigns.state_filter,
+        socket.assigns.field_filter
+      )
+    )
   end
 
   defp fields_for_type("category"), do: Translations.category_fields() -- [:slug]
@@ -555,6 +613,20 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     end)
   end
 
+  # Fix D: catalogue-wide stamp / reset — every resource the CURRENT
+  # filter matches, not the current page's bulk-select. See the
+  # moduledoc's "Catalogue-wide stamp / reset" section. No `scope` suffix
+  # (unlike the verbs above): the lang/field scope here comes from the
+  # page's OWN filter selects, not from a separate bulk-toolbar dropdown,
+  # so there is nothing to smuggle into the event name.
+  def handle_event("request_stamp_all", _params, socket) do
+    Authz.authorize(socket, :manage_settings, fn -> open_pending_all(socket, :stamp_all) end)
+  end
+
+  def handle_event("request_reset_all", _params, socket) do
+    Authz.authorize(socket, :manage_settings, fn -> open_pending_all(socket, :reset_all) end)
+  end
+
   # "Остановить переводы" (design §4.5): cancels every incomplete
   # `TranslateWorker` job for this shop's resource types, INCLUDING
   # `executing` — `Oban.cancel_all_jobs/1` signals a running job to stop;
@@ -768,6 +840,33 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     {:noreply, assign(socket, :pending, pending)}
   end
 
+  # Fix D — the catalogue-wide counterpart to `open_pending/4` above.
+  # `uuids` comes from `matching_rows/1` (every page the current filter
+  # matches), not from a client payload, so there is no `scope` to parse:
+  # the lang/field narrowing is whatever the page's own filter selects
+  # already say (`@lang_filter` / `@field_filter`), same as `bulk_stamp/4`
+  # and `bulk_reset_reference/4` already read for the page-scoped verbs.
+  # An empty match (nothing to stamp/reset under the current filter)
+  # never opens the modal — mirrors `open_pending/4`'s own empty-uuids
+  # no-op, and the buttons' own `disabled={@total == 0}`.
+  defp open_pending_all(socket, verb) do
+    case socket |> matching_rows() |> Enum.map(& &1.uuid) do
+      [] ->
+        {:noreply, socket}
+
+      uuids ->
+        pending = %{
+          verb: verb,
+          uuids: uuids,
+          lang: socket.assigns.lang_filter,
+          field: socket.assigns.field_filter,
+          count: length(uuids)
+        }
+
+        {:noreply, assign(socket, :pending, pending)}
+    end
+  end
+
   # `"all"` (or any value that fails the whitelist) collapses to `nil`,
   # meaning "every configured target language" / "every field of this
   # resource type" — never `String.to_existing_atom/1` on the raw field
@@ -914,6 +1013,55 @@ defmodule PhoenixKitEcommerce.Web.Translations do
      |> load_data()}
   end
 
+  # Fix D — same write as `:stamp` above, just over the catalogue-wide
+  # `uuids` `open_pending_all/2` computed (every page, not the one
+  # bulk-select could see). Reuses `bulk_stamp/4` itself, so the actual
+  # write path is identical to the page-scoped verb; only the uuid list's
+  # origin differs.
+  defp do_confirm(socket, %{verb: :stamp_all, uuids: uuids, lang: lang, field: field}) do
+    count = bulk_stamp(socket, uuids, lang, field)
+
+    {:noreply,
+     socket
+     |> assign(:pending, nil)
+     |> put_flash(
+       :info,
+       ngettext(
+         "Stamped %{count} resource as reference, across every matching page.",
+         "Stamped %{count} resources as reference, across every matching page.",
+         count,
+         count: count
+       )
+     )
+     |> load_data()}
+  end
+
+  # Fix D — resets the reference only (`reset_reference/3`), no enqueue.
+  # Distinct from `:retranslate` on purpose: a catalogue-wide action that
+  # ALSO enqueued a `TranslateWorker` job per resource/language would
+  # reproduce the very "1330-job blast" design §13 reserves for an
+  # explicit owner decision, never a page button. A reset field reads
+  # `:unknown` afterward (design §4.4) — the sweep leaves it alone
+  # (design §4.1: sweep never auto-queues `:unknown`) until an operator
+  # explicitly stamps or translates it, same as any other `:unknown` row.
+  defp do_confirm(socket, %{verb: :reset_all, uuids: uuids, lang: lang, field: field}) do
+    count = bulk_reset_reference(socket, uuids, lang, field)
+
+    {:noreply,
+     socket
+     |> assign(:pending, nil)
+     |> put_flash(
+       :info,
+       ngettext(
+         "Reset the reference for %{count} resource, across every matching page.",
+         "Reset the reference for %{count} resources, across every matching page.",
+         count,
+         count: count
+       )
+     )
+     |> load_data()}
+  end
+
   defp bulk_translate(socket, uuids, lang_filter) do
     adapter = adapter_for(socket.assigns.type_filter)
 
@@ -1017,6 +1165,20 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
     Enum.count(uuids, fn uuid ->
       match?({:ok, _}, adapter.stamp_reference(uuid, source_lang, target_langs, fields))
+    end)
+  end
+
+  # Fix D's `:reset_all` write path — `reset_reference/3` only, no
+  # enqueue. Mirrors `bulk_stamp/4` exactly (same lang/field narrowing),
+  # minus `source_lang` (`reset_reference/3` doesn't hash anything, so it
+  # never needs it).
+  defp bulk_reset_reference(socket, uuids, lang_filter, field_filter) do
+    adapter = adapter_for(socket.assigns.type_filter)
+    target_langs = if lang_filter, do: [lang_filter], else: socket.assigns.target_langs
+    fields = if field_filter, do: [field_filter], else: socket.assigns.fields
+
+    Enum.count(uuids, fn uuid ->
+      match?({:ok, _}, adapter.reset_reference(uuid, target_langs, fields))
     end)
   end
 
@@ -1372,6 +1534,54 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     }
   end
 
+  # Fix D — catalogue-wide counterparts of the two clauses above. `count`
+  # comes straight off `@pending` (`open_pending_all/2` set it from
+  # `matching_rows/1`'s FULL, unpaginated result), so this states the
+  # real affected total, never the page's 25 — exactly what Fix D asked
+  # for. `scope_messages/1` already reads `pending[:lang]`/`[:field]`
+  # generically, so it needs no changes to cover these two verbs.
+  defp pending_modal(%{pending: %{verb: :stamp_all, count: count}} = assigns) do
+    %{
+      title: gettext("Stamp every matching resource as reference?"),
+      prompt:
+        ngettext(
+          "Mark the current source text as the reference translation for %{count} resource matching the filters above — every page, not just the one shown. No model call; existing translations are kept as-is.",
+          "Mark the current source text as the reference translation for %{count} resources matching the filters above — every page, not just the one shown. No model call; existing translations are kept as-is.",
+          count,
+          count: count
+        ),
+      messages:
+        [
+          {:warning,
+           gettext(
+             "A translation whose source has changed since (\"stale\") is accepted as up to date too — the sweep will stop picking it up until its reference is reset."
+           )}
+        ] ++ scope_messages(assigns),
+      danger: false
+    }
+  end
+
+  defp pending_modal(%{pending: %{verb: :reset_all, count: count}} = assigns) do
+    %{
+      title: gettext("Reset the reference for every matching resource?"),
+      prompt:
+        ngettext(
+          "Clear the stored reference for %{count} resource matching the filters above — every page, not just the one shown. The existing translation is kept as-is; the pair reads as \"unknown\" until it's stamped or translated again.",
+          "Clear the stored reference for %{count} resources matching the filters above — every page, not just the one shown. The existing translation is kept as-is; the pair reads as \"unknown\" until it's stamped or translated again.",
+          count,
+          count: count
+        ),
+      messages:
+        [
+          {:warning,
+           gettext(
+             "This does not queue any translation — it only clears the reference. The automatic sweep never picks up an \"unknown\" pair on its own."
+           )}
+        ] ++ scope_messages(assigns),
+      danger: true
+    }
+  end
+
   # Design §4.5 wants the confirmation to name "число ресурсов, языков и
   # оценку" — the resource count is in the prompt above, the estimate in
   # `estimate_messages/1`; this spells out WHICH languages (and which
@@ -1611,6 +1821,37 @@ defmodule PhoenixKitEcommerce.Web.Translations do
               <input type="text" name="search" value={@search} placeholder={gettext("Search...")} class="input w-full" phx-debounce="300" />
             </form>
           </div>
+        </div>
+      </div>
+
+      <%!-- Catalogue-wide actions (Fix D): apply to EVERY resource the
+           filters above match, not just the current page — @total is
+           already the full, unpaginated count `matching_rows/1`
+           computes, the same number the confirmation modal below will
+           state. --%>
+      <div class="flex flex-wrap items-center justify-between gap-3 bg-base-200 rounded-lg px-4 py-3 mb-4" id="catalogue-wide-actions">
+        <p class="text-sm text-base-content/70 m-0">
+          {gettext("Applies to every resource matching the filters above — %{count} match right now, across every page.", count: @total)}
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            id="stamp-all-matching"
+            class="btn btn-sm btn-outline"
+            phx-click="request_stamp_all"
+            disabled={@total == 0}
+          >
+            {gettext("Stamp all matching as reference")}
+          </button>
+          <button
+            type="button"
+            id="reset-all-matching"
+            class="btn btn-sm btn-outline btn-warning"
+            phx-click="request_reset_all"
+            disabled={@total == 0}
+          >
+            {gettext("Reset reference for all matching")}
+          </button>
         </div>
       </div>
 

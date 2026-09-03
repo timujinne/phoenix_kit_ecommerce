@@ -419,6 +419,163 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
   end
 
   # ============================================================
+  # Catalogue-wide stamp / reset (Fix D) — apply to EVERY resource the
+  # current filter matches, not just the page `BulkSelectScope` can see.
+  # `@per_page` is 25, so every test here seeds 30 matching products
+  # specifically to put resources on a second page.
+  # ============================================================
+
+  describe "catalogue-wide stamp / reset" do
+    setup %{conn: conn} do
+      ready!()
+      {:ok, conn: put_test_scope(conn, fake_scope())}
+    end
+
+    # Titles sort so product 30 lands on page 2 (rows are sorted by
+    # title, page size 25) — this is the one whose fate proves whether
+    # the action really reached past the first page.
+    defp seed_primed_products(count) do
+      for n <- 1..count do
+        product = create_product(%{title: %{"en" => "Sortable Product #{pad(n)}"}})
+
+        {:ok, primed} =
+          product
+          |> Ecto.Changeset.change(%{title: Map.put(product.title, "de", "Vorhandene #{pad(n)}")})
+          |> repo().update()
+
+        primed
+      end
+    end
+
+    defp pad(n), do: String.pad_leading(Integer.to_string(n), 2, "0")
+
+    # Real (non-empty, model-produced-looking) translations, one per
+    # product with a unique target title — `Category.changeset/2`'s /
+    # the product path's slug generation would collide two products on
+    # an identical translated title otherwise.
+    defp translate_all!(products) do
+      products
+      |> Enum.with_index(1)
+      |> Enum.each(fn {product, n} ->
+        {:ok, _} =
+          AITranslatable.put_translation(product, "de", %{"title" => "Vorhandene #{pad(n)}"},
+            source_fields: %{"title" => "Sortable Product #{pad(n)}"}
+          )
+      end)
+    end
+
+    test "request_stamp_all states the true catalogue-wide count, not the page size", %{
+      conn: conn
+    } do
+      seed_primed_products(30)
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      html = render_click(view, "request_stamp_all", %{})
+
+      assert html =~ "Stamp every matching resource as reference?"
+      assert html =~ "30 resources matching the filters above"
+      refute html =~ "25 resources matching the filters above"
+    end
+
+    test "confirm stamps every matching resource, including ones past the first page", %{
+      conn: conn
+    } do
+      products = seed_primed_products(30)
+      last = List.last(products)
+
+      assert TranslationFingerprint.get(last.metadata, "de", "title") == nil
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      render_click(view, "request_stamp_all", %{})
+      html = confirm!(view)
+
+      assert html =~ "Stamped 30 resources"
+
+      reloaded_last = Shop.get_product!(last.uuid)
+      assert TranslationFingerprint.get(reloaded_last.metadata, "de", "title") != nil
+      assert reloaded_last.title["de"] == "Vorhandene 30"
+
+      # Every one of the 30 got stamped, not merely the 25 a page could show.
+      assert products
+             |> Enum.map(&Shop.get_product!(&1.uuid))
+             |> Enum.all?(&(TranslationFingerprint.get(&1.metadata, "de", "title") != nil))
+
+      # No model call anywhere in this — stamping is metadata-only.
+      assert translate_jobs() == []
+    end
+
+    test "request_reset_all states the true catalogue-wide count, not the page size", %{
+      conn: conn
+    } do
+      products = seed_primed_products(30)
+      translate_all!(products)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      html = render_click(view, "request_reset_all", %{})
+
+      assert html =~ "Reset the reference for every matching resource?"
+      assert html =~ "30 resources matching the filters above"
+      refute html =~ "25 resources matching the filters above"
+    end
+
+    test "confirm resets the reference on every matching resource, including ones past the first page",
+         %{conn: conn} do
+      products = seed_primed_products(30)
+      translate_all!(products)
+
+      last = List.last(products)
+      reloaded_last_before = Shop.get_product!(last.uuid)
+      assert TranslationFingerprint.get(reloaded_last_before.metadata, "de", "title") != nil
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      render_click(view, "request_reset_all", %{})
+      html = confirm!(view)
+
+      assert html =~ "Reset the reference for 30 resources"
+
+      reloaded_last = Shop.get_product!(last.uuid)
+      assert TranslationFingerprint.get(reloaded_last.metadata, "de", "title") == nil
+      # The translation itself is untouched — only the reference is cleared.
+      assert reloaded_last.title["de"] == "Vorhandene 30"
+
+      # Every one of the 30 was reset, not merely the 25 a page could show.
+      assert products
+             |> Enum.map(&Shop.get_product!(&1.uuid))
+             |> Enum.all?(&(TranslationFingerprint.get(&1.metadata, "de", "title") == nil))
+
+      # No model call anywhere in this — reset is metadata-only.
+      assert translate_jobs() == []
+    end
+
+    test "an empty match never opens the confirm modal", %{conn: conn} do
+      {:ok, view, html} = live(conn, "/en/admin/shop/translations")
+
+      refute html =~ "Stamp every matching resource as reference?"
+
+      html = render_click(view, "request_stamp_all", %{})
+
+      refute html =~ "Stamp every matching resource as reference?"
+    end
+
+    test "denied without shop.manage_settings", %{conn: conn} do
+      products = seed_primed_products(2)
+      conn = put_test_scope(conn, fake_scope(permissions: ["shop", "shop.manage_catalog"]))
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      html = render_click(view, "request_stamp_all", %{})
+
+      assert html =~ "You don&#39;t have permission to do that"
+
+      assert products
+             |> Enum.map(&Shop.get_product!(&1.uuid))
+             |> Enum.all?(&(TranslationFingerprint.get(&1.metadata, "de", "title") == nil))
+    end
+  end
+
+  # ============================================================
   # Stop translations — cancels this shop's jobs only
   # ============================================================
 
