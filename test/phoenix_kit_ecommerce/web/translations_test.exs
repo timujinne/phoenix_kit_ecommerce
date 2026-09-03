@@ -241,6 +241,35 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       assert [%{args: %{"target_lang" => "de"}}] = jobs
     end
 
+    test "the estimate counts what will actually be queued, not only the filtered field's work",
+         %{conn: conn} do
+      # Design §4.4: the field axis never narrows a translate JOB ("на
+      # состав задания он не влияет") — it only narrows what the write
+      # step touches. So the confirmation's "≈N model calls" has to count
+      # languages exactly as `candidate_langs/5` does, over EVERY field.
+      # Here :title is already :fresh for "de" while :description is still
+      # :missing, so a `field=title` scope must still own up to the one
+      # call it is about to buy — an estimate that says nothing and then
+      # queues a real model call is a confirmation that lied about money.
+      product = create_product()
+
+      {:ok, translated} =
+        AITranslatable.put_translation(product, "de", %{"title" => "Holzvase"},
+          source_fields: %{"title" => "Wooden Vase"}
+        )
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      html = render_click(view, "request_translate:de:title", %{"uuids" => [translated.uuid]})
+
+      assert html =~ "1 model call"
+      # ...and the scope line must not claim the job is limited to :title.
+      assert html =~ "all fields"
+
+      confirm!(view)
+      assert length(jobs_for(translated.uuid)) == 1
+    end
+
     test "a resource with every language already :fresh queues nothing", %{conn: conn} do
       # No `description` source at all — otherwise it would sit :missing
       # for "de"/"fr" and keep BOTH languages legitimate candidates, which
@@ -611,6 +640,34 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
 
       assert html =~ "Sweep ran"
       assert jobs_for(product.uuid) != []
+    end
+
+    test "a tick whose enqueues all failed says so in the flash, not just \"0 queued\"", %{
+      conn: conn
+    } do
+      # The immediate-flash twin of the persisted-summary test below, and
+      # provoked through a door an operator can actually open rather than
+      # by writing the outcome by hand: the AI section's explicit endpoint
+      # override left pointing at something that isn't a uuid.
+      # `default_endpoint_uuid/0` hands that value back verbatim, so both
+      # this page and the tick still consider AI available, while
+      # `enqueue_all_missing/2` refuses every language with
+      # `{:invalid_uuids, [:endpoint_uuid]}`. The tick then records
+      # `enqueued: 0, errors: 1` — which, unsurfaced, reads exactly like
+      # "nothing needed doing".
+      Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", true, "shop")
+      {:ok, _} = Settings.update_setting_with_module("ai_translation_endpoint_uuid", "nope", "ai")
+      product = create_product()
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+      html = render_click(view, "run_sweep_now", %{})
+
+      # The FLASH specifically — its wording ("queued." + count) is
+      # distinct from the persisted "Last tick" line rendered in
+      # `#sweep-last-run`, so this can't pass on that line's back.
+      assert html =~ "Sweep ran"
+      assert html =~ "0 jobs queued. 1 enqueue error."
+      assert jobs_for(product.uuid) == []
     end
 
     test "a tick that recorded enqueue errors shows the count, not just the queued total", %{

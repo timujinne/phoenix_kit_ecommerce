@@ -759,32 +759,55 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     length(langs)
   end
 
-  defp langs_needing_work(row, lang, field, :translate) do
+  # The field filter is deliberately NOT consulted here: `candidate_langs/5`,
+  # which decides what `do_confirm/2` actually enqueues, folds over EVERY
+  # field (design §4.4 — the field axis never narrows a translate job).
+  # Counting only the filtered field would under-report the calls this
+  # confirmation is about to buy, down to showing no estimate at all for a
+  # selection that then queues real work.
+  defp langs_needing_work(row, lang, _field, :translate) do
     langs = if lang, do: [lang], else: Map.keys(row.states)
 
     Enum.count(langs, fn l ->
-      field_states = Map.get(row.states, l, %{})
-      fields = if field, do: [field], else: Map.keys(field_states)
-      Enum.any?(fields, fn f -> Map.get(field_states, f) in [:missing, :stale] end)
+      row.states
+      |> Map.get(l, %{})
+      |> Map.values()
+      |> Enum.any?(&(&1 in [:missing, :stale]))
     end)
   end
 
   defp do_confirm(socket, %{verb: :stop}) do
-    {:ok, count} = cancel_pending_translation_jobs()
+    socket = assign(socket, :pending, nil)
 
-    {:noreply,
-     socket
-     |> assign(:pending, nil)
-     |> put_flash(
-       :info,
-       ngettext(
-         "Cancelled %{count} pending translation job.",
-         "Cancelled %{count} pending translation jobs.",
-         count,
-         count: count
-       )
-     )
-     |> load_data()}
+    case cancel_pending_translation_jobs() do
+      {:ok, count} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           ngettext(
+             "Cancelled %{count} pending translation job.",
+             "Cancelled %{count} pending translation jobs.",
+             count,
+             count: count
+           )
+         )
+         |> load_data()}
+
+      # Design §1: "cancelled 0 jobs" and "the cancel itself failed" are
+      # different facts, and this is the button an operator reaches for
+      # when a confirmed full run (1330 jobs, design §8) is spending money
+      # it shouldn't. Reporting the second as the first would leave them
+      # believing the queue was stopped while it drains at 45s a call.
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :error,
+           gettext("Couldn't stop the translation queue — nothing was cancelled. Try again.")
+         )
+         |> load_data()}
+    end
   end
 
   defp do_confirm(socket, %{verb: :translate, uuids: uuids, lang: lang}) do
@@ -985,9 +1008,9 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
     Oban.cancel_all_jobs(query)
   rescue
-    _ -> {:ok, 0}
+    error -> {:error, error}
   catch
-    :exit, _ -> {:ok, 0}
+    :exit, reason -> {:error, reason}
   end
 
   # ============================================================
@@ -1268,11 +1291,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
         lang -> [lang]
       end
 
-    field_part =
-      case pending[:field] do
-        nil -> gettext("all fields")
-        field -> field_label(field)
-      end
+    field_part = field_scope_label(pending[:verb], pending[:field])
 
     [
       {:info,
@@ -1282,6 +1301,14 @@ defmodule PhoenixKitEcommerce.Web.Translations do
        )}
     ]
   end
+
+  # "Translate" always asks the model for every field, whatever the field
+  # filter says (design §4.4) — only the fingerprint verbs ("translate
+  # again" / "stamp") act on the selected field alone, so only they may
+  # name it here.
+  defp field_scope_label(:translate, _field), do: gettext("all fields")
+  defp field_scope_label(_verb, nil), do: gettext("all fields")
+  defp field_scope_label(_verb, field), do: field_label(field)
 
   defp estimate_messages(calls) do
     case call_estimate(calls) do
