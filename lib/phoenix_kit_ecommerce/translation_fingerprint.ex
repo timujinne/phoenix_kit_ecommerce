@@ -366,12 +366,24 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
   # exists AND it no longer matches)) — deliberately silent on `unknown`
   # (fingerprint absent, translation present): that state is excluded by
   # construction, not filtered out afterward.
+  #
+  # "Non-empty" is `blank?/1`'s definition, i.e. non-empty AFTER the same
+  # trim `hash/1` applies — hence `btrim(..., $5)` inside every `nullif`,
+  # not a bare `nullif(x,'')`. A whitespace-only source is blank here
+  # (`field_state/3` returns `nil` for it) but would be non-empty to a
+  # bare `nullif`, and that gap is not cosmetic: such a field would be a
+  # candidate forever. `source_fields/2` drops it before the model ever
+  # sees it, so nothing is written and no fingerprint is ever stamped,
+  # while a sibling field on the same resource still makes the job a real
+  # (paid) model call on every single sweep tick. Same rule on the
+  # translation side, so a whitespace-only translation reads as `:missing`
+  # here exactly as it does in `field_state/3`.
   defp field_clause(field) do
     """
     (
-       nullif(p."#{field}"->>$2,'') IS NOT NULL
+       nullif(btrim(p."#{field}"->>$2, $5),'') IS NOT NULL
        AND (
-         nullif(p."#{field}"->>t.lang,'') IS NULL
+         nullif(btrim(p."#{field}"->>t.lang, $5),'') IS NULL
          OR (
            p.metadata->'#{@metadata_key}'->t.lang->>'#{field}' IS NOT NULL
            AND encode(sha256(convert_to(btrim(p."#{field}"->>$2, $5),'UTF8')),'hex')

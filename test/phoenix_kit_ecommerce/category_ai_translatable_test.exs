@@ -605,6 +605,44 @@ defmodule PhoenixKitEcommerce.CategoryAITranslatableTest do
       assert missing_row.languages == ["de"]
     end
 
+    # design §4.1/§4.3 + TranslationFingerprint.field_state/3, which pins
+    # `field_state("   ", nil, nil) == nil`: a whitespace-only source is
+    # BLANK, so its field has no state and cannot make the resource a
+    # candidate. The SQL has to use the same trim the hash does — with a
+    # bare `nullif(x,'')` this row is a candidate on every tick forever
+    # (`source_fields/2` drops the blank field, so it is never written
+    # and never fingerprinted), and the sibling `name` field keeps the
+    # job a real, paid model call each time.
+    test "a whitespace-only source is blank, not a candidate" do
+      whitespace =
+        create_category(%{name: %{"en" => "Whitespace Src", "de" => "Leerzeichen"}})
+
+      metadata =
+        TranslationFingerprint.put_many(whitespace.metadata, "de", %{
+          "name" => TranslationFingerprint.hash("Whitespace Src")
+        })
+
+      {:ok, whitespace} =
+        whitespace
+        |> Ecto.Changeset.change(%{description: %{"en" => "   "}, metadata: metadata})
+        |> repo().update()
+
+      uuids = MapSet.new(CategoryAITranslatable.candidates("en", ["de"]), & &1.uuid)
+
+      refute MapSet.member?(uuids, whitespace.uuid)
+    end
+
+    test "a whitespace-only translation reads as :missing, exactly as in field_state/3" do
+      whitespace =
+        create_category(
+          Map.merge(@no_other_sources, %{name: %{"en" => "Blank Translation", "de" => "  "}})
+        )
+
+      uuids = MapSet.new(CategoryAITranslatable.candidates("en", ["de"]), & &1.uuid)
+
+      assert MapSet.member?(uuids, whitespace.uuid)
+    end
+
     test "a hidden category is still a candidate — no status filter exists for categories", %{
       hidden_missing: hidden_missing
     } do

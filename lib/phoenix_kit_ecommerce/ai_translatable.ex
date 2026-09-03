@@ -498,7 +498,11 @@ defmodule PhoenixKitEcommerce.AITranslatable do
     end
   end
 
-  # Best-effort per-language uniqueness (no DB constraint on the JSONB map).
+  # Best-effort per-language uniqueness — NOT because the database has no
+  # say (design §4.2: V171's `phoenix_kit_shop_product_slugs` projection
+  # pkey is real; see the moduledoc), but because this probe buckets by
+  # full language code where that pkey buckets by base language, so it can
+  # miss a sibling-dialect collision it never queried.
   defp unique_slug(base, lang, own_uuid), do: unique_slug(base, lang, own_uuid, 0)
 
   defp unique_slug(base, lang, own_uuid, attempt) when attempt < 10 do
