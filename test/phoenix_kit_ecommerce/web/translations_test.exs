@@ -377,6 +377,50 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       assert TranslationFingerprint.get(reloaded.metadata, "de", "title") == nil
       assert TranslationFingerprint.get(reloaded.metadata, "de", "description") != nil
     end
+
+    test "an insert that fails for every language says so instead of \"0 jobs queued\"", %{
+      conn: conn
+    } do
+      # Fix F's third bullet: `retranslate_one/2` folds through the SAME
+      # `enqueue_reduce/8` `translate_one/2` (`bulk_translate/3`) uses —
+      # this pins that a failed enqueue is surfaced through THIS entry
+      # point too, rather than trusting the shared code by inspection
+      # alone. Provoked via the AI section's endpoint override left
+      # pointing at something that isn't a uuid: `enqueue_all_missing/2`
+      # validates `endpoint_uuid` BEFORE looping languages, so this hits
+      # `enqueue_reduce/8`'s `{:error, reason}` clause (one error for the
+      # whole call) rather than its `{:ok, %{errors: [...]}}` per-language
+      # list — commit 12b6f2e's own diff was to the latter, which needs a
+      # language-level failure (not a base-params one) to reach at all,
+      # and `TranslationSweepSettings.languages/0` already strips blank
+      # codes before any language list reaches here, so that branch has
+      # no live trigger through the public UI in either flow — the sweep
+      # tick's own "enqueue errors" tests (`run sweep now` describe) hit
+      # the identical `{:error, reason}` clause for the same reason.
+      # `reset_reference/3` (called first, retranslate's distinguishing
+      # step) still succeeds.
+      product = create_product()
+
+      {:ok, translated} =
+        AITranslatable.put_translation(product, "de", %{"title" => "Holzvase"},
+          source_fields: %{"title" => "Wooden Vase"}
+        )
+
+      {:ok, _} = Settings.update_setting_with_module("ai_translation_endpoint_uuid", "nope", "ai")
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+      render_click(view, "request_retranslate:de:title", %{"uuids" => [translated.uuid]})
+      html = confirm!(view)
+
+      assert html =~ "0 jobs queued"
+      assert html =~ "1 failed"
+      assert jobs_for(translated.uuid) == []
+
+      # And the fingerprint reset (this verb's whole point) still landed
+      # even though the enqueue that was meant to follow it failed.
+      reloaded = Shop.get_product!(translated.uuid)
+      assert TranslationFingerprint.get(reloaded.metadata, "de", "title") == nil
+    end
   end
 
   # ============================================================
@@ -1137,6 +1181,52 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
 
       assert html =~ "You don&#39;t have permission to do that"
       assert jobs_for(product.uuid) == []
+    end
+
+    test "the persisted 'Last tick' line translates a non-:ok reason instead of showing the raw atom",
+         %{conn: conn} do
+      # Fix F: `last_run_summary/1` special-cased only `"ok"` and
+      # `"sweep_stalled"` — every OTHER stored reason
+      # (`:translations_disabled`, `:sweep_disabled`, `:ai_unavailable`,
+      # `:ceiling_reached`, `:no_target_languages`) fell through to a
+      # bare `reason` return, so the "Last tick" span rendered the raw
+      # persisted atom string verbatim ("Last tick: ceiling_reached")
+      # while `sweep_result_message/2` — reachable from the very same
+      # page, via the manual-run flash — already had a full, translated
+      # sentence for that exact reason. Provoked the same way the manual
+      # flash's own "ceiling" test provokes it (two in-flight jobs, a
+      # ceiling that matches), but asserting on the PERSISTED line
+      # `#sweep-last-run` renders on a plain, un-clicked page load, not
+      # the flash a click produces.
+      product = create_product()
+
+      for lang <- ["de", "fr"] do
+        {:ok, _job} =
+          %{
+            "resource_type" => AITranslatable.resource_type(),
+            "resource_uuid" => product.uuid,
+            "endpoint_uuid" => Ecto.UUID.generate(),
+            "prompt_uuid" => Ecto.UUID.generate(),
+            "source_lang" => "en",
+            "target_lang" => lang,
+            "actor_uuid" => nil,
+            "resource_scope" => nil
+          }
+          |> PhoenixKitAI.TranslateWorker.new()
+          |> Oban.insert()
+      end
+
+      {:ok, _} =
+        Settings.update_setting_with_module("shop_translation_max_in_flight", "2", "shop")
+
+      {:ceiling_reached, _info} = SweepWorker.run_manual_tick()
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/translations")
+
+      assert SweepWorker.last_run()["reason"] == "ceiling_reached"
+      assert html =~ "Last tick:"
+      assert html =~ "2 jobs already in flight (at the ceiling)"
+      refute html =~ "Last tick: ceiling_reached"
     end
   end
 

@@ -2013,5 +2013,37 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     )
   end
 
-  defp last_run_summary(%{"reason" => reason}), do: reason
+  # Fix F: every OTHER stored reason (`:translations_disabled`,
+  # `:sweep_disabled`, `:ai_unavailable`, `:ceiling_reached`,
+  # `:no_target_languages`) used to fall straight through to the bare
+  # `reason` string below — "Last tick: ceiling_reached" — even though
+  # `sweep_result_message/2` right above already renders a full,
+  # translated sentence for that exact reason on the manual-run flash.
+  # Reusing it here means a SCHEDULED tick's stop reason (never seen
+  # through a flash, since nobody clicked anything) reads the same
+  # sentence a human clicking "Запустить сверку" into the identical
+  # outcome would see. `"ok"` and `"sweep_stalled"` never reach this
+  # clause — they're matched, and worded for this "Last tick: " context
+  # specifically, above.
+  defp last_run_summary(%{"reason" => reason} = run) do
+    reason
+    |> safe_to_existing_atom()
+    |> Kernel.||(reason)
+    |> sweep_result_message(run_info(run))
+  end
+
+  # Lifts the persisted string-keyed run map into the atom-keyed shape
+  # `sweep_result_message/2`'s clauses pattern-match on. A fixed, known
+  # key set — never a blind `Map.new(fn {k, v} -> {String.to_atom(k), v}
+  # end)` over caller-controlled data.
+  defp run_info(run) do
+    %{
+      enqueued: Map.get(run, "enqueued", 0),
+      errors: Map.get(run, "errors", 0),
+      in_flight: Map.get(run, "in_flight"),
+      batch_size: Map.get(run, "batch_size"),
+      max_in_flight: Map.get(run, "max_in_flight"),
+      target_language_count: Map.get(run, "target_language_count")
+    }
+  end
 end
