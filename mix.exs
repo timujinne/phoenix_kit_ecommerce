@@ -126,6 +126,17 @@ defmodule PhoenixKitEcommerce.MixProject do
       # Optional: only the AI-translate UI/adapter use it, and both compile out
       # when it's absent (see ProductForm's @ai_translate? flag). Version tracks
       # the actual API used (Translatable behaviour, AITranslate components).
+      #
+      # RAISE THIS FLOOR BEFORE THE NEXT HEX RELEASE. The translation prompts
+      # this package rolls out (`AITranslatable`, `CategoryAITranslatable`)
+      # carry their entire source section as `{{SourceFields}}` — a variable
+      # bound only by the phoenix_kit_ai release carrying the translation-control
+      # design's §9.1 change, which 0.19.2 (the newest published today) predates.
+      # An older engine renders `{{SourceFields}}` literally, so every
+      # translation call goes out with an empty SOURCE section: it costs money,
+      # fails to parse, and nothing but a log warning says why. This requirement
+      # must become `~> <first release with §9.1>` when that release lands
+      # (design §6 step 9). Until then the stand pins the fork by path.
       pk_dep(:phoenix_kit_ai, "~> 0.18", optional: true),
 
       # LiveView is needed for the admin and storefront pages.

@@ -137,6 +137,32 @@ defmodule PhoenixKitEcommerce.PromptRolloutTest do
     assert prompt.content == unrelated_content
   end
 
+  test "metadata keys this module does not own survive a rollout" do
+    a = attrs("PR Test Metadata Merge #{unique()}", "Version A {{Name}}")
+    assert {:ok, uuid, :created} = PromptRollout.ensure(a)
+
+    # Someone else stashes a key in the row's general-purpose metadata bag.
+    created = PhoenixKitAI.get_prompt(uuid)
+
+    {:ok, _} =
+      PhoenixKitAI.update_prompt(created, %{
+        metadata: Map.put(created.metadata, "host_note", "keep me")
+      })
+
+    # The unchanged-content path: nothing to write, nothing dropped.
+    assert {:ok, ^uuid, :unchanged} = PromptRollout.ensure(a)
+    assert PhoenixKitAI.get_prompt(uuid).metadata["host_note"] == "keep me"
+
+    # The in-place-update path: our two keys are refreshed, the rest stays.
+    b = %{a | content: "Version B {{Name}}"}
+    assert {:ok, ^uuid, :updated} = PromptRollout.ensure(b)
+
+    after_update = PhoenixKitAI.get_prompt(uuid)
+    assert after_update.metadata["host_note"] == "keep me"
+    assert after_update.metadata["content_sha"] == PromptRollout.content_sha(b.content)
+    assert after_update.metadata["managed_by"] == "phoenix_kit_ecommerce"
+  end
+
   test "a create race (unique violation on name) resolves to one row, not an error" do
     a = attrs("PR Test Race #{unique()}", "Hello {{Name}}")
     parent = self()

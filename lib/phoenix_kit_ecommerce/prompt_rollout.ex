@@ -151,12 +151,13 @@ defmodule PhoenixKitEcommerce.PromptRollout do
   # content: unchanged, so this never touches the row's translated
   # content — only ever brings metadata up to what it should already say.
   defp backfill_metadata(prompt, target_sha) do
-    canonical = metadata(target_sha)
+    existing = prompt.metadata || %{}
+    merged = merged_metadata(prompt, target_sha)
 
-    if prompt.metadata == canonical do
+    if merged == existing do
       {:ok, prompt.uuid, :unchanged}
     else
-      case PhoenixKitAI.update_prompt(prompt, %{metadata: canonical}) do
+      case PhoenixKitAI.update_prompt(prompt, %{metadata: merged}) do
         {:ok, updated} -> {:ok, updated.uuid, :unchanged}
         {:error, changeset} -> {:error, changeset}
       end
@@ -170,7 +171,7 @@ defmodule PhoenixKitEcommerce.PromptRollout do
   defp update(prompt, attrs, target_sha, status) do
     case PhoenixKitAI.update_prompt(prompt, %{
            content: attrs.content,
-           metadata: metadata(target_sha)
+           metadata: merged_metadata(prompt, target_sha)
          }) do
       {:ok, updated} -> {:ok, updated.uuid, status}
       {:error, changeset} -> {:error, changeset}
@@ -190,5 +191,15 @@ defmodule PhoenixKitEcommerce.PromptRollout do
 
   defp metadata(content_sha) do
     %{"managed_by" => @managed_by, "content_sha" => content_sha}
+  end
+
+  # `metadata` is the schema's general-purpose JSON bag, not ours alone
+  # (`duplicate_prompt/2` copies it, a host may stash its own keys there).
+  # Design §5.2 says to *add* our two keys to a row, so merge onto whatever
+  # is already stored rather than replacing the map — otherwise every
+  # ensure/2 call, which happens on each product-form mount, would silently
+  # drop everyone else's keys.
+  defp merged_metadata(prompt, target_sha) do
+    Map.merge(prompt.metadata || %{}, metadata(target_sha))
   end
 end
