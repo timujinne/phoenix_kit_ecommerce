@@ -1228,6 +1228,35 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       assert html =~ "2 jobs already in flight (at the ceiling)"
       refute html =~ "Last tick: ceiling_reached"
     end
+
+    test "a reason the page has no wording for still shows itself, never \"Sweep finished\"", %{
+      conn: conn
+    } do
+      # Review guard on Fix F: routing the fallback through
+      # `sweep_result_message/2` also routes UNKNOWN reasons into that
+      # function's catch-all, which reads "Sweep finished." — a tick that
+      # stopped for a reason this page has no wording for did NOT finish,
+      # and saying so is worse than the raw atom Fix F set out to
+      # replace. Written straight to the persisted row (the same
+      # hand-edited-settings door the `:sweep_stalled` test above uses),
+      # because by construction no reason the CURRENT worker records can
+      # reach this clause — the point is that a future one must not
+      # silently become a lie.
+      {:ok, _} =
+        Settings.update_json_setting_with_module(
+          "shop_translation_sweep_last_run",
+          %{
+            "reason" => "quota_exhausted",
+            "at" => DateTime.to_iso8601(DateTime.utc_now())
+          },
+          "shop_translations"
+        )
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/translations")
+
+      assert html =~ "Last tick: quota_exhausted"
+      refute html =~ "Sweep finished."
+    end
   end
 
   # ============================================================

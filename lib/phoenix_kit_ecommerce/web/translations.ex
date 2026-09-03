@@ -2013,6 +2013,8 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     )
   end
 
+  @translated_reasons ~w(translations_disabled sweep_disabled ai_unavailable no_target_languages ceiling_reached)
+
   # Fix F: every OTHER stored reason (`:translations_disabled`,
   # `:sweep_disabled`, `:ai_unavailable`, `:ceiling_reached`,
   # `:no_target_languages`) used to fall straight through to the bare
@@ -2025,12 +2027,20 @@ defmodule PhoenixKitEcommerce.Web.Translations do
   # outcome would see. `"ok"` and `"sweep_stalled"` never reach this
   # clause — they're matched, and worded for this "Last tick: " context
   # specifically, above.
-  defp last_run_summary(%{"reason" => reason} = run) do
+  defp last_run_summary(%{"reason" => reason} = run) when reason in @translated_reasons do
     reason
-    |> safe_to_existing_atom()
-    |> Kernel.||(reason)
+    |> String.to_existing_atom()
     |> sweep_result_message(run_info(run))
   end
+
+  # Anything NOT in that list — a reason a newer worker records, a
+  # hand-edited settings row — still shows itself verbatim, exactly as
+  # before Fix F. Ugly, but true. Routing it through
+  # `sweep_result_message/2` as well would land on that function's
+  # catch-all and render "Last tick: Sweep finished." — the one thing a
+  # tick that stopped for an unknown reason demonstrably did NOT do, and
+  # the opposite of what this whole block is for.
+  defp last_run_summary(%{"reason" => reason}), do: reason
 
   # Lifts the persisted string-keyed run map into the atom-keyed shape
   # `sweep_result_message/2`'s clauses pattern-match on. A fixed, known
