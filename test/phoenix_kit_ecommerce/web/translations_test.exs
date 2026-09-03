@@ -613,6 +613,36 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       assert jobs_for(product.uuid) != []
     end
 
+    test "a tick that recorded enqueue errors shows the count, not just the queued total", %{
+      conn: conn
+    } do
+      # Review fix on the sweep (task 5): a tick where every per-language
+      # enqueue_all_missing/2 call failed used to record {enqueued: 0,
+      # errors: 0} — byte-identical to "nothing needed doing" — so an
+      # operator staring at this page had no way to tell a silently
+      # failing sweep from a healthy, idle one. Written directly rather
+      # than provoked through a real failing tick: the persisted shape is
+      # the worker's own contract (`finish/2`), and this pins that the
+      # page actually reads the `"errors"` key it writes.
+      Settings.update_json_setting_with_module(
+        "shop_translation_sweep_last_run",
+        %{
+          "reason" => "ok",
+          "candidates" => 2,
+          "enqueued" => 0,
+          "errors" => 2,
+          "in_flight" => 0,
+          "at" => DateTime.to_iso8601(DateTime.utc_now())
+        },
+        "shop_translations"
+      )
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/translations")
+
+      assert html =~ "0 jobs queued"
+      assert html =~ "2 enqueue errors"
+    end
+
     test "denied without shop.manage_settings", %{conn: conn} do
       Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", true, "shop")
       product = create_product()

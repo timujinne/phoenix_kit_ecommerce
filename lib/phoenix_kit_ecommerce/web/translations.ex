@@ -510,7 +510,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
       {:noreply,
        socket
-       |> put_flash(sweep_flash_kind(reason), sweep_result_message(reason, info))
+       |> put_flash(sweep_flash_kind(reason, info), sweep_result_message(reason, info))
        |> load_data()}
     end)
   end
@@ -1040,11 +1040,29 @@ defmodule PhoenixKitEcommerce.Web.Translations do
       not is_nil(PhoenixKitAI.Translations.default_endpoint_uuid())
   end
 
-  defp sweep_flash_kind(:ok), do: :info
-  defp sweep_flash_kind(_reason), do: :warning
+  # `:ok` with per-language enqueue failures (design §1 — the run-now
+  # button's own version of the `last_run_summary/1` gap above: a tick
+  # that failed to enqueue anything is not the same as one that had
+  # nothing to do, and the flash color must say so too).
+  defp sweep_flash_kind(:ok, %{errors: n}) when n > 0, do: :warning
+  defp sweep_flash_kind(:ok, _info), do: :info
+  defp sweep_flash_kind(_reason, _info), do: :warning
 
-  defp sweep_result_message(:ok, %{enqueued: n}) do
-    ngettext("Sweep ran — %{count} job queued.", "Sweep ran — %{count} jobs queued.", n, count: n)
+  defp sweep_result_message(:ok, %{enqueued: n} = info) do
+    base =
+      ngettext("Sweep ran — %{count} job queued.", "Sweep ran — %{count} jobs queued.", n,
+        count: n
+      )
+
+    errors = Map.get(info, :errors, 0)
+
+    if errors > 0 do
+      base <>
+        " " <>
+        ngettext("%{count} enqueue error.", "%{count} enqueue errors.", errors, count: errors)
+    else
+      base
+    end
   end
 
   defp sweep_result_message(:translations_disabled, _info),
@@ -1600,9 +1618,24 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
   defp last_run_summary(nil), do: gettext("never run yet")
 
+  # `"errors"` is the per-language `enqueue_all_missing/2` failure count a
+  # tick can now report (review fix on the sweep, task 5) — a tick that
+  # enqueued nothing because every insert failed is otherwise
+  # indistinguishable here from "nothing needed doing", which is exactly
+  # the silent-failure shape that fix closed at the source. Surfacing it
+  # is what makes that fix's outcome actually visible per design §1.
   defp last_run_summary(%{"reason" => "ok"} = run) do
     n = Map.get(run, "enqueued", 0)
-    ngettext("ran, %{count} job queued", "ran, %{count} jobs queued", n, count: n)
+    errors = Map.get(run, "errors", 0)
+    base = ngettext("ran, %{count} job queued", "ran, %{count} jobs queued", n, count: n)
+
+    if errors > 0 do
+      base <>
+        " — " <>
+        ngettext("%{count} enqueue error", "%{count} enqueue errors", errors, count: errors)
+    else
+      base
+    end
   end
 
   defp last_run_summary(%{"reason" => reason}), do: reason
