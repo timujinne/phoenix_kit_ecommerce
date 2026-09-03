@@ -191,7 +191,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
       if socket.assigns[:ai_translation_available?] and connected?(socket) do
         case AITranslatable.ensure_prompt() do
-          {:ok, prompt_uuid} -> assign(socket, :ai_selected_prompt, prompt_uuid)
+          # A :diverged prompt (operator hand-edited it) is still a
+          # perfectly usable prompt uuid — just no longer code-managed.
+          {:ok, prompt_uuid, _sync_status} -> assign(socket, :ai_selected_prompt, prompt_uuid)
           _ -> socket
         end
       else

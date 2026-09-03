@@ -37,6 +37,18 @@ defmodule PhoenixKitEcommerce.AITranslatable do
   `phoenixkit-shop-product-translation`). Host forms must pass its uuid
   per job — the global `ai_translation_prompt_uuid` setting stays untouched.
 
+  The prompt template lives in `prompt_attrs/0` in code, but the row in
+  `phoenix_kit_ai_prompts` is what's actually asked — a code change alone
+  reaches nobody until `ensure_prompt/0` rolls it out. That rollout (create
+  vs. update-in-place vs. leave-a-hand-edit-alone) is `PromptRollout.ensure/2`
+  (design §5.2); see that module for the full invariant. The template itself
+  is built on `{{SourceFields}}` (phoenix_kit_ai §9.1) — one marker section
+  per field actually passed — rather than one hardcoded `{{fieldname}}` slot
+  per field, which is what let a "skip literal placeholders" rule upstream
+  mistake an unbound `{{title}}` for a real placeholder and skip translating
+  the title outright (design §2). That rule is gone; there is nothing left
+  for it to misfire on.
+
   Requires the optional `phoenix_kit_ai` plugin: `ensure_prompt/0` returns
   `{:error, :ai_not_installed}` when it is absent, and the whole adapter is
   only reached through duck-typed discovery, which never runs without it.
@@ -55,6 +67,7 @@ defmodule PhoenixKitEcommerce.AITranslatable do
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Product
+  alias PhoenixKitEcommerce.PromptRollout
 
   @resource_type "shop_product"
   @prompt_name "PhoenixKit Shop Product Translation"
@@ -64,6 +77,18 @@ defmodule PhoenixKitEcommerce.AITranslatable do
   # ensure_prompt/0 fail with :prompt_create_failed on every call after the
   # first (unique-name violation, then a slug miss).
   @prompt_slug "phoenixkit-shop-product-translation"
+
+  # sha256(content) of every template this adapter has ever shipped BEFORE
+  # PromptRollout's metadata scheme existed — consulted only to adopt a
+  # stand's pre-existing unversioned row (design §5.2). This one entry is
+  # the "literal placeholder" template §2 diagnoses: it hardcoded one
+  # `{{fieldname}}` slot per field, which let the model see its own
+  # unbound `{{title}}` and skip the title as if it were a placeholder.
+  # Once a row is adopted it carries metadata and this list is never
+  # consulted for it again — it never needs a second entry.
+  @known_previous_shas [
+    "751962e45dbea4bd36ef56c60558425c40aa8760767501211370d4363f42d232"
+  ]
 
   # field name in the prompt/pipeline => schema field
   @field_map %{
@@ -125,32 +150,25 @@ defmodule PhoenixKitEcommerce.AITranslatable do
   end
 
   @doc """
-  Idempotently creates this adapter's translation prompt and returns its
+  Idempotently rolls out this adapter's translation prompt and returns its
   uuid — host forms pass it per job instead of the shared default prompt.
+
+  Beyond the first call this is not a pure no-op read: a code change to
+  `prompt_attrs/0` reaches the database here, via `PromptRollout.ensure/2`
+  (design §5.2) — see that module for exactly when it updates a row in
+  place versus leaves it alone. The returned `sync_status` matters mainly
+  to callers surfacing rollout state (e.g. a translations management
+  page); `:diverged` still returns a perfectly usable uuid — an
+  operator-edited prompt keeps working, it's just no longer code-managed
+  until someone resolves the divergence by hand.
   """
-  @spec ensure_prompt() :: {:ok, String.t()} | {:error, term()}
+  @spec ensure_prompt() ::
+          {:ok, String.t(), PromptRollout.sync_status()} | {:error, term()}
   def ensure_prompt do
     if Code.ensure_loaded?(PhoenixKitAI) and function_exported?(PhoenixKitAI, :create_prompt, 1) do
-      case PhoenixKitAI.get_prompt_by_slug(@prompt_slug) do
-        nil -> create_prompt()
-        prompt -> {:ok, prompt.uuid}
-      end
+      PromptRollout.ensure(prompt_attrs(), @known_previous_shas)
     else
       {:error, :ai_not_installed}
-    end
-  end
-
-  defp create_prompt do
-    case PhoenixKitAI.create_prompt(prompt_attrs()) do
-      {:ok, prompt} ->
-        {:ok, prompt.uuid}
-
-      {:error, _} ->
-        # Lost a create race — re-read by slug.
-        case PhoenixKitAI.get_prompt_by_slug(@prompt_slug) do
-          nil -> {:error, :prompt_create_failed}
-          prompt -> {:ok, prompt.uuid}
-        end
     end
   end
 
@@ -262,6 +280,17 @@ defmodule PhoenixKitEcommerce.AITranslatable do
     )
   end
 
+  # §5.1/§9.1: built on the dynamic {{SourceFields}} block rather than one
+  # hardcoded {{fieldname}} slot per field. The old per-slot template left a
+  # slot like {{seo_title}} unbound whenever a product had no SEO text (only
+  # non-empty fields are ever passed in, per source_fields/2), and the
+  # "skip literal placeholders" rule that was patched in to handle that
+  # matched the model's own unbound {{title}} slot too — the model read it
+  # as "this is a placeholder, not real text" and silently skipped
+  # translating the title (design §2). {{SourceFields}} only ever contains
+  # markers for fields that were actually passed, so there is no unbound
+  # slot left in the prose for a "skip placeholders" rule to misfire on —
+  # and so that rule is gone, not tightened.
   defp prompt_attrs do
     %{
       slug: @prompt_slug,
@@ -278,28 +307,20 @@ defmodule PhoenixKitEcommerce.AITranslatable do
       - Keep brand names, materials and measurements as-is unless they have a standard translation.
       - Output ONLY the structured markers below — no commentary, no preface, no closing remarks.
 
-      OUTPUT FORMAT — for each non-empty field in the SOURCE section below,
-      emit ONE marker named after the field (uppercased), followed by the
-      translation:
+      The SOURCE section below has one marker per field of this product that
+      needs translating — there is no fixed set of fields, so read whichever
+      markers are actually present. For EACH marker in SOURCE, emit that
+      SAME marker name back, followed by its translation:
 
           ---TITLE---
           [translated title]
 
-      Skip any field that is missing, blank, or still a literal placeholder
-      (a value like `{{title}}` means the caller did not bind it) — do NOT
-      emit a marker for it, and do NOT translate the placeholder text itself.
+      Emit a marker for every field in SOURCE and no others — never invent
+      a marker that wasn't there, and never skip one that was.
 
       === SOURCE ===
 
-      Title: {{title}}
-
-      Description: {{description}}
-
-      Body: {{body}}
-
-      Seo_title: {{seo_title}}
-
-      Seo_description: {{seo_description}}
+      {{SourceFields}}
       """
     }
   end
