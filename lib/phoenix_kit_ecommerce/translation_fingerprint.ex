@@ -51,6 +51,8 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
   fingerprint is the only supported way to lift that protection.
   """
 
+  use PhoenixKit.SchemaPrefix
+
   alias Ecto.Adapters.SQL
 
   @metadata_key "_translation_fingerprints"
@@ -284,6 +286,28 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
   defp blank?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank?(_), do: true
 
+  # ── Schema prefix (named-schema / `--prefix` installs) ─────────────
+
+  @doc """
+  Schema-qualifies a bare table name with the configured
+  `config :phoenix_kit, :prefix` — the SAME compile-time value every
+  Ecto-schema-backed query in this package already carries via
+  `use PhoenixKit.SchemaPrefix` (see `Product`, `Category`, ...). Raw
+  SQL text never goes through Ecto's query builder, so it doesn't pick
+  that prefix up automatically; `select_candidates/2` below and the
+  one-shot backfill mix task (`build_sql/2`) both call this on every
+  table name they interpolate, so a named-schema install targets the
+  schema the migrations actually installed into instead of raising
+  "relation does not exist" against `public`.
+
+  `nil` — the default, unprefixed `public` install — leaves `table`
+  untouched, so behavior for every existing (unprefixed) install is
+  unchanged.
+  """
+  @spec qualify_table(String.t(), String.t() | nil) :: String.t()
+  def qualify_table(table, nil), do: table
+  def qualify_table(table, prefix) when is_binary(prefix), do: "#{prefix}.#{table}"
+
   # ── Candidate query (design §4.3) ────────────────────────────────
 
   @doc """
@@ -323,7 +347,7 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
     statuses = Keyword.get(opts, :statuses)
     limit = Keyword.get(opts, :limit)
 
-    sql = candidates_sql(table, fields)
+    sql = candidates_sql(qualify_table(table, @schema_prefix), fields)
 
     case SQL.query(repo, sql, [target_langs, source_lang, statuses, limit, @sql_trim_chars]) do
       {:ok, %{rows: rows}} ->
@@ -345,7 +369,14 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
   # `sql_trim_chars/0` — it is what makes this query's hash equal
   # `hash/1`'s). Fixed positions regardless of which optional clauses
   # fire, so no dynamic renumbering is needed.
-  defp candidates_sql(table, fields) do
+  #
+  # `table` arrives already schema-qualified (see `select_candidates/2`,
+  # `qualify_table/2`) — this function just interpolates it into `FROM`.
+  # `def`, not `defp`: exposed (doc false) so a test can pin the prefix
+  # actually reaching this string without a live prefixed database.
+  @doc false
+  @spec candidates_sql(String.t(), [String.t()]) :: String.t()
+  def candidates_sql(table, fields) do
     field_clauses = Enum.map_join(fields, "\n     OR ", &field_clause/1)
 
     """

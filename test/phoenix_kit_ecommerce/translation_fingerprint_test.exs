@@ -274,4 +274,37 @@ defmodule PhoenixKitEcommerce.TranslationFingerprintTest do
       assert updated["_option_values"] == %{"keep" => true}
     end
   end
+
+  describe "qualify_table/2 — schema-prefix support (Fix E)" do
+    test "nil prefix (the default, unprefixed public install) leaves the table name untouched" do
+      assert FP.qualify_table("phoenix_kit_shop_products", nil) == "phoenix_kit_shop_products"
+    end
+
+    test "a configured prefix schema-qualifies the table name" do
+      assert FP.qualify_table("phoenix_kit_shop_products", "custom_schema") ==
+               "custom_schema.phoenix_kit_shop_products"
+    end
+  end
+
+  describe "candidates_sql/2 — the prefix actually reaching the generated SQL (Fix E)" do
+    # select_candidates/2 always calls candidates_sql/2 with
+    # qualify_table(table, @schema_prefix) applied first — so pinning
+    # candidates_sql/2's own FROM clause against an explicitly-qualified
+    # table name pins exactly what a prefixed install's sweep tick and
+    # management page send to Postgres, without needing a second live
+    # database compiled with a different `config :phoenix_kit, :prefix`
+    # (that value is read at compile time — see PhoenixKit.SchemaPrefix).
+    test "an unqualified (public-install) table name reaches the FROM clause bare" do
+      sql = FP.candidates_sql("phoenix_kit_shop_products", ["title"])
+      assert sql =~ "FROM phoenix_kit_shop_products AS p"
+    end
+
+    test "a schema-qualified table name reaches the FROM clause fully qualified" do
+      qualified = FP.qualify_table("phoenix_kit_shop_products", "custom_schema")
+      sql = FP.candidates_sql(qualified, ["title"])
+
+      assert sql =~ "FROM custom_schema.phoenix_kit_shop_products AS p"
+      refute sql =~ "FROM phoenix_kit_shop_products AS p"
+    end
+  end
 end

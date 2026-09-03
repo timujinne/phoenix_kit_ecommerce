@@ -185,5 +185,32 @@ defmodule Mix.Tasks.PhoenixKitEcommerce.BackfillTranslationFingerprintsTest do
     assert first_pass == second_pass
   end
 
+  describe "build_sql/2 — the prefix actually reaching the generated SQL (Fix E)" do
+    # run_table/6 always calls build_sql/2 with
+    # TranslationFingerprint.qualify_table(table, @schema_prefix) applied
+    # first — so pinning build_sql/2's own UPDATE/SELECT FROM clauses
+    # against an explicitly-qualified table name pins exactly what a
+    # prefixed install's one-shot backfill sends to Postgres, without
+    # needing a second live database compiled with a different
+    # `config :phoenix_kit, :prefix` (that value is read at compile time
+    # — see PhoenixKit.SchemaPrefix — so this environment's test build
+    # can't just flip it at runtime).
+    test "an unqualified (public-install) table name reaches UPDATE and SELECT bare" do
+      {count_sql, update_sql} = Backfill.build_sql("phoenix_kit_shop_products", ["title"])
+
+      assert count_sql =~ "FROM phoenix_kit_shop_products AS p"
+      assert update_sql =~ "UPDATE phoenix_kit_shop_products AS p"
+    end
+
+    test "a schema-qualified table name reaches UPDATE and SELECT fully qualified" do
+      qualified = FP.qualify_table("phoenix_kit_shop_products", "custom_schema")
+      {count_sql, update_sql} = Backfill.build_sql(qualified, ["title"])
+
+      assert count_sql =~ "FROM custom_schema.phoenix_kit_shop_products AS p"
+      assert update_sql =~ "UPDATE custom_schema.phoenix_kit_shop_products AS p"
+      refute update_sql =~ "UPDATE phoenix_kit_shop_products AS p"
+    end
+  end
+
   defp repo, do: PhoenixKit.RepoHelper.repo()
 end

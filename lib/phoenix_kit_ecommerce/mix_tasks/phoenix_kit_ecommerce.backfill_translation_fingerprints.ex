@@ -58,6 +58,7 @@ defmodule Mix.Tasks.PhoenixKitEcommerce.BackfillTranslationFingerprints do
   """
 
   use Mix.Task
+  use PhoenixKit.SchemaPrefix
 
   @dialyzer {:nowarn_function, run: 1}
   @dialyzer {:nowarn_function, build_sql: 2}
@@ -154,7 +155,8 @@ defmodule Mix.Tasks.PhoenixKitEcommerce.BackfillTranslationFingerprints do
   end
 
   defp run_table(repo, table, fields, source_lang, target_langs, dry_run) do
-    {count_sql, update_sql} = build_sql(table, fields)
+    qualified_table = TranslationFingerprint.qualify_table(table, @schema_prefix)
+    {count_sql, update_sql} = build_sql(qualified_table, fields)
     sql = if dry_run, do: count_sql, else: update_sql
 
     # $3 (the trim character set) only appears in the UPDATE — the
@@ -185,7 +187,15 @@ defmodule Mix.Tasks.PhoenixKitEcommerce.BackfillTranslationFingerprints do
   # both a non-empty source and a non-empty translation already — the
   # exact same "has something to stamp" predicate for both the dry-run
   # count and the real UPDATE's WHERE, so the two never disagree.
-  defp build_sql(table, fields) do
+  #
+  # `table` arrives already schema-qualified (see `run_table/6`,
+  # `TranslationFingerprint.qualify_table/2`) — this function just
+  # interpolates it into `UPDATE`/`FROM`. `def`, not `defp`: exposed
+  # (doc false) so a test can pin the prefix actually reaching this
+  # string without a live prefixed database.
+  @doc false
+  @spec build_sql(String.t(), [String.t()]) :: {String.t(), String.t()}
+  def build_sql(table, fields) do
     touch_predicate = Enum.map_join(fields, "\n           OR ", &field_present_clause/1)
 
     exists_clause = """
