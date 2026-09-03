@@ -43,11 +43,13 @@ defmodule PhoenixKitEcommerce.Web.SettingsTranslationsTest do
   test "without a configured AI endpoint, the toggle is disabled with an explanation", %{
     conn: conn
   } do
-    {:ok, _view, html} = live(conn, "/en/admin/shop/settings")
+    {:ok, view, html} = live(conn, "/en/admin/shop/settings")
 
     assert html =~ "Configure an enabled AI endpoint in the AI section first"
-    assert html =~ ~s(id="toggle-shop-translations-enabled")
-    assert html =~ ~s(disabled="disabled") or html =~ "disabled"
+
+    # The TOGGLE must carry `disabled` — not merely the page containing the
+    # word "disabled" somewhere, which any settings page does.
+    assert has_element?(view, "#toggle-shop-translations-enabled[disabled]")
   end
 
   test "the event handler itself refuses to enable while AI is unavailable", %{conn: conn} do

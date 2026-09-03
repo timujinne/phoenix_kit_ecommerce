@@ -29,8 +29,9 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
   alias PhoenixKit.Settings
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.AITranslatable
-  alias PhoenixKitEcommerce.CategoryAITranslatable
   alias PhoenixKitEcommerce.TranslationFingerprint
+  alias PhoenixKitEcommerce.TranslationSweepSettings, as: SweepSettings
+  alias PhoenixKitEcommerce.Workers.TranslationSweepWorker, as: SweepWorker
 
   @translate_worker "PhoenixKitAI.TranslateWorker"
 
@@ -216,6 +217,9 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
 
       html = render_click(view, "request_translate:all:all", %{"uuids" => [product.uuid]})
       assert html =~ "Translate?"
+      # Design §4.5: the confirmation names resources, LANGUAGES and the estimate.
+      assert html =~ "de, fr"
+      assert html =~ "model call"
 
       html = confirm!(view)
 
@@ -370,6 +374,9 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
 
       html = render_click(view, "request_stamp:all:all", %{"uuids" => [primed.uuid]})
       assert html =~ "Stamp as reference?"
+      # Stamping a `stale` row freezes its divergence (design §4.1's booked
+      # cost) — the confirmation has to say so before it happens.
+      assert html =~ "accepted as up to date"
       html = confirm!(view)
 
       reloaded = Shop.get_product!(primed.uuid)
@@ -488,6 +495,184 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       _ = :sys.get_state(view.pid)
 
       assert render(view) =~ "Fresh"
+    end
+  end
+
+  # ============================================================
+  # Operational settings panel (design §4.6's keys, edited here per §4.5)
+  # ============================================================
+
+  describe "operational sweep panel" do
+    setup %{conn: conn} do
+      ready!()
+      {:ok, conn: put_test_scope(conn, fake_scope())}
+    end
+
+    test "saves every operational key, logs it, and reschedules the tick", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      # Mount's `ensure_scheduled/0` left a tick at the 60-minute default.
+      before = SweepWorker.status().next_tick_at
+      assert DateTime.diff(before, DateTime.utc_now()) > 50 * 60
+
+      html =
+        view
+        |> element("#sweep-settings-form")
+        |> render_submit(%{
+          "sweep_enabled" => "true",
+          "interval_minutes" => "15",
+          "batch_size" => "4",
+          "max_in_flight" => "9",
+          "languages" => ["de"],
+          "statuses" => ["active", "draft"]
+        })
+
+      assert html =~ "Sweep settings updated"
+
+      assert SweepSettings.sweep_enabled?()
+      assert SweepSettings.interval_minutes() == 15
+      assert SweepSettings.batch_size() == 4
+      assert SweepSettings.max_in_flight() == 9
+      assert SweepSettings.languages() == ["de"]
+      assert Enum.sort(SweepSettings.statuses()) == ["active", "draft"]
+
+      # Design §4.3/§7: a shortened interval must move the ALREADY
+      # scheduled tick, not wait out the stale one.
+      after_save = SweepWorker.status().next_tick_at
+      assert DateTime.diff(after_save, DateTime.utc_now()) <= 15 * 60
+
+      assert_activity_logged("shop.translation_sweep_settings_changed",
+        metadata_has: %{"interval_minutes" => 15, "sweep_enabled" => true}
+      )
+    end
+
+    test "the primary language is never accepted as a sweep target", %{conn: conn} do
+      # The checkbox list never renders "en" (design §4.6: targets are
+      # "все включённые, кроме основного"); a stale or hand-crafted submit
+      # must not be able to smuggle it in either, or the sweep would queue
+      # en → en translations.
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      view
+      |> element("#sweep-settings-form")
+      |> render_submit(%{
+        "interval_minutes" => "60",
+        "batch_size" => "3",
+        "max_in_flight" => "6",
+        "languages" => ["en", "de"],
+        "statuses" => ["active"]
+      })
+
+      assert SweepSettings.languages() == ["de"]
+    end
+
+    test "denied without shop.manage_settings", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope(permissions: ["shop", "shop.manage_catalog"]))
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      html =
+        view
+        |> element("#sweep-settings-form")
+        |> render_submit(%{
+          "interval_minutes" => "5",
+          "batch_size" => "3",
+          "max_in_flight" => "6"
+        })
+
+      assert html =~ "You don&#39;t have permission to do that"
+      assert SweepSettings.interval_minutes() == 60
+    end
+  end
+
+  # ============================================================
+  # "Запустить сверку" — the tick body, called directly (design §4.5)
+  # ============================================================
+
+  describe "run sweep now" do
+    setup %{conn: conn} do
+      ready!()
+      {:ok, conn: put_test_scope(conn, fake_scope())}
+    end
+
+    test "reports the tick's own refusal reason when the sweep is switched off", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      html = render_click(view, "run_sweep_now", %{})
+
+      assert html =~ "automatic sweeping is turned off"
+    end
+
+    test "runs the tick body directly and queues the work it finds", %{conn: conn} do
+      Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", true, "shop")
+      product = create_product()
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+      html = render_click(view, "run_sweep_now", %{})
+
+      assert html =~ "Sweep ran"
+      assert jobs_for(product.uuid) != []
+    end
+
+    test "denied without shop.manage_settings", %{conn: conn} do
+      Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", true, "shop")
+      product = create_product()
+      conn = put_test_scope(conn, fake_scope(permissions: ["shop", "shop.manage_catalog"]))
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+      html = render_click(view, "run_sweep_now", %{})
+
+      assert html =~ "You don&#39;t have permission to do that"
+      assert jobs_for(product.uuid) == []
+    end
+  end
+
+  # ============================================================
+  # Diagnostics panel (design §4.5)
+  # ============================================================
+
+  describe "diagnostics panel" do
+    setup %{conn: conn} do
+      ready!()
+      {:ok, conn: put_test_scope(conn, fake_scope())}
+    end
+
+    test "shows the prompt as sent, not only the raw response", %{conn: conn} do
+      product = create_product()
+
+      {:ok, endpoint} =
+        PhoenixKitAI.create_endpoint(%{
+          name: "Diag Endpoint #{System.unique_integer([:positive])}",
+          provider: "test",
+          model: "test-chat-model",
+          api_key: "unused-test-key"
+        })
+
+      {:ok, _request} =
+        PhoenixKitAI.create_request(%{
+          endpoint_uuid: endpoint.uuid,
+          endpoint_name: endpoint.name,
+          model: "test-chat-model",
+          request_type: "chat",
+          status: "success",
+          metadata: %{
+            "attribution" => %{
+              "resource_type" => "shop_product",
+              "resource_uuid" => product.uuid
+            },
+            "response" => "---TITLE---\nHolzvase",
+            "messages" => [
+              %{"role" => "system", "content" => "SENTINEL-PROMPT-TEXT for Wooden Vase"}
+            ]
+          }
+        })
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/translations")
+
+      # Design §2 diagnosed this whole initiative by reading the RENDERED
+      # prompt off these rows — the panel is half-useless without it.
+      assert html =~ "Prompt as sent"
+      assert html =~ "SENTINEL-PROMPT-TEXT for Wooden Vase"
+      assert html =~ "Raw model response"
     end
   end
 

@@ -435,6 +435,14 @@ defmodule PhoenixKitEcommerce.Web.Translations do
         status: r.status,
         error_message: r.error_message,
         response: fragment("?->>'response'", r.metadata),
+        # Design §4.5 asks this panel for BOTH halves — "сырой ответ модели
+        # и отправленный промпт". The sent half is the load-bearing one:
+        # design §2 diagnosed this initiative's root defect (`{{title}}`
+        # substituted into the prompt's own prose) by reading the RENDERED
+        # prompt off these rows, not the response. `metadata->'messages'`
+        # is what the AI request log stores, subject to the same
+        # `:capture_request_content` gate as `response` (default `true`).
+        messages: fragment("?->'messages'", r.metadata),
         inserted_at: r.inserted_at
       }
     )
@@ -587,7 +595,13 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     max_in_flight =
       parse_non_negative_int(params["max_in_flight"], SweepSettings.max_in_flight())
 
-    languages = checked_list(params["languages"], socket.assigns.enabled_languages)
+    # Design §4.6: target languages are "все включённые, кроме основного".
+    # The source language is excluded from the WHITELIST, not just from the
+    # rendered checkbox list — `SweepSettings.languages/0` only intersects
+    # with the enabled set, so a stale or hand-crafted submit naming the
+    # primary language would otherwise persist it as a translation target.
+    allowed_languages = socket.assigns.enabled_languages -- [socket.assigns.source_lang]
+    languages = checked_list(params["languages"], allowed_languages)
     statuses = checked_list(params["statuses"], @product_statuses)
 
     Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", enabled, "shop")
@@ -1098,6 +1112,32 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     |> Enum.map_join(", ", fn {field, _state} -> field_label(field) end)
   end
 
+  # The prompt as the provider actually received it, flattened out of the
+  # request log's `messages` array (design §4.5's "отправленный промпт").
+  # `nil` when content capture is off (`:capture_request_content false`) or
+  # the row predates it — the panel then simply omits the block rather
+  # than claiming an empty prompt was sent.
+  defp prompt_text(messages) when is_list(messages) do
+    text =
+      messages
+      |> Enum.map(fn
+        %{"role" => role, "content" => content} when is_binary(content) ->
+          "[#{role}]\n#{content}"
+
+        %{"content" => content} when is_binary(content) ->
+          content
+
+        _other ->
+          nil
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join("\n\n")
+
+    if text == "", do: nil, else: text
+  end
+
+  defp prompt_text(_messages), do: nil
+
   defp format_tick_time(nil), do: gettext("not scheduled")
 
   defp format_tick_time(%DateTime{} = dt) do
@@ -1136,7 +1176,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
     }
   end
 
-  defp pending_modal(%{pending: %{verb: :translate, uuids: uuids, calls: calls}}) do
+  defp pending_modal(%{pending: %{verb: :translate, uuids: uuids, calls: calls}} = assigns) do
     %{
       title: gettext("Translate?"),
       prompt:
@@ -1146,12 +1186,12 @@ defmodule PhoenixKitEcommerce.Web.Translations do
           length(uuids),
           count: length(uuids)
         ),
-      messages: estimate_messages(calls),
+      messages: scope_messages(assigns) ++ estimate_messages(calls),
       danger: false
     }
   end
 
-  defp pending_modal(%{pending: %{verb: :retranslate, uuids: uuids, calls: calls}}) do
+  defp pending_modal(%{pending: %{verb: :retranslate, uuids: uuids, calls: calls}} = assigns) do
     %{
       title: gettext("Translate again?"),
       prompt:
@@ -1167,12 +1207,12 @@ defmodule PhoenixKitEcommerce.Web.Translations do
            gettext(
              "Any manual edit to the selected fields, for the selected languages, will be overwritten by the new translation."
            )}
-        ] ++ estimate_messages(calls),
+        ] ++ scope_messages(assigns) ++ estimate_messages(calls),
       danger: true
     }
   end
 
-  defp pending_modal(%{pending: %{verb: :stamp, uuids: uuids}}) do
+  defp pending_modal(%{pending: %{verb: :stamp, uuids: uuids}} = assigns) do
     %{
       title: gettext("Stamp as reference?"),
       prompt:
@@ -1182,9 +1222,47 @@ defmodule PhoenixKitEcommerce.Web.Translations do
           length(uuids),
           count: length(uuids)
         ),
-      messages: [],
+      messages:
+        [
+          # Design §4.1 aims this verb at the 634 `unknown` rows, but the
+          # page can't stop the operator pointing it at a `stale` one, and
+          # there the effect is the freeze §4.1 books as a conscious cost:
+          # the divergence stops being visible to the sweep. Say so.
+          {:warning,
+           gettext(
+             "A translation whose source has changed since (\"stale\") is accepted as up to date — the sweep will stop picking it up until its reference is reset."
+           )}
+        ] ++ scope_messages(assigns),
       danger: false
     }
+  end
+
+  # Design §4.5 wants the confirmation to name "число ресурсов, языков и
+  # оценку" — the resource count is in the prompt above, the estimate in
+  # `estimate_messages/1`; this spells out WHICH languages (and which
+  # field, when the filter narrows one) the verb is about to act on, so
+  # "the current language/field scope" is never something the operator has
+  # to reconstruct from the toolbar.
+  defp scope_messages(%{pending: pending} = assigns) do
+    langs =
+      case pending[:lang] do
+        nil -> assigns.target_langs
+        lang -> [lang]
+      end
+
+    field_part =
+      case pending[:field] do
+        nil -> gettext("all fields")
+        field -> field_label(field)
+      end
+
+    [
+      {:info,
+       gettext("Scope: %{langs} · %{fields}",
+         langs: Enum.join(langs, ", "),
+         fields: field_part
+       )}
+    ]
   end
 
   defp estimate_messages(calls) do
@@ -1329,7 +1407,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
         <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end">
           <div>
             <label class="label"><span class="fieldset-legend">{gettext("Type")}</span></label>
-            <form phx-change="filter_type">
+            <form id="filter-type-form" phx-change="filter_type">
               <select class="select w-full" name="type">
                 <option value="product" selected={@type_filter == "product"}>{gettext("Products")}</option>
                 <option value="category" selected={@type_filter == "category"}>{gettext("Categories")}</option>
@@ -1339,7 +1417,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
           <div>
             <label class="label"><span class="fieldset-legend">{gettext("Category")}</span></label>
-            <form phx-change="filter_category">
+            <form id="filter-category-form" phx-change="filter_category">
               <select class="select w-full" name="category" disabled={@type_filter != "product"}>
                 <option value="" selected={is_nil(@category_filter)}>{gettext("All categories")}</option>
                 <%= for category <- @categories do %>
@@ -1353,7 +1431,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
           <div>
             <label class="label"><span class="fieldset-legend">{gettext("Language")}</span></label>
-            <form phx-change="filter_lang">
+            <form id="filter-lang-form" phx-change="filter_lang">
               <select class="select w-full" name="lang">
                 <option value="" selected={is_nil(@lang_filter)}>{gettext("All target languages")}</option>
                 <%= for lang <- @target_langs do %>
@@ -1365,7 +1443,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
           <div>
             <label class="label"><span class="fieldset-legend">{gettext("State")}</span></label>
-            <form phx-change="filter_state">
+            <form id="filter-state-form" phx-change="filter_state">
               <select class="select w-full" name="state">
                 <option value="" selected={is_nil(@state_filter)}>{gettext("Any state")}</option>
                 <option value="missing" selected={@state_filter == "missing"}>{gettext("Missing")}</option>
@@ -1378,7 +1456,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
           <div>
             <label class="label"><span class="fieldset-legend">{gettext("Field")}</span></label>
-            <form phx-change="filter_field">
+            <form id="filter-field-form" phx-change="filter_field">
               <select class="select w-full" name="field">
                 <option value="" selected={is_nil(@field_filter)}>{gettext("Any field")}</option>
                 <%= for field <- @fields do %>
@@ -1390,7 +1468,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
           <div>
             <label class="label"><span class="fieldset-legend">{gettext("Search")}</span></label>
-            <form phx-submit="search" phx-change="search">
+            <form id="filter-search-form" phx-submit="search" phx-change="search">
               <input type="text" name="search" value={@search} placeholder={gettext("Search...")} class="input w-full" phx-debounce="300" />
             </form>
           </div>
@@ -1496,6 +1574,11 @@ defmodule PhoenixKitEcommerce.Web.Translations do
             <details :if={entry.response} class="mt-2">
               <summary class="cursor-pointer text-sm text-base-content/60">{gettext("Raw model response")}</summary>
               <pre class="whitespace-pre-wrap text-xs bg-base-200 rounded p-2 mt-1 max-h-64 overflow-y-auto" phx-no-curly-interpolation><%= entry.response %></pre>
+            </details>
+            <% sent_prompt = prompt_text(entry.messages) %>
+            <details :if={sent_prompt} id={"diagnostic-prompt-#{entry.uuid}"} class="mt-2">
+              <summary class="cursor-pointer text-sm text-base-content/60">{gettext("Prompt as sent")}</summary>
+              <pre class="whitespace-pre-wrap text-xs bg-base-200 rounded p-2 mt-1 max-h-64 overflow-y-auto" phx-no-curly-interpolation><%= sent_prompt %></pre>
             </details>
           </div>
         </:content>

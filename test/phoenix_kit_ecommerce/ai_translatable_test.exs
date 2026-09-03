@@ -661,6 +661,44 @@ defmodule PhoenixKitEcommerce.AITranslatableTest do
       assert TranslationFingerprint.get(stamped.metadata, "de", "title") == nil
     end
 
+    test "a :stale pair is ACCEPTED as reference — it reads :fresh afterwards" do
+      # The consequential half of "проштамповать" and the one the confirm
+      # modal is asking about: the source moved on, the old translation
+      # stayed, and stamping declares that translation good. Design §4.1
+      # already books this cost explicitly for the one-time catalog stamp
+      # ("если какой-то из существующих переводов уже разошёлся с
+      # источником, это расхождение замораживается"); pinning it here so
+      # the freeze can never become accidental.
+      product = create_product()
+
+      {:ok, translated} =
+        AITranslatable.put_translation(product, "fr", %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => "Wooden Vase"}
+        )
+
+      {:ok, moved_on} =
+        translated
+        |> Ecto.Changeset.change(%{title: Map.put(translated.title, "en", "Oak Vase")})
+        |> repo().update()
+
+      assert TranslationFingerprint.field_state(
+               "Oak Vase",
+               moved_on.title["fr"],
+               TranslationFingerprint.get(moved_on.metadata, "fr", "title")
+             ) == :stale
+
+      {:ok, stamped} = AITranslatable.stamp_reference(moved_on.uuid, "en", ["fr"], [:title])
+
+      # The translation itself is untouched — only the reference moved.
+      assert stamped.title["fr"] == "Vase en Bois"
+
+      assert TranslationFingerprint.field_state(
+               "Oak Vase",
+               stamped.title["fr"],
+               TranslationFingerprint.get(stamped.metadata, "fr", "title")
+             ) == :fresh
+    end
+
     test "errors on an unknown uuid" do
       assert {:error, :resource_not_found} =
                AITranslatable.stamp_reference(Ecto.UUID.generate(), "en", ["fr"])
