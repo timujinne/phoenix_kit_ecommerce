@@ -2122,15 +2122,41 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   # `_option_slots`, `_discovered`, ...). Casting it as-is would replace the
   # product's whole `metadata` map (`cast/3` on a `:map` field is a full
   # replace, not a merge — see `Product.changeset/2`) and silently erase
-  # every one of those. Start from the CURRENTLY stored metadata instead,
-  # drop only the keys the form owns (so its adds/updates/deletes for those
-  # still apply), and layer the form's output on top.
-  defp merge_foreign_metadata(existing_metadata, cleaned_metadata) do
-    owned_keys = @form_owned_metadata_keys ++ [PriceDisplay.metadata_key()]
+  # every one of those. Start from the product's own metadata instead, drop
+  # only the keys the form owns (so its adds/updates/deletes for those still
+  # apply), and layer the form's output on top.
+  #
+  # NOTE: that base is the mount-time snapshot (`socket.assigns.product`),
+  # not a fresh read. The narrow race design §4.1 names and accepts — a form
+  # opened BEFORE a translation finishes, saved after — therefore still
+  # loses the fingerprints written in between, and the pair falls back to
+  # `unknown`. What this closes is the far wider defect: every ordinary save
+  # erasing fingerprints that were already there when the form opened.
+  defp merge_foreign_metadata(existing_metadata, cleaned_metadata, option_schema) do
+    owned_keys =
+      @form_owned_metadata_keys ++
+        [PriceDisplay.metadata_key()] ++ specification_option_keys(option_schema)
 
     (existing_metadata || %{})
     |> Map.drop(owned_keys)
     |> Map.merge(cleaned_metadata)
+  end
+
+  # The "Specifications" card renders one input per non-price-affecting
+  # option straight under `product[metadata][<key>]`, so those keys are
+  # form-owned too — and they are NOT all guaranteed to come back in the
+  # params. A `multiselect` with every box cleared submits nothing at all
+  # for its key (unlike `<.checkbox>`, whose hidden "false" companion
+  # always arrives), so a merge that did not list these would resurrect
+  # the value the operator just cleared and make the field unclearable.
+  # Price-affecting options are deliberately excluded: they render through
+  # `_option_values` / `_price_modifiers`, never as a top-level key, so the
+  # form has no submitted value to replace one with.
+  defp specification_option_keys(option_schema) do
+    (option_schema || [])
+    |> Enum.reject(& &1["affects_price"])
+    |> Enum.map(& &1["key"])
+    |> Enum.filter(&is_binary/1)
   end
 
   # Clean up _option_values - remove entries where all values are selected (use defaults)
@@ -2623,17 +2649,21 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
     # The form only ever reads/writes the metadata keys it renders inputs
     # for (_option_values, _price_modifiers, _image_mappings,
-    # PriceDisplay.metadata_key(), plus whatever dynamic option keys the
-    # schema adds directly under metadata — all of which are already part
-    # of `cleaned_metadata` by construction above). Keys it never rendered
+    # PriceDisplay.metadata_key(), plus the specification keys the option
+    # schema adds directly under metadata). Keys it never rendered
     # a field for — `_translation_fingerprints` chief among them, also
     # `_option_slots` / `_discovered` set elsewhere (import) — are NOT in
     # `product_params["metadata"]` at all, because there is no input for
     # them to arrive on. Building `cleaned_metadata` was never a partial
     # update of those keys; every prior save silently erased them. Restore
-    # them from the product's current stored metadata before writing —
-    # the form does not own those keys, so it must merge, not replace.
-    final_metadata = merge_foreign_metadata(socket.assigns.product.metadata, cleaned_metadata)
+    # them from the product's own metadata before writing — the form does
+    # not own those keys, so it must merge, not replace.
+    final_metadata =
+      merge_foreign_metadata(
+        socket.assigns.product.metadata,
+        cleaned_metadata,
+        socket.assigns.option_schema
+      )
 
     product_params =
       product_params

@@ -40,6 +40,7 @@ defmodule PhoenixKitEcommerce.Web.ProductFormFingerprintTest do
   use PhoenixKitEcommerce.LiveCase, async: true
 
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.TranslationFingerprint, as: FP
 
   @source_lang "en"
@@ -180,6 +181,49 @@ defmodule PhoenixKitEcommerce.Web.ProductFormFingerprintTest do
       # still untouched by any of this.
       assert FP.get(reloaded.metadata, @target_lang, "description") ==
                FP.hash("source")
+    end
+
+    test "clearing every value of a multiselect specification still removes the key",
+         %{conn: conn} do
+      # The other side of the merge. Non-price-affecting options render
+      # straight under `product[metadata][<key>]`; a multiselect with no
+      # box checked submits NOTHING for its key (there is no hidden
+      # companion input the way `<.checkbox>` has one). A merge that
+      # treated those keys as foreign would layer the operator's cleared
+      # field back on from the stored metadata and the field could never
+      # be emptied through the form.
+      {:ok, _} =
+        Options.update_global_options([
+          %{
+            "key" => "finish",
+            "label" => "Finish",
+            "type" => "multiselect",
+            "options" => ["matte", "gloss"],
+            "affects_price" => false
+          }
+        ])
+
+      product = product_with_stamped_translation("source")
+
+      {:ok, product} =
+        product
+        |> Ecto.Changeset.change(%{metadata: Map.put(product.metadata, "finish", ["matte"])})
+        |> repo().update()
+
+      {:ok, view, html} = live(conn, "/en/admin/shop/products/#{product.uuid}/edit")
+      # The input really is on the page — otherwise this test would pass
+      # for the wrong reason.
+      assert html =~ "product[metadata][finish][]"
+
+      view
+      |> form("form.space-y-6", %{"product" => %{"metadata" => %{"finish" => []}}})
+      |> render_submit()
+
+      reloaded = Shop.get_product!(product.uuid)
+      refute Map.has_key?(reloaded.metadata, "finish")
+
+      # ...and the foreign key still survives the very same save.
+      assert FP.get(reloaded.metadata, @target_lang, "description") == FP.hash("source")
     end
   end
 end
