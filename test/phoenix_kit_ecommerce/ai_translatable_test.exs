@@ -6,6 +6,7 @@ defmodule PhoenixKitEcommerce.AITranslatableTest do
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.AITranslatable
   alias PhoenixKitEcommerce.Product
+  alias PhoenixKitEcommerce.TranslationFingerprint
 
   defp create_product(attrs \\ %{}) do
     base = %{
@@ -250,6 +251,468 @@ defmodule PhoenixKitEcommerce.AITranslatableTest do
 
     assert {:error, :no_translated_fields} =
              AITranslatable.put_translation(product, "fr", %{"title" => "  "}, [])
+  end
+
+  # ── Fingerprints, write-narrowing, reset, candidates (design §4.1/§4.4) ──
+
+  describe "put_translation/4 stamps a fingerprint alongside each field it writes" do
+    test "first write of a field stamps hash(trim(source)) under metadata" do
+      product = create_product()
+
+      {:ok, updated} =
+        AITranslatable.put_translation(
+          product,
+          "fr",
+          %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => "Wooden Vase"}
+        )
+
+      assert updated.title["fr"] == "Vase en Bois"
+
+      assert updated.metadata["_translation_fingerprints"]["fr"]["title"] ==
+               TranslationFingerprint.hash("Wooden Vase")
+    end
+
+    test "the fingerprint is taken from the SOURCE FIELDS THE JOB PASSED, not the row's current value" do
+      # design §4.1: source_fields/2 and put_translation/4 are ~45s apart in
+      # production; a Shopify sync can land in between. The fingerprint must
+      # reflect what was actually translated, never whatever the row
+      # happens to say by persist time.
+      product = create_product()
+      # Simulate the source changing between read and persist by passing a
+      # DIFFERENT source text than the product's own current `title["en"]`.
+      stale_source = "Wooden Vase (as read at translation time)"
+
+      {:ok, updated} =
+        AITranslatable.put_translation(
+          product,
+          "fr",
+          %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => stale_source}
+        )
+
+      assert updated.metadata["_translation_fingerprints"]["fr"]["title"] ==
+               TranslationFingerprint.hash(stale_source)
+
+      refute updated.metadata["_translation_fingerprints"]["fr"]["title"] ==
+               TranslationFingerprint.hash(product.title["en"])
+    end
+
+    test "a call with no :source_fields opt at all still writes, but stamps no fingerprint" do
+      product = create_product()
+
+      {:ok, updated} =
+        AITranslatable.put_translation(product, "fr", %{"title" => "Vase en Bois"}, [])
+
+      assert updated.title["fr"] == "Vase en Bois"
+      assert TranslationFingerprint.get(updated.metadata, "fr", "title") == nil
+    end
+  end
+
+  describe "write-narrowing (design §4.4's table)" do
+    test "an unchanged source is skipped — the stored translation is left alone" do
+      product = create_product()
+      source = product.title["en"]
+
+      {:ok, first} =
+        AITranslatable.put_translation(product, "fr", %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => source}
+        )
+
+      # A second call with the SAME source but a DIFFERENT AI response
+      # (simulating a routine re-run) must not clobber the stored
+      # translation — this is the manual-edit protection design §4.4
+      # exists for.
+      {:ok, second} =
+        AITranslatable.put_translation(first, "fr", %{"title" => "Vase Complètement Différent"},
+          source_fields: %{"title" => source}
+        )
+
+      assert second.title["fr"] == "Vase en Bois"
+
+      assert second.metadata["_translation_fingerprints"]["fr"]["title"] ==
+               TranslationFingerprint.hash(source)
+    end
+
+    test "a changed source is written and the fingerprint moves with it" do
+      product = create_product()
+
+      {:ok, first} =
+        AITranslatable.put_translation(product, "fr", %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => "Wooden Vase"}
+        )
+
+      {:ok, second} =
+        AITranslatable.put_translation(first, "fr", %{"title" => "Vase en Bois (Nouveau)"},
+          source_fields: %{"title" => "Wooden Vase, Deluxe"}
+        )
+
+      assert second.title["fr"] == "Vase en Bois (Nouveau)"
+
+      assert second.metadata["_translation_fingerprints"]["fr"]["title"] ==
+               TranslationFingerprint.hash("Wooden Vase, Deluxe")
+    end
+
+    test "a field with no fingerprint yet (:unknown) is written even though a translation exists" do
+      product = create_product()
+
+      # Simulate a translation stored WITHOUT going through put_translation/4
+      # (e.g. an import, or a translation done before this design shipped) —
+      # translated but fingerprint-less: exactly design §4.1's `:unknown`.
+      {:ok, unknown_state} =
+        product
+        |> Ecto.Changeset.change(%{title: Map.put(product.title, "fr", "Vase (import)")})
+        |> repo().update()
+
+      {:ok, updated} =
+        AITranslatable.put_translation(unknown_state, "fr", %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => "Wooden Vase"}
+        )
+
+      assert updated.title["fr"] == "Vase en Bois"
+
+      assert TranslationFingerprint.get(updated.metadata, "fr", "title") ==
+               TranslationFingerprint.hash("Wooden Vase")
+    end
+
+    test "fields are narrowed independently — one stale, one fresh, in the same call" do
+      product = create_product()
+
+      {:ok, first} =
+        AITranslatable.put_translation(
+          product,
+          "fr",
+          %{"title" => "Vase en Bois", "description" => "Un joli vase"},
+          source_fields: %{"title" => "Wooden Vase", "description" => "A nice vase"}
+        )
+
+      # Second call: title's source is UNCHANGED (skip expected), description's
+      # source CHANGED (write expected) — both fields present in the same
+      # AI response.
+      {:ok, second} =
+        AITranslatable.put_translation(
+          first,
+          "fr",
+          %{
+            "title" => "Vase Different (should be ignored)",
+            "description" => "Description mise à jour"
+          },
+          source_fields: %{"title" => "Wooden Vase", "description" => "A nice vase, updated"}
+        )
+
+      assert second.title["fr"] == "Vase en Bois"
+      assert second.description["fr"] == "Description mise à jour"
+    end
+
+    test "all fields write-narrowed away ⇒ success without a write, no event, no activity log" do
+      product = create_product()
+      source = product.title["en"]
+
+      {:ok, first} =
+        AITranslatable.put_translation(product, "fr", %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => source}
+        )
+
+      # The first (real) write already logged one activity entry — the
+      # assertion below is that the SECOND (fully skipped) call adds no
+      # further entry, not that none exist at all.
+      activity_count_before = length(list_activities())
+
+      PhoenixKitEcommerce.Events.subscribe_products()
+
+      {:ok, second} =
+        AITranslatable.put_translation(first, "fr", %{"title" => "Ignored, unchanged source"},
+          source_fields: %{"title" => source}
+        )
+
+      assert second.uuid == first.uuid
+      assert second.title["fr"] == "Vase en Bois"
+      assert second.updated_at == first.updated_at
+
+      refute_receive {:product_updated, _}, 50
+
+      assert length(list_activities()) == activity_count_before
+    end
+
+    test "a write DOES broadcast the update event and log the activity entry" do
+      product = create_product()
+      PhoenixKitEcommerce.Events.subscribe_products()
+
+      {:ok, _updated} =
+        AITranslatable.put_translation(product, "fr", %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => "Wooden Vase"},
+          actor_uuid: nil
+        )
+
+      assert_receive {:product_updated, _}, 100
+
+      assert_activity_logged("shop.product.updated",
+        resource_uuid: product.uuid,
+        metadata_has: %{"target_language" => "fr"}
+      )
+    end
+  end
+
+  describe "the slug corner: title write-narrowed away falls back to the STORED title (design §4.4)" do
+    test "title skipped (fresh), a different field written, slug still generated from stored title" do
+      product = create_product()
+      title_source = product.title["en"]
+
+      # Set up a product that already has a FRESH French title (fingerprint
+      # matches) but — simulating the backfill (§4.1) or an import path
+      # that never ran slug generation — no French slug yet.
+      metadata =
+        TranslationFingerprint.put_many(product.metadata, "fr", %{
+          "title" => TranslationFingerprint.hash(title_source)
+        })
+
+      {:ok, primed} =
+        product
+        |> Ecto.Changeset.change(%{
+          title: Map.put(product.title, "fr", "Vase en Bois"),
+          metadata: metadata
+        })
+        |> repo().update()
+
+      refute Map.has_key?(primed.slug || %{}, "fr")
+
+      {:ok, updated} =
+        AITranslatable.put_translation(
+          primed,
+          "fr",
+          %{"title" => "Vase Ignoré", "description" => "Un joli vase"},
+          source_fields: %{"title" => title_source, "description" => "A nice vase"}
+        )
+
+      # title write-narrowed away — untouched
+      assert updated.title["fr"] == "Vase en Bois"
+      # description written normally
+      assert updated.description["fr"] == "Un joli vase"
+      # slug generated from the STORED title, not the (ignored) AI response
+      assert updated.slug["fr"] == "vase-en-bois"
+    end
+
+    test "title absent from the AI response entirely — same fallback applies" do
+      product = create_product()
+
+      {:ok, primed} =
+        product
+        |> Ecto.Changeset.change(%{title: Map.put(product.title, "fr", "Vase Préexistant")})
+        |> repo().update()
+
+      refute Map.has_key?(primed.slug || %{}, "fr")
+
+      {:ok, updated} =
+        AITranslatable.put_translation(primed, "fr", %{"description" => "Un joli vase"},
+          source_fields: %{"description" => "A nice vase"}
+        )
+
+      assert updated.description["fr"] == "Un joli vase"
+      assert updated.slug["fr"] == "vase-preexistant"
+    end
+  end
+
+  describe "reset_reference/3 — \"перевести заново\" (design §4.4)" do
+    test "erases the fingerprint for exactly the requested language/field pair" do
+      product = create_product()
+
+      {:ok, translated} =
+        AITranslatable.put_translation(
+          product,
+          "fr",
+          %{"title" => "Vase en Bois", "description" => "Un joli vase"},
+          source_fields: %{"title" => "Wooden Vase", "description" => "A nice vase"}
+        )
+
+      assert TranslationFingerprint.get(translated.metadata, "fr", "title") != nil
+
+      {:ok, reset} = AITranslatable.reset_reference(translated.uuid, ["fr"], [:title])
+
+      # translated content is untouched
+      assert reset.title["fr"] == "Vase en Bois"
+      assert reset.description["fr"] == "Un joli vase"
+
+      # only :title's fingerprint is gone
+      assert TranslationFingerprint.get(reset.metadata, "fr", "title") == nil
+      assert TranslationFingerprint.get(reset.metadata, "fr", "description") != nil
+    end
+
+    test "after a reset, a call with the SAME source writes again instead of skipping" do
+      product = create_product()
+      source = "Wooden Vase"
+
+      {:ok, translated} =
+        AITranslatable.put_translation(product, "fr", %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => source}
+        )
+
+      {:ok, _reset} = AITranslatable.reset_reference(translated.uuid, ["fr"], [:title])
+      reset_product = repo().get(Product, product.uuid)
+
+      {:ok, retranslated} =
+        AITranslatable.put_translation(
+          reset_product,
+          "fr",
+          %{"title" => "Vase en Bois (Amélioré)"},
+          source_fields: %{"title" => source}
+        )
+
+      assert retranslated.title["fr"] == "Vase en Bois (Amélioré)"
+    end
+
+    test "defaults to every fingerprinted field when none are given" do
+      product = create_product()
+
+      {:ok, translated} =
+        AITranslatable.put_translation(
+          product,
+          "fr",
+          %{"title" => "Vase en Bois", "description" => "Un joli vase"},
+          source_fields: %{"title" => "Wooden Vase", "description" => "A nice vase"}
+        )
+
+      {:ok, reset} = AITranslatable.reset_reference(translated.uuid, ["fr"])
+
+      assert TranslationFingerprint.get(reset.metadata, "fr", "title") == nil
+      assert TranslationFingerprint.get(reset.metadata, "fr", "description") == nil
+    end
+
+    test "errors on an unknown uuid" do
+      assert {:error, :resource_not_found} =
+               AITranslatable.reset_reference(Ecto.UUID.generate(), ["fr"], [:title])
+    end
+  end
+
+  describe "candidates/3 — the hash-in-the-database query (design §4.3)" do
+    # create_product/1's base attrs give description/seo_title an "en"
+    # value with no "de" counterpart — fine for :missing/:stale fixtures
+    # (an extra missing field doesn't change whether the resource is a
+    # candidate), but it would make :unknown/:fresh/:empty_source spuriously
+    # candidates too (via description/seo_title being :missing for "de"
+    # regardless of what title does). Those three fixtures clear
+    # description/seo_title entirely so title is the only field with any
+    # state at all — isolating exactly what each is meant to test.
+    @no_other_sources %{description: %{}, seo_title: %{}}
+
+    setup do
+      # :missing — source present ("en"), no "de" translation at all.
+      missing = create_product(%{title: %{"en" => "Missing Title"}})
+
+      # :stale — translated, but the fingerprint no longer matches source.
+      stale =
+        create_product(%{title: %{"en" => "Stale Title V2", "de" => "Alter Titel"}})
+
+      stale_metadata =
+        TranslationFingerprint.put_many(stale.metadata, "de", %{
+          "title" => TranslationFingerprint.hash("Stale Title V1")
+        })
+
+      {:ok, stale} =
+        stale |> Ecto.Changeset.change(%{metadata: stale_metadata}) |> repo().update()
+
+      # :unknown — translated, no fingerprint. Must NEVER be a candidate.
+      unknown =
+        create_product(
+          Map.merge(@no_other_sources, %{
+            title: %{"en" => "Unknown Title", "de" => "Unbekannter Titel"}
+          })
+        )
+
+      # :fresh — translated, fingerprint matches. Must NEVER be a candidate.
+      fresh_source = "Fresh Title"
+
+      fresh =
+        create_product(
+          Map.merge(@no_other_sources, %{
+            title: %{"en" => fresh_source, "de" => "Frischer Titel"}
+          })
+        )
+
+      fresh_metadata =
+        TranslationFingerprint.put_many(fresh.metadata, "de", %{
+          "title" => TranslationFingerprint.hash(fresh_source)
+        })
+
+      {:ok, fresh} =
+        fresh |> Ecto.Changeset.change(%{metadata: fresh_metadata}) |> repo().update()
+
+      # Empty source, but a LIVE "de" translation — must NEVER be a
+      # candidate (design §4.1's convergence rule: empty source excludes
+      # the field entirely, it does not count as "stale"). Built via a
+      # raw changeset (bypassing Product.changeset/2's "en required"
+      # validation) so the "en" title can be genuinely absent, not just
+      # blank.
+      {:ok, empty_source} =
+        create_product(@no_other_sources)
+        |> Ecto.Changeset.change(%{title: %{"de" => "Verwaistes Deutsch"}})
+        |> repo().update()
+
+      draft_missing =
+        create_product(%{title: %{"en" => "Draft Missing Title"}, status: "draft"})
+
+      %{
+        missing: missing,
+        stale: stale,
+        unknown: unknown,
+        fresh: fresh,
+        empty_source: empty_source,
+        draft_missing: draft_missing
+      }
+    end
+
+    test "missing and stale are candidates; unknown, fresh, and empty-source are not", %{
+      missing: missing,
+      stale: stale,
+      unknown: unknown,
+      fresh: fresh,
+      empty_source: empty_source
+    } do
+      results = AITranslatable.candidates("en", ["de"])
+      uuids = MapSet.new(results, & &1.uuid)
+
+      assert MapSet.member?(uuids, missing.uuid)
+      assert MapSet.member?(uuids, stale.uuid)
+      refute MapSet.member?(uuids, unknown.uuid)
+      refute MapSet.member?(uuids, fresh.uuid)
+      refute MapSet.member?(uuids, empty_source.uuid)
+
+      missing_row = Enum.find(results, &(&1.uuid == missing.uuid))
+      assert missing_row.languages == ["de"]
+    end
+
+    test "a status filter excludes non-matching statuses", %{
+      missing: missing,
+      draft_missing: draft_missing
+    } do
+      results = AITranslatable.candidates("en", ["de"], statuses: ["active"])
+      uuids = MapSet.new(results, & &1.uuid)
+
+      assert MapSet.member?(uuids, missing.uuid)
+      refute MapSet.member?(uuids, draft_missing.uuid)
+
+      # With no status filter, the draft one is included too.
+      unfiltered_uuids = AITranslatable.candidates("en", ["de"]) |> MapSet.new(& &1.uuid)
+      assert MapSet.member?(unfiltered_uuids, draft_missing.uuid)
+    end
+
+    test "limit caps the number of {uuid, language} candidate rows returned" do
+      full = AITranslatable.candidates("en", ["de"])
+      total_pairs = full |> Enum.map(&length(&1.languages)) |> Enum.sum()
+      assert total_pairs > 1
+
+      limited = AITranslatable.candidates("en", ["de"], limit: 1)
+      limited_pairs = limited |> Enum.map(&length(&1.languages)) |> Enum.sum()
+      assert limited_pairs == 1
+    end
+
+    test "an unrequested target language is never returned", %{missing: missing} do
+      results = AITranslatable.candidates("en", ["fr"])
+      row = Enum.find(results, &(&1.uuid == missing.uuid))
+
+      # "de" was never requested, so even though missing has no "de" or
+      # "fr" translation, only "fr" (the requested language) can appear.
+      assert row.languages == ["fr"]
+    end
   end
 
   defp repo, do: PhoenixKit.RepoHelper.repo()

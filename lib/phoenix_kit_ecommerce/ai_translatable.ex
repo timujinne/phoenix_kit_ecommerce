@@ -30,6 +30,21 @@ defmodule PhoenixKitEcommerce.AITranslatable do
   collision); there is no DB unique constraint on the JSONB slug map (core
   migration v47 dropped it), so the check is best-effort across rows.
 
+  ## Staleness / write-narrowing (design §4.1, §4.4)
+
+  The SAME `FOR UPDATE` lock that makes concurrent languages safe is also
+  what makes per-field write-narrowing correct: `put_translation/4`
+  decides, field by field, whether a translation is worth writing by
+  comparing `opts[:source_fields]` (the exact text this job read and
+  translated — see `PhoenixKitEcommerce.TranslationFingerprint`) against
+  the CURRENTLY stored translation and fingerprint of the freshly-locked
+  row, never against the possibly-stale `resource` argument. A field whose
+  fingerprint still matches is left untouched even though a fresh AI
+  response for it is sitting right there — that's what stops a routine
+  re-translation from clobbering a manual edit. Resetting a resource's
+  fingerprints (`reset_reference/3`) is the only supported way to lift
+  that protection ("перевести заново", design §4.4).
+
   ## Prompt
 
   The seo fields are not in the shared translation prompt's vocabulary, so
@@ -68,6 +83,7 @@ defmodule PhoenixKitEcommerce.AITranslatable do
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.PromptRollout
+  alias PhoenixKitEcommerce.TranslationFingerprint
 
   @resource_type "shop_product"
   @prompt_name "PhoenixKit Shop Product Translation"
@@ -98,6 +114,22 @@ defmodule PhoenixKitEcommerce.AITranslatable do
     "seo_title" => :seo_title,
     "seo_description" => :seo_description
   }
+
+  # The reverse of @field_map — write-narrowing looks a field up by its
+  # SCHEMA name (the key `translated`, the AI response after clean/1, is
+  # keyed by) but needs the PROMPT name to find that field's source text
+  # in opts[:source_fields] (which is keyed the way source_fields/2 built
+  # it — prompt vocabulary).
+  @schema_to_prompt Map.new(@field_map, fn {prompt_field, schema_field} ->
+                      {schema_field, prompt_field}
+                    end)
+
+  # Fingerprints are keyed by SCHEMA field name (design §4.1's example
+  # metadata uses "body_html", not the prompt vocabulary's "body") —
+  # deliberately the same identifier as the JSONB column itself, so the
+  # candidate SQL (TranslationFingerprint.select_candidates/2) can address
+  # both with one `#{field}` interpolation.
+  @schema_fields Map.values(@field_map) |> Enum.map(&Atom.to_string/1)
 
   @doc "The resource-type key this adapter registers under."
   def resource_type, do: @resource_type
@@ -135,18 +167,96 @@ defmodule PhoenixKitEcommerce.AITranslatable do
       end
 
     if translated == %{} do
+      # Nothing usable came back from the caller at all (blank/absent
+      # response) — a real error, distinct from every field being
+      # write-narrowed away below (which is a success, not this).
       {:error, :no_translated_fields}
     else
-      case merge_translation(uuid, target_lang, translated) do
-        {:ok, updated} = ok ->
+      source_fields = Keyword.get(opts, :source_fields) || %{}
+
+      case merge_translation(uuid, target_lang, translated, source_fields) do
+        {:ok, {:written, updated}} ->
           Events.broadcast_product_updated(updated)
           log_translated(updated, target_lang, opts)
-          ok
+          {:ok, updated}
 
-        error ->
+        # Design §4.4: every field was write-narrowed away (each one's
+        # fingerprint still matched its stored translation) — success,
+        # but the row didn't change, so no update event and no
+        # ai.translation_added activity entry (that log is about a
+        # write that happened, not a call that happened).
+        {:ok, {:skipped, current}} ->
+          {:ok, current}
+
+        {:error, _reason} = error ->
           error
       end
     end
+  end
+
+  @doc """
+  "Перевести заново" (design §4.4): erases the stored fingerprints for
+  `target_langs` × `fields` (schema field atoms; defaults to every
+  fingerprinted field) under the same `FOR UPDATE` lock
+  `put_translation/4` uses. The translated content itself is untouched —
+  this only lifts write-narrowing's protection, so the next
+  `put_translation/4` for that pair writes again even if the source
+  hasn't changed. Until that next call lands, the reset field reads as
+  `:unknown` (design §4.4: "пара со сброшенным эталоном до завершения
+  задания числится unknown"), which is also why this never broadcasts a
+  product-updated event — nothing visible changed, only bookkeeping.
+  """
+  @spec reset_reference(String.t(), [String.t()], [atom()]) ::
+          {:ok, Product.t()} | {:error, term()}
+  def reset_reference(uuid, target_langs, fields \\ Map.values(@field_map))
+      when is_binary(uuid) and is_list(target_langs) and is_list(fields) do
+    field_strings = Enum.map(fields, &Atom.to_string/1)
+
+    repo().transaction(fn ->
+      query = Product |> where([p], p.uuid == ^uuid) |> lock("FOR UPDATE")
+
+      case repo().one(query) do
+        nil -> repo().rollback(:resource_not_found)
+        %Product{} = fresh -> apply_reset(fresh, target_langs, field_strings)
+      end
+    end)
+  end
+
+  defp apply_reset(%Product{} = fresh, target_langs, field_strings) do
+    new_metadata = TranslationFingerprint.drop(fresh.metadata, target_langs, field_strings)
+
+    case fresh |> Ecto.Changeset.change(%{metadata: new_metadata}) |> repo().update() do
+      {:ok, updated} -> updated
+      {:error, reason} -> repo().rollback(reason)
+    end
+  end
+
+  @doc """
+  Design §4.3's candidate query: products with at least one field
+  `:missing` or `:stale` (design §4.1) for a target language, hashed
+  entirely in the database — see
+  `PhoenixKitEcommerce.TranslationFingerprint.select_candidates/2`.
+
+  `opts`:
+
+    * `:statuses` — product-status filter (design §4.3 step 5); `nil`
+      (default) applies none.
+    * `:limit` — row cap (one row per `{uuid, language}` candidate
+      pair, not per product).
+  """
+  @spec candidates(String.t(), [String.t()], keyword()) :: [
+          %{uuid: String.t(), languages: [String.t()]}
+        ]
+  def candidates(source_lang, target_langs, opts \\ [])
+      when is_binary(source_lang) and is_list(target_langs) do
+    TranslationFingerprint.select_candidates(repo(),
+      table: "phoenix_kit_shop_products",
+      fields: @schema_fields,
+      source_lang: source_lang,
+      target_langs: target_langs,
+      statuses: Keyword.get(opts, :statuses),
+      limit: Keyword.get(opts, :limit)
+    )
   end
 
   @doc """
@@ -174,30 +284,104 @@ defmodule PhoenixKitEcommerce.AITranslatable do
 
   # -- internals ---------------------------------------------------------
 
-  defp merge_translation(uuid, target_lang, translated) do
+  defp merge_translation(uuid, target_lang, translated, source_fields) do
     repo().transaction(fn ->
       query = Product |> where([p], p.uuid == ^uuid) |> lock("FOR UPDATE")
 
       case repo().one(query) do
         nil -> repo().rollback(:resource_not_found)
-        %Product{} = fresh -> write_merged(fresh, target_lang, translated)
+        %Product{} = fresh -> write_merged(fresh, target_lang, translated, source_fields)
       end
     end)
   end
 
-  defp write_merged(%Product{} = fresh, target_lang, translated) do
-    changes =
-      translated
-      |> Enum.reduce(%{}, fn {schema_field, value}, acc ->
-        merged = Map.put(Map.get(fresh, schema_field) || %{}, target_lang, value)
-        Map.put(acc, schema_field, merged)
-      end)
-      |> maybe_put_slug(fresh, target_lang, translated[:title])
+  defp write_merged(%Product{} = fresh, target_lang, translated, source_fields) do
+    {field_changes, fingerprint_updates, written_fields} =
+      narrow_writes(fresh, target_lang, translated, source_fields)
 
-    case fresh |> Ecto.Changeset.change(changes) |> repo().update() do
-      {:ok, updated} -> updated
-      {:error, reason} -> repo().rollback(reason)
+    if field_changes == %{} do
+      {:skipped, fresh}
+    else
+      # Design §4.4's slug corner: the slug is derived from whichever
+      # title text is actually about to be true after this write — the
+      # just-written translation if :title was written this round,
+      # otherwise the title translation already stored (covers both "the
+      # model didn't return a title this time" and "title was
+      # write-narrowed away") — never blank just because this call
+      # didn't touch :title.
+      title_for_slug =
+        if :title in written_fields do
+          translated[:title]
+        else
+          fresh.title |> then(&(&1 || %{})) |> Map.get(target_lang)
+        end
+
+      changes =
+        field_changes
+        |> maybe_put_slug(fresh, target_lang, title_for_slug)
+        |> maybe_put_metadata(fresh, target_lang, fingerprint_updates)
+
+      case fresh |> Ecto.Changeset.change(changes) |> repo().update() do
+        {:ok, updated} -> {:written, updated}
+        {:error, reason} -> repo().rollback(reason)
+      end
     end
+  end
+
+  # Design §4.4's write-narrowing table, applied per field against the
+  # FRESHLY-LOCKED row (never the possibly-stale `resource` the worker
+  # loaded before the multi-second AI call) — returns the field changes
+  # to write, the fingerprint updates to stamp, and which schema fields
+  # were actually written (the slug step above needs to know that last
+  # part specifically for :title).
+  defp narrow_writes(fresh, target_lang, translated, source_fields) do
+    Enum.reduce(translated, {%{}, %{}, []}, fn {schema_field, value}, acc ->
+      apply_write_decision(fresh, target_lang, source_fields, schema_field, value, acc)
+    end)
+  end
+
+  defp apply_write_decision(
+         fresh,
+         target_lang,
+         source_fields,
+         schema_field,
+         value,
+         {changes, fps, written}
+       ) do
+    prompt_field = Map.fetch!(@schema_to_prompt, schema_field)
+    source = source_fields[prompt_field]
+
+    existing_translation =
+      fresh |> Map.get(schema_field) |> then(&(&1 || %{})) |> Map.get(target_lang)
+
+    fp_field = Atom.to_string(schema_field)
+    existing_fp = TranslationFingerprint.get(fresh.metadata, target_lang, fp_field)
+
+    case TranslationFingerprint.write_decision(source, existing_translation, existing_fp) do
+      :skip ->
+        {changes, fps, written}
+
+      {:write, new_fp} ->
+        merged_field = Map.put(Map.get(fresh, schema_field) || %{}, target_lang, value)
+        new_changes = Map.put(changes, schema_field, merged_field)
+        new_fps = put_fingerprint(fps, fp_field, new_fp)
+        {new_changes, new_fps, [schema_field | written]}
+    end
+  end
+
+  defp put_fingerprint(fps, _fp_field, nil), do: fps
+  defp put_fingerprint(fps, fp_field, new_fp), do: Map.put(fps, fp_field, new_fp)
+
+  defp maybe_put_metadata(changes, _fresh, _target_lang, fingerprint_updates)
+       when fingerprint_updates == %{},
+       do: changes
+
+  defp maybe_put_metadata(changes, fresh, target_lang, fingerprint_updates) do
+    Map.put(
+      changes,
+      :metadata,
+      TranslationFingerprint.put_many(fresh.metadata, target_lang, fingerprint_updates)
+    )
   end
 
   # A locally-generated slug from the translated title, ONLY when the target
