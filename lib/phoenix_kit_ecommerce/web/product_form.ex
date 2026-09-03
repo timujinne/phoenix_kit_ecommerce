@@ -2109,6 +2109,30 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
   defp get_schema_for_category_uuid(_), do: Options.get_enabled_global_options()
 
+  # Top-level metadata keys this form actually renders inputs for (or
+  # derives from socket assigns fed by those inputs) and is therefore
+  # entitled to add, change, OR remove on save. Every other top-level key
+  # is foreign to the form — it has no way to know about it, let alone
+  # decide it should be gone — and must survive a save untouched.
+  @form_owned_metadata_keys ["_option_values", "_price_modifiers", "_image_mappings"]
+
+  # `cleaned_metadata` was built from the client-submitted `product[metadata]`
+  # params plus the form-owned keys above; it carries none of the keys the
+  # form never rendered a field for (`_translation_fingerprints`,
+  # `_option_slots`, `_discovered`, ...). Casting it as-is would replace the
+  # product's whole `metadata` map (`cast/3` on a `:map` field is a full
+  # replace, not a merge — see `Product.changeset/2`) and silently erase
+  # every one of those. Start from the CURRENTLY stored metadata instead,
+  # drop only the keys the form owns (so its adds/updates/deletes for those
+  # still apply), and layer the form's output on top.
+  defp merge_foreign_metadata(existing_metadata, cleaned_metadata) do
+    owned_keys = @form_owned_metadata_keys ++ [PriceDisplay.metadata_key()]
+
+    (existing_metadata || %{})
+    |> Map.drop(owned_keys)
+    |> Map.merge(cleaned_metadata)
+  end
+
   # Clean up _option_values - remove entries where all values are selected (use defaults)
   defp clean_option_values(metadata, option_schema, original_option_values) do
     case metadata["_option_values"] do
@@ -2597,10 +2621,24 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
         display -> Map.put(cleaned_metadata, PriceDisplay.metadata_key(), display)
       end
 
+    # The form only ever reads/writes the metadata keys it renders inputs
+    # for (_option_values, _price_modifiers, _image_mappings,
+    # PriceDisplay.metadata_key(), plus whatever dynamic option keys the
+    # schema adds directly under metadata — all of which are already part
+    # of `cleaned_metadata` by construction above). Keys it never rendered
+    # a field for — `_translation_fingerprints` chief among them, also
+    # `_option_slots` / `_discovered` set elsewhere (import) — are NOT in
+    # `product_params["metadata"]` at all, because there is no input for
+    # them to arrive on. Building `cleaned_metadata` was never a partial
+    # update of those keys; every prior save silently erased them. Restore
+    # them from the product's current stored metadata before writing —
+    # the form does not own those keys, so it must merge, not replace.
+    final_metadata = merge_foreign_metadata(socket.assigns.product.metadata, cleaned_metadata)
+
     product_params =
       product_params
       |> Map.drop(["price_unit", "price_from", "price_on_request"])
-      |> Map.put("metadata", cleaned_metadata)
+      |> Map.put("metadata", final_metadata)
 
     # Extract featured and gallery from unified image list
     all_images = socket.assigns.all_image_uuids
