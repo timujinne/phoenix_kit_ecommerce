@@ -43,6 +43,18 @@ config :phoenix_kit_ecommerce, PhoenixKitEcommerce.Test.Repo,
 # Wire repo for PhoenixKit.RepoHelper — without this, context-layer DB calls crash.
 config :phoenix_kit, repo: PhoenixKitEcommerce.Test.Repo
 
+# `testing: :manual` (design §7's "Oban в тестах приложения — testing:
+# :manual, задания не выполняются сами"): `Oban.insert/1` and
+# `Oban.cancel_job/1` still hit the real `oban_jobs` table (needed by
+# `TranslationSweepWorker`'s integration tests — design §4.3), but no
+# queue/plugin/stager ever runs a job on its own; tests call `perform/1`
+# directly. Not started here — only when the sandboxed test repo is up
+# (see `test/test_helper.exs`), same guard every other DB-dependent
+# piece of this test setup uses.
+config :phoenix_kit_ecommerce, Oban,
+  repo: PhoenixKitEcommerce.Test.Repo,
+  testing: :manual
+
 # Swoosh test adapter so flows that send mail (e.g. the guest-checkout
 # confirmation email in `convert_cart_to_order/2`) don't crash with a
 # missing-adapter error. Mail is captured in-process, never delivered.

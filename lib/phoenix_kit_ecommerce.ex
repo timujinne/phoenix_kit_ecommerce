@@ -58,6 +58,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.Shopify.Provider, as: ShopifyProvider
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
+  alias PhoenixKitEcommerce.Workers.TranslationSweepWorker
 
   # ============================================
   # SYSTEM ENABLE/DISABLE
@@ -89,6 +90,11 @@ defmodule PhoenixKitEcommerce do
   def enable_system do
     result = Settings.update_boolean_setting_with_module("shop_enabled", true, "shop")
     refresh_dashboard_tabs()
+    # Design §4.3: recovers the sweep's self-rescheduling Oban chain if it
+    # was ever broken (a restart, Oban pruning) — unconditional, cheap
+    # (deduplicated by the worker's own uniqueness), and safe to call even
+    # when translations were never turned on.
+    TranslationSweepWorker.ensure_scheduled()
     result
   end
 

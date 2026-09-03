@@ -229,6 +229,18 @@ if repo_available do
   {:ok, _} = PhoenixKitEcommerce.Test.Endpoint.start_link()
 end
 
+# `TranslationSweepWorker`'s self-rescheduling chain (design §4.3) needs a
+# real, registered `Oban` instance to call `Oban.insert/1` /
+# `Oban.cancel_job/1` against. `testing: :manual` (config/test.exs) means
+# nothing it starts ever runs a job on its own — no queue, no plugins, no
+# stager — every DB write it does still lands through the caller's own
+# sandboxed connection, exactly like any other `Repo` call from within a
+# test. Only started when the test DB is up; without it there's no
+# `oban_jobs` table to point at.
+if repo_available do
+  {:ok, _} = Oban.start_link(Application.fetch_env!(:phoenix_kit_ecommerce, Oban))
+end
+
 # i18n tests require phoenix_kit with the `gettext_backend` API
 # (see BeamLabEU/phoenix_kit#522). When building against an older
 # published phoenix_kit lacking `PhoenixKit.Dashboard.Tab.localized_label/1`,
