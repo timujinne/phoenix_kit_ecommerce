@@ -71,6 +71,30 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
     :crypto.hash(:sha256, String.trim(value)) |> Base.encode16(case: :lower)
   end
 
+  # Every character `String.trim/1` strips — the Unicode `White_Space`
+  # set. Postgres' one-argument `btrim(x)` strips ASCII SPACE and
+  # nothing else, so a source text ending in a newline (which is what an
+  # imported `body_html` normally ends in) hashes differently in SQL
+  # than it does here. That divergence is not cosmetic: the candidate
+  # query would call such a row `:stale` forever while
+  # `write_decision/3` narrows every write away, so every sweep tick
+  # would pay for a translation that changes nothing, and the management
+  # page (which reads `field_state/3`, i.e. this trim) would show
+  # `:fresh` for the row the sweep keeps re-queuing. Both SQL sites
+  # therefore pass this set explicitly as `btrim(x, $n)`.
+  @sql_trim_chars ([0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0x85, 0xA0, 0x1680] ++
+                     Enum.to_list(0x2000..0x200A) ++ [0x2028, 0x2029, 0x202F, 0x205F, 0x3000])
+                  |> Enum.map_join(&<<&1::utf8>>)
+
+  @doc """
+  The character set to pass as `btrim`'s second argument so a hash
+  computed in Postgres equals `hash/1` computed here — see the comment
+  above its definition. Any SQL that recomputes a fingerprint MUST use
+  it; `select_candidates/2` and the one-shot backfill mix task both do.
+  """
+  @spec sql_trim_chars() :: String.t()
+  def sql_trim_chars, do: @sql_trim_chars
+
   # ── Metadata accessors ───────────────────────────────────────────
 
   @doc "Reads the stored fingerprint for `{lang, field}` out of a resource's `metadata` map, or `nil`."
@@ -262,7 +286,7 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
 
     sql = candidates_sql(table, fields)
 
-    case SQL.query(repo, sql, [target_langs, source_lang, statuses, limit]) do
+    case SQL.query(repo, sql, [target_langs, source_lang, statuses, limit, @sql_trim_chars]) do
       {:ok, %{rows: rows}} ->
         rows
         |> Enum.group_by(fn [uuid, _lang] -> uuid end, fn [_uuid, lang] -> lang end)
@@ -278,8 +302,10 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
   # (text[] or NULL — a NULL comparison short-circuits the whole clause
   # to "no filter" on the SQL side), $4 = limit (integer or NULL —
   # Postgres treats `LIMIT NULL` as no limit at all, so this is always
-  # safe to include). Fixed positions regardless of which optional
-  # clauses fire, so no dynamic renumbering is needed.
+  # safe to include), $5 = the trim character set (see
+  # `sql_trim_chars/0` — it is what makes this query's hash equal
+  # `hash/1`'s). Fixed positions regardless of which optional clauses
+  # fire, so no dynamic renumbering is needed.
   defp candidates_sql(table, fields) do
     field_clauses = Enum.map_join(fields, "\n     OR ", &field_clause/1)
 
@@ -309,7 +335,7 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
          nullif(p."#{field}"->>t.lang,'') IS NULL
          OR (
            p.metadata->'#{@metadata_key}'->t.lang->>'#{field}' IS NOT NULL
-           AND encode(sha256(convert_to(btrim(p."#{field}"->>$2),'UTF8')),'hex')
+           AND encode(sha256(convert_to(btrim(p."#{field}"->>$2, $5),'UTF8')),'hex')
                IS DISTINCT FROM p.metadata->'#{@metadata_key}'->t.lang->>'#{field}'
          )
        )

@@ -63,6 +63,7 @@ defmodule Mix.Tasks.PhoenixKitEcommerce.BackfillTranslationFingerprints do
   @dialyzer {:nowarn_function, build_sql: 2}
 
   alias Ecto.Adapters.SQL
+  alias PhoenixKitEcommerce.TranslationFingerprint
   alias PhoenixKitEcommerce.Translations
 
   @shortdoc "One-shot: stamp existing shop translations' sources as the fingerprint reference"
@@ -156,7 +157,17 @@ defmodule Mix.Tasks.PhoenixKitEcommerce.BackfillTranslationFingerprints do
     {count_sql, update_sql} = build_sql(table, fields)
     sql = if dry_run, do: count_sql, else: update_sql
 
-    case SQL.query(repo, sql, [target_langs, source_lang]) do
+    # $3 (the trim character set) only appears in the UPDATE — the
+    # count query has no hash expression, and Postgres rejects a bind
+    # carrying more parameters than the statement uses.
+    params =
+      if dry_run do
+        [target_langs, source_lang]
+      else
+        [target_langs, source_lang, TranslationFingerprint.sql_trim_chars()]
+      end
+
+    case SQL.query(repo, sql, params) do
       {:ok, %{rows: [[count]]}} when dry_run ->
         count
 
@@ -168,7 +179,8 @@ defmodule Mix.Tasks.PhoenixKitEcommerce.BackfillTranslationFingerprints do
     end
   end
 
-  # $1 = target_langs (text[]), $2 = source_lang (text). A row is touched
+  # $1 = target_langs (text[]), $2 = source_lang (text), $3 = the trim
+  # character set (UPDATE only — see run_table/6). A row is touched
   # only when AT LEAST ONE field, for AT LEAST ONE target language, has
   # both a non-empty source and a non-empty translation already — the
   # exact same "has something to stamp" predicate for both the dry-run
@@ -228,7 +240,7 @@ defmodule Mix.Tasks.PhoenixKitEcommerce.BackfillTranslationFingerprints do
     CASE
                 WHEN nullif(p."#{field}"->>$2,'') IS NOT NULL
                      AND nullif(p."#{field}"->>t.lang,'') IS NOT NULL
-                THEN encode(sha256(convert_to(btrim(p."#{field}"->>$2),'UTF8')),'hex')
+                THEN encode(sha256(convert_to(btrim(p."#{field}"->>$2, $3),'UTF8')),'hex')
               END
     """
   end
