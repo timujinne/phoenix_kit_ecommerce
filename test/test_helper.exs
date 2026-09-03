@@ -5,7 +5,8 @@ require Logger
 # Level 1: Unit tests (schemas, changesets, pure functions) always run.
 # Level 2: Integration tests (tagged `:integration` via
 #          PhoenixKitEcommerce.DataCase / LiveCase) require PostgreSQL —
-#          automatically excluded when the database is unavailable.
+#          by default a missing/broken database is a HARD FAILURE (see
+#          the `allow_missing_db?` block below), not a silent exclusion.
 #
 # First-time setup:
 #
@@ -14,6 +15,46 @@ require Logger
 # After that, `mix test` boots the repo, runs core's versioned migrations
 # via `PhoenixKit.Migration.ensure_current/2`, and lets the Ecto sandbox
 # handle isolation. No module-owned DDL.
+
+# --- MIX_ENV guard -------------------------------------------------------
+#
+# config/config.exs only loads config/test.exs (test DB credentials, the
+# Ecto.Adapters.SQL.Sandbox pool, the test Endpoint, etc.) when
+# `config_env() == :test`:
+#
+#   if config_env() == :test do
+#     import_config "test.exs"
+#   end
+#
+# `mix test` normally runs with `Mix.env() == :test` even when nothing
+# sets MIX_ENV, because Mix applies each task's *preferred* environment —
+# but only when MIX_ENV is unset. An explicit `MIX_ENV=dev` (or any other
+# value) exported in the shell/container always overrides that
+# preference, so `mix test` would silently run in `:dev`, config/test.exs
+# would never load, and the repo would start on bare Ecto/Postgrex
+# defaults (no Sandbox pool, no configured credentials/database). That
+# makes every test look like a database problem when it is really a
+# config problem — fail loudly here instead of leaving it to be
+# rediscovered downstream (e.g. as `cannot invoke sandbox operation with
+# pool DBConnection.ConnectionPool`).
+if Mix.env() != :test do
+  raise """
+  mix test is running with MIX_ENV=#{Mix.env()}, not "test".
+
+  config/config.exs only imports config/test.exs when config_env() == :test,
+  so none of the test repo configuration (database, credentials, the
+  Ecto.Adapters.SQL.Sandbox pool, the test Endpoint) was loaded and this
+  suite cannot run correctly.
+
+  This happens whenever MIX_ENV is exported in the environment: Mix only
+  applies mix test's preferred environment (:test) when MIX_ENV is unset,
+  and an explicit value always wins over that preference.
+
+  Run instead:
+
+      MIX_ENV=test mix test
+  """
+end
 
 # Elixir 1.19's `mix test` no longer auto-loads modules from
 # `:elixirc_paths` test directories at test-helper time — only files
@@ -42,6 +83,34 @@ db_name =
   Application.get_env(:phoenix_kit_ecommerce, TestRepo, [])[:database] ||
     "phoenix_kit_ecommerce_test"
 
+# --- Degraded "no database" mode (opt-in only) ---------------------------
+#
+# A broken or missing test database used to be swallowed here: the
+# integration tests were quietly excluded and the run still reported
+# "0 failures". That is exactly how a MIX_ENV misconfiguration (see the
+# guard above) went unnoticed — a config bug that should have failed
+# loudly instead looked like a healthy, if partial, green suite.
+#
+# By default this file now treats a broken/missing database as a hard
+# failure: `mix test` raises instead of degrading. A contributor who
+# genuinely has no PostgreSQL available and only wants the unit-level
+# suite can opt in explicitly:
+#
+#   PK_ECOMMERCE_TEST_NO_DB=1 mix test
+#
+# which still prints exactly what happened and what got excluded, so the
+# degraded run can never be mistaken for a full one.
+allow_missing_db? = System.get_env("PK_ECOMMERCE_TEST_NO_DB") == "1"
+
+no_db_hint = fn reason ->
+  """
+
+    Test database unavailable — integration tests excluded (PK_ECOMMERCE_TEST_NO_DB=1).
+    Database: #{db_name}
+    Reason: #{reason}
+  """
+end
+
 db_check =
   try do
     case System.cmd("psql", ["-lqt"], stderr_to_stdout: true) do
@@ -60,52 +129,71 @@ db_check =
     end
   rescue
     # `psql` not on PATH (CI / minimal env). Fall through to the
-    # connection attempt — if the repo can't start, integration tests
-    # are excluded; otherwise the existing rescue prints a hint.
+    # connection attempt — the repo start-up below is the real check;
+    # this is just an optional early, friendlier diagnostic.
     ErlangError -> :try_connect
   end
 
 repo_available =
-  if db_check == :not_found do
-    IO.puts("""
+  cond do
+    db_check == :not_found and allow_missing_db? ->
+      IO.puts(no_db_hint.("database \"#{db_name}\" not found (checked via `psql -lqt`)"))
+      false
 
-      Test database "#{db_name}" not found — integration tests excluded.
-      Run: createdb #{db_name}
-    """)
+    db_check == :not_found ->
+      raise """
+      Test database "#{db_name}" not found.
 
-    false
-  else
-    try do
-      {:ok, _} = TestRepo.start_link()
+      Run:  createdb #{db_name}
 
-      # Build the schema directly from core's versioned migrations — same
-      # call the host app makes in production. `ensure_current/2`
-      # re-applies any newly-shipped Vxxx migrations on every boot.
-      PhoenixKit.Migration.ensure_current(TestRepo, log: false)
+      To run only the unit-level suite without a database, opt in explicitly:
 
-      Ecto.Adapters.SQL.Sandbox.mode(TestRepo, :manual)
-      true
-    rescue
-      e ->
-        IO.puts("""
+          PK_ECOMMERCE_TEST_NO_DB=1 mix test
+      """
 
-          Could not connect to test database — integration tests excluded.
-          Run: createdb #{db_name}
-          Error: #{Exception.message(e)}
-        """)
+    true ->
+      try do
+        {:ok, _} = TestRepo.start_link()
 
-        false
-    catch
-      :exit, reason ->
-        IO.puts("""
+        # Build the schema directly from core's versioned migrations — same
+        # call the host app makes in production. `ensure_current/2`
+        # re-applies any newly-shipped Vxxx migrations on every boot.
+        PhoenixKit.Migration.ensure_current(TestRepo, log: false)
 
-          Could not connect to test database — integration tests excluded.
-          Run: createdb #{db_name}
-          Error: #{inspect(reason)}
-        """)
+        Ecto.Adapters.SQL.Sandbox.mode(TestRepo, :manual)
+        true
+      rescue
+        e ->
+          if allow_missing_db? do
+            IO.puts(no_db_hint.(Exception.message(e)))
+            false
+          else
+            # Decorate and die — never swallow. A failure here (wrong
+            # credentials, un-migratable schema, a genuine migration bug)
+            # is a real defect, not an absent-database situation.
+            reraise(
+              Exception.message(e) <>
+                "\n\nThe test database is required. Create it with: createdb #{db_name}\n" <>
+                "To skip it deliberately, set PK_ECOMMERCE_TEST_NO_DB=1.",
+              __STACKTRACE__
+            )
+          end
+      catch
+        :exit, reason ->
+          if allow_missing_db? do
+            IO.puts(no_db_hint.(inspect(reason)))
+            false
+          else
+            raise """
+            Could not connect to test database "#{db_name}".
 
-        false
-    end
+            Error: #{inspect(reason)}
+
+            Create it with: createdb #{db_name}
+            To skip it deliberately, set PK_ECOMMERCE_TEST_NO_DB=1.
+            """
+          end
+      end
   end
 
 Application.put_env(:phoenix_kit_ecommerce, :test_repo_available, repo_available)
