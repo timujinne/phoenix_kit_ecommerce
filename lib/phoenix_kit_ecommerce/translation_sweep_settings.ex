@@ -78,6 +78,14 @@ defmodule PhoenixKitEcommerce.TranslationSweepSettings do
   silently drops out here rather than being sweep-queued for a language
   the storefront no longer serves. When nothing is stored, defaults to
   every enabled language except the primary.
+
+  Blank codes are dropped whatever their source. `languages_config` will
+  hand one back verbatim if a row was ever saved with an empty `code`, and
+  a blank target is worse than useless downstream: the candidate SQL
+  matches EVERY resource for it (`nullif(p.<F>->>'','')` is always null),
+  while `PhoenixKitAI.Translations.enqueue/1` rejects every resulting job
+  as `{:invalid, [:target_lang]}` — a sweep that fills its batch with the
+  same resources every tick and never enqueues anything.
   """
   @spec languages() :: [String.t()]
   def languages do
@@ -90,7 +98,9 @@ defmodule PhoenixKitEcommerce.TranslationSweepSettings do
         _ -> enabled -- [Translations.default_language()]
       end
 
-    Enum.filter(configured, &MapSet.member?(enabled_set, &1))
+    configured
+    |> Enum.reject(&(String.trim(&1) == ""))
+    |> Enum.filter(&MapSet.member?(enabled_set, &1))
   end
 
   @doc """

@@ -342,6 +342,44 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
       assert TranslationSweepWorker.last_run()["in_flight"] == 1
     end
 
+    test "a finished TranslateWorker job no longer presses on the ceiling" do
+      enable_translations!()
+      setup_ai!()
+      enable_languages!(["en", "de"])
+      Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
+
+      product = create_product()
+      done = seed_translate_job(AITranslatable.resource_type(), Ecto.UUID.generate(), "de")
+
+      from(j in "oban_jobs", where: j.id == ^done.id)
+      |> repo().update_all(set: [state: "completed"])
+
+      # Terminal states must drop out of the count, or every finished
+      # translation would accumulate against the ceiling until Oban pruning
+      # ran and the sweep would jam shut permanently on a busy stand.
+      assert {:ok, %{enqueued: 1, in_flight: 0}} = TranslationSweepWorker.run_tick()
+
+      assert [queued] =
+               translate_jobs() |> Enum.filter(&(&1.args["resource_uuid"] == product.uuid))
+
+      assert queued.args["target_lang"] == "de"
+    end
+
+    test "another module's TranslateWorker job does not press on the shop ceiling" do
+      enable_translations!()
+      setup_ai!()
+      enable_languages!(["en", "de"])
+      Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
+
+      create_product()
+      # The ceiling bounds THIS shop's contribution (design §4.3: "по типам
+      # ресурсов магазина"); a blog-post translation from another module
+      # sharing the queue must not count against it.
+      seed_translate_job("blog_post", Ecto.UUID.generate(), "de")
+
+      assert {:ok, %{enqueued: 1, in_flight: 0}} = TranslationSweepWorker.run_tick()
+    end
+
     test "a scheduled (snoozed) TranslateWorker job presses on the ceiling exactly like an available one" do
       enable_translations!()
       setup_ai!()

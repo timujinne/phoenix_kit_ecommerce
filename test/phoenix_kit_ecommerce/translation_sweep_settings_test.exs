@@ -167,6 +167,25 @@ defmodule PhoenixKitEcommerce.TranslationSweepSettingsTest do
       assert SweepSettings.languages() == ["de", "fr"]
     end
 
+    test "a blank language code is dropped, whatever its source" do
+      # `languages_config` hands back an empty `code` verbatim if such a row
+      # was ever saved. A blank target matches EVERY resource in the
+      # candidate SQL and is then rejected by `enqueue/1` on every job:
+      # the sweep would fill its batch with the same resources every tick
+      # and never enqueue anything.
+      enable_languages!(["en", "de", " ", ""])
+
+      assert SweepSettings.languages() == ["de"]
+
+      Settings.update_json_setting_with_module(
+        "shop_translation_languages",
+        %{"codes" => ["de", " "]},
+        "shop"
+      )
+
+      assert SweepSettings.languages() == ["de"]
+    end
+
     test "a malformed stored value falls back to the dynamic default" do
       enable_languages!(["en", "de"])
 

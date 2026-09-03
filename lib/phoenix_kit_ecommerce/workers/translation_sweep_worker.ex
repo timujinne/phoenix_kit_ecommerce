@@ -329,8 +329,18 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
     }
 
     case PhoenixKitAI.Translations.enqueue_all_missing(base_params, candidate.languages) do
-      {:ok, %{enqueued: n}} -> {enqueued + n, errors}
-      {:error, reason} -> {enqueued, [{candidate.uuid, reason} | errors]}
+      # Per-language failures arrive INSIDE the ok tuple (`enqueue/1`
+      # refused one language, or Oban rejected its insert) — they must be
+      # counted here, or a tick where every insert failed would record
+      # `{:ok, enqueued: 0, errors: 0}`, indistinguishable from "nothing
+      # needed doing". `last_run/0` is the only place a system-run tick is
+      # ever observable (design §1: every capability has observable state).
+      {:ok, %{enqueued: n} = result} ->
+        lang_errors = Map.get(result, :errors, [])
+        {enqueued + n, Enum.map(lang_errors, &{candidate.uuid, &1}) ++ errors}
+
+      {:error, reason} ->
+        {enqueued, [{candidate.uuid, reason} | errors]}
     end
   end
 
