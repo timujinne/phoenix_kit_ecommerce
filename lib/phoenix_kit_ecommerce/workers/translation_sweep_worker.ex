@@ -53,18 +53,20 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
        flipped by direct SQL is honoured immediately, not on the next
        code deploy.
     3. Stop, recording why (`:sweep_stalled`), if `shop_translation_batch`
-       or `shop_translation_max_in_flight` is configured so low that NO
-       candidate could ever be selected — batch below 1, ceiling below 1,
-       or ceiling below the number of configured target languages
-       (`structurally_stalled?/3`, Fix C). Checked against the raw
-       settings, not the current in-flight count: a config this broken is
-       wrong on every tick, not just this one, and reporting it as `:ok`
-       (candidate count/enqueued both `0`, exactly the shape of a healthy
-       idle sweep) would hide a permanent deadlock behind a healthy-looking
-       status forever. The operational panel (design §4.6) refuses to save
-       a config this broken in the first place — this check is what stays
-       honest about one that reached storage anyway (a pre-fix install, a
-       hand-edited row).
+       or `shop_translation_max_in_flight` is below 1 — no candidate can
+       ever be selected under either (`structurally_stalled?/3`, Fix C).
+       A ceiling below the number of configured target languages is the
+       third arm of that predicate, but it does NOT stop the tick: a
+       candidate whose own language gap fits the ceiling is still
+       enqueued. It only decides the REASON recorded when a tick selects
+       nothing — `:sweep_stalled` rather than `:ok`, since under that
+       config the emptiness is permanent (`take_within_budget/3` halts,
+       never skips, so the first resource missing every target language
+       blocks everything queued behind it), not the healthy idle `0` it
+       is otherwise indistinguishable from. The operational panel (design
+       §4.6) refuses to save a config this broken in the first place —
+       this check is what stays honest about one that reached storage
+       anyway (a pre-fix install, a hand-edited row).
     4. Stop, recording why, if the shop's incomplete `TranslateWorker`
        jobs (`available`/`scheduled`/`executing`/`retryable` — the same
        four states `PhoenixKitAI.Translations` dedups against; a
@@ -209,8 +211,9 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
   below instead, not this function.
 
   Returns `{reason, info}` — `reason` is one of `:translations_disabled`,
-  `:sweep_disabled`, `:ai_unavailable`, `:sweep_stalled` (Fix C: batch or
-  ceiling configured too low to ever select a candidate — see
+  `:sweep_disabled`, `:ai_unavailable`, `:sweep_stalled` (Fix C: the tick
+  selected nothing AND the configured batch/ceiling guarantees every
+  future tick will do the same until they change — see
   `structurally_stalled?/3`), `:ceiling_reached`, `:no_target_languages`,
   or `:ok` (ran; `info[:enqueued]` may still be `0` if nothing needed
   translating or everything was already in flight — that `0` is never
@@ -264,24 +267,22 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
     end
   end
 
-  # Fix C, step 3 above: the structural check runs BEFORE the ordinary
-  # in-flight ceiling check and is blind to the current in-flight count —
-  # a batch/ceiling combination this broken can never admit a candidate
-  # regardless of how many (if any) jobs happen to be running right now,
-  # so basing it on `count_in_flight/0` would only make the symptom
-  # flicker between an occasional lucky `:ok` and a
-  # transient-sounding `:ceiling_reached` instead of naming the real,
-  # permanent cause once and consistently.
+  # Fix C, step 3 above: a batch or ceiling below 1 admits no candidate at
+  # all, whatever is or isn't running right now, so it short-circuits here
+  # — blind to `count_in_flight/0`, which would only make the symptom
+  # flicker between a transient-sounding `:ceiling_reached` and a
+  # healthy-looking `:ok` instead of naming the permanent cause once and
+  # consistently. The third arm of `structurally_stalled?/3` (ceiling
+  # below the target-language count) deliberately does NOT short-circuit:
+  # it degrades progress rather than forbidding it, so the sweep still
+  # runs and `do_sweep/5` names the stall only if the tick actually came
+  # up empty.
   defp check_capacity(target_langs) do
     batch_size = SweepSettings.batch_size()
     max_in_flight = SweepSettings.max_in_flight()
 
-    if structurally_stalled?(batch_size, max_in_flight, target_langs) do
-      finish(:sweep_stalled, %{
-        batch_size: batch_size,
-        max_in_flight: max_in_flight,
-        target_language_count: length(target_langs)
-      })
+    if batch_size < 1 or max_in_flight < 1 do
+      finish(:sweep_stalled, stall_info(batch_size, max_in_flight, target_langs))
     else
       in_flight = count_in_flight()
       remaining_jobs = max_in_flight - in_flight
@@ -289,56 +290,79 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorker do
       if remaining_jobs <= 0 do
         finish(:ceiling_reached, %{in_flight: in_flight})
       else
-        do_sweep(target_langs, batch_size, remaining_jobs, in_flight)
+        do_sweep(target_langs, batch_size, max_in_flight, remaining_jobs, in_flight)
       end
     end
   end
 
+  defp stall_info(batch_size, max_in_flight, target_langs) do
+    %{
+      batch_size: batch_size,
+      max_in_flight: max_in_flight,
+      target_language_count: length(target_langs)
+    }
+  end
+
   @doc """
   Fix C: true when `batch_size`/`max_in_flight`, as currently configured,
-  can never let `take_within_budget/3` select a single candidate —
-  independent of any particular tick's in-flight count or candidate list.
+  cannot be relied on to ever let `take_within_budget/3` select a
+  candidate — independent of any particular tick's in-flight count or
+  candidate list.
 
   `take_within_budget/3` HALTS — never skips — on the first candidate
   whose language count exceeds the remaining job budget:
 
     * `batch_size < 1` — its `resource_budget` starts at or below zero, so
       the very first check in its `reduce_while` halts before looking at
-      any candidate at all.
+      any candidate at all. NOTHING is selectable, ever.
     * `max_in_flight < 1` — the in-flight ceiling can never leave a
       positive job budget for any tick to spend, whatever is or isn't
-      currently running.
+      currently running. Again nothing is selectable, ever.
     * `max_in_flight < length(target_langs)` — a resource missing every
       configured target language (the worst case, and an entirely
       ordinary one: any newly added or bulk-imported resource starts
       there) needs `length(target_langs)` jobs; a ceiling below that can
       never admit it, and because the scan halts rather than skips, it
-      blocks every cheaper candidate queued behind it too.
+      blocks every cheaper candidate queued behind it too. Note the
+      narrower claim: this arm does NOT make selection impossible — a
+      candidate whose own language gap fits under the ceiling and sorts
+      ahead of any such blocker is still enqueued, and `run_tick/0`
+      deliberately keeps enqueueing it rather than refusing to sweep.
 
-  Any of the three makes the config permanently incapable of enqueueing
-  anything, for as long as it stands — the reason `run_tick/0` records
-  when this is true (`:sweep_stalled`) exists so that fact is visible
-  instead of reading as a healthy idle sweep.
+  So this predicate answers "is an empty tick under this config permanent
+  rather than incidental?" — `run_tick/0` records `:sweep_stalled` when it
+  holds AND the tick selected nothing, so that emptiness stops reading as
+  a healthy idle sweep. It is not, by itself, a licence to skip the work.
   """
   @spec structurally_stalled?(non_neg_integer(), non_neg_integer(), [String.t()]) :: boolean()
   def structurally_stalled?(batch_size, max_in_flight, target_langs) do
     batch_size < 1 or max_in_flight < 1 or max_in_flight < length(target_langs)
   end
 
-  defp do_sweep(target_langs, batch_size, remaining_jobs, in_flight) do
+  defp do_sweep(target_langs, batch_size, max_in_flight, remaining_jobs, in_flight) do
     source_lang = Translations.default_language()
 
     selected =
       take_within_budget(candidates(source_lang, target_langs), batch_size, remaining_jobs)
 
-    {enqueued, errors} = enqueue_selected(selected, source_lang)
+    # Fix C: an empty selection under a structurally stalled config is
+    # permanent, so it gets its own reason instead of the healthy-looking
+    # `:ok, enqueued: 0`. Keyed on `selected`, not on `enqueued`: a
+    # selection that was made and then failed to insert must keep
+    # reporting its `errors` count (task 5's fix), not be relabelled a
+    # config stall.
+    if selected == [] and structurally_stalled?(batch_size, max_in_flight, target_langs) do
+      finish(:sweep_stalled, stall_info(batch_size, max_in_flight, target_langs))
+    else
+      {enqueued, errors} = enqueue_selected(selected, source_lang)
 
-    finish(:ok, %{
-      candidates: length(selected),
-      enqueued: enqueued,
-      errors: length(errors),
-      in_flight: in_flight
-    })
+      finish(:ok, %{
+        candidates: length(selected),
+        enqueued: enqueued,
+        errors: length(errors),
+        in_flight: in_flight
+      })
+    end
   end
 
   # Categories first (design §4.3: 7 of them, more costly a wrong

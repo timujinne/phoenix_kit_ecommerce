@@ -795,6 +795,29 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       refute html =~ "Sweep ran"
     end
 
+    test "a structurally stalled config is named on the page, not reported as a healthy tick", %{
+      conn: conn
+    } do
+      # Fix C's other half: the panel refuses to SAVE a batch of zero, so
+      # this is written straight to Settings — the hand-edited row (or
+      # pre-fix install) the tick's honesty check exists for. Pins both
+      # operator-visible surfaces of the `:sweep_stalled` reason: the
+      # flash from the manual button and the persisted "Last tick" line
+      # that a SCHEDULED tick's stall would otherwise only ever reach.
+      {:ok, _} = Settings.update_setting_with_module("shop_translation_batch", "0", "shop")
+      create_product()
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+      html = render_click(view, "run_sweep_now", %{})
+
+      assert html =~ "Sweep queued nothing"
+      assert html =~ "batch 0 / ceiling 6"
+      refute html =~ "Sweep ran"
+      assert SweepWorker.last_run()["reason"] == "sweep_stalled"
+
+      assert render(view) =~ "Last tick: stalled — batch 0 / ceiling 6"
+    end
+
     test "runs the tick body directly and queues the work it finds", %{conn: conn} do
       Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", true, "shop")
       product = create_product()

@@ -635,6 +635,32 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
       assert info.target_language_count == 2
     end
 
+    test "a ceiling below the target-language count still enqueues a candidate whose own gap fits" do
+      # The stall REPORT must not cost the sweep the work it can still do.
+      # `take_within_budget/3` halts on a candidate that needs more jobs
+      # than the budget left — but this product needs only ONE (de is
+      # translated and fingerprinted, so only fr is missing), which fits a
+      # ceiling of 1 exactly. Pre-refinement the tick refused to sweep at
+      # all on the raw settings and this job was lost forever; the reason
+      # is now decided by what the tick actually selected.
+      Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
+
+      product = create_product(%{title: %{"en" => "Wooden Vase", "de" => "Holzvase"}})
+
+      fresh_metadata =
+        TranslationFingerprint.put_many(product.metadata, "de", %{
+          "title" => TranslationFingerprint.hash("Wooden Vase")
+        })
+
+      {:ok, _product} =
+        product |> Ecto.Changeset.change(%{metadata: fresh_metadata}) |> repo().update()
+
+      assert {:ok, %{enqueued: 1, candidates: 1}} = TranslationSweepWorker.run_tick()
+      assert [job] = translate_jobs()
+      assert job.args["target_lang"] == "fr"
+      assert TranslationSweepWorker.last_run()["reason"] == "ok"
+    end
+
     test "a transient ceiling squeeze — config is fine, just busy right now — still just says ok" do
       Settings.update_setting_with_module("shop_translation_max_in_flight", "3", "shop")
 

@@ -1177,14 +1177,17 @@ defmodule PhoenixKitEcommerce.Web.Translations do
   defp sweep_result_message(:ceiling_reached, %{in_flight: n}),
     do: gettext("Sweep did not run — %{count} jobs already in flight (at the ceiling).", count: n)
 
-  # Fix C: distinguishes a PERMANENT deadlock (batch or ceiling configured
-  # too low to ever select a candidate — `TranslationSweepWorker.
-  # structurally_stalled?/3`) from the ordinary, self-clearing
-  # `:ceiling_reached` above. Names the actual numbers so the operator
-  # doesn't have to scroll down to the settings panel to see what's wrong.
+  # Fix C: distinguishes a PERMANENT empty tick (batch or ceiling
+  # configured too low for the selection to ever recover on its own —
+  # `TranslationSweepWorker.structurally_stalled?/3`) from the ordinary,
+  # self-clearing `:ceiling_reached` above. Names the actual numbers so
+  # the operator doesn't have to scroll down to the settings panel to see
+  # what's wrong. Worded "queued nothing" rather than "did not run": the
+  # tick does run under a too-low ceiling, it just cannot admit a resource
+  # missing every target language, and that resource blocks the scan.
   defp sweep_result_message(:sweep_stalled, info) do
     gettext(
-      "Sweep did not run — batch %{batch} / ceiling %{ceiling} can never fit %{count} target languages. Raise them in the settings below.",
+      "Sweep queued nothing — batch %{batch} / ceiling %{ceiling} can never admit a resource missing all %{count} target languages. Raise them in the settings below.",
       batch: Map.get(info, :batch_size),
       ceiling: Map.get(info, :max_in_flight),
       count: Map.get(info, :target_language_count)
@@ -1762,7 +1765,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
   # "Last tick" line as one provoked through the manual button.
   defp last_run_summary(%{"reason" => "sweep_stalled"} = run) do
     gettext(
-      "stalled — batch %{batch} / ceiling %{ceiling} can never fit %{count} target languages",
+      "stalled — batch %{batch} / ceiling %{ceiling} can never admit a resource missing all %{count} target languages",
       batch: Map.get(run, "batch_size", "?"),
       ceiling: Map.get(run, "max_in_flight", "?"),
       count: Map.get(run, "target_language_count", "?")
