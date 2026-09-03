@@ -573,6 +573,89 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
              |> Enum.map(&Shop.get_product!(&1.uuid))
              |> Enum.all?(&(TranslationFingerprint.get(&1.metadata, "de", "title") == nil))
     end
+
+    # "Across every page" is only half of what this verb promises — the
+    # other half is "matching the current filter". Without the three
+    # tests below, an `open_pending_all/2` that ignored every filter and
+    # stamped the WHOLE catalogue would still pass this file: every test
+    # above mounts with no filter on, so filtered and unfiltered are the
+    # same set there. That is the more dangerous of the two failure
+    # modes — a page-scoped bug under-reaches, an unfiltered one silently
+    # freezes resources the operator deliberately excluded.
+
+    test "the catalogue-wide stamp reaches only what the category filter matches", %{conn: conn} do
+      kept = create_category(%{name: %{"en" => "Kept"}})
+      other = create_category(%{name: %{"en" => "Other"}})
+
+      inside =
+        create_product(%{
+          title: %{"en" => "Inside", "de" => "Drinnen"},
+          category_uuid: kept.uuid
+        })
+
+      outside =
+        create_product(%{
+          title: %{"en" => "Outside", "de" => "Draussen"},
+          category_uuid: other.uuid
+        })
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations?category=#{kept.uuid}")
+
+      html = render_click(view, "request_stamp_all", %{})
+      assert html =~ "for 1 resource matching the filters above"
+
+      confirm!(view)
+
+      assert TranslationFingerprint.get(Shop.get_product!(inside.uuid).metadata, "de", "title") !=
+               nil
+
+      assert TranslationFingerprint.get(Shop.get_product!(outside.uuid).metadata, "de", "title") ==
+               nil
+    end
+
+    test "the catalogue-wide stamp reaches only what the state filter matches", %{conn: conn} do
+      # Design §4.1's rollout is exactly this filter: `state=unknown`,
+      # then stamp. A translation with no reference reads `:unknown`; a
+      # resource that was never translated reads `:missing` and has to
+      # stay out of the write.
+      unknown = create_product(%{title: %{"en" => "Has A Translation", "de" => "Hat Eine"}})
+      missing = create_product(%{title: %{"en" => "Never Translated"}})
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations?state=unknown")
+
+      html = render_click(view, "request_stamp_all", %{})
+      assert html =~ "for 1 resource matching the filters above"
+
+      confirm!(view)
+
+      assert TranslationFingerprint.get(Shop.get_product!(unknown.uuid).metadata, "de", "title") !=
+               nil
+
+      assert TranslationFingerprint.get(Shop.get_product!(missing.uuid).metadata, "de", "title") ==
+               nil
+    end
+
+    test "the catalogue-wide stamp writes only the filtered language and field", %{conn: conn} do
+      product =
+        create_product(%{
+          title: %{"en" => "Wooden Vase", "de" => "Holzvase", "fr" => "Vase en Bois"},
+          description: %{"en" => "A nice vase", "de" => "Eine Vase", "fr" => "Un vase"}
+        })
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations?lang=de&field=title")
+
+      html = render_click(view, "request_stamp_all", %{})
+      # The modal must name the narrowed scope, not "de, fr · all fields".
+      assert html =~ "Scope: de · Title"
+
+      confirm!(view)
+
+      metadata = Shop.get_product!(product.uuid).metadata
+
+      assert TranslationFingerprint.get(metadata, "de", "title") != nil
+      assert TranslationFingerprint.get(metadata, "fr", "title") == nil
+      assert TranslationFingerprint.get(metadata, "de", "description") == nil
+    end
   end
 
   # ============================================================
