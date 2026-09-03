@@ -137,6 +137,17 @@ defmodule PhoenixKitEcommerce.MixProject do
       # fails to parse, and nothing but a log warning says why. This requirement
       # must become `~> <first release with §9.1>` when that release lands
       # (design §6 step 9). Until then the stand pins the fork by path.
+      #
+      # The SAME release must carry §9.3 (`put_translation/4` receiving
+      # the source fields the worker actually read). Without it the
+      # staleness model of design §4.1 is inert rather than merely
+      # degraded: every write arrives with no source to hash, so nothing
+      # is ever fingerprinted, write-narrowing never engages, and each
+      # write erases the field's reference instead (see
+      # `TranslationFingerprint.apply_writes/3` — that erase is what keeps
+      # the sweep convergent on such an engine, at the cost of every
+      # touched pair falling back to `:unknown` for the operator to
+      # resolve by hand).
       pk_dep(:phoenix_kit_ai, "~> 0.18", optional: true),
 
       # LiveView is needed for the admin and storefront pages.

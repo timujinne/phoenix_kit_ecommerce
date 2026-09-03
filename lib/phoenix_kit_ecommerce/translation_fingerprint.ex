@@ -127,6 +127,41 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
   end
 
   @doc """
+  Applies ONE round of write-time fingerprint updates for `lang`, as
+  `write_decision/3` produced them: a `{field, hash}` entry stamps that
+  hash, a `{field, nil}` entry ERASES whatever fingerprint the field
+  had.
+
+  The `nil` case is not a no-op, and that matters. `write_decision/3`
+  returns `{:write, nil}` when the caller supplied no source text for
+  the field — the field is written from a source this module was never
+  shown. Keeping the previous fingerprint would then have the metadata
+  assert "this translation was made from source X" about a translation
+  that replaced it, made from something else. Concretely, on a field
+  that was `:stale`: the row keeps a fingerprint that still mismatches
+  its source, so `select_candidates/2` keeps returning it, every sweep
+  tick pays for another model call, and the write never moves the
+  fingerprint — a non-convergent loop of exactly the kind design §4.1's
+  empty-source carve-out exists to prevent. Erasing instead lands the
+  field in `:unknown`, which design §4.1 names as the state for
+  "переводы, записанные в обход отпечатков" and which the sweep never
+  picks up on its own; the operator sees it and decides.
+
+  Pure — the caller writes the result back under its own row lock.
+  """
+  @spec apply_writes(map() | nil, String.t(), %{String.t() => String.t() | nil}) :: map()
+  def apply_writes(metadata, lang, updates) do
+    {cleared, stamped} = Enum.split_with(updates, fn {_field, fp} -> is_nil(fp) end)
+
+    metadata
+    |> drop(cleared_langs(cleared, lang), Enum.map(cleared, &elem(&1, 0)))
+    |> put_many(lang, Map.new(stamped))
+  end
+
+  defp cleared_langs([], _lang), do: []
+  defp cleared_langs(_cleared, lang), do: [lang]
+
+  @doc """
   Erases the fingerprints for every `{lang, field}` pair in `langs` ×
   `fields` — the "reset the reference" action (design §4.4). Pure; the
   caller applies it under the same locked merge `put_many/3` requires.
@@ -225,10 +260,14 @@ defmodule PhoenixKitEcommerce.TranslationFingerprint do
   doesn't participate in fingerprinting at all (no `:source_fields`
   opt; every production caller after design §9.3 always supplies one).
   Without source text there is nothing to hash, so this falls back to
-  the pre-fingerprint behavior — always write, stamp no fingerprint —
-  rather than either guessing or blocking a legitimate write. The
-  written field is left in `:unknown` afterward, which is the honest
-  state: this module was never told what it was translated from.
+  the pre-fingerprint behavior — always write — rather than either
+  guessing or blocking a legitimate write. The `nil` in `{:write, nil}`
+  means "erase this field's fingerprint", NOT "leave it as it was":
+  applied through `apply_writes/3`, that leaves the field in
+  `:unknown`, the honest state, since this module was never told what
+  the value it just accepted was translated from. See `apply_writes/3`
+  for why keeping the old fingerprint instead is not a harmless
+  omission.
   """
   @spec write_decision(String.t() | nil, String.t() | nil, String.t() | nil) ::
           :skip | {:write, String.t() | nil}

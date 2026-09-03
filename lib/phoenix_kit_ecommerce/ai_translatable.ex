@@ -433,13 +433,15 @@ defmodule PhoenixKitEcommerce.AITranslatable do
       {:write, new_fp} ->
         merged_field = Map.put(Map.get(fresh, schema_field) || %{}, target_lang, value)
         new_changes = Map.put(changes, schema_field, merged_field)
-        new_fps = put_fingerprint(fps, fp_field, new_fp)
+        # `new_fp == nil` (the caller passed no source for this field)
+        # is recorded, not dropped: TranslationFingerprint.apply_writes/3
+        # reads it as "erase this field's fingerprint". Leaving a stale
+        # one behind is what makes a `:stale` field a permanent sweep
+        # candidate — see that function's doc.
+        new_fps = Map.put(fps, fp_field, new_fp)
         {new_changes, new_fps, [schema_field | written]}
     end
   end
-
-  defp put_fingerprint(fps, _fp_field, nil), do: fps
-  defp put_fingerprint(fps, fp_field, new_fp), do: Map.put(fps, fp_field, new_fp)
 
   defp maybe_put_metadata(changes, _fresh, _target_lang, fingerprint_updates)
        when fingerprint_updates == %{},
@@ -449,7 +451,7 @@ defmodule PhoenixKitEcommerce.AITranslatable do
     Map.put(
       changes,
       :metadata,
-      TranslationFingerprint.put_many(fresh.metadata, target_lang, fingerprint_updates)
+      TranslationFingerprint.apply_writes(fresh.metadata, target_lang, fingerprint_updates)
     )
   end
 

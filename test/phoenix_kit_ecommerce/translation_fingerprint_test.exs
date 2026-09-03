@@ -214,4 +214,64 @@ defmodule PhoenixKitEcommerce.TranslationFingerprintTest do
       assert FP.drop(metadata, ["fr-FR"], ["title"]) == metadata
     end
   end
+
+  describe "apply_writes/3 — one round of write_decision/3's output" do
+    test "a hash stamps, a nil ERASES the fingerprint the field had" do
+      metadata = %{
+        "_translation_fingerprints" => %{
+          "de-DE" => %{"title" => "old-title", "description" => "old-desc"}
+        }
+      }
+
+      updated = FP.apply_writes(metadata, "de-DE", %{"title" => nil, "description" => "new-desc"})
+
+      # nil erased the entry outright rather than leaving the old hash
+      # in place (see apply_writes/3's doc: a retained mismatching
+      # fingerprint is a permanent sweep candidate).
+      assert FP.get(updated, "de-DE", "title") == nil
+      refute Map.has_key?(updated["_translation_fingerprints"]["de-DE"], "title")
+      assert FP.get(updated, "de-DE", "description") == "new-desc"
+    end
+
+    test "a field left in :unknown by a nil is exactly field_state/3's :unknown" do
+      metadata = %{"_translation_fingerprints" => %{"de-DE" => %{"title" => FP.hash("Vase")}}}
+      updated = FP.apply_writes(metadata, "de-DE", %{"title" => nil})
+
+      assert FP.field_state("Vase", "Vase (de)", FP.get(updated, "de-DE", "title")) == :unknown
+    end
+
+    test "erasing every field of a language cleans the leftovers away" do
+      metadata = %{"_translation_fingerprints" => %{"de-DE" => %{"title" => "old"}}}
+      assert FP.apply_writes(metadata, "de-DE", %{"title" => nil}) == %{}
+    end
+
+    test "other languages and unmentioned fields are untouched" do
+      metadata = %{
+        "_translation_fingerprints" => %{
+          "de-DE" => %{"title" => "old-title", "body_html" => "keep-me"},
+          "fr-FR" => %{"title" => "fr-title"}
+        }
+      }
+
+      updated = FP.apply_writes(metadata, "de-DE", %{"title" => nil})
+
+      assert FP.get(updated, "de-DE", "body_html") == "keep-me"
+      assert FP.get(updated, "fr-FR", "title") == "fr-title"
+    end
+
+    test "a nil for a field that had no fingerprint changes nothing" do
+      metadata = %{"_translation_fingerprints" => %{"de-DE" => %{"title" => "old-title"}}}
+      assert FP.apply_writes(metadata, "de-DE", %{"description" => nil}) == metadata
+    end
+
+    test "foreign metadata keys survive both the stamp and the erase" do
+      metadata = %{
+        "_option_values" => %{"keep" => true},
+        "_translation_fingerprints" => %{"de-DE" => %{"title" => "old"}}
+      }
+
+      updated = FP.apply_writes(metadata, "de-DE", %{"title" => nil, "description" => "d"})
+      assert updated["_option_values"] == %{"keep" => true}
+    end
+  end
 end

@@ -373,6 +373,46 @@ defmodule PhoenixKitEcommerce.TranslationSeamTest do
       assert FP.get(product.metadata, "de", "title") == product_fp
       assert FP.get(category.metadata, "de", "name") == category_fp
     end
+
+    test "both erase a stale fingerprint when a write carries no source for the field" do
+      # The engine pinned here (phoenix_kit_ai 0.19.2) predates design
+      # §9.3 and passes no :source_fields at all, so this is not a
+      # corner case but the CURRENT shape of every worker write. If an
+      # adapter kept the old fingerprint, the pair would stay a
+      # candidate the write can never satisfy — the same non-convergent
+      # loop the btrim seam above exists to prevent. Pinned for both
+      # adapters together so they can't drift apart on it.
+      product = create_product(%{title: %{"en" => "Wooden Vase"}})
+
+      {:ok, product} =
+        AITranslatable.put_translation(product, "de", %{"title" => "Holzvase"},
+          source_fields: %{"title" => "Wooden Vase"}
+        )
+
+      {:ok, product} =
+        AITranslatable.put_translation(product, "de", %{"title" => "Holzvase Neu"}, [])
+
+      category = create_category(%{name: %{"en" => "Vases"}})
+
+      {:ok, category} =
+        CategoryAITranslatable.put_translation(category, "de", %{"name" => "Vasen"},
+          source_fields: %{"name" => "Vases"}
+        )
+
+      {:ok, category} =
+        CategoryAITranslatable.put_translation(category, "de", %{"name" => "Vasen Neu"}, [])
+
+      assert FP.get(product.metadata, "de", "title") == nil
+      assert FP.get(category.metadata, "de", "name") == nil
+
+      # ...so neither is a candidate the next tick would re-queue.
+      refute Enum.any?(AITranslatable.candidates("en", ["de"]), &(&1.uuid == product.uuid))
+
+      refute Enum.any?(
+               CategoryAITranslatable.candidates("en", ["de"]),
+               &(&1.uuid == category.uuid)
+             )
+    end
   end
 
   describe "source_fields/2 output is usable verbatim as opts[:source_fields] (design §9.3)" do

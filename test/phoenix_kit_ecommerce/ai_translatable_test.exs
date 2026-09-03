@@ -114,6 +114,35 @@ defmodule PhoenixKitEcommerce.AITranslatableTest do
     assert fresh.title["de"] == "Vase DE"
   end
 
+  test "concurrent translations of two languages both keep their fingerprints" do
+    # `metadata` is ONE JSONB column shared by every language, exactly
+    # like `title` above, so the FOR UPDATE merge has to protect the
+    # fingerprints too — a sibling language's reference silently lost
+    # here would send that pair back to :unknown and out of the sweep's
+    # reach (design §4.1).
+    product = create_product()
+    parent = self()
+
+    tasks =
+      for {lang, title} <- [{"fr", "Vase FR"}, {"de", "Vase DE"}] do
+        Task.async(fn ->
+          Sandbox.allow(repo(), parent, self())
+
+          AITranslatable.put_translation(product, lang, %{"title" => title},
+            source_fields: %{"title" => "Wooden Vase"}
+          )
+        end)
+      end
+
+    Enum.each(tasks, &Task.await/1)
+
+    fresh = repo().get(Product, product.uuid)
+    expected = TranslationFingerprint.hash("Wooden Vase")
+
+    assert TranslationFingerprint.get(fresh.metadata, "fr", "title") == expected
+    assert TranslationFingerprint.get(fresh.metadata, "de", "title") == expected
+  end
+
   test "accented Latin titles transliterate in the slug" do
     product = create_product()
 
@@ -306,6 +335,69 @@ defmodule PhoenixKitEcommerce.AITranslatableTest do
 
       assert updated.title["fr"] == "Vase en Bois"
       assert TranslationFingerprint.get(updated.metadata, "fr", "title") == nil
+    end
+
+    test "a call with no :source_fields ERASES the fingerprint the field already had" do
+      # The engine pinned here (phoenix_kit_ai 0.19.2) does not yet pass
+      # :source_fields — design §9.3 is the upstream half of this work.
+      # A write it makes must not leave behind a fingerprint describing a
+      # source that is no longer what the stored translation came from.
+      product = create_product()
+
+      {:ok, first} =
+        AITranslatable.put_translation(product, "fr", %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => "Wooden Vase"}
+        )
+
+      assert TranslationFingerprint.get(first.metadata, "fr", "title") != nil
+
+      {:ok, second} =
+        AITranslatable.put_translation(first, "fr", %{"title" => "Vase Sans Source"}, [])
+
+      assert second.title["fr"] == "Vase Sans Source"
+      assert TranslationFingerprint.get(second.metadata, "fr", "title") == nil
+
+      # ...which is design §4.1's :unknown, the state it names for
+      # "переводы, записанные в обход отпечатков".
+      assert TranslationFingerprint.field_state(
+               second.title["en"],
+               second.title["fr"],
+               TranslationFingerprint.get(second.metadata, "fr", "title")
+             ) == :unknown
+    end
+
+    test "a sourceless write ENDS the sweep for that pair instead of looping it forever" do
+      # The convergence guard for the sourceless path, the twin of the
+      # empty-source carve-out (design §4.1). Before: a :stale field
+      # written without :source_fields kept its old, still-mismatching
+      # fingerprint, so `candidates/3` returned the product on every
+      # tick, each one paying for a ~45s model call that changed nothing.
+      # Title-only, so `title` is the ONLY field that can make this
+      # product a candidate — the other fields' `missing` would mask the
+      # transition this test is about.
+      product = create_product(%{description: %{}, seo_title: %{}})
+
+      {:ok, first} =
+        AITranslatable.put_translation(product, "fr", %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => "Wooden Vase"}
+        )
+
+      refute Enum.any?(AITranslatable.candidates("en", ["fr"]), &(&1.uuid == product.uuid))
+
+      # The source moves on ⇒ :stale ⇒ the sweep picks it up.
+      {:ok, moved_on} =
+        first
+        |> Ecto.Changeset.change(%{title: Map.put(first.title, "en", "Oak Vase")})
+        |> repo().update()
+
+      assert Enum.any?(AITranslatable.candidates("en", ["fr"]), &(&1.uuid == product.uuid))
+
+      # The engine translates it and persists WITHOUT :source_fields.
+      {:ok, written} =
+        AITranslatable.put_translation(moved_on, "fr", %{"title" => "Vase en Chene"}, [])
+
+      assert written.title["fr"] == "Vase en Chene"
+      refute Enum.any?(AITranslatable.candidates("en", ["fr"]), &(&1.uuid == product.uuid))
     end
   end
 
