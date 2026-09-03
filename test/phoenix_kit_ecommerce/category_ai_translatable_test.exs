@@ -469,6 +469,62 @@ defmodule PhoenixKitEcommerce.CategoryAITranslatableTest do
     end
   end
 
+  describe "stamp_reference/4 — \"проштамповать текущий источник как эталон\" (design §4.1, §4.5)" do
+    test "an unfingerprinted (:unknown) translation moves to :fresh, no model call" do
+      category = create_category()
+
+      {:ok, primed} =
+        category
+        |> Ecto.Changeset.change(%{name: Map.put(category.name, "fr", "Vases Préexistants")})
+        |> repo().update()
+
+      assert TranslationFingerprint.get(primed.metadata, "fr", "name") == nil
+
+      {:ok, stamped} = CategoryAITranslatable.stamp_reference(primed.uuid, "en", ["fr"])
+
+      assert stamped.name["fr"] == "Vases Préexistants"
+
+      assert TranslationFingerprint.get(stamped.metadata, "fr", "name") ==
+               TranslationFingerprint.hash("Vases")
+
+      assert TranslationFingerprint.field_state(
+               "Vases",
+               stamped.name["fr"],
+               TranslationFingerprint.get(stamped.metadata, "fr", "name")
+             ) == :fresh
+    end
+
+    test "a field with no stored translation is left alone" do
+      category = create_category(%{description: %{}})
+
+      {:ok, stamped} = CategoryAITranslatable.stamp_reference(category.uuid, "en", ["fr"])
+
+      assert TranslationFingerprint.get(stamped.metadata, "fr", "name") == nil
+      assert TranslationFingerprint.get(stamped.metadata, "fr", "description") == nil
+    end
+
+    test "narrows to exactly the given fields and languages, leaving others untouched" do
+      category = create_category()
+
+      {:ok, primed} =
+        category
+        |> Ecto.Changeset.change(%{
+          name: Map.merge(category.name, %{"fr" => "Vases FR", "de" => "Vasen DE"})
+        })
+        |> repo().update()
+
+      {:ok, stamped} = CategoryAITranslatable.stamp_reference(primed.uuid, "en", ["fr"], [:name])
+
+      assert TranslationFingerprint.get(stamped.metadata, "fr", "name") != nil
+      assert TranslationFingerprint.get(stamped.metadata, "de", "name") == nil
+    end
+
+    test "errors on an unknown uuid" do
+      assert {:error, :resource_not_found} =
+               CategoryAITranslatable.stamp_reference(Ecto.UUID.generate(), "en", ["fr"])
+    end
+  end
+
   describe "candidates/3 — the hash-in-the-database query (design §4.3)" do
     @no_other_sources %{description: %{}}
 

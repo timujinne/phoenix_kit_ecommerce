@@ -58,6 +58,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.Shopify.Provider, as: ShopifyProvider
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
+  alias PhoenixKitEcommerce.TranslationSweepSettings
   alias PhoenixKitEcommerce.Workers.TranslationSweepWorker
 
   # ============================================
@@ -454,6 +455,23 @@ defmodule PhoenixKitEcommerce do
         level: :admin,
         permission: "shop.run_imports",
         parent: :admin_shop,
+        gettext_backend: PhoenixKitEcommerce.Gettext
+      ),
+      Tab.new!(
+        id: :admin_shop_translations,
+        label: "Translations",
+        icon: "hero-language",
+        path: "shop/translations",
+        priority: 538,
+        level: :admin,
+        permission: "shop.manage_catalog",
+        parent: :admin_shop,
+        # Design §4.6: `shop_translations_enabled` gates the page's mere
+        # existence, not just its content — a hidden menu entry rather
+        # than a reachable-but-immediately-redirecting one. Evaluated
+        # live on every sidebar render (per `Tab.visible?/2`'s own doc),
+        # so `get_setting_cached/2` is required here — this is a hot path.
+        visible: fn _scope -> TranslationSweepSettings.translations_enabled?() end,
         gettext_backend: PhoenixKitEcommerce.Gettext
       )
     ]

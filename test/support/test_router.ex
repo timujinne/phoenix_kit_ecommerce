@@ -92,6 +92,9 @@ defmodule PhoenixKitEcommerce.Test.Router do
 
       # Shopify Sync
       live("/shopify-sync", ShopifySync, :index, as: :shop_shopify_sync)
+
+      # Translations
+      live("/translations", Translations, :index, as: :shop_translations)
     end
   end
 end

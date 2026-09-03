@@ -583,6 +583,90 @@ defmodule PhoenixKitEcommerce.AITranslatableTest do
     end
   end
 
+  describe "stamp_reference/4 — \"проштамповать текущий источник как эталон\" (design §4.1, §4.5)" do
+    test "an unfingerprinted (:unknown) translation moves to :fresh, no model call" do
+      product = create_product()
+
+      # Simulate a pre-existing translation with no fingerprint at all —
+      # the 627-product bulk-adoption case design §4.1 describes.
+      {:ok, primed} =
+        product
+        |> Ecto.Changeset.change(%{
+          title: Map.put(product.title, "fr", "Vase Préexistant"),
+          description: Map.put(product.description, "fr", "Description préexistante")
+        })
+        |> repo().update()
+
+      assert TranslationFingerprint.get(primed.metadata, "fr", "title") == nil
+
+      {:ok, stamped} = AITranslatable.stamp_reference(primed.uuid, "en", ["fr"])
+
+      # Translated content is untouched.
+      assert stamped.title["fr"] == "Vase Préexistant"
+      assert stamped.description["fr"] == "Description préexistante"
+
+      # Fingerprint now matches the CURRENT source exactly — the field
+      # reads :fresh by construction.
+      assert TranslationFingerprint.get(stamped.metadata, "fr", "title") ==
+               TranslationFingerprint.hash("Wooden Vase")
+
+      assert TranslationFingerprint.field_state(
+               "Wooden Vase",
+               stamped.title["fr"],
+               TranslationFingerprint.get(stamped.metadata, "fr", "title")
+             ) == :fresh
+    end
+
+    test "a field with no stored translation is left alone (still :missing)" do
+      product = create_product()
+
+      # seo_description has an "en" source in create_product/1's base? No —
+      # it's absent entirely, so this field has NO state at all, which is
+      # exactly the case this test wants: nothing to certify.
+      {:ok, stamped} =
+        AITranslatable.stamp_reference(product.uuid, "en", ["fr"], [:seo_description])
+
+      assert TranslationFingerprint.get(stamped.metadata, "fr", "seo_description") == nil
+    end
+
+    test "does not overwrite an ALREADY-stamped field's translation or fingerprint" do
+      product = create_product()
+
+      {:ok, translated} =
+        AITranslatable.put_translation(product, "fr", %{"title" => "Vase en Bois"},
+          source_fields: %{"title" => "Wooden Vase"}
+        )
+
+      fp_before = TranslationFingerprint.get(translated.metadata, "fr", "title")
+
+      {:ok, restamped} = AITranslatable.stamp_reference(translated.uuid, "en", ["fr"], [:title])
+
+      assert restamped.title["fr"] == "Vase en Bois"
+      assert TranslationFingerprint.get(restamped.metadata, "fr", "title") == fp_before
+    end
+
+    test "narrows to exactly the given fields and languages, leaving others untouched" do
+      product = create_product()
+
+      {:ok, primed} =
+        product
+        |> Ecto.Changeset.change(%{
+          title: Map.merge(product.title, %{"fr" => "Vase FR", "de" => "Vase DE"})
+        })
+        |> repo().update()
+
+      {:ok, stamped} = AITranslatable.stamp_reference(primed.uuid, "en", ["fr"], [:title])
+
+      assert TranslationFingerprint.get(stamped.metadata, "fr", "title") != nil
+      assert TranslationFingerprint.get(stamped.metadata, "de", "title") == nil
+    end
+
+    test "errors on an unknown uuid" do
+      assert {:error, :resource_not_found} =
+               AITranslatable.stamp_reference(Ecto.UUID.generate(), "en", ["fr"])
+    end
+  end
+
   describe "candidates/3 — the hash-in-the-database query (design §4.3)" do
     # create_product/1's base attrs give description/seo_title an "en"
     # value with no "de" counterpart — fine for :missing/:stale fixtures

@@ -244,6 +244,57 @@ defmodule PhoenixKitEcommerce.CategoryAITranslatable do
   end
 
   @doc """
+  "Проштамповать текущий источник как эталон" (design §4.1, §4.5). Mirrors
+  `AITranslatable.stamp_reference/4` — see there for the full rationale:
+  for every `{lang, field}` pair in `target_langs` × `fields` that
+  currently HAS a stored translation, writes the current source's hash as
+  its fingerprint, without calling the model and without touching the
+  translation value. Runs under the same `FOR UPDATE` lock
+  `put_translation/4` / `reset_reference/3` use.
+  """
+  @spec stamp_reference(String.t(), String.t(), [String.t()], [atom()]) ::
+          {:ok, Category.t()} | {:error, term()}
+  def stamp_reference(uuid, source_lang, target_langs, fields \\ Map.values(@field_map))
+      when is_binary(uuid) and is_binary(source_lang) and is_list(target_langs) and
+             is_list(fields) do
+    repo().transaction(fn ->
+      query = Category |> where([c], c.uuid == ^uuid) |> lock("FOR UPDATE")
+
+      case repo().one(query) do
+        nil -> repo().rollback(:resource_not_found)
+        %Category{} = fresh -> apply_stamp(fresh, source_lang, target_langs, fields)
+      end
+    end)
+  end
+
+  defp apply_stamp(%Category{} = fresh, source_lang, target_langs, fields) do
+    new_metadata =
+      Enum.reduce(target_langs, fresh.metadata, fn lang, metadata ->
+        field_hashes = stampable_field_hashes(fresh, source_lang, lang, fields)
+        TranslationFingerprint.put_many(metadata, lang, field_hashes)
+      end)
+
+    case fresh |> Ecto.Changeset.change(%{metadata: new_metadata}) |> repo().update() do
+      {:ok, updated} -> updated
+      {:error, reason} -> repo().rollback(reason)
+    end
+  end
+
+  # Only fields that have BOTH a non-empty source and an existing
+  # translation for `lang` get stamped — see AITranslatable's identical
+  # helper for the full rationale.
+  defp stampable_field_hashes(%Category{} = fresh, source_lang, lang, fields) do
+    for schema_field <- fields,
+        source = fresh |> Map.get(schema_field, %{}) |> then(&(&1 || %{})) |> Map.get(source_lang),
+        is_binary(source) and String.trim(source) != "",
+        translation = fresh |> Map.get(schema_field, %{}) |> then(&(&1 || %{})) |> Map.get(lang),
+        is_binary(translation) and String.trim(translation) != "",
+        into: %{} do
+      {Atom.to_string(schema_field), TranslationFingerprint.hash(source)}
+    end
+  end
+
+  @doc """
   Design §4.3's candidate query for categories: categories with at least
   one field `:missing` or `:stale` (design §4.1) for a target language,
   hashed entirely in the database — see

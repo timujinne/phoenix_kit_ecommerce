@@ -243,6 +243,64 @@ defmodule PhoenixKitEcommerce.AITranslatable do
   end
 
   @doc """
+  "Проштамповать текущий источник как эталон" (design §4.1, §4.5): for
+  every `{lang, field}` pair in `target_langs` × `fields` (schema field
+  atoms; defaults to every fingerprinted field) that currently HAS a
+  stored translation, writes the CURRENT source text's hash as its
+  fingerprint — without calling the model and without touching the
+  translation value. A field with no stored translation is left alone
+  (nothing to certify — `:missing` stays `:missing`); a field whose
+  source is blank is left alone too (mirrors `TranslationFingerprint`'s
+  own "no source, no state" rule). Runs under the same `FOR UPDATE` lock
+  `put_translation/4` / `reset_reference/3` use, and reads the source
+  text itself off the freshly-locked row — never off a possibly-stale
+  caller-supplied struct — so this can't race a concurrent write. Every
+  stamped field reads as `:fresh` immediately afterward, by construction
+  (the fingerprint IS `hash(current source)`).
+  """
+  @spec stamp_reference(String.t(), String.t(), [String.t()], [atom()]) ::
+          {:ok, Product.t()} | {:error, term()}
+  def stamp_reference(uuid, source_lang, target_langs, fields \\ Map.values(@field_map))
+      when is_binary(uuid) and is_binary(source_lang) and is_list(target_langs) and
+             is_list(fields) do
+    repo().transaction(fn ->
+      query = Product |> where([p], p.uuid == ^uuid) |> lock("FOR UPDATE")
+
+      case repo().one(query) do
+        nil -> repo().rollback(:resource_not_found)
+        %Product{} = fresh -> apply_stamp(fresh, source_lang, target_langs, fields)
+      end
+    end)
+  end
+
+  defp apply_stamp(%Product{} = fresh, source_lang, target_langs, fields) do
+    new_metadata =
+      Enum.reduce(target_langs, fresh.metadata, fn lang, metadata ->
+        field_hashes = stampable_field_hashes(fresh, source_lang, lang, fields)
+        TranslationFingerprint.put_many(metadata, lang, field_hashes)
+      end)
+
+    case fresh |> Ecto.Changeset.change(%{metadata: new_metadata}) |> repo().update() do
+      {:ok, updated} -> updated
+      {:error, reason} -> repo().rollback(reason)
+    end
+  end
+
+  # Only fields that have BOTH a non-empty source and an existing
+  # translation for `lang` get stamped — see the moduledoc on
+  # `stamp_reference/4`.
+  defp stampable_field_hashes(%Product{} = fresh, source_lang, lang, fields) do
+    for schema_field <- fields,
+        source = fresh |> Map.get(schema_field, %{}) |> then(&(&1 || %{})) |> Map.get(source_lang),
+        is_binary(source) and String.trim(source) != "",
+        translation = fresh |> Map.get(schema_field, %{}) |> then(&(&1 || %{})) |> Map.get(lang),
+        is_binary(translation) and String.trim(translation) != "",
+        into: %{} do
+      {Atom.to_string(schema_field), TranslationFingerprint.hash(source)}
+    end
+  end
+
+  @doc """
   Design §4.3's candidate query: products with at least one field
   `:missing` or `:stale` (design §4.1) for a target language, hashed
   entirely in the database — see

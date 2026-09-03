@@ -15,9 +15,14 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Notifications, as: ShopNotifications
   alias PhoenixKitEcommerce.Policy
+  alias PhoenixKitEcommerce.TranslationSweepSettings
   alias PhoenixKitEcommerce.Vocabulary
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
+
+  # phoenix_kit_ai is an OPTIONAL dependency (see mix.exs) — this page must
+  # compile and render fine without it. See `ai_translations_available?/0`.
+  @compile {:no_warn_undefined, PhoenixKitAI.Translations}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -61,9 +66,22 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign(:recipient_candidates, load_recipient_candidates())
       |> assign(:shipping_skip_mode, to_string(Shop.shipping_skip_mode()))
       |> assign(:shipping_selection_position, to_string(Shop.shipping_selection_position()))
+      |> assign(:shop_translations_enabled, TranslationSweepSettings.translations_enabled?())
+      |> assign(:ai_translations_available, ai_translations_available?())
       |> assign_policy()
 
     {:ok, socket}
+  end
+
+  # Guarded the same way `Web.Translations` and `TranslationSweepWorker`
+  # guard it — `phoenix_kit_ai` is an OPTIONAL dependency (mix.exs), so a
+  # host without it installed must see this toggle rendered disabled with
+  # an explanation, never crash the settings page.
+  defp ai_translations_available? do
+    Code.ensure_loaded?(PhoenixKitAI.Translations) and
+      function_exported?(PhoenixKitAI.Translations, :available?, 0) and
+      PhoenixKitAI.Translations.available?() and
+      not is_nil(PhoenixKitAI.Translations.default_endpoint_uuid())
   end
 
   # Stored as `%{"uuids" => [...]}` — core's `value_json` column casts
@@ -234,6 +252,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   def handle_event("toggle_cart_bar", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("toggle_cart_bar", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("toggle_shop_translations_enabled", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("toggle_shop_translations_enabled", params, socket)
     end)
   end
 
@@ -634,6 +659,55 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                 />
               </label>
             </div>
+          </div>
+        </div>
+
+        <%!-- AI Translations existence toggle (design §4.6). The operational
+             knobs (sweep on/off, interval, batch, ceiling, languages,
+             statuses) live on the translations page itself, not here — the
+             operator changes the sweep's pace where they see its effect
+             (design §4.5). This card owns only whether the feature EXISTS
+             at all: the page, the sidebar entry, the manual actions. --%>
+        <div class="card bg-base-100 shadow-xl mb-6" id="shop-translations-card">
+          <div class="card-body">
+            <h2 class="card-title text-xl mb-2">
+              <.icon name="hero-language" class="w-6 h-6" />
+              {gettext("AI Translations")}
+            </h2>
+            <p class="text-sm text-base-content/70 mb-4">
+              {gettext(
+                "Turns on AI-powered translation of products and categories: the management page, its sidebar entry, and manual translate/stamp/reset actions. Requires a configured AI endpoint."
+              )}
+            </p>
+
+            <div class="fieldset">
+              <label class="label cursor-pointer justify-between">
+                <span class="fieldset-legend text-lg">
+                  <span class="font-semibold">{gettext("Enable shop translations")}</span>
+                  <div :if={not @ai_translations_available} class="text-sm text-warning mt-1">
+                    {gettext(
+                      "Configure an enabled AI endpoint in the AI section first — this stays off until one exists."
+                    )}
+                  </div>
+                </span>
+                <input
+                  id="toggle-shop-translations-enabled"
+                  type="checkbox"
+                  class="toggle toggle-secondary"
+                  checked={@shop_translations_enabled}
+                  disabled={not @ai_translations_available and not @shop_translations_enabled}
+                  phx-click="toggle_shop_translations_enabled"
+                />
+              </label>
+            </div>
+
+            <.link
+              :if={@shop_translations_enabled}
+              navigate={Routes.path("/admin/shop/translations")}
+              class="link link-primary text-sm"
+            >
+              {gettext("Open the translations page →")}
+            </.link>
           </div>
         </div>
 
@@ -1312,6 +1386,31 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     end
   end
 
+  # Design §4.6: `shop_translations_enabled` gates the feature's mere
+  # EXISTENCE (page, sidebar entry, manual actions) — a toggle that only
+  # ever turns ON when AI is actually usable (never lifted server-side just
+  # because a stale client sent the click; the `disabled` attribute in the
+  # template is a UX hint, not the enforcement). Turning it OFF also turns
+  # `shop_translation_sweep_enabled` off (design §12.4's one-directional
+  # link: the sweep can never run without the section, the section can
+  # exist with the sweep off) — a background actor must never keep working
+  # after the operator switched the whole feature off. Both writes land in
+  # `Activity.log`, same as the existence flag itself.
+  defp gated_event("toggle_shop_translations_enabled", _params, socket) do
+    new_value = !socket.assigns.shop_translations_enabled
+
+    if new_value and not ai_translations_available?() do
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         gettext("Configure an enabled AI endpoint in the AI section before enabling this.")
+       )}
+    else
+      do_toggle_shop_translations_enabled(new_value, socket)
+    end
+  end
+
   defp gated_event("update_catalog_vocabulary", %{"vocabulary" => vocabulary}, socket) do
     if vocabulary in Vocabulary.options() do
       case Settings.update_setting(Vocabulary.setting_key(), vocabulary) do
@@ -1510,6 +1609,55 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       {:error, _} ->
         {:noreply, put_flash(socket, :error, gettext("Failed to reset filters"))}
     end
+  end
+
+  defp do_toggle_shop_translations_enabled(new_value, socket) do
+    case Settings.update_boolean_setting_with_module(
+           "shop_translations_enabled",
+           new_value,
+           "shop"
+         ) do
+      {:ok, _} ->
+        Activity.log("shop.translations_enabled_changed",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "setting",
+          metadata: %{"enabled" => new_value}
+        )
+
+        socket = maybe_disable_sweep(new_value, socket)
+
+        {:noreply,
+         socket
+         |> assign(:shop_translations_enabled, new_value)
+         |> put_flash(
+           :info,
+           if(new_value,
+             do: gettext("Shop translations enabled"),
+             else: gettext("Shop translations disabled")
+           )
+         )}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, gettext("Failed to update shop translations"))}
+    end
+  end
+
+  defp maybe_disable_sweep(true, socket), do: socket
+
+  defp maybe_disable_sweep(false, socket) do
+    if TranslationSweepSettings.sweep_enabled?() do
+      Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", false, "shop")
+
+      Activity.log("shop.translation_sweep_settings_changed",
+        actor_uuid: Activity.actor_uuid(socket),
+        actor_role: Activity.actor_role(socket),
+        resource_type: "setting",
+        metadata: %{"sweep_enabled" => false, "reason" => "shop_translations_disabled"}
+      )
+    end
+
+    socket
   end
 
   defp vocabulary_label("services"), do: gettext("Services")
