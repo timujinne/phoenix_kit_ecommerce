@@ -221,6 +221,15 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       assert html =~ "de, fr"
       assert html =~ "model call"
 
+      # The call count and the minute count are INDEPENDENT counts: 2
+      # calls at 45s spread over 10 parallel jobs still rounds up to a
+      # single minute, and so does everything from 2 to 13 calls. A
+      # single `ngettext/4` governed by the CALL count picks one plural
+      # form for the whole sentence and renders "about 1 minutes." —
+      # here in en, and identically in de/fr/et. Two counts, two calls.
+      assert html =~ "≈2 model calls, about 1 minute."
+      refute html =~ "1 minutes"
+
       html = confirm!(view)
 
       jobs = jobs_for(product.uuid)

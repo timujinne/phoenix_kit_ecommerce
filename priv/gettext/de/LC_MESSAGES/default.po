@@ -27,7 +27,7 @@ msgstr "Dashboard"
 #: lib/phoenix_kit_ecommerce/web/products.ex:58
 #: lib/phoenix_kit_ecommerce/web/products.ex:288
 #: lib/phoenix_kit_ecommerce/web/settings.ex:1766
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1799
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1801
 #, elixir-autogen
 msgid "Products"
 msgstr "Produkte"
@@ -39,7 +39,7 @@ msgstr "Produkte"
 #: lib/phoenix_kit_ecommerce/web/dashboard.ex:105
 #: lib/phoenix_kit_ecommerce/web/dashboard.ex:157
 #: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:307
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1800
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1802
 #, elixir-autogen
 msgid "Categories"
 msgstr "Kategorien"
@@ -117,8 +117,8 @@ msgstr "%{count} Produkte auf %{status} aktualisiert"
 #: lib/phoenix_kit_ecommerce/web/products.ex:375
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1156
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1442
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1911
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1912
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1913
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1914
 #, elixir-autogen, elixir-format
 msgid "%{count} selected"
 msgstr "%{count} ausgewählt"
@@ -469,7 +469,7 @@ msgstr "Kategorien im Shop aktiviert"
 #: lib/phoenix_kit_ecommerce/web/products.ex:339
 #: lib/phoenix_kit_ecommerce/web/products.ex:418
 #: lib/phoenix_kit_ecommerce/web/products.ex:485
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1806
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1808
 #, elixir-autogen, elixir-format
 msgid "Category"
 msgstr "Kategorie"
@@ -560,7 +560,7 @@ msgstr "Steuer für dieses Produkt berechnen"
 
 #: lib/phoenix_kit_ecommerce/web/categories.ex:354
 #: lib/phoenix_kit_ecommerce/web/products.ex:378
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1914
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1916
 #, elixir-autogen, elixir-format
 msgid "Clear selection"
 msgstr "Auswahl aufheben"
@@ -1985,7 +1985,7 @@ msgstr "SEO-freundliche URL für diese Sprache"
 #: lib/phoenix_kit_ecommerce/web/categories.ex:286
 #: lib/phoenix_kit_ecommerce/web/components/catalog_sidebar.ex:340
 #: lib/phoenix_kit_ecommerce/web/products.ex:299
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1857
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1859
 #, elixir-autogen, elixir-format
 msgid "Search"
 msgstr "Suche"
@@ -2349,7 +2349,7 @@ msgstr "Kürzen (einzeilig)"
 #: lib/phoenix_kit_ecommerce/web/products.ex:416
 #: lib/phoenix_kit_ecommerce/web/products.ex:484
 #: lib/phoenix_kit_ecommerce/web/settings.ex:926
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1796
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1798
 #, elixir-autogen, elixir-format
 msgid "Type"
 msgstr "Typ"
@@ -3956,7 +3956,7 @@ msgid "Missing required option: %{option}.\nPlease select all required parameter
 msgstr "Erforderliche Option fehlt: %{option}.\nBitte wählen Sie alle erforderlichen Parameter aus."
 
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1537
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1978
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1980
 #: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:138
 #, elixir-autogen, elixir-format
 msgid "Next"
@@ -4504,7 +4504,7 @@ msgid "Pending changes"
 msgstr "Ausstehende Änderungen"
 
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1520
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1974
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1976
 #, elixir-autogen, elixir-format
 msgid "Prev"
 msgstr "Zurück"
@@ -4702,7 +4702,7 @@ msgid_plural "%{count} already in flight"
 msgstr[0] "%{count} bereits in der Warteschlange"
 msgstr[1] "%{count} bereits in der Warteschlange"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:2040
+#: lib/phoenix_kit_ecommerce/web/translations.ex:2042
 #, elixir-autogen, elixir-format
 msgid "%{count} enqueue error"
 msgid_plural "%{count} enqueue errors"
@@ -4723,7 +4723,7 @@ msgid_plural "%{count} failed"
 msgstr[0] "%{count} fehlgeschlagen"
 msgstr[1] "%{count} fehlgeschlagen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1699
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1701
 #, elixir-autogen, elixir-format
 msgid "%{count} in queue now"
 msgid_plural "%{count} in queue now"
@@ -4737,12 +4737,12 @@ msgid_plural "%{count} jobs queued"
 msgstr[0] "%{count} Aufgabe eingereiht"
 msgstr[1] "%{count} Aufgaben eingereiht"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1594
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1596
 #, elixir-autogen, elixir-format
 msgid "A translation whose source has changed since (\"stale\") is accepted as up to date too — the sweep will stop picking it up until its reference is reset."
 msgstr "Eine Übersetzung, deren Quelle sich seither geändert hat („veraltet“), gilt ebenfalls als aktuell — der Abgleich erfasst sie nicht mehr, bis ihre Referenz zurückgesetzt wird."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1567
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1569
 #, elixir-autogen, elixir-format
 msgid "A translation whose source has changed since (\"stale\") is accepted as up to date — the sweep will stop picking it up until its reference is reset."
 msgstr "Eine Übersetzung, deren Quelle sich seither geändert hat („veraltet“), gilt als aktuell — der Abgleich erfasst sie nicht mehr, bis ihre Referenz zurückgesetzt wird."
@@ -4757,49 +4757,49 @@ msgstr "KI-Übersetzungen"
 msgid "AI translation isn't available — configure an enabled AI endpoint in the AI section first."
 msgstr "KI-Übersetzung ist nicht verfügbar — konfigurieren Sie zuerst einen aktivierten KI-Endpunkt im Bereich „KI“."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1809
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1811
 #, elixir-autogen, elixir-format
 msgid "All categories"
 msgstr "Alle Kategorien"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1823
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1825
 #, elixir-autogen, elixir-format
 msgid "All target languages"
 msgstr "Alle Zielsprachen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1848
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1850
 #, elixir-autogen, elixir-format
 msgid "Any field"
 msgstr "Beliebiges Feld"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1542
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1544
 #, elixir-autogen, elixir-format
 msgid "Any manual edit to the selected fields, for the selected languages, will be overwritten by the new translation."
 msgstr "Jede manuelle Bearbeitung der ausgewählten Felder für die ausgewählten Sprachen wird durch die neue Übersetzung überschrieben."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1835
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1837
 #, elixir-autogen, elixir-format
 msgid "Any state"
 msgstr "Alle Status"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1872
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1874
 #, elixir-autogen, elixir-format
 msgid "Applies to every resource matching the filters above — %{count} match right now, across every page."
 msgid_plural "Applies to every resource matching the filters above — %{count} matches right now, across every page."
 msgstr[0] "Gilt für jede Ressource, die den obigen Filtern entspricht — aktuell trifft %{count} zu, über alle Seiten hinweg."
 msgstr[1] "Gilt für jede Ressource, die den obigen Filtern entspricht — aktuell treffen %{count} zu, über alle Seiten hinweg."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1690
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1692
 #, elixir-autogen, elixir-format
 msgid "Automatic sweep: off (manual only)"
 msgstr "Automatischer Abgleich: aus (nur manuell)"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1690
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1692
 #, elixir-autogen, elixir-format
 msgid "Automatic sweep: on"
 msgstr "Automatischer Abgleich: an"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1717
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1719
 #, elixir-autogen, elixir-format
 msgid "Batch size (resources per tick)"
 msgstr "Stapelgröße (Ressourcen pro Durchlauf)"
@@ -4821,17 +4821,17 @@ msgid_plural "Cancelled %{count} pending translation jobs."
 msgstr[0] "%{count} ausstehende Übersetzungsaufgabe abgebrochen."
 msgstr[1] "%{count} ausstehende Übersetzungsaufgaben abgebrochen."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1507
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1509
 #, elixir-autogen, elixir-format
 msgid "Cancels every pending and in-progress translation job for this shop. Nothing already written is undone — a stopped translation just doesn't appear yet and can be started again."
 msgstr "Bricht alle ausstehenden und laufenden Übersetzungsaufgaben für diesen Shop ab. Bereits Geschriebenes wird nicht rückgängig gemacht — eine gestoppte Übersetzung erscheint einfach noch nicht und kann erneut gestartet werden."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1671
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1673
 #, elixir-autogen, elixir-format
 msgid "Check now"
 msgstr "Jetzt prüfen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1606
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1608
 #, elixir-autogen, elixir-format
 msgid "Clear the stored reference for %{count} resource matching the filters above — every page, not just the one shown. The existing translation is kept as-is; the pair reads as \"unknown\" until it's stamped or translated again."
 msgid_plural "Clear the stored reference for %{count} resources matching the filters above — every page, not just the one shown. The existing translation is kept as-is; the pair reads as \"unknown\" until it's stamped or translated again."
@@ -4853,7 +4853,7 @@ msgstr "Konfigurieren Sie zuerst einen aktivierten KI-Endpunkt im Bereich „KI�
 msgid "Couldn't stop the translation queue — nothing was cancelled. Try again."
 msgstr "Die Übersetzungswarteschlange konnte nicht gestoppt werden — nichts wurde abgebrochen. Versuchen Sie es erneut."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1984
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1986
 #, elixir-autogen, elixir-format
 msgid "Diagnostics — recent AI request log entries"
 msgstr "Diagnose — letzte Protokolleinträge der KI-Anfragen"
@@ -4863,7 +4863,7 @@ msgstr "Diagnose — letzte Protokolleinträge der KI-Anfragen"
 msgid "Enable Shopify sync"
 msgstr "Shopify-Sync aktivieren"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1706
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1708
 #, elixir-autogen, elixir-format
 msgid "Enable automatic sweep"
 msgstr "Automatischen Abgleich aktivieren"
@@ -4883,57 +4883,57 @@ msgstr "Shopify-Sync konnte nicht aktualisiert werden"
 msgid "Failed to update shop translations"
 msgstr "Shop-Übersetzungen konnten nicht aktualisiert werden"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1845
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1847
 #, elixir-autogen, elixir-format
 msgid "Field"
 msgstr "Feld"
 
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1431
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1839
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1841
 #, elixir-autogen, elixir-format
 msgid "Fresh"
 msgstr "Aktuell"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1786
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1788
 #, elixir-autogen, elixir-format
 msgid "In queue now"
 msgstr "Aktuell in der Warteschlange"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1786
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1788
 #, elixir-autogen, elixir-format
 msgid "Incomplete translation jobs"
 msgstr "Unvollständige Übersetzungsaufgaben"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1712
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1714
 #, elixir-autogen, elixir-format
 msgid "Interval (minutes)"
 msgstr "Intervall (Minuten)"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1820
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1822
 #, elixir-autogen, elixir-format
 msgid "Language"
 msgstr "Sprache"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1696
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1698
 #, elixir-autogen, elixir-format
 msgid "Last tick: %{outcome}"
 msgstr "Letzter Durchlauf: %{outcome}"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1585
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1587
 #, elixir-autogen, elixir-format
 msgid "Mark the current source text as the reference translation for %{count} resource matching the filters above — every page, not just the one shown. No model call; existing translations are kept as-is."
 msgid_plural "Mark the current source text as the reference translation for %{count} resources matching the filters above — every page, not just the one shown. No model call; existing translations are kept as-is."
 msgstr[0] "Den aktuellen Ausgangstext als Referenzübersetzung für %{count} Ressource, die den obigen Filtern entspricht, festlegen — über alle Seiten hinweg, nicht nur die angezeigte. Kein Modellaufruf; vorhandene Übersetzungen bleiben unverändert."
 msgstr[1] "Den aktuellen Ausgangstext als Referenzübersetzung für %{count} Ressourcen, die den obigen Filtern entsprechen, festlegen — über alle Seiten hinweg, nicht nur die angezeigte. Kein Modellaufruf; vorhandene Übersetzungen bleiben unverändert."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1554
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1556
 #, elixir-autogen, elixir-format
 msgid "Mark the current source text as the reference translation for %{count} selected resource, for the current language/field scope — no model call, existing translations are kept as-is."
 msgid_plural "Mark the current source text as the reference translation for %{count} selected resources, for the current language/field scope — no model call, existing translations are kept as-is."
 msgstr[0] "Den aktuellen Ausgangstext als Referenzübersetzung für %{count} ausgewählte Ressource, im aktuellen Sprach-/Feldumfang, festlegen — kein Modellaufruf, vorhandene Übersetzungen bleiben unverändert."
 msgstr[1] "Den aktuellen Ausgangstext als Referenzübersetzung für %{count} ausgewählte Ressourcen, im aktuellen Sprach-/Feldumfang, festlegen — kein Modellaufruf, vorhandene Übersetzungen bleiben unverändert."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1722
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1724
 #, elixir-autogen, elixir-format
 msgid "Max in-flight jobs"
 msgstr "Max. gleichzeitige Aufgaben"
@@ -4949,22 +4949,22 @@ msgid "Max in-flight jobs must be at least 1."
 msgstr "Die maximale Anzahl gleichzeitiger Aufgaben muss mindestens 1 betragen."
 
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1428
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1836
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1838
 #, elixir-autogen, elixir-format
 msgid "Missing"
 msgstr "Fehlend"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1693
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1695
 #, elixir-autogen, elixir-format
 msgid "Next tick: %{time}"
 msgstr "Nächster Durchlauf: %{time}"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1989
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1991
 #, elixir-autogen, elixir-format
 msgid "No AI requests logged for shop resources yet"
 msgstr "Für Shop-Ressourcen wurden noch keine KI-Anfragen protokolliert"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1946
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1948
 #, elixir-autogen, elixir-format
 msgid "No resources match these filters"
 msgstr "Keine Ressourcen entsprechen diesen Filtern"
@@ -4974,7 +4974,7 @@ msgstr "Keine Ressourcen entsprechen diesen Filtern"
 msgid "No source"
 msgstr "Keine Quelle"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1987
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1989
 #, elixir-autogen, elixir-format
 msgid "Only successful model calls are attributed to a resource here — a transport failure (e.g. a timeout) never carries attribution, so it won't appear even though it may have been a retryable failure. See the design notes for why."
 msgstr "Hier wird einer Ressource nur ein erfolgreicher Modellaufruf zugeordnet — ein Übertragungsfehler (z. B. ein Timeout) wird nie zugeordnet und erscheint daher nicht, selbst wenn es sich um einen wiederholbaren Fehler gehandelt haben könnte. Die Gründe dafür stehen in den Design-Notizen."
@@ -4989,39 +4989,39 @@ msgstr "Shopify-Sync-Seite öffnen →"
 msgid "Open the translations page →"
 msgstr "Übersetzungsseite öffnen →"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1741
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1743
 #, elixir-autogen, elixir-format
 msgid "Product statuses swept"
 msgstr "Im Abgleich erfasste Produktstatus"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:2003
+#: lib/phoenix_kit_ecommerce/web/translations.ex:2005
 #, elixir-autogen, elixir-format
 msgid "Prompt as sent"
 msgstr "Gesendeter Prompt"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1518
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1520
 #, elixir-autogen, elixir-format
 msgid "Queue translation for %{count} selected resource's missing and outdated languages?"
 msgid_plural "Queue translation for %{count} selected resources' missing and outdated languages?"
 msgstr[0] "Übersetzung der fehlenden und veralteten Sprachen für %{count} ausgewählte Ressource in die Warteschlange stellen?"
 msgstr[1] "Übersetzung der fehlenden und veralteten Sprachen für %{count} ausgewählte Ressourcen in die Warteschlange stellen?"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1998
+#: lib/phoenix_kit_ecommerce/web/translations.ex:2000
 #, elixir-autogen, elixir-format
 msgid "Raw model response"
 msgstr "Rohe Modellantwort"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1683
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1685
 #, elixir-autogen, elixir-format
 msgid "Reconciliation sweep"
 msgstr "Abgleich"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1896
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1898
 #, elixir-autogen, elixir-format
 msgid "Reset reference for all matching"
 msgstr "Referenz für alle Treffer zurücksetzen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1533
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1535
 #, elixir-autogen, elixir-format
 msgid "Reset the reference and re-queue translation for %{count} selected resource, for the current language/field scope?"
 msgid_plural "Reset the reference and re-queue translation for %{count} selected resources, for the current language/field scope?"
@@ -5035,17 +5035,17 @@ msgid_plural "Reset the reference for %{count} resources, across every matching 
 msgstr[0] "Referenz für %{count} Ressource zurückgesetzt, über alle passenden Seiten hinweg."
 msgstr[1] "Referenz für %{count} Ressourcen zurückgesetzt, über alle passenden Seiten hinweg."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1604
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1606
 #, elixir-autogen, elixir-format
 msgid "Reset the reference for every matching resource?"
 msgstr "Referenz für jede passende Ressource zurücksetzen?"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1934
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1936
 #, elixir-autogen, elixir-format
 msgid "Resource"
 msgstr "Ressource"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1674
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1676
 #, elixir-autogen, elixir-format
 msgid "Run sweep"
 msgstr "Abgleich starten"
@@ -5060,28 +5060,28 @@ msgstr "SEO-Beschreibung"
 msgid "SEO title"
 msgstr "SEO-Titel"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1754
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1756
 #, elixir-autogen, elixir-format
 msgid "Save sweep settings"
 msgstr "Abgleichseinstellungen speichern"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1640
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1642
 #, elixir-autogen, elixir-format
 msgid "Scope: %{langs} · %{fields}"
 msgstr "Umfang: %{langs} · %{fields}"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1859
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1861
 #, elixir-autogen, elixir-format
 msgid "Search..."
 msgstr "Suche…"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1933
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1935
 #, elixir-autogen, elixir-format
 msgid "Select all"
 msgstr "Alle auswählen"
 
 #: lib/phoenix_kit_ecommerce/web/translations.ex:198
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1668
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1670
 #, elixir-autogen, elixir-format
 msgid "Shop Translations"
 msgstr "Shop-Übersetzungen"
@@ -5117,27 +5117,27 @@ msgid "Shopify sync is turned off. Turn it on in E-Commerce settings first."
 msgstr "Der Shopify-Sync ist ausgeschaltet. Aktivieren Sie ihn zuerst in den E-Commerce-Einstellungen."
 
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1429
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1837
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1839
 #, elixir-autogen, elixir-format
 msgid "Stale"
 msgstr "Veraltet"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1887
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1889
 #, elixir-autogen, elixir-format
 msgid "Stamp all matching as reference"
 msgstr "Alle Treffer als Referenz festlegen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1924
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1926
 #, elixir-autogen, elixir-format
 msgid "Stamp as reference"
 msgstr "Als Referenz festlegen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1552
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1554
 #, elixir-autogen, elixir-format
 msgid "Stamp as reference?"
 msgstr "Als Referenz festlegen?"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1583
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1585
 #, elixir-autogen, elixir-format
 msgid "Stamp every matching resource as reference?"
 msgstr "Jede passende Ressource als Referenz festlegen?"
@@ -5156,17 +5156,17 @@ msgid_plural "Stamped %{count} resources as reference."
 msgstr[0] "%{count} Ressource als Referenz festgelegt."
 msgstr[1] "%{count} Ressourcen als Referenz festgelegt."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1832
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1834
 #, elixir-autogen, elixir-format
 msgid "State"
 msgstr "Status"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1903
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1905
 #, elixir-autogen, elixir-format
 msgid "Stop translations"
 msgstr "Übersetzungen stoppen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1505
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1507
 #, elixir-autogen, elixir-format
 msgid "Stop translations?"
 msgstr "Übersetzungen stoppen?"
@@ -5227,42 +5227,42 @@ msgstr[1] "Abgleich ausgeführt — %{count} Aufgaben eingereiht."
 msgid "Sweep settings updated"
 msgstr "Abgleichseinstellungen aktualisiert"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1729
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1731
 #, elixir-autogen, elixir-format
 msgid "Target languages"
 msgstr "Zielsprachen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1766
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1768
 #, elixir-autogen, elixir-format
 msgid "The category translation prompt has been hand-edited and no longer matches the module's shipped version. Restore it in AI › Prompts, or leave the edit — this warning stays until it's resolved."
 msgstr "Der Übersetzungs-Prompt für Kategorien wurde manuell bearbeitet und stimmt nicht mehr mit der vom Modul ausgelieferten Version überein. Stellen Sie ihn unter KI › Prompts wieder her, oder belassen Sie die Änderung — diese Warnung bleibt bestehen, bis das gelöst ist."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1763
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1765
 #, elixir-autogen, elixir-format
 msgid "The product translation prompt has been hand-edited and no longer matches the module's shipped version. Restore it in AI › Prompts, or leave the edit — this warning stays until it's resolved."
 msgstr "Der Übersetzungs-Prompt für Produkte wurde manuell bearbeitet und stimmt nicht mehr mit der vom Modul ausgelieferten Version überein. Stellen Sie ihn unter KI › Prompts wieder her, oder belassen Sie die Änderung — diese Warnung bleibt bestehen, bis das gelöst ist."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1615
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1617
 #, elixir-autogen, elixir-format
 msgid "This does not queue any translation — it only clears the reference. The automatic sweep never picks up an \"unknown\" pair on its own."
 msgstr "Dadurch wird keine Übersetzung eingereiht — es wird nur die Referenz gelöscht. Der automatische Abgleich greift ein Paar mit dem Status „unbekannt“ nie von selbst auf."
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1918
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1920
 #, elixir-autogen, elixir-format
 msgid "Translate"
 msgstr "Übersetzen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1921
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1923
 #, elixir-autogen, elixir-format
 msgid "Translate again"
 msgstr "Erneut übersetzen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1531
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1533
 #, elixir-autogen, elixir-format
 msgid "Translate again?"
 msgstr "Erneut übersetzen?"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1516
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1518
 #, elixir-autogen, elixir-format
 msgid "Translate?"
 msgstr "Übersetzen?"
@@ -5278,23 +5278,23 @@ msgid "Turns on AI-powered translation of products and categories: the managemen
 msgstr "Aktiviert die KI-gestützte Übersetzung von Produkten und Kategorien: die Verwaltungsseite, ihren Eintrag in der Seitenleiste sowie die manuellen Aktionen Übersetzen/Als Referenz festlegen/Zurücksetzen. Erfordert einen konfigurierten KI-Endpunkt."
 
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1430
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1838
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1840
 #, elixir-autogen, elixir-format
 msgid "Unknown"
 msgstr "Unbekannt"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1651
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1652
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1653
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1654
 #, elixir-autogen, elixir-format
 msgid "all fields"
 msgstr "alle Felder"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1777
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1779
 #, elixir-autogen, elixir-format
 msgid "fresh / stale %{s} / missing %{m} / unknown %{u}"
 msgstr "aktuell / veraltet %{s} / fehlend %{m} / unbekannt %{u}"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:2024
+#: lib/phoenix_kit_ecommerce/web/translations.ex:2026
 #, elixir-autogen, elixir-format
 msgid "never run yet"
 msgstr "noch nie ausgeführt"
@@ -5304,28 +5304,35 @@ msgstr "noch nie ausgeführt"
 msgid "not scheduled"
 msgstr "nicht geplant"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:2035
+#: lib/phoenix_kit_ecommerce/web/translations.ex:2037
 #, elixir-autogen, elixir-format
 msgid "ran, %{count} job queued"
 msgid_plural "ran, %{count} jobs queued"
 msgstr[0] "ausgeführt, %{count} Aufgabe eingereiht"
 msgstr[1] "ausgeführt, %{count} Aufgaben eingereiht"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:2069
+#: lib/phoenix_kit_ecommerce/web/translations.ex:2071
 #, elixir-autogen, elixir-format
 msgid "stalled — batch %{batch} / ceiling %{ceiling} can never admit a resource missing all %{count} target languages"
 msgstr "blockiert — Stapel %{batch} / Obergrenze %{ceiling} kann nie eine Ressource zulassen, der alle %{count} Zielsprachen fehlen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:2060
+#: lib/phoenix_kit_ecommerce/web/translations.ex:2062
 #, elixir-autogen, elixir-format
 msgid "stalled — batch %{batch} / ceiling %{ceiling} can never admit a resource missing the only %{count} target language"
 msgid_plural "stalled — batch %{batch} / ceiling %{ceiling} can never admit a resource missing all %{count} target languages"
 msgstr[0] "blockiert — Stapel %{batch} / Obergrenze %{ceiling} kann nie eine Ressource zulassen, der die einzige Zielsprache (%{count}) fehlt"
 msgstr[1] "blockiert — Stapel %{batch} / Obergrenze %{ceiling} kann nie eine Ressource zulassen, der alle %{count} Zielsprachen fehlen"
 
-#: lib/phoenix_kit_ecommerce/web/translations.ex:1487
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1495
 #, elixir-autogen, elixir-format
-msgid "≈%{calls} model call, about %{minutes} minute."
-msgid_plural "≈%{calls} model calls, about %{minutes} minutes."
-msgstr[0] "≈%{calls} Modellaufruf, etwa %{minutes} Minute."
-msgstr[1] "≈%{calls} Modellaufrufe, etwa %{minutes} Minuten."
+msgid "about %{count} minute."
+msgid_plural "about %{count} minutes."
+msgstr[0] "etwa %{count} Minute."
+msgstr[1] "etwa %{count} Minuten."
+
+#: lib/phoenix_kit_ecommerce/web/translations.ex:1493
+#, elixir-autogen, elixir-format
+msgid "≈%{count} model call"
+msgid_plural "≈%{count} model calls"
+msgstr[0] "≈%{count} Modellaufruf"
+msgstr[1] "≈%{count} Modellaufrufe"

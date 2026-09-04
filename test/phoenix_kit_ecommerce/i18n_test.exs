@@ -221,7 +221,16 @@ defmodule PhoenixKitEcommerce.I18nTest do
          1 => "1 Methode konfiguriert",
          2 => "2 Methoden konfiguriert"
        }},
-      {"1 day", "%{count} days", %{0 => "0 Tage", 1 => "1 Tag", 2 => "2 Tage"}}
+      {"1 day", "%{count} days", %{0 => "0 Tage", 1 => "1 Tag", 2 => "2 Tage"}},
+      # The translations page's call estimate is TWO independent counts
+      # ("≈N model calls" and "about M minutes"), so it is two
+      # `ngettext/4` calls. One sentence governed by the call count
+      # rendered "etwa 1 Minuten." for every 2–13-call estimate — the
+      # common case. These two fixtures pin each count separately.
+      {"≈%{count} model call", "≈%{count} model calls",
+       %{0 => "≈0 Modellaufrufe", 1 => "≈1 Modellaufruf", 2 => "≈2 Modellaufrufe"}},
+      {"about %{count} minute.", "about %{count} minutes.",
+       %{0 => "etwa 0 Minuten.", 1 => "etwa 1 Minute.", 2 => "etwa 2 Minuten."}}
     ]
   end
 
@@ -240,7 +249,14 @@ defmodule PhoenixKitEcommerce.I18nTest do
          1 => "1 méthode configurée",
          2 => "2 méthodes configurées"
        }},
-      {"1 day", "%{count} days", %{0 => "0 jour", 1 => "1 jour", 2 => "2 jours"}}
+      {"1 day", "%{count} days", %{0 => "0 jour", 1 => "1 jour", 2 => "2 jours"}},
+      # See the German twin above — fr sends n=0 to the SINGULAR index,
+      # so "environ 0 minute." is the correct French here and the
+      # fixture has to say so.
+      {"≈%{count} model call", "≈%{count} model calls",
+       %{0 => "≈0 appel au modèle", 1 => "≈1 appel au modèle", 2 => "≈2 appels au modèle"}},
+      {"about %{count} minute.", "about %{count} minutes.",
+       %{0 => "environ 0 minute.", 1 => "environ 1 minute.", 2 => "environ 2 minutes."}}
     ]
   end
 end

@@ -1484,13 +1484,15 @@ defmodule PhoenixKitEcommerce.Web.Translations do
   defp call_estimate(calls) do
     minutes = max(1, ceil(calls * @avg_call_seconds / 60 / @parallel_jobs))
 
-    ngettext(
-      "≈%{calls} model call, about %{minutes} minute.",
-      "≈%{calls} model calls, about %{minutes} minutes.",
-      calls,
-      calls: calls,
-      minutes: minutes
-    )
+    # TWO independent counts, so two `ngettext/4` calls. A single one
+    # picks ONE plural form for the whole sentence, off `calls` — and
+    # `minutes` floors at 1 up to 13 calls, so the overwhelmingly common
+    # case (2–13 calls, one minute) rendered "≈2 model calls, about 1
+    # minutes." in en, and the same disagreement in de/fr/et. The comma
+    # join is a literal separator in every shipped locale.
+    ngettext("≈%{count} model call", "≈%{count} model calls", calls, count: calls) <>
+      ", " <>
+      ngettext("about %{count} minute.", "about %{count} minutes.", minutes, count: minutes)
   end
 
   # ============================================================
