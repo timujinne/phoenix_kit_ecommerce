@@ -5182,7 +5182,7 @@ msgstr "Зафиксировать все подходящие ресурсы к
 #, elixir-autogen, elixir-format
 msgid "Stamped %{count} resource as reference, across every matching page."
 msgid_plural "Stamped %{count} resources as reference, across every matching page."
-msgstr[0] "Зафиксировано %{count} ресурс как эталон, на всех подходящих страницах."
+msgstr[0] "Зафиксирован %{count} ресурс как эталон, на всех подходящих страницах."
 msgstr[1] "Зафиксировано %{count} ресурса как эталон, на всех подходящих страницах."
 msgstr[2] "Зафиксировано %{count} ресурсов как эталон, на всех подходящих страницах."
 
@@ -5190,7 +5190,7 @@ msgstr[2] "Зафиксировано %{count} ресурсов как этал�
 #, elixir-autogen, elixir-format
 msgid "Stamped %{count} resource as reference."
 msgid_plural "Stamped %{count} resources as reference."
-msgstr[0] "Зафиксировано %{count} ресурс как эталон."
+msgstr[0] "Зафиксирован %{count} ресурс как эталон."
 msgstr[1] "Зафиксировано %{count} ресурса как эталон."
 msgstr[2] "Зафиксировано %{count} ресурсов как эталон."
 
