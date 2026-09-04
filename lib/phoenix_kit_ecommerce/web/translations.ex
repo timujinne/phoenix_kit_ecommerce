@@ -803,6 +803,15 @@ defmodule PhoenixKitEcommerce.Web.Translations do
   # the template calls this function rather than `@product_statuses`.
   defp product_statuses, do: @product_statuses
 
+  # One `gettext/1` call per status so the label is extractable — the raw
+  # `draft`/`active`/`archived` value from `@product_statuses` must never
+  # be rendered directly. Reuses `products.ex`/`product_form.ex`'s own
+  # msgids for the same three words, so no new ones are needed here.
+  defp product_status_label("draft"), do: gettext("Draft")
+  defp product_status_label("active"), do: gettext("Active")
+  defp product_status_label("archived"), do: gettext("Archived")
+  defp product_status_label(status), do: status
+
   defp checked_list(nil, _allowed), do: []
 
   defp checked_list(raw, allowed) do
@@ -1336,6 +1345,19 @@ defmodule PhoenixKitEcommerce.Web.Translations do
   defp sweep_result_message(:ai_unavailable, _info),
     do: gettext("Sweep did not run — AI translation isn't available right now.")
 
+  defp sweep_result_message(:ceiling_reached, %{in_flight: n}) when is_integer(n) do
+    ngettext(
+      "Sweep did not run — %{count} job already in flight (at the ceiling).",
+      "Sweep did not run — %{count} jobs already in flight (at the ceiling).",
+      n,
+      count: n
+    )
+  end
+
+  # `n` reaches here only through the persisted `run_info/1` path, when a
+  # stored run somehow lacks "in_flight" — `ngettext/4` requires an
+  # integer to pick a plural form, so a non-integer (typically `nil`)
+  # falls back to the plain string rather than crashing on it.
   defp sweep_result_message(:ceiling_reached, %{in_flight: n}),
     do: gettext("Sweep did not run — %{count} jobs already in flight (at the ceiling).", count: n)
 
@@ -1348,11 +1370,15 @@ defmodule PhoenixKitEcommerce.Web.Translations do
   # tick does run under a too-low ceiling, it just cannot admit a resource
   # missing every target language, and that resource blocks the scan.
   defp sweep_result_message(:sweep_stalled, info) do
-    gettext(
+    count = Map.get(info, :target_language_count)
+
+    ngettext(
+      "Sweep queued nothing — batch %{batch} / ceiling %{ceiling} can never admit a resource missing the only %{count} target language. Raise them in the settings below.",
       "Sweep queued nothing — batch %{batch} / ceiling %{ceiling} can never admit a resource missing all %{count} target languages. Raise them in the settings below.",
+      count,
       batch: Map.get(info, :batch_size),
       ceiling: Map.get(info, :max_in_flight),
-      count: Map.get(info, :target_language_count)
+      count: count
     )
   end
 
@@ -1368,12 +1394,24 @@ defmodule PhoenixKitEcommerce.Web.Translations do
 
     parts =
       if conflicts > 0,
-        do: parts ++ [gettext("%{count} already in flight", count: conflicts)],
+        do:
+          parts ++
+            [
+              ngettext("%{count} already in flight", "%{count} already in flight", conflicts,
+                count: conflicts
+              )
+            ],
         else: parts
 
     parts =
       if errors != [],
-        do: parts ++ [gettext("%{count} failed", count: length(errors))],
+        do:
+          parts ++
+            [
+              ngettext("%{count} failed", "%{count} failed", length(errors),
+                count: length(errors)
+              )
+            ],
         else: parts
 
     Enum.join(parts, ", ")
@@ -1658,7 +1696,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
               {gettext("Last tick: %{outcome}", outcome: last_run_summary(@sweep_status.last_run))}
             </span>
             <span id="sweep-in-flight" class="badge badge-outline">
-              {gettext("%{count} in queue now", count: @in_flight)}
+              {ngettext("%{count} in queue now", "%{count} in queue now", @in_flight, count: @in_flight)}
             </span>
           </div>
 
@@ -1705,7 +1743,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
                 <%= for status <- product_statuses() do %>
                   <label class="label cursor-pointer gap-2">
                     <input type="checkbox" name="statuses[]" value={status} checked={status in @sweep_settings.statuses} class="checkbox checkbox-sm" />
-                    <span>{status}</span>
+                    <span>{product_status_label(status)}</span>
                   </label>
                 <% end %>
               </div>
@@ -1831,7 +1869,12 @@ defmodule PhoenixKitEcommerce.Web.Translations do
            state. --%>
       <div class="flex flex-wrap items-center justify-between gap-3 bg-base-200 rounded-lg px-4 py-3 mb-4" id="catalogue-wide-actions">
         <p class="text-sm text-base-content/70 m-0">
-          {gettext("Applies to every resource matching the filters above — %{count} match right now, across every page.", count: @total)}
+          {ngettext(
+            "Applies to every resource matching the filters above — %{count} match right now, across every page.",
+            "Applies to every resource matching the filters above — %{count} matches right now, across every page.",
+            @total,
+            count: @total
+          )}
         </p>
         <div class="flex flex-wrap gap-2">
           <button
@@ -2005,12 +2048,31 @@ defmodule PhoenixKitEcommerce.Web.Translations do
   # a flash, since nobody clicked anything) is just as legible in the
   # "Last tick" line as one provoked through the manual button.
   defp last_run_summary(%{"reason" => "sweep_stalled"} = run) do
-    gettext(
-      "stalled — batch %{batch} / ceiling %{ceiling} can never admit a resource missing all %{count} target languages",
-      batch: Map.get(run, "batch_size", "?"),
-      ceiling: Map.get(run, "max_in_flight", "?"),
-      count: Map.get(run, "target_language_count", "?")
-    )
+    batch = Map.get(run, "batch_size", "?")
+    ceiling = Map.get(run, "max_in_flight", "?")
+    count = Map.get(run, "target_language_count", "?")
+
+    # `count` falls back to the literal "?" when the persisted run map
+    # never recorded it — `ngettext/4` requires an integer to pick a
+    # plural form, so that unknown case takes the plain `gettext/2` path
+    # below instead of crashing on a non-numeric `n`.
+    if is_integer(count) do
+      ngettext(
+        "stalled — batch %{batch} / ceiling %{ceiling} can never admit a resource missing the only %{count} target language",
+        "stalled — batch %{batch} / ceiling %{ceiling} can never admit a resource missing all %{count} target languages",
+        count,
+        batch: batch,
+        ceiling: ceiling,
+        count: count
+      )
+    else
+      gettext(
+        "stalled — batch %{batch} / ceiling %{ceiling} can never admit a resource missing all %{count} target languages",
+        batch: batch,
+        ceiling: ceiling,
+        count: count
+      )
+    end
   end
 
   @translated_reasons ~w(translations_disabled sweep_disabled ai_unavailable no_target_languages ceiling_reached)
