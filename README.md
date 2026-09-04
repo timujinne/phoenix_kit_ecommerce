@@ -27,7 +27,7 @@ Add `phoenix_kit_ecommerce` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_kit_ecommerce, "~> 0.4.0"}
+    {:phoenix_kit_ecommerce, "~> 0.5.0"}
   ]
 end
 ```

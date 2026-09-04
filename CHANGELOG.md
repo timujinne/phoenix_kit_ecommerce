@@ -4,6 +4,111 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.5.0 - 2026-09-04
+
+### Added
+
+- **Catalogue translation control** (`/admin/shop/translations`, sidebar
+  entry "Translations"). A new admin page that turns AI translation from
+  a per-product button into a managed operation: per-language `fresh` /
+  `stale` / `missing` / `unknown` counts, filters (type, category,
+  language, state, field, search) that live in the URL, bulk "translate",
+  "translate again" and "stamp current source as reference" actions
+  behind a confirm modal, a "Run sweep now" / "Stop translations" pair,
+  live status via PubSub, and a recent-failures panel reading
+  `phoenix_kit_ai_requests`. Gated behind `shop.manage_catalog` (view) /
+  `shop.manage_settings` (act), and behind the new
+  `shop_translations_enabled` setting — off by default, and the toggle
+  itself stays disabled until an AI endpoint is configured
+  (`PhoenixKitAI.Translations.available?/0`).
+- **Category translation.** `PhoenixKitEcommerce.CategoryAITranslatable`
+  (`shop_category`) translates `name` and `description` under the same
+  `FOR UPDATE`-locked merge as the product adapter, with its own prompt
+  (`phoenixkit-shop-category-translation`) and slug handling — a category
+  slug is generated once, locally, from the translated name via
+  `LocalizedSlug`, and never taken from the model. There was no way to
+  translate a category at all before this.
+- **Staleness tracking for both products and categories.**
+  `PhoenixKitEcommerce.TranslationFingerprint` stores a per-field,
+  per-language SHA-256 of the source text a translation was made from
+  (in the existing `metadata` JSONB — no migration) and folds it into one
+  of four states, worst wins: `missing` > `stale` > `unknown` > `fresh`.
+  The fingerprint is taken from the exact source text the worker sent to
+  the model, not the resource's state when the write lands seconds later
+  (see the paired `phoenix_kit_ai` change below). This is also the write
+  lock: `put_translation/4` only overwrites a field whose source changed
+  since it was last translated, so a manually-edited translation is never
+  clobbered by a later sweep, re-run, or bulk action — "translate again"
+  now means an explicit reset of the reference for chosen fields/languages,
+  not blind overwrite.
+- **Reconciliation sweep.** `PhoenixKitEcommerce.Workers.TranslationSweepWorker`
+  is a self-rescheduling Oban job that periodically finds `missing`/`stale`
+  pairs (one SQL query per resource type, hashing in the database) and
+  enqueues translation jobs for them, respecting a batch size and an
+  in-flight ceiling so it can never fill the shared `default` queue.
+  `unknown` pairs are never auto-queued — the operator disposes of them
+  explicitly from the translations page. Off by default
+  (`shop_translation_sweep_enabled`); the chain self-heals after a
+  restart or Oban pruning via `ensure_scheduled/0`, called from
+  `enable_system/0`, settings save, and the page's own mount.
+- **New settings** (existence card in `/admin/shop/settings`; sweep
+  operation in the panel on the translations page itself):
+  `shop_translations_enabled` (bool, default `false`) and
+  `shop_translation_sweep_enabled` (bool, default `false`) gate the
+  feature and the automatic sweep independently — turning the feature off
+  also turns the sweep off; `shop_translation_interval_minutes` (default
+  `60`), `shop_translation_batch` (default `3`) and
+  `shop_translation_max_in_flight` (default `6`) tune the tick;
+  `shop_translation_languages` (default: every enabled language but the
+  primary) and `shop_translation_statuses` (default `["active"]`) scope
+  it. Every change is written to `Activity.log` with its actor.
+- **`shop_shopify_enabled` setting** (bool, default `true` — existing
+  stands keep today's behavior with no action needed). Turning it off
+  hides the Shopify Sync sidebar entry and integrations-page option,
+  redirects a direct link to `/admin/shop/shopify-sync` back to the shop
+  dashboard, and drops Shopify from `required_integrations/0` — without
+  touching the stored connection or its token, so re-enabling restores
+  sync exactly as it was.
+
+### Changed
+
+- **`pk_dep(:phoenix_kit_ai, ...)` floor raised from `~> 0.18` to
+  `~> 0.20`.** Both new adapters template their entire source section as
+  `{{SourceFields}}` and rely on the translation worker forwarding
+  `opts[:source_fields]` into `put_translation/4` — both land only in
+  phoenix_kit_ai 0.20.0. An engine below that floor cannot resolve
+  against this release in a way that does anything useful: every prompt
+  would render with an empty source section (§9.1 missing) and, even if
+  it didn't, no field would ever fingerprint (§9.3 missing), so nothing
+  in the paragraph above would work. `phoenix_kit_ai` stays optional —
+  absent, the whole translation feature (adapters, worker, page, sidebar
+  entry) compiles out and the rest of the shop is unaffected.
+
+### Operator notes
+
+- Nothing changes on upgrade until `shop_translations_enabled` is turned
+  on in `/admin/shop/settings`, which requires an AI endpoint already
+  configured under the AI module. Turning it on does not turn the sweep
+  on — that is `shop_translation_sweep_enabled`, a separate toggle on the
+  translations page.
+- **Every currently-translated product/category pair on an existing
+  catalogue comes back as `unknown`**, not `fresh` — this release has no
+  record of what source text they were translated from, and the sweep
+  deliberately never auto-queues `unknown` (a first tick would otherwise
+  re-translate the entire catalogue). Run the new one-shot
+  `mix phoenix_kit_ecommerce.backfill_translation_fingerprints` (has a
+  `--dry-run`) once, before turning the sweep on, to stamp today's source
+  text as the reference baseline for every existing translation; without
+  it the whole catalogue instead sits in `unknown` until resolved
+  resource by resource from the translations page. Do not run it a
+  second time once the sweep has been live — see the task's own
+  `@moduledoc` for why.
+- Sweep defaults (60-minute interval, batch 3, ceiling 6) are sized
+  against the shared `default` Oban queue's own concurrency (10) so a
+  tick always leaves headroom for other background work; raise them
+  together (batch × target languages = ceiling) when clearing a large
+  backlog, and drop them back afterward.
+
 ## 0.4.0 - 2026-09-02
 
 ### Added

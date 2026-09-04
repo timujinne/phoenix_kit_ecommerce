@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.MixProject do
   use Mix.Project
 
-  @version "0.4.0"
+  @version "0.5.0"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_ecommerce"
 
   def project do
@@ -127,28 +127,26 @@ defmodule PhoenixKitEcommerce.MixProject do
       # when it's absent (see ProductForm's @ai_translate? flag). Version tracks
       # the actual API used (Translatable behaviour, AITranslate components).
       #
-      # RAISE THIS FLOOR BEFORE THE NEXT HEX RELEASE. The translation prompts
-      # this package rolls out (`AITranslatable`, `CategoryAITranslatable`)
-      # carry their entire source section as `{{SourceFields}}` — a variable
-      # bound only by the phoenix_kit_ai release carrying the translation-control
-      # design's §9.1 change, which 0.19.2 (the newest published today) predates.
-      # An older engine renders `{{SourceFields}}` literally, so every
-      # translation call goes out with an empty SOURCE section: it costs money,
-      # fails to parse, and nothing but a log warning says why. This requirement
-      # must become `~> <first release with §9.1>` when that release lands
-      # (design §6 step 9). Until then the stand pins the fork by path.
+      # FLOOR RAISED for the translation-control design: the translation
+      # prompts this package rolls out (`AITranslatable`,
+      # `CategoryAITranslatable`) carry their entire source section as
+      # `{{SourceFields}}` — a variable bound only by phoenix_kit_ai
+      # 0.20.0, the release carrying the design's §9.1 change. An older
+      # engine renders `{{SourceFields}}` literally, so every translation
+      # call would go out with an empty SOURCE section: it costs money,
+      # fails to parse, and nothing but a log warning says why.
       #
-      # The SAME release must carry §9.3 (`put_translation/4` receiving
-      # the source fields the worker actually read). Without it the
-      # staleness model of design §4.1 is inert rather than merely
-      # degraded: every write arrives with no source to hash, so nothing
-      # is ever fingerprinted, write-narrowing never engages, and each
-      # write erases the field's reference instead (see
+      # 0.20.0 also carries §9.3 (`put_translation/4` receiving the
+      # source fields the worker actually read via `opts[:source_fields]`).
+      # Without it the staleness model of design §4.1 is inert rather than
+      # merely degraded: every write arrives with no source to hash, so
+      # nothing is ever fingerprinted, write-narrowing never engages, and
+      # each write erases the field's reference instead (see
       # `TranslationFingerprint.apply_writes/3` — that erase is what keeps
-      # the sweep convergent on such an engine, at the cost of every
-      # touched pair falling back to `:unknown` for the operator to
-      # resolve by hand).
-      pk_dep(:phoenix_kit_ai, "~> 0.18", optional: true),
+      # the sweep convergent against an engine lacking §9.3, at the cost
+      # of every touched pair falling back to `:unknown` for the operator
+      # to resolve by hand). `~> 0.20` admits only engines carrying both.
+      pk_dep(:phoenix_kit_ai, "~> 0.20", optional: true),
 
       # LiveView is needed for the admin and storefront pages.
       {:phoenix_live_view, "~> 1.1"},
