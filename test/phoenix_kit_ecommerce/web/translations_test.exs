@@ -851,6 +851,15 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
 
       assert html =~ "Sweep settings updated"
 
+      # The status checkboxes submit the RAW status, but what they render
+      # has to be a translatable label: the bare `draft`/`active`/
+      # `archived` value used to reach the DOM with no gettext call at
+      # the render site at all, so no locale could translate it.
+      assert html =~ ~s(value="draft")
+      assert html =~ ">Draft<"
+      assert html =~ ">Active<"
+      assert html =~ ">Archived<"
+
       assert SweepSettings.sweep_enabled?()
       assert SweepSettings.interval_minutes() == 15
       assert SweepSettings.batch_size() == 4
