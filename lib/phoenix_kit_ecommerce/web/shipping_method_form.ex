@@ -25,7 +25,11 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp apply_action(socket, :new, _params) do
     default_currency = Billing.get_default_currency()
-    default_currency_code = if default_currency, do: default_currency.code, else: "USD"
+    # §7.3/N3: no literal fallback — an unconfigured currency table means
+    # `default_currency_code` is nil, and `ShippingMethod.changeset/2`'s
+    # own `validate_length(:currency, is: 3)` then rejects it loudly
+    # rather than silently seeding the form with "USD".
+    default_currency_code = if default_currency, do: default_currency.code
 
     method = %ShippingMethod{currency: default_currency_code}
     changeset = Shop.change_shipping_method(method)
@@ -183,12 +187,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                     <div class="input flex items-center bg-base-200">
                       {if @default_currency,
                         do: "#{@default_currency.code} - #{@default_currency.name}",
-                        else: "USD"}
+                        else: gettext("No default currency configured")}
                     </div>
                     <input
                       type="hidden"
                       name="shipping_method[currency]"
-                      value={if @default_currency, do: @default_currency.code, else: "USD"}
+                      value={if @default_currency, do: @default_currency.code}
                     />
                   <% else %>
                     <.select
