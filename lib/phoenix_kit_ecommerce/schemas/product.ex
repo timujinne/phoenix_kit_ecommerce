@@ -65,7 +65,7 @@ defmodule PhoenixKitEcommerce.Product do
     field :price, :decimal
     field :compare_at_price, :decimal
     field :cost_per_item, :decimal
-    field :currency, :string, default: "USD"
+    field :currency, :string
     field :taxable, :boolean, default: true
 
     # Physical properties

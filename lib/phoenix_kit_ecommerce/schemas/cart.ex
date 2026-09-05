@@ -59,7 +59,7 @@ defmodule PhoenixKitEcommerce.Cart do
     field :tax_amount, :decimal, default: Decimal.new("0")
     field :discount_amount, :decimal, default: Decimal.new("0")
     field :total, :decimal, default: Decimal.new("0")
-    field :currency, :string, default: "USD"
+    field :currency, :string
 
     # Discount
     field :discount_code, :string
@@ -108,6 +108,7 @@ defmodule PhoenixKitEcommerce.Cart do
       :merged_into_cart_uuid
     ])
     |> validate_inclusion(:status, @statuses)
+    |> validate_required([:currency])
     |> validate_length(:currency, is: 3)
     |> validate_length(:shipping_country, max: 2)
     |> validate_identity()

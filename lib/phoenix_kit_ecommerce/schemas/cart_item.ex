@@ -50,7 +50,7 @@ defmodule PhoenixKitEcommerce.CartItem do
     # Pricing (snapshot)
     field :unit_price, :decimal
     field :compare_at_price, :decimal
-    field :currency, :string, default: "USD"
+    field :currency, :string
 
     # Quantity
     field :quantity, :integer, default: 1
@@ -93,7 +93,7 @@ defmodule PhoenixKitEcommerce.CartItem do
       :selected_specs,
       :metadata
     ])
-    |> validate_required([:cart_uuid, :product_title, :unit_price, :quantity])
+    |> validate_required([:cart_uuid, :product_title, :unit_price, :quantity, :currency])
     |> validate_number(:quantity, greater_than: 0)
     |> validate_number(:unit_price, greater_than_or_equal_to: 0)
     |> validate_length(:currency, is: 3)

@@ -185,13 +185,15 @@ defmodule PhoenixKitEcommerce do
   end
 
   @doc """
-  Gets the default currency code from Billing module.
-  Falls back to "USD" if Billing has no default currency configured.
+  The base currency code from Billing, or `nil` when no default currency
+  is configured. `create_cart/1` then fails loudly on its own changeset
+  (`Cart.changeset/2` requires `:currency`) instead of a silent literal
+  masking an empty currency table (§4.2, §7.3).
   """
   def get_default_currency_code do
     case Billing.get_default_currency() do
       %{code: code} -> code
-      nil -> "USD"
+      nil -> nil
     end
   end
 
@@ -872,7 +874,10 @@ defmodule PhoenixKitEcommerce do
   before saving to ensure consistent storage format.
   """
   def create_product(attrs) do
-    attrs = MetadataValidator.normalize_product_attrs(attrs)
+    attrs =
+      attrs
+      |> MetadataValidator.normalize_product_attrs()
+      |> maybe_set_default_currency()
 
     result =
       %Product{}
@@ -887,6 +892,31 @@ defmodule PhoenixKitEcommerce do
       error ->
         error
     end
+  end
+
+  # §7.3/N3: `product.ex`/`shipping_method.ex`'s `:currency` lost its
+  # `default: "USD"` literal (both columns allow NULL, so nothing forced
+  # a real value at the DB level either). Every creation path funnels
+  # through here — the admin forms, the CSV/Shopify importer
+  # (`import/shopify_csv.ex`, direct and via `upsert_product/1`) — so
+  # this is the one place a caller that omits `:currency` gets the
+  # shop's base currency instead of a silent `nil` reaching the insert.
+  # A caller that DOES pass `:currency` is never overridden.
+  #
+  # Matches the incoming map's key style (atom vs string) before adding
+  # the fallback: `Ecto.Changeset.cast/3` raises on a mixed-key map, and
+  # callers disagree — LiveView form params are string-keyed, the CSV
+  # importer's `ProductTransformer.transform/5` output is atom-keyed.
+  defp maybe_set_default_currency(attrs) do
+    if Map.has_key?(attrs, :currency) || Map.has_key?(attrs, "currency") do
+      attrs
+    else
+      Map.put(attrs, currency_key(attrs), get_default_currency_code())
+    end
+  end
+
+  defp currency_key(attrs) do
+    if Enum.any?(attrs, fn {k, _} -> is_binary(k) end), do: "currency", else: :currency
   end
 
   @doc """
@@ -1730,6 +1760,8 @@ defmodule PhoenixKitEcommerce do
   Creates a new shipping method.
   """
   def create_shipping_method(attrs) do
+    attrs = maybe_set_default_currency(attrs)
+
     %ShippingMethod{}
     |> ShippingMethod.changeset(attrs)
     |> repo().insert()
