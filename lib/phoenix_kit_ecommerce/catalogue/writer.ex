@@ -32,6 +32,12 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue.AttributeSets}
   @compile {:no_warn_undefined, PhoenixKitEntities}
 
+  import Ecto.Query, only: [from: 2]
+
+  alias PhoenixKit.Modules.Storage.File, as: StorageFile
+  alias PhoenixKit.Modules.Storage.FolderLink
+  alias PhoenixKit.RepoHelper
+  alias PhoenixKit.Users.Auth
   alias PhoenixKit.Utils.Multilang
   alias PhoenixKitCatalogue.Attachments
   alias PhoenixKitCatalogue.Catalogue
@@ -311,19 +317,36 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   payload's own array order is NOT trusted), featured = the position-1
   image.
 
-  Dedup is keyed by Shopify's own image id, recorded in `data
+  Resolves each Shopify image in this order: (a) an id already in `data
   ["ecommerce"]["shopify"]["image_ids"]` (`%{"<shopify image id>" =>
-  file_uuid}`) — an id already in that map reuses its file uuid instead
-  of downloading again. `opts[:downloader]` (default `&ImageDownloader.
-  download_and_store/3`, `(url, user_uuid, opts) -> {:ok, file_uuid} |
-  {:error, reason}`) and `opts[:user_uuid]` (the file owner passed
-  straight through — no local system-actor fallback here; deciding the
-  right actor for an unattended sync run is the worker's job) let tests
-  swap in a stub that never makes an HTTP call.
+  file_uuid}`) reuses its file uuid; (b) failing that, a Storage file
+  already linked to `item` — one of its `data["media_order"]`/
+  `featured_image_uuid` files, or any file living in (or folder-linked
+  into) its `data["files_folder_uuid"]` — whose `metadata["source_url"]`
+  matches the Shopify image's `src` once both are stripped of their
+  `?v=`-style query string reuses that file instead of downloading a
+  second copy of it (this is what lets a rerun against a catalogue item
+  migrated with plain Storage images, never tagged with a Shopify image
+  id, converge without duplicating every file); (c) otherwise downloads
+  via `opts[:downloader]` (default `&ImageDownloader.download_and_store/
+  3`, `(url, user_uuid, opts) -> {:ok, file_uuid} | {:error, reason}`).
 
-  A download failure skips that image (it is not attached and its id is
-  not recorded, so a later run retries it) and is reported back in the
-  `:errors` list rather than aborting the whole product's images.
+  `opts[:user_uuid]` is the Storage file owner for anything downloaded;
+  when omitted it falls back to `PhoenixKit.Users.Auth.
+  get_first_admin_uuid/0` so an unattended sync run never fails
+  Storage's `user_uuid can't be blank` validation for lack of an
+  explicit actor.
+
+  A download failure never corrupts a binding that does not belong to it:
+  an image id already synced before (`image_ids`) or matched to a
+  previously-linked file by `source_url` is resolved WITHOUT ever
+  attempting a download (see (a)/(b) above), so an existing binding can
+  never be lost to a transient failure. An image with neither — a
+  genuinely new Shopify image whose download fails — is skipped: not
+  attached, not recorded in `image_ids`, so a later run retries it. It
+  is never bound to some other image's file merely because it landed at
+  the same list position; still listed in `:errors` so the failure
+  stays visible.
 
   A no-op — `{:error, :catalogue_source_inactive}` — when
   `ProductSource.current/0` isn't `Catalogue` (Global Constraints: every
@@ -357,21 +380,25 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
 
   defp do_sync_images(item, shopify_product, opts) do
     downloader = Keyword.get(opts, :downloader, &ImageDownloader.download_and_store/3)
-    user_uuid = Keyword.get(opts, :user_uuid)
+    user_uuid = Keyword.get(opts, :user_uuid) || default_actor_uuid()
 
     known_image_ids =
       get_in(item.data || %{}, ["ecommerce", "shopify", "image_ids"]) || %{}
 
-    images =
-      (shopify_product["images"] || [])
-      |> Enum.sort_by(&(&1["position"] || 0))
+    url_index = item |> linked_files() |> source_url_index()
+
+    images = (shopify_product["images"] || []) |> Enum.sort_by(&(&1["position"] || 0))
 
     {image_ids, file_uuids, downloaded, reused, errors} =
       Enum.reduce(images, {%{}, [], 0, 0, []}, fn image, acc ->
-        resolve_image(image, known_image_ids, downloader, user_uuid, acc)
+        resolve_image(image, known_image_ids, url_index, downloader, user_uuid, acc)
       end)
 
-    file_uuids = Enum.reverse(file_uuids)
+    # Order is already Shopify position order; dedupe defensively so a
+    # file resolved for two different Shopify image ids (e.g. two ids
+    # that both matched the same reused uuid) can never repeat in
+    # `media_order` or be attached twice.
+    file_uuids = file_uuids |> Enum.reverse() |> Enum.uniq()
     errors = Enum.reverse(errors)
 
     with {:ok, item_with_ids} <- put_image_ids(item, image_ids),
@@ -381,18 +408,39 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     end
   end
 
-  defp resolve_image(image, known_image_ids, downloader, user_uuid, acc) do
+  defp resolve_image(image, known_image_ids, url_index, downloader, user_uuid, acc) do
     id = to_string(image["id"])
 
-    case Map.fetch(known_image_ids, id) do
+    case reused_file_uuid(id, image["src"], known_image_ids, url_index) do
       {:ok, uuid} ->
         put_resolved(acc, id, uuid, :reused)
 
       :error ->
-        case downloader.(image["src"], user_uuid, []) do
-          {:ok, uuid} -> put_resolved(acc, id, uuid, :downloaded)
-          {:error, reason} -> put_error(acc, id, reason)
-        end
+        download_image(id, image["src"], downloader, user_uuid, acc)
+    end
+  end
+
+  # (a) an id already synced before; (b) failing that, a linked file
+  # whose download source matches this image's `src` (query stripped).
+  # Both are provable bindings to THIS Shopify image — never a guess
+  # from list position.
+  defp reused_file_uuid(id, src, known_image_ids, url_index) do
+    case Map.fetch(known_image_ids, id) do
+      {:ok, uuid} -> {:ok, uuid}
+      :error -> Map.fetch(url_index, normalize_image_url(src))
+    end
+  end
+
+  defp download_image(id, src, downloader, user_uuid, acc) do
+    case downloader.(src, user_uuid, []) do
+      {:ok, uuid} ->
+        put_resolved(acc, id, uuid, :downloaded)
+
+      {:error, reason} ->
+        # No provable prior binding for this id (see `reused_file_uuid/4`
+        # above) — skip it rather than guess one from list position; a
+        # later run retries it once the download can succeed.
+        put_error(acc, id, reason)
     end
   end
 
@@ -425,6 +473,84 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
       order: file_uuids
     )
   end
+
+  # The default Storage actor for an unattended sync run that was not
+  # given one explicitly — the same first-admin fallback
+  # `PhoenixKit.Users.Auth.get_first_admin_uuid/0` provides for exactly
+  # this kind of programmatic write.
+  defp default_actor_uuid, do: Auth.get_first_admin_uuid()
+
+  defp read_string_list(nil, _key), do: []
+
+  defp read_string_list(data, key) do
+    case data[key] do
+      list when is_list(list) -> Enum.filter(list, &is_binary/1)
+      _ -> []
+    end
+  end
+
+  # Storage files already linked to `item`: its `media_order`/
+  # `featured_image_uuid` uuids as they currently stand (even if an
+  # earlier run left them pointing at only some of the item's images)
+  # plus every file living in — or folder-linked into — its own
+  # attachment folder.
+  defp linked_files(item) do
+    data = item.data || %{}
+
+    explicit_uuids =
+      Enum.uniq(read_string_list(data, "media_order") ++ List.wrap(data["featured_image_uuid"]))
+
+    (explicit_files(explicit_uuids) ++ folder_files(data["files_folder_uuid"]))
+    |> Enum.uniq_by(& &1.uuid)
+  end
+
+  defp explicit_files([]), do: []
+
+  defp explicit_files(uuids) do
+    from(f in StorageFile, where: f.uuid in ^uuids and f.status == "active")
+    |> RepoHelper.repo().all()
+  end
+
+  defp folder_files(folder_uuid) when is_binary(folder_uuid) do
+    linked_subquery =
+      from(fl in FolderLink, where: fl.folder_uuid == ^folder_uuid, select: fl.file_uuid)
+
+    from(f in StorageFile,
+      where:
+        (f.folder_uuid == ^folder_uuid or f.uuid in subquery(linked_subquery)) and
+          f.status == "active"
+    )
+    |> RepoHelper.repo().all()
+  end
+
+  defp folder_files(_folder_uuid), do: []
+
+  # Indexes linked files by their (query-stripped) download source URL.
+  # When more than one file matches the same URL — e.g. a duplicate a
+  # previous buggy run created — the earliest-inserted one wins, since
+  # that is the original rather than the duplicate; `inserted_at` is
+  # second-precision, so a `uuid` tie-break keeps the choice
+  # deterministic for two rows inserted in the same second.
+  defp source_url_index(files) do
+    files
+    |> Enum.filter(&is_binary(get_in(&1.metadata || %{}, ["source_url"])))
+    |> Enum.sort_by(&{&1.inserted_at, &1.uuid}, fn {ts_a, uuid_a}, {ts_b, uuid_b} ->
+      case DateTime.compare(ts_a, ts_b) do
+        :eq -> uuid_a <= uuid_b
+        :lt -> true
+        :gt -> false
+      end
+    end)
+    |> Enum.reduce(%{}, fn file, acc ->
+      Map.put_new(acc, normalize_image_url(file.metadata["source_url"]), file.uuid)
+    end)
+  end
+
+  defp normalize_image_url(url) when is_binary(url) do
+    url |> URI.parse() |> Map.put(:query, nil) |> URI.to_string()
+  end
+
+  defp normalize_image_url(_url), do: nil
 
   # ============================================================
   # Update: localized fields

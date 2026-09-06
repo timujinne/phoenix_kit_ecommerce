@@ -1,10 +1,13 @@
 defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
   @moduledoc """
-  `PhoenixKitEcommerce.Shopify.CollectionSync.run/1` (Block 7 Task 4,
-  `docs/superpowers/plans/2026-09-06-block7-shopify-media-collections.md`):
+  `PhoenixKitEcommerce.Shopify.CollectionSync.run/1` — Block 7 Task 4
+  (`docs/superpowers/plans/2026-09-06-block7-shopify-media-collections.md`):
   Shopify collections mapped onto catalogue categories with order
   preserved, and catalogue items placed into the right category at the
-  right position from the collections' product lists.
+  right position from the collections' product lists; plus Block 7b
+  Task 2 (`docs/superpowers/plans/2026-09-06-block7b-shopify-live-fixes.md`):
+  the `:filter` allowlist (collections not matching are skipped
+  entirely) and most-specific-collection-wins assignment.
 
   Needs `phoenix_kit_catalogue` loaded (real `Catalogue.create_category/2`
   / `update_category/3` / `update_item/2` against a live catalogue) —
@@ -72,12 +75,15 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
     item
   end
 
-  # Two Shopify collections:
+  # Two Shopify collections, both listing 2 products (a tie in
+  # specificity — see `target_category_and_position/1`'s own comment on
+  # ties breaking to (filtered) API order, which lists "frames" first):
   #   - "frames" (id 1, position 0) — matches a pre-existing category by
   #     handle, product 111 already lives there from a previous run.
   #   - "gifts" (id 2, position 1) — no local category, gets created;
-  #     product 111 is ALSO listed here (should stay in Frames); product
-  #     222 is new and gets assigned to Gifts; product 999 is unknown.
+  #     product 111 is ALSO listed here (tied with frames, so the
+  #     API-order tie-break keeps it in Frames); product 222 is new and
+  #     gets assigned to Gifts; product 999 is unknown.
   defmodule Stub do
     @moduledoc false
 
@@ -133,6 +139,48 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
     end
 
     def fetch_collection_product_ids(1, _opts), do: {:ok, []}
+  end
+
+  # Same two collections as `Stub`, except "frames" now lists 3 products
+  # (111, 999, 888) against "gifts"'s 2 (111, 222) — no longer a tie, so
+  # the most-specific rule has a real winner to test.
+  defmodule MostSpecificStub do
+    @moduledoc false
+
+    def fetch_collections(_opts) do
+      {:ok,
+       [
+         %{"id" => 1, "handle" => "frames", "title" => "Frames", "position" => 0},
+         %{"id" => 2, "handle" => "gifts", "title" => "Gifts", "position" => 1}
+       ]}
+    end
+
+    def fetch_collection_product_ids(1, _opts), do: {:ok, [111, 999, 888]}
+    def fetch_collection_product_ids(2, _opts), do: {:ok, [111, 222]}
+  end
+
+  # Four Shopify collections mimicking the live store's shape: two
+  # `3d-printed-*` categories that should pass an allowlist filter, an
+  # explicitly excluded `3d-printed-*` ("featured mix"), and an
+  # unrelated collection that doesn't match the prefix at all.
+  # `fetch_collection_product_ids/2` has NO clause for ids 2 or 3 —
+  # calling it for either would raise, proving a filtered-out collection
+  # is never even asked for its products.
+  defmodule FilterStub do
+    @moduledoc false
+
+    def fetch_collections(_opts) do
+      {:ok,
+       [
+         %{"id" => 1, "handle" => "3d-printed-frames", "title" => "Frames", "position" => 0},
+         %{"id" => 2, "handle" => "3d-printed-items", "title" => "Items", "position" => 1},
+         %{"id" => 3, "handle" => "imported-from-etsy", "title" => "Etsy", "position" => 2},
+         %{"id" => 4, "handle" => "3d-printed-gifts", "title" => "Gifts", "position" => 3}
+       ]}
+    end
+
+    def fetch_collection_product_ids(1, _opts), do: {:ok, [111]}
+    def fetch_collection_product_ids(4, _opts), do: {:ok, [222]}
   end
 
   describe "run/1 — legacy source" do
@@ -216,9 +264,8 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
       assert updated.position == 1
     end
 
-    test "a product listed in two collections keeps the category it already had", %{
-      catalogue: catalogue
-    } do
+    test "a product tied for specificity across two collections settles on the API-order tie-break",
+         %{catalogue: catalogue} do
       {:ok, frames} =
         Catalogue.create_category(%{
           name: "Frames",
@@ -252,10 +299,9 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
 
       # Product 111 currently sits in Frames locally, but THIS stub's
       # frames list is empty and its gifts list carries 111 — Shopify
-      # itself moved it. The old (buggy) rule kept any item already in a
-      # collection-derived category regardless of which one; the fixed
-      # rule only keeps it when the item's OWN collections still list it
-      # there.
+      # itself moved it, and its own current category is no longer even
+      # a candidate (empty list -> not one of `product_categories`'s
+      # entries for 111 at all).
       item =
         create_item(catalogue.uuid, "Frame A", 111, %{category_uuid: frames.uuid, position: 3})
 
@@ -270,6 +316,37 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
       updated = Catalogue.get_item!(item.uuid)
       assert updated.category_uuid == gifts.uuid
       assert updated.position == 0
+    end
+
+    test "an item in several allowed collections is assigned to the most specific one (fewest products), even over its current (bigger) category",
+         %{catalogue: catalogue} do
+      {:ok, frames} =
+        Catalogue.create_category(%{
+          name: "Frames",
+          catalogue_uuid: catalogue.uuid,
+          slug: %{"en" => "frames"},
+          position: 0
+        })
+
+      # Product 111 currently sits in Frames (3 products: less specific)
+      # but is also listed in Gifts (2 products: more specific) — the
+      # most-specific rule wins regardless of the item's current
+      # category.
+      item =
+        create_item(catalogue.uuid, "Frame A", 111, %{category_uuid: frames.uuid, position: 5})
+
+      assert {:ok, result} =
+               CollectionSync.run(client: MostSpecificStub, catalogue_uuid: catalogue.uuid)
+
+      [gifts] =
+        catalogue.uuid
+        |> Catalogue.list_categories_metadata_for_catalogue()
+        |> Enum.filter(&(&1.name == "Gifts"))
+
+      updated = Catalogue.get_item!(item.uuid)
+      assert updated.category_uuid == gifts.uuid
+      assert updated.position == 0
+      assert result.items_assigned == 1
     end
 
     test "a product id with no matching local item is reported unmatched", %{catalogue: catalogue} do
@@ -328,6 +405,77 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
       untouched = Catalogue.get_category!(other.uuid)
       assert untouched.position == 3
       assert untouched.data == %{}
+    end
+  end
+
+  describe "run/1 — collections filter (Block 7b Task 2)" do
+    setup do
+      set_product_source("catalogue")
+      :ok
+    end
+
+    test "a prefix/exclude filter skips non-matching collections entirely — no category, no product fetch, positions re-indexed without gaps",
+         %{catalogue: catalogue} do
+      create_item(catalogue.uuid, "Frame A", 111)
+      create_item(catalogue.uuid, "Gift A", 222)
+
+      filter = %{"prefix" => "3d-printed-", "exclude" => ["3d-printed-items"]}
+
+      assert {:ok, result} =
+               CollectionSync.run(
+                 client: FilterStub,
+                 catalogue_uuid: catalogue.uuid,
+                 filter: filter
+               )
+
+      # "3d-printed-items" (excluded) and "imported-from-etsy" (prefix
+      # mismatch) are both skipped; had either been fetched for its
+      # products, `FilterStub.fetch_collection_product_ids/2` (no clause
+      # for ids 2/3) would have raised instead of returning `{:ok, _}`.
+      assert result.collections_skipped_by_filter == 2
+      assert result.categories_created == 2
+      assert result.categories_matched == 0
+
+      categories = catalogue.uuid |> Catalogue.list_categories_metadata_for_catalogue()
+      assert Enum.map(categories, & &1.name) |> Enum.sort() == ["Frames", "Gifts"]
+
+      # Re-indexed 0, 1 within the ALLOWED subset — not the original API
+      # positions (0, 3) the two surviving collections carried.
+      [frames] = Enum.filter(categories, &(&1.name == "Frames"))
+      [gifts] = Enum.filter(categories, &(&1.name == "Gifts"))
+      assert frames.position == 0
+      assert gifts.position == 1
+    end
+
+    test "an empty filter (never configured) behaves as no filter at all",
+         %{catalogue: catalogue} do
+      create_item(catalogue.uuid, "Frame A", 111)
+      create_item(catalogue.uuid, "Gift A", 222)
+
+      assert {:ok, result} =
+               CollectionSync.run(client: Stub, catalogue_uuid: catalogue.uuid, filter: %{})
+
+      assert result.collections_skipped_by_filter == 0
+      assert result.categories_created == 2
+    end
+
+    test "opts[:filter] defaults to the shop_config key \"shopify_collections_filter\"",
+         %{catalogue: catalogue} do
+      %ShopConfig{}
+      |> ShopConfig.changeset(%{
+        key: "shopify_collections_filter",
+        value: %{"value" => %{"prefix" => "3d-printed-", "exclude" => ["3d-printed-items"]}}
+      })
+      |> Repo.insert!()
+
+      create_item(catalogue.uuid, "Frame A", 111)
+      create_item(catalogue.uuid, "Gift A", 222)
+
+      assert {:ok, result} =
+               CollectionSync.run(client: FilterStub, catalogue_uuid: catalogue.uuid)
+
+      assert result.collections_skipped_by_filter == 2
+      assert result.categories_created == 2
     end
   end
 end

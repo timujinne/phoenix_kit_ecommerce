@@ -123,6 +123,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
      |> assign(:connection, shopify_connection())
      |> assign(:catalogue_source_active?, catalogue_source_active?())
      |> assign(:media_sync_progress, ShopifyMediaSyncWorker.get_progress())
+     |> assign(:collections_filter, PhoenixKitEcommerce.get_config("shopify_collections_filter"))
      |> assign(:checking, false)
      |> assign(:changes, nil)
      |> assign(:error, nil)
@@ -797,6 +798,31 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   defp media_sync_summary(_progress), do: nil
 
+  # `@collections_filter` is `CollectionSync.run/1`'s own allowlist
+  # (`PhoenixKitEcommerce.get_config("shopify_collections_filter")`,
+  # `%{}` when never configured) — shown here so an operator clicking
+  # "Sync collections" sees which of the store's collections will
+  # actually become categories, without opening the config.
+  defp collections_filter_summary(filter) when is_map(filter) do
+    prefix = filter["prefix"]
+    exclude = filter["exclude"] || []
+
+    if is_nil(prefix) and exclude == [] do
+      gettext("Collections filter: none — every Shopify collection becomes a category.")
+    else
+      gettext("Collections filter: prefix %{prefix}, excluding %{exclude}",
+        prefix: prefix || gettext("(any)"),
+        exclude: if(exclude == [], do: gettext("(none)"), else: Enum.join(exclude, ", "))
+      )
+    end
+  end
+
+  # A `shop_config` value stored as something other than a map (e.g. an
+  # operator hand-edited it, or it predates this key's map shape)
+  # degrades to "no filter" instead of raising on mount.
+  defp collections_filter_summary(_filter),
+    do: gettext("Collections filter: none — every Shopify collection becomes a category.")
+
   # Groups `changes` by field, in `@sections` order, dropping fields with
   # no matching changes. A change appears once per field it differs on.
   defp group_by_field(changes) do
@@ -1414,6 +1440,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             class="text-sm text-base-content/70"
           >
             {media_sync_summary(@media_sync_progress)}
+          </div>
+
+          <div id="media-sync-collections-filter" class="text-sm text-base-content/70">
+            {collections_filter_summary(@collections_filter)}
           </div>
         </div>
 

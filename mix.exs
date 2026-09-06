@@ -153,6 +153,19 @@ defmodule PhoenixKitEcommerce.MixProject do
       # unreachable unless a host resolves that exact branch. Add
       # `pk_dep(:phoenix_kit_catalogue, "~> <floor>", optional: true)`
       # once a release carries the API.
+      #
+      # `catalogue_test_deps/0` below is the narrow exception: a
+      # TEST-ONLY, path-only, opt-in bridge so the `:catalogue`-tagged
+      # tests in this repo (`writer_images_test.exs`,
+      # `writer_variants_test.exs`, `collection_sync_test.exs`,
+      # `shopify_sync_media_panel_test.exs`, `product_source/catalogue/*`)
+      # can actually execute against a real local checkout instead of
+      # staying excluded forever — set `PHOENIX_KIT_CATALOGUE_PATH` and
+      # `PHOENIX_KIT_ENTITIES_PATH` (matching branches the host app
+      # itself pins) and run `mix test`; leave them unset and `mix test`
+      # behaves exactly as before (no dependency added, `test_helper.exs`
+      # excludes `:catalogue`). Never resolves via Hex, so the "no
+      # released version" rationale above is untouched.
 
       # LiveView is needed for the admin and storefront pages.
       {:phoenix_live_view, "~> 1.1"},
@@ -188,7 +201,28 @@ defmodule PhoenixKitEcommerce.MixProject do
       # `Phoenix.LiveViewTest` parses HTML via `lazy_html` for `element/2`,
       # `render(view) =~ "..."`, etc. Test-only.
       {:lazy_html, ">= 0.1.0", only: :test}
-    ]
+    ] ++ catalogue_test_deps()
+  end
+
+  # See the comment above `pk_dep(:phoenix_kit_catalogue, ...)`. Returns
+  # `[]` (no dependency declared at all) unless BOTH path env vars are
+  # set to a non-blank value; a path dep here can never fall back to
+  # resolving from Hex the way `pk_dep/3` does for the other optional
+  # deps, so an unset var can only ever mean "excluded", never "resolve
+  # some floor version that may not have the API".
+  defp catalogue_test_deps do
+    catalogue_path = System.get_env("PHOENIX_KIT_CATALOGUE_PATH")
+    entities_path = System.get_env("PHOENIX_KIT_ENTITIES_PATH")
+
+    if is_binary(catalogue_path) and catalogue_path != "" and is_binary(entities_path) and
+         entities_path != "" do
+      [
+        {:phoenix_kit_catalogue, path: catalogue_path, only: :test},
+        {:phoenix_kit_entities, path: entities_path, only: :test}
+      ]
+    else
+      []
+    end
   end
 
   defp package do

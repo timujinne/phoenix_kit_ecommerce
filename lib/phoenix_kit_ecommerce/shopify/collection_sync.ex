@@ -2,38 +2,58 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
   @moduledoc """
   Maps Shopify collections onto catalogue categories, preserving both
   orders — Block 7 Task 4 (`docs/superpowers/plans/2026-09-06-block7-
-  shopify-media-collections.md`, §5 Блок 7 in the design spec).
+  shopify-media-collections.md`, §5 Блок 7 in the design spec), with the
+  live-store allowlist and most-specific assignment added by Block 7b
+  Task 2 (`docs/superpowers/plans/2026-09-06-block7b-shopify-live-fixes.md`)
+  — the real store has 143 collections, of which only ~12
+  `3d-printed-*` ones are our categories; the rest (an "all products",
+  a curated cross-category "featured" mix, per-tag collections, ...)
+  must never become categories or move an item at all.
 
   `run/1` fetches every collection via `opts[:client]` (a module
   exposing `fetch_collections/1`/`fetch_collection_product_ids/2`,
   defaulting to `PhoenixKitEcommerce.Shopify.AdminClient` — both
   `opts` keyword lists are forwarded to it as-is, so `:integration_uuid`/
   `:req_options` reach the real client the same way they reach
-  `AdminClient.fetch_products/2`), resolves each to a catalogue category
-  (match by `slug[primary] == handle`, then by `name` case-insensitive,
-  else create — Shopify collections are flat, so a created category's
+  `AdminClient.fetch_products/2`), then drops every collection that
+  fails `opts[:filter]` (default: `PhoenixKitEcommerce.get_config/1`'s
+  `"shopify_collections_filter"`, itself defaulting to `%{}` —
+  everything passes) — `%{"prefix" => handle_prefix | nil, "exclude" =>
+  [handle]}`; a collection is allowed when its handle starts with
+  `prefix` (or `prefix` is `nil`/`""`) AND isn't in `exclude`. A
+  filtered-out collection is skipped ENTIRELY: no category is
+  matched/created/repositioned for it, its products are never fetched,
+  and it can never be "the" category an item is assigned to — it is
+  simply invisible to every phase below, counted only in
+  `:collections_skipped_by_filter`. The surviving collections are
+  RE-INDEXED 0.. in their own (filtered) API order before anything else
+  runs, so a category's `position` never carries gaps left by the
+  collections the filter removed.
+
+  Each surviving collection resolves to a catalogue category (match by
+  `slug[primary] == handle`, then by `name` case-insensitive, else
+  create — Shopify collections are flat, so a created category's
   `parent_uuid` is always `nil`; the existing tree is never touched),
-  and writes `category.position` = the collection's own `position`
-  (`AdminClient.fetch_collections/1`'s running index across
-  `custom_collections` then `smart_collections`, in API order) plus
-  `category.data["ecommerce"]["shopify"]["collection_id"]`.
+  and writes `category.position` = the collection's (re-indexed)
+  position plus `category.data["ecommerce"]["shopify"]["collection_id"]`.
 
   Then every resolved collection's product ids
   (`fetch_collection_product_ids/2` — already in the collection's own
   sort order) are fetched, and each distinct product id is matched to a
   catalogue item by `data["ecommerce"]["shopify"]["product_id"]` and
-  reconciled against the FULL set of collections that list IT (not
-  every collection-derived category in the catalogue): if the item's
-  CURRENT category is one of ITS OWN collections, it keeps that one
-  (updating `item.position` when the list position changed since a
-  previous run); otherwise it is assigned to the first of its own
-  collections in API order, at that collection's list position. A
-  product moved in Shopify from one collection to another therefore
-  does get repositioned — an item's current category only survives when
-  Shopify itself still lists it there. A product id with no matching
-  item is collected into `:unmatched_products` instead (deduplicated —
-  the same missing id is never reported twice even if more than one
-  collection lists it).
+  assigned to the MOST SPECIFIC of its own (allowed) collections — the
+  one with the fewest products, ties broken by (filtered) API order — at
+  that collection's list position for the item. An item listed in only
+  one allowed collection trivially gets that one. This replaces Block
+  7's original "keep the item's current category when Shopify still
+  lists it there" rule outright: on the live store, several allowed
+  categories can legitimately list the same item (e.g. a general
+  "3d-printed-decor" alongside a narrower "3d-printed-wall-frames"), and
+  always preferring whichever one happened to be assigned first —
+  rather than the narrowest match — is the bug this task fixes. A
+  product id with no matching item is collected into
+  `:unmatched_products` instead (deduplicated — the same missing id is
+  never reported twice even if more than one collection lists it).
 
   A no-op — `{:error, :catalogue_source_inactive}` — when
   `ProductSource.current/0` isn't `Catalogue` (Global Constraints: every
@@ -62,6 +82,10 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
     * `:client` — module implementing `fetch_collections/1` and
       `fetch_collection_product_ids/2`; defaults to `AdminClient`.
     * `:catalogue_uuid` — required.
+    * `:filter` — `%{"prefix" => handle_prefix | nil, "exclude" =>
+      [handle]}`; defaults to `PhoenixKitEcommerce.get_config/1`'s
+      `"shopify_collections_filter"` (itself `%{}` — everything passes
+      — when never configured).
     * anything else (`:integration_uuid`, `:req_options`, ...) is
       forwarded to the client calls unchanged.
   """
@@ -70,6 +94,7 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
            %{
              categories_created: non_neg_integer(),
              categories_matched: non_neg_integer(),
+             collections_skipped_by_filter: non_neg_integer(),
              items_assigned: non_neg_integer(),
              items_repositioned: non_neg_integer(),
              unmatched_products: [term()]
@@ -85,10 +110,12 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
 
   defp do_run(opts) do
     client = Keyword.get(opts, :client, AdminClient)
+    filter = resolve_filter(opts)
 
     with {:ok, catalogue_uuid} <- resolve_catalogue_uuid(Keyword.get(opts, :catalogue_uuid)),
          {:ok, collections} <- client.fetch_collections(opts),
-         {:ok, resolved, created, matched} <- resolve_categories(collections, catalogue_uuid),
+         {allowed, skipped_by_filter} <- apply_collections_filter(collections, filter),
+         {:ok, resolved, created, matched} <- resolve_categories(allowed, catalogue_uuid),
          {:ok, per_collection} <- fetch_collection_products(resolved, client, opts),
          {:ok, assigned, repositioned, unmatched} <-
            assign_products(per_collection, items_by_product_id(catalogue_uuid)) do
@@ -96,6 +123,7 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
        %{
          categories_created: created,
          categories_matched: matched,
+         collections_skipped_by_filter: skipped_by_filter,
          items_assigned: assigned,
          items_repositioned: repositioned,
          unmatched_products: unmatched
@@ -105,6 +133,50 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
 
   defp resolve_catalogue_uuid(uuid) when is_binary(uuid) and uuid != "", do: {:ok, uuid}
   defp resolve_catalogue_uuid(_), do: {:error, :missing_catalogue_uuid}
+
+  # `Keyword.fetch/2`, not `Keyword.get/3` with the config lookup as the
+  # default argument — Elixir evaluates a default argument eagerly, so
+  # `Keyword.get/3` would hit `phoenix_kit_shop_config` on every call
+  # EVEN when the caller passed `:filter` explicitly (every test in this
+  # module, and any future caller that wants a one-off filter).
+  defp resolve_filter(opts) do
+    case Keyword.fetch(opts, :filter) do
+      {:ok, filter} -> filter
+      :error -> PhoenixKitEcommerce.get_config("shopify_collections_filter")
+    end
+  end
+
+  # ============================================================
+  # Phase 0: the live-store allowlist (Block 7b Task 2)
+  # ============================================================
+
+  # Drops every collection `collection_allowed?/2` rejects, then
+  # RE-INDEXES the survivors' `"position"` 0.. in their own (already
+  # filtered) order — a filtered-out collection must not leave a gap in
+  # the category positions the survivors get in `resolve_one_category/4`
+  # below.
+  defp apply_collections_filter(collections, filter) do
+    filter = filter || %{}
+    {allowed, skipped} = Enum.split_with(collections, &collection_allowed?(&1, filter))
+
+    reindexed =
+      allowed
+      |> Enum.with_index()
+      |> Enum.map(fn {collection, position} -> Map.put(collection, "position", position) end)
+
+    {reindexed, length(skipped)}
+  end
+
+  defp collection_allowed?(collection, filter) do
+    handle = collection["handle"] || ""
+    exclude = filter["exclude"] || []
+    prefix = filter["prefix"]
+
+    handle not in exclude and matches_prefix?(handle, prefix)
+  end
+
+  defp matches_prefix?(_handle, prefix) when prefix in [nil, ""], do: true
+  defp matches_prefix?(handle, prefix), do: String.starts_with?(handle, prefix)
 
   # ============================================================
   # Phase 1: collections -> categories, with order
@@ -280,23 +352,29 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
     end
   end
 
-  # `product_id_string => [{category_uuid, position}, ...]` — one entry
-  # per collection that lists this product, in the SAME order
-  # `per_collection` itself is in (i.e. API/collection order), position
-  # = the product's own index within THAT collection's list.
+  # `product_id_string => [{category_uuid, position, collection_size}, ...]`
+  # — one entry per (allowed) collection that lists this product, in the
+  # SAME order `per_collection` itself is in (i.e. the filtered API
+  # order); `position` = the product's own index within THAT
+  # collection's list, `collection_size` = that collection's own total
+  # product count — the specificity `target_category_and_position/1`
+  # picks the smallest of.
   defp build_product_categories(per_collection) do
     Enum.reduce(per_collection, %{}, fn {category_uuid, product_ids}, acc ->
+      size = length(product_ids)
+
       product_ids
       |> Enum.with_index()
       |> Enum.reduce(acc, fn {product_id, position}, acc ->
         key = to_string(product_id)
-        Map.update(acc, key, [{category_uuid, position}], &(&1 ++ [{category_uuid, position}]))
+        entry = {category_uuid, position, size}
+        Map.update(acc, key, [entry], &(&1 ++ [entry]))
       end)
     end)
   end
 
   defp reconcile_item(item, categories, index, assigned, repositioned, unmatched) do
-    {target_category, target_position} = target_category_and_position(item, categories)
+    {target_category, target_position} = target_category_and_position(categories)
 
     cond do
       item.category_uuid == target_category and item.position == target_position ->
@@ -318,16 +396,19 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
     end
   end
 
-  # Keep the item's current category when Shopify itself still lists the
-  # product there (one of `categories`'s own entries); otherwise fall
-  # back to the first collection in API order.
-  defp target_category_and_position(item, categories) do
-    case Enum.find(categories, fn {category_uuid, _position} ->
-           category_uuid == item.category_uuid
-         end) do
-      nil -> List.first(categories)
-      match -> match
-    end
+  # The most specific of the item's own (allowed) collections — the one
+  # with the fewest products; ties broken by (filtered) API order, which
+  # `categories` is already in (`build_product_categories/1` appends in
+  # `per_collection` order), so `Enum.min_by/2` keeping the FIRST minimal
+  # element already IS that tie-break. Deliberately ignores the item's
+  # current category — see the moduledoc for why Block 7's "keep it when
+  # Shopify still lists it there" rule doesn't hold up once several
+  # allowed categories can legitimately list the same product.
+  defp target_category_and_position(categories) do
+    {category_uuid, position, _size} =
+      Enum.min_by(categories, fn {_category_uuid, _position, size} -> size end)
+
+    {category_uuid, position}
   end
 
   defp with_reposition(item, position, index, assigned, repositioned, unmatched) do

@@ -141,18 +141,29 @@ defmodule PhoenixKitEcommerce do
   @doc """
   Gets a raw config value stored by key in `phoenix_kit_shop_config`.
 
-  Returns `nil` when the key has never been set. Distinct from
-  `get_config/0` (the fixed dashboard-stats map above) — this is a
-  generic key lookup, currently used by
-  `PhoenixKitEcommerce.ProductSource.current/0` to read
-  `"shop_product_source"`.
+  Returns `nil` when the key has never been set, except for the few keys
+  `default_config_value/1` gives a typed default instead — currently
+  used by `PhoenixKitEcommerce.ProductSource.current/0` to read
+  `"shop_product_source"` and by
+  `PhoenixKitEcommerce.Shopify.CollectionSync.run/1` to read
+  `"shopify_collections_filter"`. Distinct from `get_config/0` (the
+  fixed dashboard-stats map above).
   """
   def get_config(key) when is_binary(key) do
     case repo().get(ShopConfig, key) do
       %ShopConfig{value: %{"value" => value}} -> value
-      _ -> nil
+      _ -> default_config_value(key)
     end
   end
+
+  # `"shopify_collections_filter"` (`CollectionSync.run/1`'s allowlist)
+  # is the one key here whose absence must NOT read as "not configured"
+  # — every place that consults it (`Map.get(filter, "prefix")`,
+  # `Map.get(filter, "exclude", [])`) treats `%{}` as "everything
+  # passes", so an operator who never set a filter gets the unfiltered
+  # behaviour rather than a `nil` the caller must special-case.
+  defp default_config_value("shopify_collections_filter"), do: %{}
+  defp default_config_value(_key), do: nil
 
   @doc """
   Effective shipping-skip mode for checkout.

@@ -124,6 +124,20 @@ Application.put_env(:phoenix_kit_ecommerce, :test_repo_available, repo_available
 # Minimal PhoenixKit services needed by the context layer.
 {:ok, _pid} = PhoenixKit.PubSub.Manager.start_link([])
 
+# `PhoenixKitCatalogue.Catalogue.PubSub.broadcast/3` (fired on every
+# catalogue mutation) needs a `Phoenix.PubSub` server registered as
+# `PhoenixKit.PubSub` — the host app provides this in production, and
+# `phoenix_kit_catalogue`'s own test suite starts it the same way. Only
+# relevant when the optional test-only `phoenix_kit_catalogue` path dep
+# (see mix.exs's `catalogue_test_deps/0`) is actually resolved, so the
+# common (`:catalogue` excluded) run starts no extra process.
+if Code.ensure_loaded?(PhoenixKitCatalogue) do
+  case Phoenix.PubSub.Supervisor.start_link(name: PhoenixKit.PubSub) do
+    {:ok, _} -> :ok
+    {:error, {:already_started, _}} -> :ok
+  end
+end
+
 # The permission layer resolves a sub-permission through the module
 # registry: `Scope.can?/2` requires `feature_enabled?/1`, which asks the
 # registry which module owns a key. Without the registry running, EVERY

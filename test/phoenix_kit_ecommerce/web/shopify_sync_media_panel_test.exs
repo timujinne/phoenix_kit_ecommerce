@@ -117,6 +117,29 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncMediaPanelTest do
       end
     end
 
+    test "shows the active collections filter — \"none\" when never configured", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync")
+
+      assert html =~ ~s(id="media-sync-collections-filter")
+      assert html =~ "Collections filter: none"
+    end
+
+    test "shows the configured collections filter's prefix and exclude list", %{conn: conn} do
+      %ShopConfig{}
+      |> ShopConfig.changeset(%{
+        key: "shopify_collections_filter",
+        value: %{"value" => %{"prefix" => "3d-printed-", "exclude" => ["3d-printed-items"]}}
+      })
+      |> Repo.insert!()
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+
+      filter_html = view |> element("#media-sync-collections-filter") |> render()
+
+      assert filter_html =~ "prefix 3d-printed-,"
+      assert filter_html =~ "excluding 3d-printed-items"
+    end
+
     test "clicking a button enqueues a job with that kind and the current user", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
 

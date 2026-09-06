@@ -22,6 +22,8 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterImagesTest do
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Attachments}
 
   alias PhoenixKit.Modules.Storage
+  alias PhoenixKit.Users.Auth
+  alias PhoenixKitCatalogue.Attachments
   alias PhoenixKitCatalogue.Catalogue
   alias PhoenixKitEcommerce.Catalogue.Writer
   alias PhoenixKitEcommerce.ShopConfig
@@ -121,6 +123,29 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterImagesTest do
     end
   end
 
+  # A Storage file already stamped with `metadata["source_url"]` — the
+  # same key `ImageDownloader.download_and_store/3` writes — as if it had
+  # been downloaded (or migrated) from `source_url` already, distinct
+  # from the Shopify `src` this test then syncs against (a `?v=` query
+  # difference), so the reuse match has to strip the query to hit.
+  defp store_linked_file(source_url, user_uuid) do
+    body = "fixture-bytes-#{source_url}"
+    tmp = Path.join(System.tmp_dir!(), "writer_images_test_#{System.unique_integer([:positive])}")
+    File.write!(tmp, body)
+
+    {:ok, file} =
+      Storage.store_file(tmp,
+        filename: Path.basename(source_url),
+        content_type: "image/jpeg",
+        size_bytes: byte_size(body),
+        user_uuid: user_uuid,
+        metadata: %{"source_url" => source_url}
+      )
+
+    File.rm(tmp)
+    file
+  end
+
   describe "sync_images/3 — legacy source" do
     test "is a no-op returning :catalogue_source_inactive", %{item: item, user_uuid: user_uuid} do
       {downloader, _counter} = counting_downloader(user_uuid)
@@ -213,6 +238,141 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterImagesTest do
 
       updated = Catalogue.get_item!(item.uuid)
       refute Map.has_key?(updated.data, "media_order")
+    end
+
+    # Block 7b Task 1
+    # (docs/superpowers/plans/2026-09-06-block7b-shopify-live-fixes.md):
+    # migrated items carry plain Storage files (never Shopify-image-id
+    # tagged) whose `metadata["source_url"]` still records the Shopify
+    # CDN URL they were downloaded from — reuse those by URL, query
+    # stripped, before ever downloading a second copy.
+    test "reuses Storage files already linked to the item by source_url, query stripped", %{
+      item: item,
+      user_uuid: user_uuid
+    } do
+      file1 = store_linked_file("https://cdn.example/first.jpg?v=111", user_uuid)
+      file2 = store_linked_file("https://cdn.example/second.jpg?v=222", user_uuid)
+
+      {:ok, item} =
+        Attachments.attach_files(item, [file1.uuid, file2.uuid], order: [file1.uuid, file2.uuid])
+
+      {downloader, counter} = counting_downloader(user_uuid)
+
+      product = %{
+        "id" => 888,
+        "images" => [
+          %{"id" => 101, "src" => "https://cdn.example/first.jpg?v=999", "position" => 1},
+          %{"id" => 201, "src" => "https://cdn.example/second.jpg?v=888", "position" => 2}
+        ]
+      }
+
+      assert {:ok, %{downloaded: 0, reused: 2, attached: 2, errors: []}} =
+               Writer.sync_images(item, product, downloader: downloader, user_uuid: user_uuid)
+
+      assert Agent.get(counter, & &1) == 0
+
+      updated = Catalogue.get_item!(item.uuid)
+      assert updated.data["ecommerce"]["shopify"]["image_ids"]["101"] == file1.uuid
+      assert updated.data["ecommerce"]["shopify"]["image_ids"]["201"] == file2.uuid
+      assert updated.data["media_order"] == [file1.uuid, file2.uuid]
+      assert updated.data["featured_image_uuid"] == file1.uuid
+    end
+
+    # Review fix (Block 7b): a reverted version of this fallback bound a
+    # failed image's Shopify id to whatever uuid happened to sit at the
+    # SAME LIST POSITION in the item's previous `media_order` — wrong the
+    # moment a new image is inserted ahead of an existing one, and the
+    # bad binding then stuck forever (a later successful download of
+    # that image was never attempted again, since the id already
+    # "resolved"). The only bindings that may ever be trusted are keyed
+    # by Shopify image id (`image_ids`) or by download source URL
+    # (`source_url`) — never by position. An id with neither is skipped,
+    # not bound to anything, so a later run retries it for real.
+    test "a failing download for a genuinely new image is skipped (not bound by position) and retries next run",
+         %{item: item, user_uuid: user_uuid} do
+      {:ok, image_a} = store_fixture_file("https://cdn.example/first.jpg", user_uuid)
+      {:ok, image_b} = store_fixture_file("https://cdn.example/second.jpg", user_uuid)
+
+      {:ok, item} =
+        Attachments.attach_files(item, [image_a, image_b], order: [image_a, image_b])
+
+      {:ok, item} =
+        Catalogue.update_item(item, %{
+          data:
+            put_in(item.data, ["ecommerce", "shopify", "image_ids"], %{
+              "101" => image_a,
+              "201" => image_b
+            })
+        })
+
+      # 301 is a new image, inserted ahead of 201 in Shopify's own
+      # order — the exact shape that made the position-based fallback
+      # bind it to `image_b` (301's index used to land on 201's slot).
+      product = %{
+        "id" => 888,
+        "images" => [
+          %{"id" => 101, "src" => "https://cdn.example/first.jpg", "position" => 1},
+          %{"id" => 301, "src" => "https://cdn.example/new.jpg", "position" => 2},
+          %{"id" => 201, "src" => "https://cdn.example/second.jpg", "position" => 3}
+        ]
+      }
+
+      {failing_downloader, _counter} =
+        counting_downloader(user_uuid, ["https://cdn.example/new.jpg"])
+
+      assert {:ok, %{downloaded: 0, reused: 2, attached: 2, errors: [{"301", :not_found}]}} =
+               Writer.sync_images(item, product,
+                 downloader: failing_downloader,
+                 user_uuid: user_uuid
+               )
+
+      updated = Catalogue.get_item!(item.uuid)
+      refute Map.has_key?(updated.data["ecommerce"]["shopify"]["image_ids"], "301")
+      assert updated.data["media_order"] == [image_a, image_b]
+
+      # A later run, once the image can actually be downloaded, binds
+      # 301 for real — it was never poisoned with a fake binding.
+      {healthy_downloader, counter} = counting_downloader(user_uuid)
+
+      assert {:ok, %{downloaded: 1, reused: 2, attached: 3, errors: []}} =
+               Writer.sync_images(updated, product,
+                 downloader: healthy_downloader,
+                 user_uuid: user_uuid
+               )
+
+      assert Agent.get(counter, & &1) == 1
+
+      final = Catalogue.get_item!(item.uuid)
+      new_uuid = final.data["ecommerce"]["shopify"]["image_ids"]["301"]
+      assert new_uuid
+      assert final.data["media_order"] == [image_a, new_uuid, image_b]
+    end
+
+    test "no user_uuid given inserts files under the default (first-admin) actor", %{
+      item: item
+    } do
+      expected_actor_uuid = Auth.get_first_admin_uuid()
+      assert expected_actor_uuid, "expected an Owner/Admin user to resolve a default actor"
+
+      downloader = fn url, downloader_user_uuid, _opts ->
+        store_fixture_file(url, downloader_user_uuid)
+      end
+
+      product = %{
+        "id" => 888,
+        "images" => [
+          %{"id" => 501, "src" => "https://cdn.example/default-actor.jpg", "position" => 1}
+        ]
+      }
+
+      assert {:ok, %{downloaded: 1, reused: 0, attached: 1}} =
+               Writer.sync_images(item, product, downloader: downloader)
+
+      updated = Catalogue.get_item!(item.uuid)
+      file_uuid = updated.data["ecommerce"]["shopify"]["image_ids"]["501"]
+      file = Storage.get_file(file_uuid)
+
+      assert file.user_uuid == expected_actor_uuid
     end
   end
 end
