@@ -130,20 +130,28 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
   def get_item(_), do: nil
 
   @doc """
-  Fetches items by uuid, order preserved, missing uuids dropped — mirrors
+  Fetches items by uuid, order preserved, missing uuids dropped, scoped
+  to the shop catalogue (same "one catalogue only" contract every other
+  read in this module enforces) — mirrors
   `PhoenixKitEcommerce.ProductSource.Legacy.list_products_by_ids/1`.
   """
   @spec list_items_by_uuids([Ecto.UUID.t()]) :: [CatItem.t()]
   def list_items_by_uuids([]), do: []
 
   def list_items_by_uuids(uuids) when is_list(uuids) do
-    by_uuid =
-      CatItem
-      |> where([i], i.uuid in ^uuids)
-      |> repo().all()
-      |> Map.new(&{&1.uuid, &1})
+    case catalogue_uuid() do
+      nil ->
+        []
 
-    uuids |> Enum.uniq() |> Enum.flat_map(&List.wrap(Map.get(by_uuid, &1)))
+      catalogue_uuid ->
+        by_uuid =
+          CatItem
+          |> where([i], i.uuid in ^uuids and i.catalogue_uuid == ^catalogue_uuid)
+          |> repo().all()
+          |> Map.new(&{&1.uuid, &1})
+
+        uuids |> Enum.uniq() |> Enum.flat_map(&List.wrap(Map.get(by_uuid, &1)))
+    end
   end
 
   @doc """
@@ -262,7 +270,15 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
   def list_categories_by_uuids([]), do: []
 
   def list_categories_by_uuids(uuids) when is_list(uuids) do
-    CatCategory |> where([c], c.uuid in ^uuids) |> repo().all()
+    case catalogue_uuid() do
+      nil ->
+        []
+
+      catalogue_uuid ->
+        CatCategory
+        |> where([c], c.uuid in ^uuids and c.catalogue_uuid == ^catalogue_uuid)
+        |> repo().all()
+    end
   end
 
   # ============================================================
@@ -290,7 +306,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
       query,
       [i],
       i.status == "active" and
-        fragment("(?->'ecommerce'->>'shop_status') = 'active'", i.data)
+        fragment("COALESCE(?->'ecommerce'->>'shop_status', 'active') = 'active'", i.data)
     )
   end
 
@@ -444,11 +460,30 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
   defp filter_by_category_status(query, :skip), do: query
   defp filter_by_category_status(query, nil), do: query
 
-  defp filter_by_category_status(query, status) when is_binary(status),
-    do: where(query, [c], c.status == ^status)
+  # `status`/`statuses` here are the SHOP status domain
+  # (active|unlisted|hidden, `data["ecommerce"]["shop_status"]` —
+  # what `View.category_view/2` maps `:status` from and what
+  # `CategoryCommerce` validates), NOT the catalogue category's own
+  # `c.status` column (active|deleted). `c.status != "deleted"` is kept
+  # as a separate always-on guard alongside it so a soft-deleted
+  # catalogue category can never be resurrected by a stray shop_status.
+  defp filter_by_category_status(query, status) when is_binary(status) do
+    query
+    |> where([c], c.status != "deleted")
+    |> where(
+      [c],
+      fragment("COALESCE(?->'ecommerce'->>'shop_status', 'active')", c.data) == ^status
+    )
+  end
 
-  defp filter_by_category_status(query, statuses) when is_list(statuses),
-    do: where(query, [c], c.status in ^statuses)
+  defp filter_by_category_status(query, statuses) when is_list(statuses) do
+    query
+    |> where([c], c.status != "deleted")
+    |> where(
+      [c],
+      fragment("COALESCE(?->'ecommerce'->>'shop_status', 'active')", c.data) in ^statuses
+    )
+  end
 
   defp filter_by_parent_uuid(query, :skip), do: query
   defp filter_by_parent_uuid(query, nil), do: where(query, [c], is_nil(c.parent_uuid))

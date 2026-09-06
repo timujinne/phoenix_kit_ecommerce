@@ -2,10 +2,18 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
   use ExUnit.Case, async: true
 
   # Pure logic — no DB, no live catalogue data. Still requires
-  # `phoenix_kit_catalogue` to be loaded so `struct(PhoenixKitCatalogue.
-  # Schemas.Item, ...)` below can build a real `Item`-shaped fixture;
-  # excluded (via `test_helper.exs`'s `ExUnit.configure(exclude: ...)`)
-  # whenever the optional dependency isn't present.
+  # `phoenix_kit_catalogue` to be loaded: although `View`'s own moduledoc
+  # says it accepts duck-typed maps (no pattern-matching on the catalogue
+  # STRUCTS), `product_view/2`/`category_view/2` unconditionally call
+  # `PhoenixKitCatalogue.Catalogue.translated_name/2` and friends — a
+  # real dependency on the `Catalogue` MODULE regardless of fixture
+  # shape. Verified empirically: `Code.ensure_loaded?(PhoenixKitCatalogue)`
+  # is `false` in this fork's own `mix test` (no dependency declared,
+  # see mix.exs), and calling `View.product_view/2` here without the
+  # guard raises `UndefinedFunctionError`. Excluded (via
+  # `test_helper.exs`'s `ExUnit.configure(exclude: ...)`) whenever the
+  # optional dependency isn't present, same as every other catalogue
+  # adapter test — see Global Constraints in the block-3 plan.
   @moduletag :catalogue
 
   alias PhoenixKitEcommerce.PriceDisplay
@@ -149,6 +157,38 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       from_wrapped = View.product_view(item, sets: %{schema_version: 2, sets: @sets})
 
       assert from_list.metadata["_option_values"] == from_wrapped.metadata["_option_values"]
+    end
+
+    test "strips the entities blueprint's catalogue_set_ prefix so _option_values/_price_modifiers key on the bare slug" do
+      # `AttributeSets.resolve_set/2` returns `key: set.name`, and
+      # `AttributeSets.create_set/2` always stores that name prefixed
+      # (`"catalogue_set_" <> slug`) — while `data["ecommerce"]["price_modifiers"]`
+      # is keyed by the bare slug (as the app migration writes it). A set
+      # resolved with the real prefixed key must still produce
+      # `_option_values`/`_price_modifiers` keyed "size", and the price
+      # modifier for that set must survive.
+      prefixed_sets = [
+        %{
+          key: "catalogue_set_size",
+          values: [
+            %{key: "5-inches-13-cm", label: "5 inches (13 cm)"},
+            %{key: "4-inches-10-cm", label: "4 inches (10 cm)"}
+          ],
+          selected: ["5-inches-13-cm", "4-inches-10-cm"]
+        }
+      ]
+
+      item = build_item()
+
+      metadata = View.product_view(item, sets: prefixed_sets).metadata
+
+      assert metadata["_option_values"] == %{
+               "size" => ["5 inches (13 cm)", "4 inches (10 cm)"]
+             }
+
+      assert metadata["_price_modifiers"] == %{
+               "size" => %{"5 inches (13 cm)" => "9.00"}
+             }
     end
 
     test "omits _option_values/_price_modifiers when there are no attachments" do

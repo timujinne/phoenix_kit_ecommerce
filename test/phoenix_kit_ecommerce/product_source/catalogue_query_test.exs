@@ -104,6 +104,24 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.QueryTest do
       assert total == 5
       assert length(page1) == 2
     end
+
+    test "status: \"active\" falls back to item.status when shop_status is absent, matching View.product_status/2",
+         %{catalogue: catalogue} do
+      no_shop_status =
+        create_item(catalogue, %{name: "No Shop Status", base_price: Decimal.new("1.00")})
+
+      inactive_item =
+        create_item(catalogue, %{
+          name: "Inactive",
+          base_price: Decimal.new("1.00"),
+          status: "inactive"
+        })
+
+      results = Query.list_items(status: "active")
+
+      assert no_shop_status.uuid in Enum.map(results, & &1.uuid)
+      refute inactive_item.uuid in Enum.map(results, & &1.uuid)
+    end
   end
 
   describe "price_range/1 and vendor_counts/1" do
@@ -152,6 +170,85 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.QueryTest do
       Catalogue.create_category(%{name: "Shelving", catalogue_uuid: other_catalogue.uuid})
 
       assert Enum.map(Query.list_categories(), & &1.name) == [category.name]
+    end
+
+    test "status/statuses filter the ecommerce shop_status (active|unlisted|hidden), not the catalogue's own status column",
+         %{catalogue: catalogue} do
+      {:ok, active} =
+        Catalogue.create_category(%{
+          name: "Active Cat",
+          catalogue_uuid: catalogue.uuid,
+          data: %{"ecommerce" => %{"shop_status" => "active"}}
+        })
+
+      {:ok, unlisted} =
+        Catalogue.create_category(%{
+          name: "Unlisted Cat",
+          catalogue_uuid: catalogue.uuid,
+          data: %{"ecommerce" => %{"shop_status" => "unlisted"}}
+        })
+
+      {:ok, hidden} =
+        Catalogue.create_category(%{
+          name: "Hidden Cat",
+          catalogue_uuid: catalogue.uuid,
+          data: %{"ecommerce" => %{"shop_status" => "hidden"}}
+        })
+
+      assert Enum.map(Query.list_categories(status: "active"), & &1.name) == [active.name]
+
+      assert Query.list_categories(status: ["active", "unlisted"])
+             |> Enum.map(& &1.name)
+             |> Enum.sort() == Enum.sort([active.name, unlisted.name])
+
+      refute hidden.name in Enum.map(Query.list_categories(status: "active"), & &1.name)
+    end
+
+    test "a category with no shop_status defaults to active", %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "No Shop Status", catalogue_uuid: catalogue.uuid})
+
+      assert Enum.map(Query.list_categories(status: "active"), & &1.name) == [category.name]
+    end
+
+    test "a catalogue-deleted category is excluded even with a stale shop_status: active",
+         %{catalogue: catalogue} do
+      {:ok, deleted} =
+        Catalogue.create_category(%{
+          name: "Ghost Cat",
+          catalogue_uuid: catalogue.uuid,
+          status: "deleted",
+          data: %{"ecommerce" => %{"shop_status" => "active"}}
+        })
+
+      refute deleted.name in Enum.map(Query.list_categories(status: "active"), & &1.name)
+    end
+  end
+
+  describe "list_items_by_uuids/1 and list_categories_by_uuids/1" do
+    test "scoped to the shop catalogue — an item/category from another catalogue is dropped",
+         %{catalogue: catalogue} do
+      item = create_item(catalogue, %{name: "Ours", base_price: Decimal.new("1.00")})
+
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Ours Cat", catalogue_uuid: catalogue.uuid})
+
+      {:ok, other_catalogue} = Catalogue.create_catalogue(%{name: "Warehouse Stock"})
+
+      other_item =
+        create_item(other_catalogue, %{name: "Theirs", base_price: Decimal.new("1.00")})
+
+      {:ok, other_category} =
+        Catalogue.create_category(%{name: "Theirs Cat", catalogue_uuid: other_catalogue.uuid})
+
+      assert Enum.map(Query.list_items_by_uuids([item.uuid, other_item.uuid]), & &1.uuid) == [
+               item.uuid
+             ]
+
+      assert Enum.map(
+               Query.list_categories_by_uuids([category.uuid, other_category.uuid]),
+               & &1.uuid
+             ) == [category.uuid]
     end
   end
 end

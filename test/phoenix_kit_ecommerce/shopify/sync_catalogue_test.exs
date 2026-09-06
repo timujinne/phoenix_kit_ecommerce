@@ -134,6 +134,51 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCatalogueTest do
       assert updated_item.data["ecommerce"]["shopify"]["handle"] == "ceramic-vase"
     end
 
+    test "apply preserves the legacy_metadata snapshot — ItemCommerce.cast/2 doesn't carry non-schema keys through",
+         %{catalogue: catalogue} do
+      {:ok, item} =
+        Catalogue.create_item(%{
+          catalogue_uuid: catalogue.uuid,
+          name: "Snapshot Vase",
+          base_price: Decimal.new("25.00"),
+          status: "active",
+          data: %{
+            "_primary_language" => "en",
+            "en" => %{},
+            "ecommerce" => %{
+              "shop_status" => "active",
+              "shopify" => %{"handle" => "snapshot-vase", "product_id" => 777},
+              "legacy_metadata" => %{
+                "_option_slots" => [%{"key" => "size", "type" => "select"}],
+                "_image_mappings" => %{"size" => %{"small" => "img-uuid"}}
+              }
+            }
+          }
+        })
+
+      product = CatalogueSource.get_product(item.uuid, [])
+
+      assert [change] =
+               ProductDiff.diff(
+                 [product],
+                 [shopify_payload(%{"handle" => "snapshot-vase"})],
+                 "en",
+                 only: [:title, :price, :compare_at_price, :tags]
+               )
+
+      assert {:ok, _updated_view} = Sync.apply_change(change)
+
+      updated_item = Catalogue.get_item!(item.uuid)
+
+      assert updated_item.data["ecommerce"]["legacy_metadata"] == %{
+               "_option_slots" => [%{"key" => "size", "type" => "select"}],
+               "_image_mappings" => %{"size" => %{"small" => "img-uuid"}}
+             }
+
+      # The write itself still landed.
+      assert Decimal.equal?(updated_item.base_price, Decimal.new("30.00"))
+    end
+
     test "applying a single field leaves the others untouched", %{item: item} do
       product = CatalogueSource.get_product(item.uuid, [])
 

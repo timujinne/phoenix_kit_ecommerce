@@ -56,7 +56,17 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
       when is_map(item) and is_map(change_fields) and is_binary(base_locale) do
     current_ecommerce = get_in(item.data || %{}, ["ecommerce"])
 
-    with {:ok, ecommerce} <- ItemCommerce.cast(ecommerce_params(change_fields), current_ecommerce) do
+    with {:ok, cast_ecommerce} <-
+           ItemCommerce.cast(ecommerce_params(change_fields), current_ecommerce) do
+      # `ItemCommerce.cast/2` returns ONLY its own embedded-schema fields —
+      # `to_storage_map/1` builds the map from `Map.from_struct/1`, so a
+      # non-schema key such as `legacy_metadata` (the migration snapshot
+      # `View.legacy_metadata/2` reads `_option_slots`/`_image_mappings`
+      # from) is silently dropped from the cast result even though it was
+      # present in `current_ecommerce`. Re-merge it back in so every key
+      # `data["ecommerce"]` carried survives a sync write.
+      ecommerce = Map.merge(current_ecommerce || %{}, cast_ecommerce)
+
       data =
         (item.data || %{})
         |> apply_translation_fields(change_fields, base_locale, item)

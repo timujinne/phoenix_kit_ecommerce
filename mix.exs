@@ -135,13 +135,24 @@ defmodule PhoenixKitEcommerce.MixProject do
       # when it's absent (see ProductForm's @ai_translate? flag). Version tracks
       # the actual API used (Translatable behaviour, AITranslate components).
       pk_dep(:phoenix_kit_ai, "~> 0.18", optional: true),
-      # No declared dependency on `phoenix_kit_catalogue`: the catalogue
-      # "extension slot" integration (`PhoenixKitEcommerce.Catalogue.Extension`)
-      # is fully duck-typed — nothing here calls into `PhoenixKitCatalogue`
-      # directly. No released version yet ships the extension slot
-      # (`PhoenixKitCatalogue.Extension`) this integration targets, so a
-      # `~>` floor here could only be inaccurate; add one once a real
-      # release ships it.
+      # No declared dependency on `phoenix_kit_catalogue`, though this app
+      # DOES call into `PhoenixKitCatalogue` directly (the ProductSource
+      # catalogue adapter, `Catalogue.Writer`, and the Shopify-sync 6a
+      # path call `Catalogue.{get_item_by_slug/3, get_category_by_slug/3,
+      # get_item!/1, create_item/2, update_item/2, list_catalogues/0,
+      # translated_*}`, `Catalogue.AttributeSets.{resolve_for_item/2,
+      # resolve_for_items/2, list_sets/1}`, `Catalogue.Slugs.from_title/2`
+      # and several `Schemas.*` structs — none of that is duck-typed).
+      # It IS true for the older extension-slot integration
+      # (`PhoenixKitEcommerce.Catalogue.Extension`), which is fully
+      # duck-typed and calls nothing in `PhoenixKitCatalogue` directly.
+      # No released version yet ships the API the ProductSource adapter
+      # targets, several of which exist only on the fork's own
+      # `feature/shop-extensions` branch — so a `~>` floor here could
+      # only be inaccurate, and every one of those call sites is
+      # unreachable unless a host resolves that exact branch. Add
+      # `pk_dep(:phoenix_kit_catalogue, "~> <floor>", optional: true)`
+      # once a release carries the API.
 
       # LiveView is needed for the admin and storefront pages.
       {:phoenix_live_view, "~> 1.1"},

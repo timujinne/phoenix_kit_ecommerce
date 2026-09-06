@@ -36,6 +36,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.Product
+  alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Components.TranslationTabs
@@ -50,8 +51,24 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
   @impl true
   def handle_params(params, _uri, socket) do
-    socket = apply_action(socket, socket.assigns.live_action, params)
-    {:noreply, socket}
+    # Products are catalogue-managed while the catalogue source is active
+    # (`create_product/1`/`update_product/2` both refuse under it) — redirect
+    # away from this form entirely rather than let an admin fill it out only
+    # to have the save fail, for :new and for :edit via any entry point
+    # (button, row link, direct URL).
+    if socket.assigns.live_action in [:new, :edit] and catalogue_source_active?() do
+      {:noreply, redirect_to_catalogue(socket)}
+    else
+      {:noreply, apply_action(socket, socket.assigns.live_action, params)}
+    end
+  end
+
+  defp catalogue_source_active?, do: ProductSource.current() == ProductSource.Catalogue
+
+  defp redirect_to_catalogue(socket) do
+    socket
+    |> put_flash(:info, gettext("Products are managed in the catalogue module now."))
+    |> push_navigate(to: Routes.path("/admin/catalogue"))
   end
 
   defp apply_action(socket, :new, _params) do
@@ -750,6 +767,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
+
+      {:error, :read_only_view} ->
+        {:noreply, redirect_to_catalogue(socket)}
     end
   rescue
     e ->
@@ -779,6 +799,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
+
+      {:error, :read_only_view} ->
+        {:noreply, redirect_to_catalogue(socket)}
     end
   rescue
     e ->

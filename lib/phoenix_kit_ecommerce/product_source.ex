@@ -48,10 +48,12 @@ defmodule PhoenixKitEcommerce.ProductSource do
   `phoenix_kit_catalogue` dependency always gets `Legacy` regardless of
   the stored key.
 
-  Reads the config on every call rather than caching it here: the
-  underlying setting is already cheap to read (core settings/ETS), so
-  adding process state here would only risk the switch not taking
-  effect without a restart.
+  Reads the config on every call rather than caching it here:
+  `PhoenixKitEcommerce.get_config/1` is a plain `repo().get/2` against
+  `phoenix_kit_shop_config` (no ETS/settings-cache layer sits in front
+  of it today), so this is a real extra query per call — accepted so
+  that the switch takes effect without a restart, rather than adding
+  process state here that could make it lag behind the stored value.
   """
   def current do
     if Code.ensure_loaded?(PhoenixKitCatalogue) and

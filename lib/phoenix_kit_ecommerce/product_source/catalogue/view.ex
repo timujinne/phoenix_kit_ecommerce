@@ -62,7 +62,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
       price: item.base_price,
       compare_at_price: to_decimal(Map.get(ecommerce, "compare_at_price")),
       cost_per_item: to_decimal(Map.get(ecommerce, "cost_per_item")),
-      currency: Map.get(ecommerce, "currency") || "USD",
+      currency: Map.get(ecommerce, "currency") || base_currency_code(),
       taxable: Map.get(ecommerce, "taxable", true),
       weight_grams: Map.get(ecommerce, "weight_grams") || 0,
       requires_shipping: Map.get(ecommerce, "requires_shipping", true),
@@ -200,7 +200,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
     sets
     |> sets_list()
     |> Enum.reduce(%{}, fn set, acc ->
-      key = Map.get(set, :key)
+      key = set |> Map.get(:key) |> strip_set_prefix()
       selected = Map.get(set, :selected) || []
       labels_by_value = value_labels(set)
 
@@ -215,13 +215,39 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
 
   defp price_modifiers_from_sets(sets, item) do
     raw_modifiers = get_in(item.data || %{}, ["ecommerce", "price_modifiers"]) || %{}
-    sets_by_key = sets |> sets_list() |> Map.new(&{Map.get(&1, :key), &1})
+    sets_by_key = sets_by_key_index(sets)
 
     Enum.reduce(raw_modifiers, %{}, fn {key, slug_amounts}, acc ->
       case Map.get(sets_by_key, key) do
         nil -> acc
         set -> put_labeled_modifiers(acc, key, slug_amounts, value_labels(set))
       end
+    end)
+  end
+
+  # A resolved set's `:key` is the entities blueprint NAME
+  # (`AttributeSets.resolve_set/2` returns `key: set.name`), and
+  # `AttributeSets.create_set/2` always stores that name prefixed —
+  # `"catalogue_set_" <> slug` — while `data["ecommerce"]["price_modifiers"]`
+  # and the legacy display keys (`_option_values`, `_option_slots`, …) use
+  # the bare slug. Same "accept both forms" convention
+  # `Query.set_uuid_for_key/1` already uses. Every set is indexed under
+  # BOTH forms below so a lookup by either succeeds, and the bare slug is
+  # always what ends up in the output map.
+  @set_prefix "catalogue_set_"
+
+  defp strip_set_prefix(@set_prefix <> rest), do: rest
+  defp strip_set_prefix(key), do: key
+
+  defp sets_by_key_index(sets) do
+    sets
+    |> sets_list()
+    |> Enum.reduce(%{}, fn set, acc ->
+      raw_key = Map.get(set, :key)
+
+      acc
+      |> Map.put(raw_key, set)
+      |> Map.put(strip_set_prefix(raw_key), set)
     end)
   end
 
@@ -254,16 +280,19 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   # convention (`PhoenixKit.Utils.Multilang`): a language with no entry
   # at all carries no override for ANY field, so every localized map on
   # this record omits it uniformly.
-  # Non-language namespaces that live alongside the per-language entries
-  # at the top level of `item.data`/`category.data` (the multilang
-  # marker, the shop's own namespace, and the two item-only media keys —
-  # harmless to list here for categories too, since they're simply never
-  # present on a category's `data`).
-  @non_language_data_keys ["_primary_language", "ecommerce", "featured_image_uuid", "media_order"]
-
+  #
+  # Whitelisted against `Translations.enabled_languages/0` rather than
+  # blacklisting known non-language namespaces: catalogue items carry
+  # several top-level keys that are not per-language data at all
+  # (`files_folder_uuid` — every item with media, written by
+  # `Attachments.attach_files/3`; `meta` — `PhoenixKitCatalogue.Metadata`;
+  # `original_unit` — the import mapper) and a hardcoded blacklist would
+  # have to keep discovering catalogue's future top-level keys one probe
+  # at a time.
   defp language_keys(data) do
     primary = Map.get(data, "_primary_language") || Translations.default_language()
-    langs = data |> Map.keys() |> Enum.reject(&(&1 in @non_language_data_keys))
+    enabled = Translations.enabled_languages()
+    langs = data |> Map.keys() |> Enum.filter(&(&1 in enabled))
 
     if primary in langs, do: Enum.uniq(langs), else: Enum.uniq([primary | langs])
   end
@@ -333,4 +362,18 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
 
   defp to_decimal(value) when is_number(value), do: Decimal.new(to_string(value))
   defp to_decimal(_), do: nil
+
+  # The shop's base currency code when the facade exposes it (currency
+  # work, `get_base_currency/0`); "USD" only as the last resort so a
+  # catalogue item without an explicit currency never disagrees with the
+  # shop's configured base.
+  defp base_currency_code do
+    if function_exported?(PhoenixKitEcommerce, :get_base_currency, 0),
+      do: currency_code(apply(PhoenixKitEcommerce, :get_base_currency, [])),
+      else: "USD"
+  end
+
+  defp currency_code(%{code: code}) when is_binary(code), do: code
+  defp currency_code(code) when is_binary(code), do: code
+  defp currency_code(_), do: "USD"
 end

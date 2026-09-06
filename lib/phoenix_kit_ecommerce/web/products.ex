@@ -28,6 +28,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Events
+  alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
@@ -68,6 +69,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
       |> assign(:delete_target, nil)
       |> assign(:delete_media_checked, false)
       |> assign(:bulk_delete_media, false)
+      |> assign(:catalogue_source_active?, ProductSource.current() == ProductSource.Catalogue)
 
     {:ok, socket}
   end
@@ -351,10 +353,19 @@ defmodule PhoenixKitEcommerce.Web.Products do
             <div>
               <label class="label"><span class="fieldset-legend">&nbsp;</span></label>
               <.link
-                navigate={Routes.path("/admin/shop/products/new")}
+                navigate={
+                  Routes.path(
+                    if @catalogue_source_active?,
+                      do: "/admin/catalogue",
+                      else: "/admin/shop/products/new"
+                  )
+                }
                 class="btn btn-primary w-full"
               >
-                <.icon name="hero-plus" class="w-4 h-4 mr-2" /> {gettext("Add Product")}
+                <.icon name="hero-plus" class="w-4 h-4 mr-2" />
+                {if @catalogue_source_active?,
+                  do: gettext("Manage in Catalogue"),
+                  else: gettext("Add Product")}
               </.link>
             </div>
           </div>

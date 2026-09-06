@@ -861,8 +861,19 @@ defmodule PhoenixKitEcommerce do
 
   Automatically normalizes metadata (price modifiers, option values)
   before saving to ensure consistent storage format.
+
+  Refuses while the catalogue source is active — a legacy row created
+  here would never be surfaced by a catalogue-backed storefront read.
   """
   def create_product(attrs) do
+    if catalogue_source_active?() do
+      {:error, :read_only_view}
+    else
+      do_create_product(attrs)
+    end
+  end
+
+  defp do_create_product(attrs) do
     attrs =
       attrs
       |> MetadataValidator.normalize_product_attrs()
@@ -972,27 +983,44 @@ defmodule PhoenixKitEcommerce do
 
   @doc """
   Bulk update product status.
-  Returns count of updated products.
+  Returns count of updated products. `0` while the catalogue source is
+  active — these ids are catalogue item uuids, not
+  `phoenix_kit_shop_products` rows, so this would silently update
+  nothing anyway; returning `0` up front makes that explicit rather
+  than reporting a phantom no-op success.
   """
   def bulk_update_product_status(ids, status) when is_list(ids) and is_binary(status) do
-    query = Product |> where([p], p.uuid in ^ids)
+    if catalogue_source_active?() do
+      0
+    else
+      query = Product |> where([p], p.uuid in ^ids)
 
-    {count, _} =
-      query
-      |> repo().update_all(set: [status: status, updated_at: UtilsDate.utc_now()])
+      {count, _} =
+        query
+        |> repo().update_all(set: [status: status, updated_at: UtilsDate.utc_now()])
 
-    if count > 0 do
-      Events.broadcast_products_bulk_status_changed(ids, status)
+      if count > 0 do
+        Events.broadcast_products_bulk_status_changed(ids, status)
+      end
+
+      count
     end
-
-    count
   end
 
   @doc """
   Bulk update product category.
-  Returns count of updated products.
+  Returns count of updated products. `0` while the catalogue source is
+  active — see `bulk_update_product_status/2`.
   """
   def bulk_update_product_category(uuids, category_uuid) when is_list(uuids) do
+    if catalogue_source_active?() do
+      0
+    else
+      do_bulk_update_product_category(uuids, category_uuid)
+    end
+  end
+
+  defp do_bulk_update_product_category(uuids, category_uuid) do
     cat_uuid =
       if category_uuid do
         case repo().get_by(Category, uuid: category_uuid) do
@@ -1024,14 +1052,17 @@ defmodule PhoenixKitEcommerce do
 
   @doc """
   Bulk delete products.
-  Returns count of deleted products.
+  Returns count of deleted products. `0` while the catalogue source is
+  active — see `bulk_update_product_status/2`.
   """
   def bulk_delete_products(ids) when is_list(ids) do
-    query = Product |> where([p], p.uuid in ^ids)
-
-    {count, _} = repo().delete_all(query)
-
-    count
+    if catalogue_source_active?() do
+      0
+    else
+      query = Product |> where([p], p.uuid in ^ids)
+      {count, _} = repo().delete_all(query)
+      count
+    end
   end
 
   @doc """
@@ -1230,27 +1261,26 @@ defmodule PhoenixKitEcommerce do
 
   @doc """
   Lists categories with count for pagination.
+
+  Reads through `list_categories/1` (the same `ProductSource.current/0`
+  dispatch every other category read goes through) rather than querying
+  `Category` directly — under the catalogue source, listing here and
+  row resolution (`get_category!/2`) must come from the same adapter, or
+  a listed row's uuid resolves to nothing on the next click.
   """
   def list_categories_with_count(opts \\ []) do
     page = Keyword.get(opts, :page, 1)
     per_page = Keyword.get(opts, :per_page, 25)
-    offset = (page - 1) * per_page
 
-    base_query =
-      Category
-      |> apply_category_filters(opts)
+    categories = list_categories(opts)
+    total = length(categories)
 
-    total = repo().aggregate(base_query, :count)
+    paged =
+      categories
+      |> Enum.drop((page - 1) * per_page)
+      |> Enum.take(per_page)
 
-    categories =
-      base_query
-      |> order_by([c], [c.position, c.name])
-      |> limit(^per_page)
-      |> offset(^offset)
-      |> maybe_preload(Keyword.get(opts, :preload))
-      |> repo().all()
-
-    {categories, total}
+    {paged, total}
   end
 
   @doc """
@@ -1300,8 +1330,19 @@ defmodule PhoenixKitEcommerce do
 
   @doc """
   Creates a new category.
+
+  Refuses while the catalogue source is active — same reason
+  `create_product/1` does.
   """
   def create_category(attrs) do
+    if catalogue_source_active?() do
+      {:error, :read_only_view}
+    else
+      do_create_category(attrs)
+    end
+  end
+
+  defp do_create_category(attrs) do
     result =
       %Category{}
       |> Category.changeset(attrs)
@@ -1319,7 +1360,14 @@ defmodule PhoenixKitEcommerce do
 
   @doc """
   Updates a category.
+
+  Refuses a view-struct (`__meta__.state == :built`, never `:loaded`) —
+  same reason `update_product/2` does.
   """
+  def update_category(%Category{__meta__: %Ecto.Schema.Metadata{state: :built}}, _attrs) do
+    {:error, :read_only_view}
+  end
+
   def update_category(%Category{} = category, attrs) do
     result =
       category
@@ -1348,7 +1396,14 @@ defmodule PhoenixKitEcommerce do
 
   @doc """
   Deletes a category.
+
+  Refuses a view-struct (`__meta__.state == :built`) for the same
+  reason `update_category/2` does.
   """
+  def delete_category(%Category{__meta__: %Ecto.Schema.Metadata{state: :built}}) do
+    {:error, :read_only_view}
+  end
+
   def delete_category(%Category{} = category) do
     category_uuid = category.uuid
 
@@ -1371,28 +1426,42 @@ defmodule PhoenixKitEcommerce do
 
   @doc """
   Bulk update category status.
-  Returns count of updated categories.
+  Returns count of updated categories. `0` while the catalogue source is
+  active — see `bulk_update_product_status/2`.
   """
   def bulk_update_category_status(ids, status) when is_list(ids) and is_binary(status) do
-    query = Category |> where([c], c.uuid in ^ids)
+    if catalogue_source_active?() do
+      0
+    else
+      query = Category |> where([c], c.uuid in ^ids)
 
-    {count, _} =
-      query
-      |> repo().update_all(set: [status: status, updated_at: UtilsDate.utc_now()])
+      {count, _} =
+        query
+        |> repo().update_all(set: [status: status, updated_at: UtilsDate.utc_now()])
 
-    if count > 0 do
-      Events.broadcast_categories_bulk_status_changed(ids, status)
+      if count > 0 do
+        Events.broadcast_categories_bulk_status_changed(ids, status)
+      end
+
+      count
     end
-
-    count
   end
 
   @doc """
   Bulk update category parent.
   Returns count of updated categories. Excludes the target parent from the update set
   to prevent self-reference. Uses a single UPDATE with subquery to resolve parent_uuid.
+  `0` while the catalogue source is active — see `bulk_update_product_status/2`.
   """
   def bulk_update_category_parent(ids, parent_uuid) when is_list(ids) do
+    if catalogue_source_active?() do
+      0
+    else
+      do_bulk_update_category_parent(ids, parent_uuid)
+    end
+  end
+
+  defp do_bulk_update_category_parent(ids, parent_uuid) do
     # Exclude the target parent and its ancestors from update set to prevent cycles
     ids_to_update =
       if parent_uuid do
@@ -1445,8 +1514,17 @@ defmodule PhoenixKitEcommerce do
   @doc """
   Bulk delete categories.
   Returns count of deleted categories. Nullifies category references on orphaned products.
+  `0` while the catalogue source is active — see `bulk_update_product_status/2`.
   """
   def bulk_delete_categories(ids) when is_list(ids) do
+    if catalogue_source_active?() do
+      0
+    else
+      do_bulk_delete_categories(ids)
+    end
+  end
+
+  defp do_bulk_delete_categories(ids) do
     # Nullify category references on products to prevent orphans
     orphan_query = Product |> where([p], p.category_uuid in ^ids)
 
@@ -1487,7 +1565,16 @@ defmodule PhoenixKitEcommerce do
   If the category has no image_uuid and no featured_product_uuid, auto-detects the
   first active product with an image and saves it. Returns the (possibly updated)
   category with :featured_product preloaded.
+
+  A view-struct (`__meta__.state == :built`) is returned unchanged — this
+  function computes a value to write, and a view-struct has nowhere to
+  write it (`update_category/2` refuses it); read-only here means
+  read-only, not "raise".
   """
+  def ensure_featured_product(%Category{__meta__: %Ecto.Schema.Metadata{state: :built}} = cat) do
+    cat
+  end
+
   def ensure_featured_product(
         %Category{featured_product_uuid: nil, image_uuid: nil, uuid: cat_uuid} = cat
       ) do
@@ -2130,12 +2217,18 @@ defmodule PhoenixKitEcommerce do
   # `Product |> where(uuid: ...) |> lock(...) |> repo().one!()` below would
   # raise `Ecto.NoResultsError` for every one of them, and there is no
   # FOR-UPDATE-capable read of a catalogue item exposed to this module to
-  # lock instead. The struct already in hand was built moments earlier by
-  # the very read path the product page used, so it is used as-is;
-  # `validate_locked_product_purchasable!/2` right after this still refuses
-  # one that is no longer active.
+  # lock instead. This is therefore a fresh READ, not a lock — a
+  # concurrent write can still race it — but it does re-fetch through
+  # `ProductSource.current/0` rather than trusting the struct the product
+  # page mounted with, so an archive/reprice since mount is seen;
+  # `validate_locked_product_purchasable!/2` right after this then refuses
+  # one that is no longer active. A product deleted/archived since is
+  # treated as unavailable rather than falling back to the stale struct.
   defp lock_or_reload_product(%Product{__meta__: %Ecto.Schema.Metadata{state: :built}} = product) do
-    product
+    case ProductSource.current().get_product(product.uuid, []) do
+      %Product{} = fresh -> fresh
+      nil -> %{product | status: "archived"}
+    end
   end
 
   defp lock_or_reload_product(%Product{} = product) do
@@ -3838,48 +3931,6 @@ defmodule PhoenixKitEcommerce do
     "%#{escaped}%"
   end
 
-  defp apply_category_filters(query, opts) do
-    query
-    |> filter_by_parent_uuid(Keyword.get(opts, :parent_uuid, :skip))
-    |> filter_by_category_status(Keyword.get(opts, :status, :skip))
-    |> filter_by_category_search(Keyword.get(opts, :search))
-  end
-
-  defp filter_by_parent_uuid(query, :skip), do: query
-  defp filter_by_parent_uuid(query, nil), do: where(query, [c], is_nil(c.parent_uuid))
-  defp filter_by_parent_uuid(query, uuid), do: where(query, [c], c.parent_uuid == ^uuid)
-
-  defp filter_by_category_status(query, :skip), do: query
-  defp filter_by_category_status(query, nil), do: query
-
-  defp filter_by_category_status(query, status) when is_binary(status) do
-    where(query, [c], c.status == ^status)
-  end
-
-  defp filter_by_category_status(query, statuses) when is_list(statuses) do
-    where(query, [c], c.status in ^statuses)
-  end
-
-  defp filter_by_category_search(query, nil), do: query
-  defp filter_by_category_search(query, ""), do: query
-
-  defp filter_by_category_search(query, search) do
-    search_term = search_like_pattern(search)
-    default_lang = Translations.default_language()
-
-    # Search in JSONB localized name field using PostgreSQL operators
-    where(
-      query,
-      [c],
-      fragment(
-        "(COALESCE(name->>?, '') ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_each_text(name) WHERE value ILIKE ?))",
-        ^default_lang,
-        ^search_term,
-        ^search_term
-      )
-    )
-  end
-
   defp maybe_preload(query, nil), do: query
   defp maybe_preload(query, preloads), do: preload(query, ^preloads)
 
@@ -4253,6 +4304,15 @@ defmodule PhoenixKitEcommerce do
   end
 
   defp repo, do: PhoenixKit.RepoHelper.repo()
+
+  # Guards the legacy write path: while the catalogue source is active,
+  # `phoenix_kit_shop_products`/`phoenix_kit_shop_categories` must never
+  # gain a row a catalogue-backed storefront read will never surface
+  # (spec principle — "no write path targets phoenix_kit_shop_products
+  # while the switch is on").
+  defp catalogue_source_active? do
+    ProductSource.current() == ProductSource.Catalogue
+  end
 
   # ============================================
   # TAX RATE (from Billing module — single source of truth)

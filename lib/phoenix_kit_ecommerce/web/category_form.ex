@@ -14,6 +14,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.OptionTypes
+  alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Components.TranslationTabs
@@ -35,8 +36,23 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
   @impl true
   def handle_params(params, _uri, socket) do
-    socket = apply_action(socket, socket.assigns.live_action, params)
-    {:noreply, socket}
+    # Categories are catalogue-managed while the catalogue source is active
+    # (`create_category/1`/`update_category/2` both refuse under it) —
+    # redirect away from this form entirely, for :new and :edit alike, via
+    # any entry point (button, row link, direct URL).
+    if socket.assigns.live_action in [:new, :edit] and catalogue_source_active?() do
+      {:noreply, redirect_to_catalogue(socket)}
+    else
+      {:noreply, apply_action(socket, socket.assigns.live_action, params)}
+    end
+  end
+
+  defp catalogue_source_active?, do: ProductSource.current() == ProductSource.Catalogue
+
+  defp redirect_to_catalogue(socket) do
+    socket
+    |> put_flash(:info, gettext("Categories are managed in the catalogue module now."))
+    |> push_navigate(to: Routes.path("/admin/catalogue"))
   end
 
   defp apply_action(socket, :new, _params) do
@@ -832,6 +848,9 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
+
+      {:error, :read_only_view} ->
+        {:noreply, redirect_to_catalogue(socket)}
     end
   end
 
@@ -853,6 +872,9 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
+
+      {:error, :read_only_view} ->
+        {:noreply, redirect_to_catalogue(socket)}
     end
   end
 

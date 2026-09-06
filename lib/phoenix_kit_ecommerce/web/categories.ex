@@ -29,6 +29,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.Events
+  alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
@@ -55,6 +56,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
       |> assign(:current_language, current_language)
       |> assign(:bulk_uuids, [])
       |> assign(:show_bulk_modal, nil)
+      |> assign(:catalogue_source_active?, ProductSource.current() == ProductSource.Catalogue)
       |> load_static_category_data()
 
     {:ok, socket}
@@ -329,10 +331,19 @@ defmodule PhoenixKitEcommerce.Web.Categories do
             <div>
               <label class="label"><span class="fieldset-legend">&nbsp;</span></label>
               <.link
-                navigate={Routes.path("/admin/shop/categories/new")}
+                navigate={
+                  Routes.path(
+                    if @catalogue_source_active?,
+                      do: "/admin/catalogue",
+                      else: "/admin/shop/categories/new"
+                  )
+                }
                 class="btn btn-primary w-full"
               >
-                <.icon name="hero-plus" class="w-4 h-4 mr-2" /> {gettext("Add Category")}
+                <.icon name="hero-plus" class="w-4 h-4 mr-2" />
+                {if @catalogue_source_active?,
+                  do: gettext("Manage in Catalogue"),
+                  else: gettext("Add Category")}
               </.link>
             </div>
           </div>
