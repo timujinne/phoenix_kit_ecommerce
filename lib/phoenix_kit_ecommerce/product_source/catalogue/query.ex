@@ -282,9 +282,9 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
       |> join(:inner, [i, a, slug], ev in EntityData,
         on: ev.entity_uuid == ^set_uuid and ev.slug == slug and ev.status == "published"
       )
-      |> group_by([i, a, slug, ev], [slug, ev.title, ev.position, ev.data])
+      |> group_by([i, a, slug, ev], [fragment("?", slug), ev.title, ev.position, ev.data])
       |> select([i, a, slug, ev], %{
-        slug: slug,
+        slug: fragment("?", slug),
         title: ev.title,
         data: ev.data,
         position: ev.position,
