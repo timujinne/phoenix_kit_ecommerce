@@ -55,10 +55,26 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
     user = get_current_user(socket)
     user_uuid = if user, do: user.uuid, else: nil
 
-    # Get or create cart
-    {:ok, cart} =
-      Shop.get_or_create_cart(user_uuid: user_uuid, session_id: session_id)
+    # Get or create cart. Since `Cart.changeset/2` began requiring
+    # `:currency`, this can FAIL: a shop whose Billing currency table has no
+    # default row resolves `nil` and the changeset rejects it. That is the
+    # intended loud failure, but it must not reach a shopper as a MatchError
+    # crashing the page — the shop is simply not open for business yet.
+    case Shop.get_or_create_cart(user_uuid: user_uuid, session_id: session_id) do
+      {:ok, cart} -> mount_with_cart(socket, cart, session_id, current_language)
+      {:error, _reason} -> {:ok, shop_unavailable(socket)}
+    end
+  end
 
+  # The same exit the disabled-shop gate in `mount/3` takes: a flash on the
+  # HOST's root, not `Routes.path("/")`.
+  defp shop_unavailable(socket) do
+    socket
+    |> put_flash(:error, gettext("The shop is currently unavailable"))
+    |> push_navigate(to: "/")
+  end
+
+  defp mount_with_cart(socket, cart, session_id, current_language) do
     # Subscribe to cart events for real-time sync across tabs
     if connected?(socket) do
       Events.subscribe_to_cart(cart)

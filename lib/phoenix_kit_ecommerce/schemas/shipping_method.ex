@@ -37,7 +37,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
 
     # Pricing
     field :price, :decimal, default: Decimal.new("0")
-    field :currency, :string, default: "USD"
+    field :currency, :string
     field :free_above_amount, :decimal
 
     # Constraints

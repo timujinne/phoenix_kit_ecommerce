@@ -455,13 +455,26 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   defp do_add_to_cart_impl(socket) do
     socket = assign(socket, :adding_to_cart, true)
 
-    # Get or create cart
-    {:ok, cart} =
-      Shop.get_or_create_cart(
-        user_uuid: socket.assigns.user_uuid,
-        session_id: socket.assigns.session_id
-      )
+    # Get or create cart. Opening one requires a currency since
+    # `Cart.changeset/2` started validating it (§4.2), so a shop with no
+    # default currency configured in Billing gets the same "unavailable"
+    # flash the disabled-shop branch below gets — never a MatchError.
+    case Shop.get_or_create_cart(
+           user_uuid: socket.assigns.user_uuid,
+           session_id: socket.assigns.session_id
+         ) do
+      {:ok, cart} ->
+        add_to_cart_with(socket, cart)
 
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:adding_to_cart, false)
+         |> put_flash(:error, gettext("The shop is currently unavailable"))}
+    end
+  end
+
+  defp add_to_cart_with(socket, cart) do
     %{
       product: product,
       quantity: quantity,

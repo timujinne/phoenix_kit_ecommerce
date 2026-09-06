@@ -12,8 +12,9 @@ require Logger
 #   createdb phoenix_kit_ecommerce_test
 #
 # After that, `mix test` boots the repo, runs core's versioned migrations
-# via `PhoenixKit.Migration.ensure_current/2`, and lets the Ecto sandbox
-# handle isolation. No module-owned DDL.
+# via `PhoenixKit.Migration.ensure_current/2`, applies this module's own
+# chain (`PhoenixKitEcommerce.Migrations`) on top, and lets the Ecto
+# sandbox handle isolation.
 
 # Elixir 1.19's `mix test` no longer auto-loads modules from
 # `:elixirc_paths` test directories at test-helper time — only files
@@ -82,6 +83,16 @@ repo_available =
       # call the host app makes in production. `ensure_current/2`
       # re-applies any newly-shipped Vxxx migrations on every boot.
       PhoenixKit.Migration.ensure_current(TestRepo, log: false)
+
+      # ...then the module-owned chain on top. V1 was purely adoptive over
+      # core's baseline, so skipping it changed nothing; V2 is not — it
+      # drops the `DEFAULT 'USD'` core declares on the four `currency`
+      # columns, and a test database that never ran it would still hand
+      # out "USD" behind the schemas' backs. `up/1` needs an
+      # `Ecto.Migration` runner, so the statements are executed directly —
+      # that is exactly what `up_statements/1` exists for, and every one of
+      # them is idempotent.
+      Enum.each(PhoenixKitEcommerce.Migrations.up_statements(), &TestRepo.query!/1)
 
       Ecto.Adapters.SQL.Sandbox.mode(TestRepo, :manual)
       true

@@ -8,7 +8,8 @@ defmodule PhoenixKitEcommerce.Schemas.CartItemTest do
     cart_uuid: Ecto.UUID.generate(),
     product_title: "Widget",
     unit_price: Decimal.new("10.00"),
-    quantity: 3
+    quantity: 3,
+    currency: "USD"
   }
 
   describe "changeset/2 validity" do

@@ -443,6 +443,34 @@ Recipients union permission holders with **Owner-role holders and `"*"`
 superadmins**: neither has permission rows, so a key-only query misses the
 primary operator of a default install.
 
+## Module-owned migrations
+
+`PhoenixKitEcommerce.Migrations` (registered via `migration_module/0`) is this
+module's own versioned chain, discovered by `mix phoenix_kit.status` and
+applied by `mix phoenix_kit.update`. V1 is **adoptive**: all ten shop tables
+are core V135 baseline tables that core still creates, so V1 changes no shape
+— it stamps a `pke_schema:<N>` COMMENT on `phoenix_kit_shop_config` and claims
+future ownership. `down/1` unstamps the marker and **drops nothing**.
+
+Two rules keep an adoptive chain honest, and both have been broken once:
+
+1. **Every statement is parameterized by the prefix.** A hardcoded `public.`
+   aborts a prefixed install, or writes into a schema this module does not own.
+2. **Object names mirror core's, including how core names them per schema.**
+   Core embeds the schema name in exactly five shop index names under a
+   non-public prefix — the `*_uuid_idx` on `phoenix_kit_shop_cart_items`,
+   `…_carts`, `…_categories`, `…_products`, `…_shipping_methods` (`pn` in
+   core's `postgres/v135.ex`, `__PK_NAME_EXEMPT__` in
+   `migrations/expected_schema.ex`); every other one is named identically in
+   every schema. A bare name for those five does not match core's index, so
+   `CREATE … IF NOT EXISTS` silently builds a duplicate.
+
+The chain is emitted as data (`up_statements/1`, `down_statements/2`) and
+`test/phoenix_kit_ecommerce/migrations_test.exs` scans it without a database —
+object counts, names, the prefix rules above, and that no statement can drop or
+truncate. When adding a version, extend those scans; they are the only check
+that runs, since the test repo deliberately applies core's DDL only.
+
 ## Critical Conventions
 
 - **Module key** must be consistent across all callbacks: `"shop"`

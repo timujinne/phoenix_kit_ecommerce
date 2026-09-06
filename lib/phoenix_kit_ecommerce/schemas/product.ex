@@ -17,7 +17,9 @@ defmodule PhoenixKitEcommerce.Product do
   - `price` - Base price (required)
   - `compare_at_price` - Original price for discounts
   - `cost_per_item` - Cost for profit calculation
-  - `currency` - ISO currency code (default: USD)
+  - `currency` - ISO currency code; no default. `create_product/1`
+    substitutes the shop's base currency, so this is nil only when none
+    is configured
   - `taxable` - Subject to tax
   - `weight_grams` - Weight for shipping
   - `requires_shipping` - Needs physical delivery
@@ -65,7 +67,7 @@ defmodule PhoenixKitEcommerce.Product do
     field :price, :decimal
     field :compare_at_price, :decimal
     field :cost_per_item, :decimal
-    field :currency, :string, default: "USD"
+    field :currency, :string
     field :taxable, :boolean, default: true
 
     # Physical properties

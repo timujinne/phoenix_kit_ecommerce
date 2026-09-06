@@ -5,11 +5,11 @@ defmodule PhoenixKitEcommerce.Schemas.CartTest do
 
   describe "changeset/2 identity validation" do
     test "is valid with a session_id (guest cart)" do
-      assert Cart.changeset(%Cart{}, %{session_id: "abc"}).valid?
+      assert Cart.changeset(%Cart{}, %{session_id: "abc", currency: "USD"}).valid?
     end
 
     test "is valid with a user_uuid" do
-      assert Cart.changeset(%Cart{}, %{user_uuid: Ecto.UUID.generate()}).valid?
+      assert Cart.changeset(%Cart{}, %{user_uuid: Ecto.UUID.generate(), currency: "USD"}).valid?
     end
 
     test "is invalid without any identity" do
@@ -30,17 +30,17 @@ defmodule PhoenixKitEcommerce.Schemas.CartTest do
     end
 
     test "shipping_country max 2 chars" do
-      cs = Cart.changeset(%Cart{}, %{session_id: "x", shipping_country: "USA"})
+      cs = Cart.changeset(%Cart{}, %{session_id: "x", currency: "USD", shipping_country: "USA"})
       assert %{shipping_country: [_ | _]} = errors_on(cs)
     end
 
     test "guest carts get a default expires_at" do
-      cs = Cart.changeset(%Cart{}, %{session_id: "x"})
+      cs = Cart.changeset(%Cart{}, %{session_id: "x", currency: "USD"})
       assert get_change(cs, :expires_at)
     end
 
     test "user carts do not set expires_at" do
-      cs = Cart.changeset(%Cart{}, %{user_uuid: Ecto.UUID.generate()})
+      cs = Cart.changeset(%Cart{}, %{user_uuid: Ecto.UUID.generate(), currency: "USD"})
       refute get_change(cs, :expires_at)
     end
   end

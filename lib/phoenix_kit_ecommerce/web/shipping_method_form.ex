@@ -25,7 +25,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp apply_action(socket, :new, _params) do
     default_currency = Billing.get_default_currency()
-    default_currency_code = if default_currency, do: default_currency.code, else: "USD"
+    # §7.3/N3: no literal fallback — an unconfigured currency table leaves
+    # `default_currency_code` nil and the form submits no currency, so the
+    # method is stored without one instead of being seeded with "USD".
+    # `ShippingMethod.changeset/2` does NOT reject that: `validate_length`
+    # skips nil, and the hidden input's "" is an Ecto empty value. A
+    # shipping method with no currency is the honest record of a shop that
+    # has configured no currency; nothing downstream reads it as a number.
+    default_currency_code = if default_currency, do: default_currency.code
 
     method = %ShippingMethod{currency: default_currency_code}
     changeset = Shop.change_shipping_method(method)
@@ -183,12 +190,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                     <div class="input flex items-center bg-base-200">
                       {if @default_currency,
                         do: "#{@default_currency.code} - #{@default_currency.name}",
-                        else: "USD"}
+                        else: gettext("No default currency configured")}
                     </div>
                     <input
                       type="hidden"
                       name="shipping_method[currency]"
-                      value={if @default_currency, do: @default_currency.code, else: "USD"}
+                      value={if @default_currency, do: @default_currency.code}
                     />
                   <% else %>
                     <.select
