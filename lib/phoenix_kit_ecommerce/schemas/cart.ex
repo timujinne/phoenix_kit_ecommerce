@@ -61,6 +61,15 @@ defmodule PhoenixKitEcommerce.Cart do
     field :total, :decimal, default: Decimal.new("0")
     field :currency, :string
 
+    # Frozen at cart creation (§4.4, §12.2 of the per-domain-currency
+    # spec): the shop's base currency and the base -> currency rate at
+    # that moment. Never re-read from the currency table by any code
+    # after creation — a later rate change must not reprice a cart the
+    # shopper is still looking at. Refreshed only when the cart is
+    # emptied (`recalculate_cart_totals!/1`), the one safe moment.
+    field :base_currency, :string
+    field :exchange_rate, :decimal
+
     # Discount
     field :discount_code, :string
 
@@ -99,6 +108,8 @@ defmodule PhoenixKitEcommerce.Cart do
       :discount_amount,
       :total,
       :currency,
+      :base_currency,
+      :exchange_rate,
       :discount_code,
       :total_weight_grams,
       :items_count,
@@ -110,6 +121,7 @@ defmodule PhoenixKitEcommerce.Cart do
     |> validate_inclusion(:status, @statuses)
     |> validate_required([:currency])
     |> validate_length(:currency, is: 3)
+    |> validate_length(:base_currency, is: 3)
     |> validate_length(:shipping_country, max: 2)
     |> validate_identity()
     |> maybe_set_expires_at()
@@ -117,6 +129,11 @@ defmodule PhoenixKitEcommerce.Cart do
 
   @doc """
   Changeset for updating cart totals.
+
+  `:currency`/`:base_currency`/`:exchange_rate` are only ever present in
+  `attrs` when the cart was just emptied (§4.4) — see
+  `recalculate_cart_totals!/1`'s `fx_refresh` map — never as a side
+  effect of a normal totals recompute over existing items.
   """
   def totals_changeset(cart, attrs) do
     cart
@@ -127,7 +144,10 @@ defmodule PhoenixKitEcommerce.Cart do
       :discount_amount,
       :total,
       :total_weight_grams,
-      :items_count
+      :items_count,
+      :currency,
+      :base_currency,
+      :exchange_rate
     ])
   end
 

@@ -102,7 +102,7 @@
                     {order.status}
                   </span>
                   <div class="text-lg font-bold mt-1">
-                    {format_price(order.total, @currency)}
+                    {format_price(order.total, Shop.currency_for_code(order.currency))}
                   </div>
                 </div>
               </div>

@@ -11,18 +11,21 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Utils.HtmlSanitizer
   alias PhoenixKit.Utils.Routes
-  alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.Policy
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Authz
+  alias PhoenixKitEcommerce.Web.Helpers
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     product = Shop.get_product!(id, preload: [:category])
-    currency = Shop.get_default_currency()
+    # Admin view: the product's own stored price is a BASE-currency amount,
+    # so the admin must always see it in base, never the visitor's display
+    # currency (§4.2, "ADMIN view -> base").
+    currency = Shop.get_default_currency_code()
 
     # Get price-affecting specs for admin view
     price_affecting_specs = Options.get_price_affecting_specs_for_product(product)
@@ -410,7 +413,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
               <div class="card-body">
                 <div class="flex items-center justify-between">
                   <h2 class="card-title">{gettext("Pricing")}</h2>
-                  <span class="badge badge-outline">{(@currency && @currency.code) || "—"}</span>
+                  <span class="badge badge-outline">{@currency || "—"}</span>
                 </div>
 
                 <div class="grid grid-cols-3 gap-4 mt-4">
@@ -703,15 +706,9 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
   defp status_badge_class("archived"), do: "badge badge-neutral badge-lg"
   defp status_badge_class(_), do: "badge badge-lg"
 
-  defp format_price(nil, _currency), do: "—"
-
-  defp format_price(price, nil) do
-    "$#{Decimal.round(price, 2)}"
-  end
-
-  defp format_price(price, currency) do
-    Currency.format_amount(price, currency)
-  end
+  # `currency` is now a CODE, not a struct (Э1-E4) — delegate to the one
+  # place that resolves a code to its symbol (§12.1).
+  defp format_price(price, currency), do: Helpers.format_price(price, currency)
 
   # Get signed URL for Storage image (skip URLs - they are legacy Shopify images)
   defp get_storage_image_url("http" <> _ = _url, _variant), do: nil
@@ -838,7 +835,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
   end
 
   defp format_modifier(value, _type, currency) do
-    Currency.format_amount(value, currency)
+    Helpers.format_price(value, currency)
   end
 
   # Get available languages for preview switcher

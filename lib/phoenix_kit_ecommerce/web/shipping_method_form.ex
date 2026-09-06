@@ -24,7 +24,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   end
 
   defp apply_action(socket, :new, _params) do
-    default_currency = Billing.get_default_currency()
+    default_currency = Shop.get_base_currency()
     # §7.3/N3: no literal fallback — an unconfigured currency table leaves
     # `default_currency_code` nil and the form submits no currency, so the
     # method is stored without one instead of being seeded with "USD".
@@ -50,7 +50,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     method = Shop.get_shipping_method!(id)
     changeset = Shop.change_shipping_method(method)
     currencies = load_currencies()
-    default_currency = Billing.get_default_currency()
+    default_currency = Shop.get_base_currency()
 
     socket
     |> assign(:page_title, gettext("Edit %{name}", name: method.name))

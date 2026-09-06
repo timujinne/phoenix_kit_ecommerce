@@ -49,6 +49,7 @@ defmodule PhoenixKitEcommerce.PriceDisplay do
   # extractable into this module's own catalogue.
   use Gettext, backend: PhoenixKitEcommerce.Gettext
 
+  alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Helpers
@@ -175,6 +176,26 @@ defmodule PhoenixKitEcommerce.PriceDisplay do
   @doc """
   Renders a price for display.
 
+  The second argument is a display-currency CODE (`String.t() | nil`) —
+  per-domain-currency spec §4.2.1: assigns carry a code, never a struct,
+  so a cached struct can never go stale between requests. A `%Currency{}`
+  is still accepted, for callers that already have one, and is unwrapped
+  to its code immediately; every conversion downstream still goes
+  through `Currency.present/3`'s own fresh resolution.
+
+  Which numbers convert is decided by where the number CAME FROM (§2.10),
+  not by the context alone:
+
+    * `:catalog` — both bounds of the product's (base-currency) price
+      range go through `present/3`.
+    * `:selected` — `opts[:amount]` is a LIVE base-currency number just
+      computed by `calculate_product_price/2`; converted exactly once,
+      here.
+    * `:cart` / `:order` — `opts[:amount]` is a STORED snapshot already
+      recorded in the record's own currency (a `CartItem`'s `unit_price`,
+      an order line's amount); converting it again would double-convert
+      a number that is already in the currency being asked for (N1).
+
   ## Options
 
     * `:amount` — the exact amount to render (required for `:selected`,
@@ -187,17 +208,19 @@ defmodule PhoenixKitEcommerce.PriceDisplay do
   """
   def render(product, currency, ctx, opts \\ [])
 
-  def render(%Product{} = product, currency, :catalog, opts) do
+  def render(product, %Currency{code: code}, ctx, opts), do: render(product, code, ctx, opts)
+
+  def render(%Product{} = product, code, :catalog, opts) do
     if on_request?(product) do
       # No number is shown at all: the price does not exist yet. Beats any
       # range/"From" computation below, which would invent one.
       on_request_label()
     else
-      do_render_catalog(product, currency, opts)
+      do_render_catalog(product, code, opts)
     end
   end
 
-  def render(product_or_nil, currency, ctx, opts) when ctx in [:selected, :cart, :order] do
+  def render(product_or_nil, code, ctx, opts) when ctx in [:selected, :cart, :order] do
     amount = Keyword.get(opts, :amount)
 
     # `:on_request` is passed by snapshot callers from the LINE's own metadata.
@@ -212,35 +235,43 @@ defmodule PhoenixKitEcommerce.PriceDisplay do
     if on_request? do
       on_request_label()
     else
-      do_render_snapshot(product_or_nil, currency, amount, opts)
+      # Provenance decides, not the context alone (§2.10): :selected hands
+      # us a LIVE base amount, so this is the one and only conversion it
+      # gets (N1 — do_render_snapshot below must never convert again).
+      # :cart/:order hand us a STORED snapshot already in `code`'s
+      # currency; converting that would double-convert it.
+      amount = if ctx == :selected, do: Currency.present(amount, code), else: amount
+      do_render_snapshot(product_or_nil, code, amount, opts)
     end
   end
 
-  defp do_render_catalog(%Product{} = product, currency, opts) do
+  defp do_render_catalog(%Product{} = product, code, opts) do
     language = Keyword.get(opts, :language)
     %{from: force_from} = settings(product)
-    {min_price, max_price} = PhoenixKitEcommerce.get_price_range(product)
+    {min_base, max_base} = PhoenixKitEcommerce.get_price_range(product)
+    min_price = Currency.present(min_base, code)
+    max_price = Currency.present(max_base, code)
 
     base =
       cond do
         Decimal.compare(min_price, max_price) != :eq and
             Keyword.get(opts, :range_style, :from) == :range ->
-          "#{Helpers.format_price(min_price, currency)} - #{Helpers.format_price(max_price, currency)}"
+          "#{Helpers.format_price(min_price, code)} - #{Helpers.format_price(max_price, code)}"
 
         Decimal.compare(min_price, max_price) != :eq or force_from ->
           # A real option range implies "From" regardless of the flag; the
           # flag additionally forces it for a single-price product (a
           # service quoted "from" a starting rate).
-          "#{from_label()} #{Helpers.format_price(min_price, currency)}"
+          "#{from_label()} #{Helpers.format_price(min_price, code)}"
 
         true ->
-          Helpers.format_price(min_price, currency)
+          Helpers.format_price(min_price, code)
       end
 
     append_unit(base, unit_for(product, language))
   end
 
-  defp do_render_snapshot(product_or_nil, currency, amount, opts) do
+  defp do_render_snapshot(product_or_nil, code, amount, opts) do
     unit =
       case Keyword.fetch(opts, :unit) do
         # Snapshot contexts pass their stored unit explicitly — including
@@ -250,7 +281,51 @@ defmodule PhoenixKitEcommerce.PriceDisplay do
         :error -> product_or_nil && unit_for(product_or_nil, Keyword.get(opts, :language))
       end
 
-    Helpers.format_price(amount, currency) |> append_unit(unit)
+    Helpers.format_price(amount, code) |> append_unit(unit)
+  end
+
+  @doc """
+  Strike-through price and discount percent, or `nil` when there is no
+  discount (or the product is on request — a negotiated price has no
+  "was" to compare against).
+
+  Both numbers pass through `present/3` together with the price they
+  accompany (§4.3.1): the discount itself is computed in BASE currency
+  first (comparing `product.compare_at_price` against the base amount —
+  `opts[:amount]` for `:selected`, the product's own `price` otherwise),
+  so `percent` is the TRUE discount regardless of display currency or
+  rounding; only the already-decided `compare_at_price` is then
+  converted for display, the same way `render/4` converts a `:catalog`/
+  `:selected` amount and never a `:cart`/`:order` one.
+  """
+  @spec compare_at(Product.t(), String.t() | nil, atom(), keyword()) ::
+          %{price: String.t(), percent: integer()} | nil
+  def compare_at(product, currency, ctx, opts \\ [])
+
+  def compare_at(%Product{compare_at_price: nil}, _code, _ctx, _opts), do: nil
+
+  def compare_at(%Product{} = product, %Currency{code: code}, ctx, opts),
+    do: compare_at(product, code, ctx, opts)
+
+  def compare_at(%Product{compare_at_price: compare} = product, code, ctx, opts) do
+    base_amount =
+      if ctx == :selected,
+        do: Keyword.fetch!(opts, :amount),
+        else: product.price || Decimal.new("0")
+
+    if on_request?(product) or Decimal.compare(compare, base_amount) != :gt do
+      nil
+    else
+      percent =
+        compare
+        |> Decimal.sub(base_amount)
+        |> Decimal.div(compare)
+        |> Decimal.mult(100)
+        |> Decimal.round(0)
+        |> Decimal.to_integer()
+
+      %{price: Helpers.format_price(Currency.present(compare, code), code), percent: percent}
+    end
   end
 
   defp append_unit(price, nil), do: price

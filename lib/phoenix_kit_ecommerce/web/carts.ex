@@ -8,17 +8,12 @@ defmodule PhoenixKitEcommerce.Web.Carts do
   import PhoenixKitWeb.Components.Core.TableDefault
 
   alias PhoenixKit.Utils.Routes
-  alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
+  import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
   @per_page 25
-
-  # Last-resort currency symbol used only when no default currency is
-  # configured in Billing (i.e. `@currency` resolved to nil at mount).
-  # When a currency struct is present we always defer to its own symbol.
-  @default_currency_symbol "$"
 
   @impl true
   def mount(params, session, socket) do
@@ -29,7 +24,6 @@ defmodule PhoenixKitEcommerce.Web.Carts do
 
   defp do_mount(_params, _session, socket) do
     {carts, total} = Shop.list_carts_with_count(per_page: @per_page)
-    currency = Shop.get_default_currency()
 
     socket =
       socket
@@ -40,7 +34,6 @@ defmodule PhoenixKitEcommerce.Web.Carts do
       |> assign(:per_page, @per_page)
       |> assign(:status_filter, nil)
       |> assign(:search, "")
-      |> assign(:currency, currency)
 
     {:ok, socket}
   end
@@ -227,10 +220,12 @@ defmodule PhoenixKitEcommerce.Web.Carts do
                     <% end %>
                   </.table_default_cell>
                   <.table_default_cell class="text-right">
-                    <div class="font-semibold">{format_price(cart.total, @currency)}</div>
+                    <div class="font-semibold">
+                      {format_price(cart.total, Shop.currency_for_code(cart.currency))}
+                    </div>
                     <%= if Decimal.compare(cart.subtotal || Decimal.new("0"), cart.total || Decimal.new("0")) != :eq do %>
                       <div class="text-xs text-base-content/50">
-                        Subtotal: {format_price(cart.subtotal, @currency)}
+                        Subtotal: {format_price(cart.subtotal, Shop.currency_for_code(cart.currency))}
                       </div>
                     <% end %>
                   </.table_default_cell>
@@ -276,16 +271,6 @@ defmodule PhoenixKitEcommerce.Web.Carts do
   defp status_badge_class("expired"), do: "badge badge-neutral"
   defp status_badge_class("merged"), do: "badge badge-secondary"
   defp status_badge_class(_), do: "badge"
-
-  defp format_price(nil, _currency), do: "-"
-
-  defp format_price(amount, nil) do
-    "#{@default_currency_symbol}#{Decimal.round(amount, 2)}"
-  end
-
-  defp format_price(amount, currency) do
-    Currency.format_amount(amount, currency)
-  end
 
   defp format_weight(grams) when grams >= 1000, do: "#{Float.round(grams / 1000, 1)} kg"
   defp format_weight(grams), do: "#{grams} g"

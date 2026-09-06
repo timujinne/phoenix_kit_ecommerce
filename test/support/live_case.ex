@@ -130,4 +130,20 @@ defmodule PhoenixKitEcommerce.LiveCase do
   def put_test_scope(conn, scope) do
     Plug.Test.init_test_session(conn, %{"phoenix_kit_test_scope" => scope})
   end
+
+  @doc """
+  Plugs a display-currency CODE into the test conn's session so the
+  `:assign_currency` `on_mount` hook can set it as the request-scoped
+  currency at mount time (Э1-E4) — the test double for a host's own
+  domain-currency hook. Pass `nil` (or omit) for "no domain mapping",
+  i.e. the storefront falls back to the base currency.
+
+  ## Example
+
+      conn = put_test_currency(conn, "EUR")
+      {:ok, view, _html} = live(conn, "/shop/product/\#{slug}")
+  """
+  def put_test_currency(conn, code \\ nil) do
+    Plug.Test.init_test_session(conn, %{"phoenix_kit_test_currency" => code})
+  end
 end

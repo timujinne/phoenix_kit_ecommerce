@@ -9,7 +9,6 @@ defmodule PhoenixKitEcommerce.Web.UserOrders do
 
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
-  alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Web.Helpers
 
@@ -108,7 +107,6 @@ defmodule PhoenixKitEcommerce.Web.UserOrders do
 
   defp load_user_orders(socket) do
     user_uuid = socket.assigns.current_user.uuid
-    currency = Shop.get_default_currency()
 
     # Build filters for Billing.list_user_orders
     filters = build_query_filters(socket)
@@ -131,7 +129,6 @@ defmodule PhoenixKitEcommerce.Web.UserOrders do
     |> assign(:total_count, total_count)
     |> assign(:total_pages, total_pages)
     |> assign(:page, page)
-    |> assign(:currency, currency)
   end
 
   defp build_query_filters(socket) do
@@ -176,15 +173,7 @@ defmodule PhoenixKitEcommerce.Web.UserOrders do
     Calendar.strftime(dt, "%B %d, %Y")
   end
 
-  defp format_price(nil, _currency), do: "-"
-
-  defp format_price(amount, nil) do
-    "$#{Decimal.round(amount, 2)}"
-  end
-
-  defp format_price(amount, currency) do
-    Currency.format_amount(amount, currency)
-  end
+  defp format_price(amount, currency), do: Helpers.format_price(amount, currency)
 
   defp items_count(nil), do: 0
   defp items_count([]), do: 0

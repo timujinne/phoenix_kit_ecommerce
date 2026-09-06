@@ -6,15 +6,17 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
   use PhoenixKitEcommerce.Web, :live_view
 
   alias PhoenixKit.Utils.Routes
-  alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Web.Authz
+  import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
   @impl true
   def mount(_params, _session, socket) do
     methods = Shop.list_shipping_methods()
-    currency = Shop.get_default_currency()
+    # A method's price/thresholds are always BASE currency (§4.5), same as
+    # a product's own price - not the visitor's display currency.
+    currency = Shop.get_base_currency()
 
     socket =
       socket
@@ -199,16 +201,6 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
         </.table_default>
       </div>
     """
-  end
-
-  defp format_price(nil, _currency), do: "—"
-
-  defp format_price(amount, nil) do
-    "$#{Decimal.round(amount || Decimal.new("0"), 2)}"
-  end
-
-  defp format_price(amount, currency) do
-    Currency.format_amount(amount, currency)
   end
 
   defp format_weight(grams) when grams >= 1000, do: "#{Float.round(grams / 1000, 1)} kg"

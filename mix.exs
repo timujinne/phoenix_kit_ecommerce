@@ -102,27 +102,35 @@ defmodule PhoenixKitEcommerce.MixProject do
 
   defp deps do
     [
-      # 2.6 is a hard floor, not a preference. ShippingMethod.changeset/2
-      # calls `Slug.put_slug/3` (added in 2.4.0), and Product/Category name
-      # V171's projection pkeys (`phoenix_kit_shop_{product,category}_slugs_pkey`,
-      # added in 2.6.0). Under the previous `~> 2.0` a host resolving 2.0–2.5
-      # either raised UndefinedFunctionError on every shipping-method save
-      # or turned slug collisions back into raw Postgrex errors. Two-segment
-      # so every later 2.x still resolves.
-      pk_dep(:phoenix_kit, "~> 2.6"),
+      # 2.15 is a hard floor, not a preference (raised from 2.6 for
+      # per-domain-currency Э1-E1, plan §0.3/§8.5). `Cart`/`CartItem` cast
+      # `base_currency`/`exchange_rate`/`base_unit_price` — columns core's
+      # V185 adds. Below V185 those `ADD COLUMN`s do not exist and every
+      # cart/cart-item write raises `Postgrex.Error` (`undefined_column`)
+      # instead of quietly dropping the field, since these are real table
+      # columns cast/3 tries to persist, not attrs the schema merely
+      # declares. 2.6 remains true too: ShippingMethod.changeset/2 calls
+      # `Slug.put_slug/3` (2.4.0), and Product/Category name V171's
+      # projection pkeys (2.6.0) — both still required, now subsumed by
+      # the higher floor. Exact number confirmed at PR time once core's
+      # V185 branch is the one actually released against.
+      pk_dep(:phoenix_kit, "~> 2.15"),
 
       # Gettext for per-module i18n of sidebar tab labels.
       {:gettext, "~> 1.0"},
 
       # Billing integration for checkout and order conversion.
-      # 0.5.2 is the floor: that release adds `payment_option_uuid` to
-      # `PhoenixKitBilling.Order`, the column `maybe_put_payment_option/2`
-      # writes once core is migrated to V162. Below it the attr is dropped
-      # by `cast/3` and the order/payment-option linkage silently vanishes.
-      # `~> 0.1` also admitted 0.1.0, which predates the `PhoenixKitBilling`
-      # namespace entirely (it was `PhoenixKit.Modules.Billing`), and
-      # 0.1.1/0.1.2, which have no tax API — both fail to compile here.
-      pk_dep(:phoenix_kit_billing, "~> 0.7"),
+      # 0.11 is the floor (raised from 0.7 for per-domain-currency Э1-E1,
+      # plan §0.3/§8.5): `create_cart/1` and both add-to-cart paths call
+      # `PhoenixKitBilling.get_base_currency/0`, `get_display_currency/0`,
+      # `resolve_display_currency/1`, and `Currency.present/3`/
+      # `effective_rate/2` — none exist below the release carrying Э1-B1
+      # through B5. Below the floor these are `UndefinedFunctionError` at
+      # checkout, not a silently-dropped attr. 0.5.2 remains true too:
+      # `payment_option_uuid` on `PhoenixKitBilling.Order`, still required,
+      # now subsumed by the higher floor. Exact number confirmed at PR
+      # time once billing's currency work is the one actually released.
+      pk_dep(:phoenix_kit_billing, "~> 0.11"),
       # Optional: only the AI-translate UI/adapter use it, and both compile out
       # when it's absent (see ProductForm's @ai_translate? flag). Version tracks
       # the actual API used (Translatable behaviour, AITranslate components).

@@ -15,6 +15,7 @@ defmodule PhoenixKitEcommerce.Web.TestShop do
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.OptionTypes
   alias PhoenixKitEcommerce.Translations
+  import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -24,6 +25,10 @@ defmodule PhoenixKitEcommerce.Web.TestShop do
       |> assign(:test_results, [])
       |> assign(:products, [])
       |> assign(:show_products, false)
+      # A product's own price is always BASE currency (§4.5) - this
+      # diagnostic page reads product fields directly, never a converted
+      # display amount.
+      |> assign(:currency, Shop.get_base_currency())
 
     {:ok, socket}
   end
@@ -72,12 +77,15 @@ defmodule PhoenixKitEcommerce.Web.TestShop do
     calculated_price = Shop.calculate_product_price(product, test_selections)
     {min_price, max_price} = Shop.get_price_range(product)
     product_title = Translations.get(product, :title, Translations.default_language())
+    currency = socket.assigns.currency
 
     result = %{
       name: "Price Test: #{product_title}",
       status: :ok,
       details:
-        "Base: $#{product.price}, Calculated: $#{calculated_price}, Range: $#{min_price} - $#{max_price}"
+        "Base: #{format_price(product.price, currency)}, " <>
+          "Calculated: #{format_price(calculated_price, currency)}, " <>
+          "Range: #{format_price(min_price, currency)} - #{format_price(max_price, currency)}"
     }
 
     assign(socket, :test_results, socket.assigns.test_results ++ [result])
@@ -192,7 +200,7 @@ defmodule PhoenixKitEcommerce.Web.TestShop do
                               {Translations.get(product, :slug, default_lang)}
                             </div>
                           </td>
-                          <td>${Decimal.round(product.price || Decimal.new("0"), 2)}</td>
+                          <td>{format_price(product.price, @currency)}</td>
                           <td>
                             <%= if price_specs != [] do %>
                               <span class="badge badge-primary badge-sm">

@@ -15,6 +15,9 @@ defmodule PhoenixKitEcommerce.DependencyFloorTest do
   """
   use ExUnit.Case, async: true
 
+  alias PhoenixKit.Migrations.Postgres, as: CoreMigrations
+  alias PhoenixKitBilling.Currency
+
   test "the phoenix_kit floor ships PhoenixKitWeb.Live.UrlState" do
     # `Web.Products` and `Web.Categories` `use` it at compile time, so a core
     # without it is a compile failure in the consumer, or an
@@ -60,5 +63,29 @@ defmodule PhoenixKitEcommerce.DependencyFloorTest do
     assert function_exported?(PhoenixKitBilling, :tax_enabled?, 0)
     assert function_exported?(PhoenixKitBilling, :get_tax_rate, 0)
     assert function_exported?(PhoenixKitBilling, :get_tax_rate_percent, 0)
+  end
+
+  test "the phoenix_kit_billing floor ships the per-domain-currency resolution API" do
+    # create_cart/1 and both add-to-cart paths (Э1-E1) call all five of
+    # these. Below the floor that raised billing's `~> 0.7` to `~> 0.11`,
+    # get_base_currency/0 and get_display_currency/0 do not exist at all
+    # (they are new, not renamed), so a checkout call would be
+    # UndefinedFunctionError, not a silently wrong value.
+    assert Code.ensure_loaded?(PhoenixKitBilling)
+    assert function_exported?(PhoenixKitBilling, :get_base_currency, 0)
+    assert function_exported?(PhoenixKitBilling, :get_display_currency, 0)
+    assert function_exported?(PhoenixKitBilling, :resolve_display_currency, 1)
+    assert Code.ensure_loaded?(Currency)
+    assert function_exported?(Currency, :present, 3)
+    assert function_exported?(Currency, :effective_rate, 2)
+  end
+
+  test "the phoenix_kit floor ships V185's cart/order freeze columns" do
+    # Cart/CartItem cast base_currency/exchange_rate/base_unit_price —
+    # real table columns core's V185 adds, not attrs the schema merely
+    # declares. Below V185 the ALTER TABLEs never ran, so every
+    # cart/cart-item write in Э1-E1 raises Postgrex.Error
+    # (undefined_column) at the database, not a dropped-attr no-op.
+    assert CoreMigrations.current_version() >= 185
   end
 end

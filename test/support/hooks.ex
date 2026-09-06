@@ -18,6 +18,7 @@ defmodule PhoenixKitEcommerce.Test.Hooks do
   import Phoenix.Component, only: [assign: 3]
 
   alias PhoenixKit.Users.Auth.Scope
+  alias PhoenixKitBilling.Currency
 
   @doc """
   `on_mount` callback. Reads `"phoenix_kit_test_scope"` from session and
@@ -46,5 +47,17 @@ defmodule PhoenixKitEcommerce.Test.Hooks do
 
         {:cont, socket}
     end
+  end
+
+  # `on_mount` callback standing in for the HOST's own domain-currency hook
+  # (Э1-A2, e.g. `Decor3dprintWeb.DomainCurrencyHook`) — production sets the
+  # request-scoped display currency from the visitor's domain; this test
+  # double sets it from `"phoenix_kit_test_currency"` in the session instead,
+  # via `LiveCase.put_test_currency/2`. No-op (falls through to the base
+  # currency, same as an unmapped domain) when the session carries no code.
+  def on_mount(:assign_currency, _params, session, socket) do
+    Currency.put_request_currency(Map.get(session, "phoenix_kit_test_currency"))
+
+    {:cont, socket}
   end
 end

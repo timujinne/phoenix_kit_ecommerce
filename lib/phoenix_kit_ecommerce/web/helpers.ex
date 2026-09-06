@@ -42,7 +42,10 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   end
 
   def format_price(price, code) when is_binary(code) do
-    "#{trim_decimals(price, 2)} #{code}"
+    case PhoenixKitEcommerce.currency_for_code(code) do
+      %Currency{} = currency -> format_price(price, currency)
+      _ -> "#{trim_decimals(price, 2)} #{code}"
+    end
   end
 
   def format_price(price, currency) do

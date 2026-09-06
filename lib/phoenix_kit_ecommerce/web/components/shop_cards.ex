@@ -66,10 +66,9 @@ defmodule PhoenixKitEcommerce.Web.Components.ShopCards do
           <span class="text-lg font-bold text-primary">
             {PriceDisplay.render(@product, @currency, :catalog, language: @language)}
           </span>
-          <%= if !PriceDisplay.on_request?(@product) && @product.compare_at_price &&
-               Decimal.compare(@product.compare_at_price, @product.price) == :gt do %>
+          <%= if cmp = PriceDisplay.compare_at(@product, @currency, :catalog, []) do %>
             <span class="text-sm text-base-content/40 line-through">
-              {Helpers.format_price(@product.compare_at_price, @currency)}
+              {cmp.price}
             </span>
           <% end %>
         </div>

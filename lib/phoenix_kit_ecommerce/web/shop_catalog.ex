@@ -63,7 +63,7 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
     total_pages = max(1, ceil(total / per_page))
     page = min(page, total_pages)
 
-    currency = Shop.get_default_currency()
+    currency = Shop.get_display_currency_code()
 
     # Check if user is authenticated
     authenticated = not is_nil(socket.assigns[:phoenix_kit_current_user])

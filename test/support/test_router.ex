@@ -37,9 +37,13 @@ defmodule PhoenixKitEcommerce.Test.Router do
 
     live_session :storefront_test,
       layout: {PhoenixKitEcommerce.Test.Layouts, :app},
-      on_mount: {PhoenixKitEcommerce.Test.Hooks, :assign_scope} do
+      on_mount: [
+        {PhoenixKitEcommerce.Test.Hooks, :assign_scope},
+        {PhoenixKitEcommerce.Test.Hooks, :assign_currency}
+      ] do
       live("/shop", ShopCatalog, :index, as: :shop_catalog)
       live("/shop/category/:slug", CatalogCategory, :show, as: :shop_category)
+      live("/shop/product/:slug", CatalogProduct, :show, as: :shop_product)
       live("/cart", CartPage, :index, as: :shop_cart)
       live("/checkout", CheckoutPage, :index, as: :shop_checkout)
 

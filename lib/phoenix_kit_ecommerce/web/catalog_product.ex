@@ -8,6 +8,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   use PhoenixKitEcommerce.Web, :live_view
 
   alias PhoenixKit.Modules.Languages.DialectMapper
+  alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Options
@@ -115,7 +116,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
       |> assign(:localized_title, localized_title)
       |> assign(:localized_description, Translations.get(product, :description, current_language))
       |> assign(:localized_body, Translations.get(product, :body_html, current_language))
-      |> assign(:currency, Shop.get_default_currency())
+      |> assign(:currency, Shop.get_display_currency_code())
       |> assign(:quantity, 1)
       |> assign(:session_id, session_id)
       |> assign(:user_uuid, user_uuid)
@@ -273,7 +274,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     user = Helpers.get_current_user(socket)
     user_uuid = if user, do: user.uuid, else: nil
 
-    currency = Shop.get_default_currency()
+    currency = Shop.get_display_currency_code()
     authenticated = not is_nil(socket.assigns[:phoenix_kit_current_user])
 
     # Build specifications
@@ -480,32 +481,34 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
       quantity: quantity,
       currency: currency,
       selected_specs: selected_specs,
-      price_affecting_specs: price_affecting_specs,
-      calculated_price: calculated_price
+      price_affecting_specs: price_affecting_specs
     } = socket.assigns
 
     add_result = add_to_cart(cart, product, quantity, selected_specs, socket)
 
     case add_result do
       {:ok, updated_cart} ->
-        unit_price =
-          if price_affecting_specs != [] do
-            calculated_price
-          else
-            product.price
-          end
-
-        display_name = build_cart_display_name(product, price_affecting_specs, selected_specs)
-
-        message =
-          build_cart_message(display_name, quantity, unit_price, updated_cart.total, currency)
-
+        # The STORED line item, not a fresh live-amount conversion: this is
+        # what the shopper was actually charged, so the flash cannot drift
+        # from the snapshot even by a rounding cent (review follow-up on
+        # Э1-E4).
         updated_cart_item =
           find_cart_item_after_add(
             updated_cart.items,
             product.uuid,
             selected_specs,
             price_affecting_specs
+          )
+
+        display_name = build_cart_display_name(product, price_affecting_specs, selected_specs)
+
+        message =
+          build_cart_message(
+            display_name,
+            quantity,
+            updated_cart_item,
+            updated_cart.total,
+            currency
           )
 
         {:noreply,
@@ -662,7 +665,14 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     end
   end
 
-  defp build_cart_message(display_name, quantity, unit_price, cart_total, currency) do
+  defp build_cart_message(display_name, quantity, cart_item, cart_total, currency) do
+    # `cart_item.unit_price` is the STORED snapshot — already converted and
+    # rounded at add-to-cart time, in the cart's own currency — not a fresh
+    # live conversion recomputed here. That is what the shopper was
+    # actually charged, so the flash cannot drift from the persisted line
+    # even by a rounding cent (review follow-up on Э1-E4). `cart_total` is
+    # likewise already a stored snapshot; neither is converted again (N1).
+    unit_price = cart_item.unit_price
     line_total = Decimal.mult(unit_price, quantity)
     line_str = format_price(line_total, currency)
     cart_total_str = format_price(cart_total, currency)
@@ -835,10 +845,12 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                     language: @current_language
                   )}
                 </span>
-                <%= if !PriceDisplay.on_request?(@product) && @product.compare_at_price &&
-                     Decimal.compare(@product.compare_at_price, @calculated_price) == :gt do %>
+                <%= if cmp = PriceDisplay.compare_at(@product, @currency, :selected, amount: @calculated_price) do %>
                   <span class="text-xl text-base-content/40 line-through">
-                    {format_price(@product.compare_at_price, @currency)}
+                    {cmp.price}
+                  </span>
+                  <span class="badge badge-success">
+                    {cmp.percent}% OFF
                   </span>
                 <% end %>
               <% else %>
@@ -846,13 +858,12 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                 <span class="text-3xl font-bold text-primary">
                   {PriceDisplay.render(@product, @currency, :catalog, language: @current_language)}
                 </span>
-                <%= if !PriceDisplay.on_request?(@product) && @product.compare_at_price &&
-                     Decimal.compare(@product.compare_at_price, @product.price) == :gt do %>
+                <%= if cmp = PriceDisplay.compare_at(@product, @currency, :catalog, []) do %>
                   <span class="text-xl text-base-content/40 line-through">
-                    {format_price(@product.compare_at_price, @currency)}
+                    {cmp.price}
                   </span>
                   <span class="badge badge-success">
-                    {discount_percentage(@product)}% OFF
+                    {cmp.percent}% OFF
                   </span>
                 <% end %>
               <% end %>
@@ -1033,16 +1044,23 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                     </div>
                     <span class="text-base-content/60">×</span>
                     <span class="text-base-content/60">
-                      {format_price(
-                        current_display_price(@product, @calculated_price, @price_affecting_specs),
-                        @currency
+                      {PriceDisplay.render(nil, @currency, :selected,
+                        amount:
+                          current_display_price(@product, @calculated_price, @price_affecting_specs)
                       )}
                     </span>
                     <span class="text-base-content/60">=</span>
                     <span class="text-xl font-bold text-primary">
                       {format_price(
                         line_total(
-                          current_display_price(@product, @calculated_price, @price_affecting_specs),
+                          Currency.present(
+                            current_display_price(
+                              @product,
+                              @calculated_price,
+                              @price_affecting_specs
+                            ),
+                            @currency
+                          ),
                           @quantity
                         ),
                         @currency
@@ -1141,7 +1159,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
         !@selected && @is_missing && "btn-error btn-outline"
       ]}
     >
-      {@option_value} — {format_price(@price, @currency)}
+      {@option_value} — {PriceDisplay.render(nil, @currency, :selected, amount: @price)}
     </button>
     """
   end
@@ -1282,14 +1300,6 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
         option["options"] || []
     end
   end
-
-  defp discount_percentage(%{price: price, compare_at_price: compare}) when not is_nil(compare) do
-    diff = Decimal.sub(compare, price)
-    percent = Decimal.div(diff, compare) |> Decimal.mult(100) |> Decimal.round(0)
-    Decimal.to_integer(percent)
-  end
-
-  defp discount_percentage(_), do: 0
 
   defp line_total(price, quantity) when not is_nil(price) do
     Decimal.mult(price, quantity)

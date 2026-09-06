@@ -60,13 +60,17 @@ defmodule PhoenixKitEcommerce.Web.HelpersLocaleTest do
       Settings.update_setting("shop_hide_zero_decimals", "true")
       assert Helpers.hide_zero_decimals?()
 
-      # No currency struct: the plain-code and nil branches must agree with the
-      # currency branch about WHEN to trim.
-      assert Helpers.format_price(Decimal.new("40.00"), "EUR") == "40 EUR"
-      assert Helpers.format_price(Decimal.new("40.50"), "EUR") == "40.50 EUR"
+      # An UNKNOWN code (not "EUR" — per-domain-currency Э1-E3 made a
+      # known code resolve to its real currency struct and symbol via
+      # `PhoenixKitEcommerce.currency_for_code/1`, so this needs a code
+      # that stays bare to test the bare-code branch at all): the
+      # plain-code and nil branches must agree with the currency branch
+      # about WHEN to trim.
+      assert Helpers.format_price(Decimal.new("40.00"), "XYZ") == "40 XYZ"
+      assert Helpers.format_price(Decimal.new("40.50"), "XYZ") == "40.50 XYZ"
 
       Settings.update_setting("shop_hide_zero_decimals", "false")
-      assert Helpers.format_price(Decimal.new("40.00"), "EUR") == "40.00 EUR"
+      assert Helpers.format_price(Decimal.new("40.00"), "XYZ") == "40.00 XYZ"
     end
 
     test "the CURRENCY branch trims without rounding a real fraction" do

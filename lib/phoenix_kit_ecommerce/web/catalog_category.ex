@@ -80,7 +80,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
         total_pages = max(1, ceil(total / per_page))
         page = min(page, total_pages)
 
-        currency = Shop.get_default_currency()
+        currency = Shop.get_display_currency_code()
         all_categories = Shop.list_active_categories(preload: [:featured_product])
 
         # Check if user is authenticated

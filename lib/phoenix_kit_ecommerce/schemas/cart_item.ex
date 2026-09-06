@@ -52,6 +52,15 @@ defmodule PhoenixKitEcommerce.CartItem do
     field :compare_at_price, :decimal
     field :currency, :string
 
+    # The same line, expressed in the shop's base currency (§4.4, §9.1 of
+    # the per-domain-currency spec) — kept for auditing, not for display:
+    # without it a support agent looking at a mispriced line cannot tell
+    # whether the cart's frozen rate, an option modifier, or rounding is
+    # at fault. Set once, at the same moment as `unit_price`, from
+    # `calculate_product_price/2`'s own (always-base) result — never
+    # converted, never re-derived from `unit_price` later.
+    field :base_unit_price, :decimal
+
     # Quantity
     field :quantity, :integer, default: 1
 
@@ -84,6 +93,7 @@ defmodule PhoenixKitEcommerce.CartItem do
       :product_sku,
       :product_image,
       :unit_price,
+      :base_unit_price,
       :compare_at_price,
       :currency,
       :quantity,
@@ -149,6 +159,12 @@ defmodule PhoenixKitEcommerce.CartItem do
       # total still summed it was incoherent: the cart said "Price on request"
       # and then printed the sum of the very numbers it had just hidden.
       unit_price: if(PriceDisplay.on_request?(product), do: Decimal.new(0), else: product.price),
+      # Default only — the two cart-context callers (`add_simple_product_to_cart/4`,
+      # `add_product_with_specs_to_cart/5`) always override this with
+      # `calculate_product_price/2`'s own result via `Map.put/3` right
+      # after calling `from_product/3`, the same as `unit_price` above.
+      base_unit_price:
+        if(PriceDisplay.on_request?(product), do: Decimal.new(0), else: product.price),
       compare_at_price:
         if(PriceDisplay.on_request?(product), do: nil, else: product.compare_at_price),
       # Line amounts are summed in the CART's currency frame, so the line

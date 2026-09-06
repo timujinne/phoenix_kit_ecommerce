@@ -67,6 +67,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.Shopify.Provider, as: ShopifyProvider
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
+  alias PhoenixKitEcommerce.Web.Helpers
 
   # ============================================
   # SYSTEM ENABLE/DISABLE
@@ -223,10 +224,42 @@ defmodule PhoenixKitEcommerce do
   end
 
   @doc """
+  The CODE of the currency to show and charge the current shopper (§4.2,
+  §12.4) — the request-scoped display currency resolved through Billing's
+  own fail-safe (§6.3: disabled/unknown/non-positive-rate falls back to
+  base), or `nil` when no currency is configured at all.
+
+  Storefront LiveViews assign this (not `get_default_currency/0`, which is
+  always the BASE currency) so `PriceDisplay`/`format_price` convert live
+  base amounts to what the visitor's domain is mapped to.
+  """
+  def get_display_currency_code do
+    case Billing.get_display_currency() do
+      %{code: code} -> code
+      nil -> nil
+    end
+  end
+
+  @doc """
   Gets the default currency struct from Billing module.
   """
   def get_default_currency do
     Billing.get_default_currency()
+  end
+
+  @doc """
+  The BASE currency struct (Э1-E6, §4.5) - the same value
+  `get_default_currency/0` returns, through Billing's CACHED
+  `get_base_currency/0` (§13) rather than a fresh query every call.
+
+  Admin authoring screens (a product's own price, a shipping method's
+  price/thresholds) are always denominated in base, never the visitor's
+  display currency - this is the name to reach for there, so the call
+  site says what it means instead of relying on `get_default_currency/0`
+  happening to be the same value today.
+  """
+  def get_base_currency do
+    Billing.get_base_currency()
   end
 
   @doc """
@@ -1104,19 +1137,15 @@ defmodule PhoenixKitEcommerce do
   def format_product_price(%Product{} = product, currency, style \\ :from) do
     {min_price, max_price} = get_price_range(product)
 
-    format_fn = fn price ->
-      case currency do
-        %{} = c -> Currency.format_amount(price, c)
-        nil -> "$#{Decimal.round(price, 2)}"
-      end
-    end
-
     if Decimal.compare(min_price, max_price) == :eq do
-      format_fn.(min_price)
+      Helpers.format_price(min_price, currency)
     else
       case style do
-        :from -> "From #{format_fn.(min_price)}"
-        :range -> "#{format_fn.(min_price)} - #{format_fn.(max_price)}"
+        :from ->
+          "From #{Helpers.format_price(min_price, currency)}"
+
+        :range ->
+          "#{Helpers.format_price(min_price, currency)} - #{Helpers.format_price(max_price, currency)}"
       end
     end
   end
@@ -1630,6 +1659,12 @@ defmodule PhoenixKitEcommerce do
   def get_available_shipping_methods(%Cart{} = cart) do
     shippable_weight = cart |> cart_items_loaded() |> shippable_weight_grams()
 
+    # `min_order_amount`/`max_order_amount`/`free_above_amount` are all
+    # base-currency thresholds (§4.7, §2.11); comparing them against the
+    # cart's DISPLAY subtotal denied or offered methods by the wrong
+    # number on a non-base cart.
+    base_subtotal = to_base(cart, cart.subtotal || Decimal.new("0"))
+
     ShippingMethod
     |> where([s], s.active == true)
     |> order_by([s], [s.position, s.name])
@@ -1637,7 +1672,7 @@ defmodule PhoenixKitEcommerce do
     |> Enum.filter(fn method ->
       ShippingMethod.available_for?(method, %{
         weight_grams: shippable_weight,
-        subtotal: cart.subtotal || Decimal.new("0"),
+        subtotal: base_subtotal,
         country: cart.shipping_country
       })
     end)
@@ -1811,12 +1846,27 @@ defmodule PhoenixKitEcommerce do
 
   @doc """
   Creates a new cart.
+
+  The cart's currency is the request's display currency (§4.1, §4.4 of
+  the per-domain-currency spec) — the host app maps the request's domain
+  to it via `PhoenixKitBilling.Currency.put_request_currency/1`, resolved
+  fail-safe by `get_display_currency/0` (§6.3). With no mapping in play
+  this is the base currency, same as before this feature existed
+  (§2.12). `base_currency`/`exchange_rate` freeze the base and the rate
+  at THIS moment (§12.2) — no code anywhere may re-read them from the
+  currency table for this cart after creation; only emptying the cart
+  refreshes them (`recalculate_cart_totals!/1`).
   """
   def create_cart(opts) do
+    base = Billing.get_base_currency()
+    display = Billing.get_display_currency()
+
     attrs = %{
       user_uuid: Keyword.get(opts, :user_uuid),
       session_id: Keyword.get(opts, :session_id),
-      currency: get_default_currency_code()
+      currency: display && display.code,
+      base_currency: base && base.code,
+      exchange_rate: display && base && Currency.effective_rate(display, base)
     }
 
     case %Cart{} |> Cart.changeset(attrs) |> repo().insert() do
@@ -2020,24 +2070,44 @@ defmodule PhoenixKitEcommerce do
     if enabled?(), do: :ok, else: {:error, :shop_disabled}
   end
 
-  # Cart totals sum line decimals in the CART's currency frame, so every
-  # line must be snapshotted in that frame. A product whose own currency
-  # differs (a legacy row carrying the "USD" the schema and the column both
-  # used to default to on a non-USD shop) is logged, not rejected: prices
-  # are entered thinking in the shop currency, and rejecting would brick
-  # every existing catalog that carries the stale default.
-  defp validate_cart_currency(%Cart{currency: cart_currency}, %Product{} = product) do
-    if is_binary(product.currency) and is_binary(cart_currency) and
-         product.currency != cart_currency do
-      require Logger
+  # §4.6/§7.2 of the per-domain-currency spec: `product.currency` means
+  # "the currency `price` is stored in", which is always meant to be the
+  # BASE — never the cart's (display) currency, which is a per-request
+  # thing a product has no opinion on. Comparing against the cart here
+  # (as this used to) would warn on every EUR-cart line for an ordinary
+  # USD-based catalog, which is not a currency problem at all.
+  #
+  # A `nil` or unknown code is treated as "assume base" rather than
+  # flagged — a legacy row with no currency recorded, or one naming a
+  # currency this shop's table has never heard of, gives no actionable
+  # signal either way. Only a KNOWN, foreign code is a real mismatch, and
+  # even then the default is to log and continue: prices are entered
+  # thinking in the shop currency, and refusing by default would brick
+  # every existing catalog that carries a stale default. An operator who
+  # wants a hard stop opts in via `shop_enforce_product_currency`.
+  defp validate_cart_currency(%Cart{}, %Product{currency: product_currency}) do
+    base = Billing.get_base_currency()
+    base_code = base && base.code
 
-      Logger.warning(
-        "[Shop] product #{product.uuid} carries currency #{product.currency} " <>
-          "but the cart is #{cart_currency}; the amount is charged in #{cart_currency}"
-      )
+    known? =
+      is_binary(product_currency) and not is_nil(Billing.get_currency_by_code(product_currency))
+
+    cond do
+      is_nil(base_code) or not known? or product_currency == base_code ->
+        :ok
+
+      Settings.get_boolean_setting("shop_enforce_product_currency", false) ->
+        {:error, :currency_mismatch}
+
+      true ->
+        Logger.warning(
+          "[Shop] product carries currency #{product_currency} but the base is " <>
+            "#{base_code}; the amount is treated as base " <>
+            "(set shop_enforce_product_currency to refuse)"
+        )
+
+        :ok
     end
-
-    :ok
   end
 
   # A product must still be purchasable AT THE LOCKED READ - the page the
@@ -2125,12 +2195,16 @@ defmodule PhoenixKitEcommerce do
                   currency: cart.currency
                 )
                 |> Map.put(:cart_uuid, cart.uuid)
-                |> Map.put(:unit_price, calculated_price)
+                |> Map.put(:unit_price, snapshot_unit_price(cart, calculated_price))
+                |> Map.put(:base_unit_price, calculated_price)
 
               %CartItem{} |> CartItem.changeset(attrs) |> repo().insert!()
 
             item ->
-              # Update quantity
+              # Update quantity — unit_price/base_unit_price are NOT
+              # recomputed here: the line is already frozen from its
+              # first add (§4.4), and a re-add must never change what a
+              # returning line already agreed to.
               new_qty = item.quantity + quantity
               item |> CartItem.changeset(%{quantity: new_qty}) |> repo().update!()
           end
@@ -2149,6 +2223,44 @@ defmodule PhoenixKitEcommerce do
       error ->
         error
     end
+  end
+
+  # §12.2: the ONLY rate a line snapshot may use is the cart's OWN frozen
+  # rate — never a fresh table lookup, and never `Currency.effective_rate/2`
+  # recomputed here (that would silently un-freeze the cart on every add).
+  # A cart already in its own base currency needs no conversion at all.
+  # A cart with an unknown rate (NULL — the V185 backfill's honest
+  # "unknown" for a foreign currency, or a currency the table no longer
+  # knows) snapshots the base amount unchanged and says so once, rather
+  # than inventing a number.
+  defp snapshot_unit_price(%Cart{currency: same, base_currency: same}, amount), do: amount
+
+  defp snapshot_unit_price(%Cart{exchange_rate: nil} = cart, amount) do
+    require Logger
+
+    Logger.warning(
+      "[Shop] cart #{cart.uuid} in #{cart.currency} has no frozen rate; line snapshotted in base"
+    )
+
+    amount
+  end
+
+  # `rate: cart.exchange_rate` makes this the ONE call in the codebase
+  # that freezes a rate rather than resolving one live (§12.2). A review
+  # initially found that `present/3` still re-resolved its TARGET
+  # currency via `resolve_display_currency/1` even with `:rate` given —
+  # if `cart.currency` had since been disabled (no rate change, no
+  # deletion, just disabled) while the cart sat open, that resolution
+  # fell back to the base, `present/3` then saw `target.code ==
+  # base.code`, and the frozen rate was silently discarded. Fixed
+  # upstream, in `present/3` itself (`phoenix_kit_billing`
+  # `feature/currency-e1`), not by a second conversion implementation
+  # here — §12.1 requires `present/3` to remain the ONE place a base
+  # amount becomes a display amount. See
+  # `cart_fx_freeze_test.exs`'s "disabled currency" scenario for the
+  # regression this call is now proven against.
+  defp snapshot_unit_price(%Cart{} = cart, amount) do
+    Currency.present(amount, cart.currency, rate: cart.exchange_rate)
   end
 
   defp add_product_with_specs_to_cart(cart, product, quantity, selected_specs, language) do
@@ -2176,7 +2288,8 @@ defmodule PhoenixKitEcommerce do
                   currency: cart.currency
                 )
                 |> Map.put(:cart_uuid, cart.uuid)
-                |> Map.put(:unit_price, calculated_price)
+                |> Map.put(:unit_price, snapshot_unit_price(cart, calculated_price))
+                |> Map.put(:base_unit_price, calculated_price)
                 |> Map.put(:selected_specs, selected_specs)
 
               %CartItem{} |> CartItem.changeset(attrs) |> repo().insert!()
@@ -2430,7 +2543,13 @@ defmodule PhoenixKitEcommerce do
   Sets shipping method for cart.
   """
   def set_cart_shipping(%Cart{} = cart, %ShippingMethod{} = method, country) do
-    shipping_cost = ShippingMethod.calculate_cost(method, cart.subtotal || Decimal.new("0"))
+    # This initial value is immediately overwritten by `recalculate_cart_totals!/1`
+    # below (which does the real, from_base-converted calculation via
+    # `calculate_shipping/3`) — converting the subtotal here is for
+    # consistency with every other threshold comparison, not because this
+    # particular number survives.
+    shipping_cost =
+      ShippingMethod.calculate_cost(method, to_base(cart, cart.subtotal || Decimal.new("0")))
 
     result =
       repo().transaction(fn ->
@@ -2558,7 +2677,11 @@ defmodule PhoenixKitEcommerce do
 
       # One or more methods available - select cheapest
       true ->
-        cheapest = find_cheapest_shipping_method(shipping_methods, cart.subtotal)
+        # `find_cheapest_shipping_method/2` ranks by `free_above_amount`/
+        # `price`, both base-currency (§4.7) — rank on the cart's subtotal
+        # converted to base, same as every other threshold comparison.
+        base_subtotal = to_base(cart, cart.subtotal || Decimal.new("0"))
+        cheapest = find_cheapest_shipping_method(shipping_methods, base_subtotal)
         set_cart_shipping(cart, cheapest, nil)
     end
   end
@@ -3243,39 +3366,7 @@ defmodule PhoenixKitEcommerce do
   end
 
   defp build_order_line_items(%Cart{} = cart) do
-    product_items =
-      Enum.map(cart.items, fn item ->
-        metadata = item.metadata || %{}
-
-        %{
-          "name" => item.product_title,
-          "description" => format_item_description(item),
-          "selected_specs" => item.selected_specs || %{},
-          "quantity" => item.quantity,
-          "unit_price" => Decimal.to_string(item.unit_price),
-          "total" => Decimal.to_string(item.line_total),
-          "sku" => item.product_sku,
-          "type" => "product",
-          # Carries the catalogue item identity forward past the cart row
-          # (whose own `product_uuid` is nil for a catalogue-backed line —
-          # see `CartItem.from_product/3`) so the order snapshot can still
-          # be traced back to the item it was sold from. nil for a legacy
-          # line, matching the absent key on rows created before this
-          # shipped.
-          "catalogue_item_uuid" => metadata["catalogue_item_uuid"],
-          # Carried so invoices and the confirmation page can render the
-          # unit the customer saw. Rides billing's existing line-item JSONB;
-          # first-class linkage is a billing-side change.
-          "price_unit" => metadata["price_unit"],
-          # Carried for the same reason and with more at stake: without it the
-          # order confirmation and order-details pages fall back to formatting
-          # `total`, which for an on-request service is 0 — so a line the
-          # customer agreed as "Price on request" reads "0.00" on a COMMITTED
-          # order. The cart line snapshots this; the conversion has to forward it
-          # or the snapshot dies at the cart/order boundary.
-          "price_on_request" => metadata["price_on_request"] == true
-        }
-      end)
+    product_items = Enum.map(cart.items, &build_product_line_item/1)
 
     # A digital-only cart gets NO shipping line even when a method is still
     # selected (a mixed cart that lost its last physical line keeps the
@@ -3289,6 +3380,11 @@ defmodule PhoenixKitEcommerce do
             "quantity" => 1,
             "unit_price" => Decimal.to_string(cart.shipping_amount || Decimal.new(0)),
             "total" => Decimal.to_string(cart.shipping_amount || Decimal.new(0)),
+            # A shipping line has no product-level base price of its own to
+            # carry (unlike a product line's `base_unit_price` above) - the
+            # cart's own `base_currency`/`exchange_rate` on the order cover
+            # it if a base figure is ever needed.
+            "base_unit_price" => nil,
             "type" => "shipping"
           }
         ]
@@ -3297,6 +3393,45 @@ defmodule PhoenixKitEcommerce do
       end
 
     product_items ++ shipping_item
+  end
+
+  defp build_product_line_item(item) do
+    metadata = item.metadata || %{}
+
+    %{
+      "name" => item.product_title,
+      "description" => format_item_description(item),
+      "selected_specs" => item.selected_specs || %{},
+      "quantity" => item.quantity,
+      "unit_price" => Decimal.to_string(item.unit_price),
+      "total" => Decimal.to_string(item.line_total),
+      # The base-currency amount `unit_price` was converted FROM at
+      # add-to-cart time (§4.5, §2.4/§2.5) — carried so an order/invoice
+      # line can show or re-derive the base figure without re-deriving a
+      # conversion from a rate that may have since moved (§12.2). `nil`
+      # only for a cart item that predates this column.
+      "base_unit_price" => item.base_unit_price && Decimal.to_string(item.base_unit_price),
+      "sku" => item.product_sku,
+      "type" => "product",
+      # Carries the catalogue item identity forward past the cart row
+      # (whose own `product_uuid` is nil for a catalogue-backed line —
+      # see `CartItem.from_product/3`) so the order snapshot can still
+      # be traced back to the item it was sold from. nil for a legacy
+      # line, matching the absent key on rows created before this
+      # shipped.
+      "catalogue_item_uuid" => metadata["catalogue_item_uuid"],
+      # Carried so invoices and the confirmation page can render the
+      # unit the customer saw. Rides billing's existing line-item JSONB;
+      # first-class linkage is a billing-side change.
+      "price_unit" => metadata["price_unit"],
+      # Carried for the same reason and with more at stake: without it the
+      # order confirmation and order-details pages fall back to formatting
+      # `total`, which for an on-request service is 0 — so a line the
+      # customer agreed as "Price on request" reads "0.00" on a COMMITTED
+      # order. The cart line snapshots this; the conversion has to forward it
+      # or the snapshot dies at the cart/order boundary.
+      "price_on_request" => metadata["price_on_request"] == true
+    }
   end
 
   defp build_order_attrs(%Cart{} = cart, line_items, opts, placing_session_id) do
@@ -3310,6 +3445,13 @@ defmodule PhoenixKitEcommerce do
     base_attrs =
       %{
         "currency" => cart.currency,
+        # Frozen at order creation, mirroring the cart's own freeze at
+        # cart-creation time (§4.5) - an order must not have its historical
+        # base/rate move under it the way a live currency-table lookup
+        # would.
+        "base_currency" => cart.base_currency,
+        "exchange_rate" => cart.exchange_rate,
+        "base_total" => base_total(cart),
         "line_items" => line_items,
         "subtotal" => cart.subtotal,
         "tax_amount" => cart.tax_amount || Decimal.new(0),
@@ -3907,17 +4049,45 @@ defmodule PhoenixKitEcommerce do
       |> Decimal.add(tax_amount)
       |> Decimal.sub(cart.discount_amount || Decimal.new("0"))
 
+    fx_refresh = fx_refresh_if_emptied(cart, items)
+
     cart
-    |> Cart.totals_changeset(%{
-      subtotal: subtotal,
-      shipping_amount: shipping_amount,
-      tax_amount: tax_amount,
-      total: total,
-      total_weight_grams: total_weight,
-      items_count: items_count
-    })
+    |> Cart.totals_changeset(
+      Map.merge(
+        %{
+          subtotal: subtotal,
+          shipping_amount: shipping_amount,
+          tax_amount: tax_amount,
+          total: total,
+          total_weight_grams: total_weight,
+          items_count: items_count
+        },
+        fx_refresh
+      )
+    )
     |> repo().update!()
     |> repo().preload([:items, :shipping_method], force: true)
+  end
+
+  # §4.4: a cart's currency/base/rate are frozen at creation and NEVER
+  # re-read from the currency table while it holds items — a shopper
+  # must not have their cart's prices moved under them. Emptying it is
+  # the one safe moment: nothing left to reprice, so this is where a
+  # stale mapping/rate catches up before the next item freezes it again.
+  # The request-scoped code wins over the cart's own stale currency when
+  # both are available, since a shopper on a still-open tab may have
+  # since navigated to a different domain.
+  defp fx_refresh_if_emptied(_cart, items) when items != [], do: %{}
+
+  defp fx_refresh_if_emptied(cart, []) do
+    base = Billing.get_base_currency()
+    display = Billing.resolve_display_currency(Currency.get_request_currency() || cart.currency)
+
+    %{
+      currency: display.code,
+      base_currency: base.code,
+      exchange_rate: Currency.effective_rate(display, base)
+    }
   end
 
   # The portion of the cart tax actually applies to.
@@ -3957,11 +4127,24 @@ defmodule PhoenixKitEcommerce do
     end
   end
 
+  # Shipping methods are admin-configured in BASE currency (their price,
+  # `free_above_amount`, min/max order amount thresholds — §4.7, §2.11).
+  # `subtotal` here is the cart's own, potentially non-base, display-currency
+  # snapshot (§4.4), so a EUR cart's subtotal was being compared against a
+  # USD-denominated free-shipping threshold and priced with a USD-denominated
+  # per-method rate as if both were the same number. Convert the subtotal TO
+  # base before it reaches `calculate_method_shipping/4` (unchanged — it and
+  # `ShippingMethod` know nothing about display currency, §12.3), then
+  # convert the resulting cost back to the cart's currency before it's
+  # written onto `shipping_amount`.
   defp calculate_shipping(cart, subtotal, total_weight) do
     if cart.shipping_method_uuid do
+      base_subtotal = to_base(cart, subtotal)
+
       cart.shipping_method_uuid
       |> then(&repo().get_by(ShippingMethod, uuid: &1))
-      |> calculate_method_shipping(subtotal, total_weight, cart.shipping_country)
+      |> calculate_method_shipping(base_subtotal, total_weight, cart.shipping_country)
+      |> from_base(cart)
     else
       # No method selected, no charge - never echo back a stale
       # `cart.shipping_amount` from a previously-selected method that was
@@ -3970,6 +4153,82 @@ defmodule PhoenixKitEcommerce do
       # here would persist it indefinitely.
       Decimal.new("0")
     end
+  end
+
+  # The inverse of `snapshot_unit_price/2` (§10.14/§10.16): that one takes a
+  # LIVE base amount forward into the cart's currency at add-to-cart time;
+  # this takes the cart's OWN already-converted subtotal backward into base
+  # so it can be compared against a base-currency shipping threshold. Same
+  # currency (including an unmapped/no-currency cart) or no frozen rate
+  # (nothing to invert) both mean "already base, or as close as this cart
+  # can get" - pass the amount through unchanged rather than divide by a
+  # rate that isn't there.
+  defp to_base(%Cart{currency: same, base_currency: same}, amount), do: amount
+  defp to_base(%Cart{exchange_rate: nil}, amount), do: amount
+
+  defp to_base(%Cart{exchange_rate: rate}, amount) do
+    amount |> Decimal.div(rate) |> Decimal.round(2)
+  end
+
+  # Forward leg of the round trip: a base-currency shipping cost back into
+  # the cart's currency, through `Currency.present/3`'s frozen-rate path
+  # (§12.1 - the one function that does this arithmetic) so a disabled
+  # display currency can't silently drop the conversion (§12.2).
+  defp from_base(amount, %Cart{currency: same, base_currency: same}), do: amount
+  defp from_base(amount, %Cart{exchange_rate: nil}), do: amount
+
+  defp from_base(amount, %Cart{} = cart) do
+    Currency.present(amount, cart.currency, rate: cart.exchange_rate)
+  end
+
+  # `cart.total` expressed in base currency, frozen onto the order (§4.5,
+  # §2.4/§2.5). Unlike `to_base/2` above - which is used for a LIVE
+  # threshold comparison, where "no rate" is close enough treated as
+  # "already base" - a `nil` rate here means the frozen figure genuinely
+  # cannot be computed, so this returns `nil` rather than the display
+  # total mislabeled as base.
+  #
+  # The PRODUCT portion is summed from each line's own EXACT base
+  # components (`base_unit_price × quantity`) rather than dividing the
+  # cart's already-twice-rounded display `total` back by the rate: 138.00
+  # base -> 125.45 display -> naive total/rate gives 137.99, a cent under
+  # the real 138.00, purely from rounding the SAME number twice in
+  # opposite directions. Summing the base amounts that were never rounded
+  # away avoids that entirely. `unit_price / rate` is the fallback ONLY
+  # for a line that predates the `base_unit_price` column.
+  #
+  # Shipping/tax/discount have no per-line base figure to sum (a shipping
+  # method's cost and a tax rate are computed once over the whole cart,
+  # not per line) - that non-product remainder IS divided back through
+  # the rate, same as before. This is therefore an approximation, not an
+  # exact frozen figure the way the product subtotal is: good enough for
+  # a REPORTING total (§4.5), not a value anything charges against.
+  defp base_total(%Cart{currency: same, base_currency: same} = cart), do: cart.total
+  defp base_total(%Cart{exchange_rate: nil}), do: nil
+
+  defp base_total(%Cart{} = cart) do
+    items = cart.items || []
+
+    product_base =
+      Enum.reduce(items, Decimal.new("0"), fn item, acc ->
+        Decimal.add(acc, base_line_amount(item, cart.exchange_rate))
+      end)
+
+    non_product =
+      (cart.shipping_amount || Decimal.new("0"))
+      |> Decimal.add(cart.tax_amount || Decimal.new("0"))
+      |> Decimal.sub(cart.discount_amount || Decimal.new("0"))
+      |> Decimal.div(cart.exchange_rate)
+
+    product_base |> Decimal.add(non_product) |> Decimal.round(2)
+  end
+
+  defp base_line_amount(%CartItem{base_unit_price: %Decimal{}} = item, _rate) do
+    Decimal.mult(item.base_unit_price, item.quantity)
+  end
+
+  defp base_line_amount(%CartItem{} = item, rate) do
+    item.unit_price |> Decimal.mult(item.quantity) |> Decimal.div(rate)
   end
 
   defp calculate_method_shipping(nil, _subtotal, _weight, _country), do: Decimal.new("0")
