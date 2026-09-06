@@ -743,7 +743,7 @@ defmodule PhoenixKitEcommerce.Options do
 
       base_spec = %{
         "key" => key,
-        "label" => humanize_key(key),
+        "label" => option_label(metadata, key),
         "type" => "select",
         "options" => values,
         "_discovered" => true
@@ -825,14 +825,33 @@ defmodule PhoenixKitEcommerce.Options do
               Enum.filter(schema_options, &(&1 in values)) ++
                 Enum.reject(values, &(&1 in schema_options))
 
-            Map.put(spec, "options", narrowed)
+            spec |> Map.put("options", narrowed) |> drop_stale_default(narrowed)
 
           _ ->
-            Map.put(spec, "options", values)
+            spec |> Map.put("options", values) |> drop_stale_default(values)
         end
 
       _ ->
         spec
+    end
+  end
+
+  # An admin-configured `"default"` is only meaningful if it's still one
+  # of the values narrowing just offered for THIS product. Narrowing to
+  # the product's own `_option_values` (the catalogue source's per-item,
+  # and per-language, value list) can drop the admin's untranslated
+  # default from the narrowed list entirely — `build_default_specs/2`
+  # would then seed `selected_specs` with a value the picker never
+  # renders, and `validate_selected_specs/2` rejects it on add-to-cart.
+  # Dropping the stale default here (once) is simpler than teaching every
+  # default-selection reader to re-check it.
+  defp drop_stale_default(spec, narrowed) do
+    default = Map.get(spec, "default")
+
+    if is_binary(default) and default not in narrowed do
+      Map.delete(spec, "default")
+    else
+      spec
     end
   end
 
@@ -869,7 +888,7 @@ defmodule PhoenixKitEcommerce.Options do
     |> Enum.map(fn {key, values} ->
       %{
         "key" => key,
-        "label" => humanize_key(key),
+        "label" => option_label(metadata, key),
         "type" => "select",
         "options" => values,
         "affects_price" => true,
@@ -879,6 +898,21 @@ defmodule PhoenixKitEcommerce.Options do
         "_discovered" => true
       }
     end)
+  end
+
+  # A DISCOVERED option (no admin-configured schema entry — the
+  # catalogue source's attribute sets, or any imported product with
+  # custom options) has no admin-typed label to show either, only the
+  # raw metadata key. `metadata["_option_labels"]` — the attribute
+  # set's own (per-language) display name, `View.product_view/2`'s
+  # `:language` opt — is the real name when the source populated it;
+  # `humanize_key/1`'s snake_case guess is the fallback every discovered
+  # option used before that key existed.
+  defp option_label(metadata, key) do
+    case get_in(metadata, ["_option_labels", key]) do
+      label when is_binary(label) and label != "" -> label
+      _ -> humanize_key(key)
+    end
   end
 
   # Checks if a price modifiers map has at least one non-zero value.

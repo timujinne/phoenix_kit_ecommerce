@@ -45,8 +45,15 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
     per_page = 24
     page = Helpers.parse_page(params["page"])
 
-    # Load storefront filters
-    {enabled_filters, filter_values} = FilterHelpers.load_filter_data()
+    # Load storefront filters — `exclude_hidden_categories: true` matches
+    # the listing query just below so a hidden category's items can't
+    # inflate a facet count past what the shopper's result list shows.
+    {enabled_filters, filter_values} =
+      FilterHelpers.load_filter_data(
+        language: current_language,
+        exclude_hidden_categories: true
+      )
+
     active_filters = FilterHelpers.parse_filter_params(params, enabled_filters)
     filter_opts = FilterHelpers.build_query_opts(active_filters, enabled_filters)
 
@@ -56,7 +63,8 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
           status: "active",
           page: 1,
           per_page: page * per_page,
-          exclude_hidden_categories: true
+          exclude_hidden_categories: true,
+          language: current_language
         ] ++ filter_opts
       )
 
@@ -129,7 +137,8 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
             status: "active",
             page: 1,
             per_page: effective_page * socket.assigns.per_page,
-            exclude_hidden_categories: true
+            exclude_hidden_categories: true,
+            language: socket.assigns.current_language
           ] ++ filter_opts
         )
 

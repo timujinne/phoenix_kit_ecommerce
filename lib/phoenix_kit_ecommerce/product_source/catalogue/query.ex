@@ -17,16 +17,19 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Schemas.Category}
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Schemas.Item}
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Schemas.ItemAttributeSet}
+  @compile {:no_warn_undefined, PhoenixKitEntities.EntityData}
 
   import Ecto.Query, warn: false
 
   require Logger
 
+  alias PhoenixKit.Utils.Multilang
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
   alias PhoenixKitCatalogue.Catalogue
   alias PhoenixKitCatalogue.Schemas.Category, as: CatCategory
   alias PhoenixKitCatalogue.Schemas.Item, as: CatItem
   alias PhoenixKitCatalogue.Schemas.ItemAttributeSet
+  alias PhoenixKitEntities.EntityData
 
   @default_catalogue_name "decor3dprint"
 
@@ -228,6 +231,176 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
     end
   rescue
     _ -> []
+  end
+
+  @doc """
+  Facet counts for one attribute SET's values (`set_slug` — the set's
+  entities blueprint name, with or without the `"catalogue_set_"`
+  prefix, same lookup `filter_by_metadata/2` uses), scoped to
+  storefront-visible items (`active_visibility/1`) in the shop
+  catalogue.
+
+  Options: `:category_uuid` (scope to one category), `:exclude_hidden_categories`
+  (drop items whose category's `shop_status` is `"hidden"`), `:language`
+  (prefer `data[language]["_title"]` over the value's bare `title` —
+  the picker/sidebar's fuller per-language resolution is Block 5's
+  remaining work; this covers the plain value label).
+
+  A value with no `published` `EntityData` row for the requested slug
+  never appears — `draft`/`archived` values (Block 5's resolver creates
+  unknown Shopify strings as `draft`) are excluded from storefront
+  facets by construction, not by a separate filter.
+
+  Ordered by the value's position, then its resolved label.
+  """
+  @spec attribute_set_counts(String.t(), keyword()) :: [
+          %{slug: String.t(), label: String.t(), count: non_neg_integer()}
+        ]
+  def attribute_set_counts(set_slug, opts \\ []) when is_binary(set_slug) do
+    with catalogue_uuid when not is_nil(catalogue_uuid) <- catalogue_uuid(),
+         set_uuid when not is_nil(set_uuid) <- set_uuid_for_key(set_slug) do
+      language = Keyword.get(opts, :language)
+
+      CatItem
+      |> where([i], i.catalogue_uuid == ^catalogue_uuid)
+      |> active_visibility()
+      |> maybe_filter_category(Keyword.get(opts, :category_uuid))
+      |> exclude_hidden_categories(Keyword.get(opts, :exclude_hidden_categories, false))
+      |> join(:inner, [i], a in ItemAttributeSet,
+        on: a.item_uuid == i.uuid and a.set_uuid == ^set_uuid
+      )
+      |> join(
+        :inner_lateral,
+        [i, a],
+        slug in fragment(
+          "jsonb_array_elements_text(CASE WHEN jsonb_typeof(?->'selected_value_slugs') = 'array' THEN ?->'selected_value_slugs' ELSE '[]'::jsonb END)",
+          a.data,
+          a.data
+        ),
+        on: true
+      )
+      |> join(:inner, [i, a, slug], ev in EntityData,
+        on: ev.entity_uuid == ^set_uuid and ev.slug == slug and ev.status == "published"
+      )
+      |> group_by([i, a, slug, ev], [slug, ev.title, ev.position, ev.data])
+      |> select([i, a, slug, ev], %{
+        slug: slug,
+        title: ev.title,
+        data: ev.data,
+        position: ev.position,
+        count: count(i.uuid, :distinct)
+      })
+      |> repo().all()
+      |> Enum.map(
+        &%{
+          slug: &1.slug,
+          label: value_label(&1, language),
+          count: &1.count,
+          position: &1.position
+        }
+      )
+      |> Enum.sort_by(&{&1.position, &1.label})
+      |> Enum.map(&Map.take(&1, [:slug, :label, :count]))
+    else
+      _ -> []
+    end
+  rescue
+    e ->
+      Logger.warning("Failed to load attribute_set_counts(#{inspect(set_slug)}): #{inspect(e)}")
+      []
+  end
+
+  @doc """
+  Translated display names for a batch of attribute-set BLUEPRINTS,
+  keyed by set uuid (`AttributeSets.resolve_for_item/2`'s per-set `:uuid`
+  field) — `ProductSource.Catalogue` swaps a resolved set's `:name` for
+  this before handing `sets` to `View.product_view/2` (which is pure and
+  has no way to read `settings["translations"]` itself). One
+  `AttributeSets.get_set/2` call per DISTINCT set, never per item — a
+  product page has a handful of attached sets, and a listing page's many
+  items still share that same handful, so the count stays small; there
+  is no batched-by-uuid-list entities read to reach for instead. A set
+  that can't be resolved (deleted, or gated by `get_set/2`'s own owner
+  check) is simply absent from the result — callers keep the
+  untranslated `:name` already on the resolved set for it.
+  """
+  @spec set_display_names([Ecto.UUID.t()], String.t()) :: %{Ecto.UUID.t() => String.t()}
+  def set_display_names([], _language), do: %{}
+
+  def set_display_names(set_uuids, language) when is_list(set_uuids) and is_binary(language) do
+    set_uuids
+    |> Enum.uniq()
+    |> Map.new(&{&1, set_display_name(&1, language)})
+    |> Enum.reject(fn {_uuid, name} -> is_nil(name) end)
+    |> Map.new()
+  end
+
+  @doc """
+  Translated display name of one attribute set by its FILTER-CONFIG slug
+  (`set_slug` — with or without the `catalogue_set_` prefix, same lookup
+  `filter_by_metadata/2` uses), `nil` when the slug doesn't resolve to a
+  set. The sidebar's `attribute_set`/`metadata_option` filter section
+  reads this — a filter config only ever carries the slug, never the
+  set's uuid.
+  """
+  @spec set_label(String.t(), String.t()) :: String.t() | nil
+  def set_label(set_slug, language) when is_binary(set_slug) and is_binary(language) do
+    case set_uuid_for_key(set_slug) do
+      nil -> nil
+      set_uuid -> set_display_name(set_uuid, language)
+    end
+  end
+
+  # The one place this module reaches for `AttributeSets.get_set/2`
+  # rather than a plain query of its own: `get_set/2`'s `:lang` option
+  # already applies the exact translation-with-fallback
+  # (`settings["translations"][language]["display_name"]`, else the bare
+  # `display_name`) a hand-rolled fragment would have to duplicate —
+  # base/dialect matching (`"es"` finding an `"es-ES"` translation)
+  # included. Writing that logic a second time here would drift from
+  # `PhoenixKitEntities.resolve_language/2`'s the moment either changes.
+  defp set_display_name(set_uuid, language) do
+    case Catalogue.AttributeSets.get_set(set_uuid, lang: language) do
+      %{display_name: name} when is_binary(name) and name != "" -> name
+      _ -> nil
+    end
+  rescue
+    e ->
+      Logger.warning("Failed to resolve set display name for #{inspect(set_uuid)}: #{inspect(e)}")
+      nil
+  end
+
+  defp value_label(%{title: title}, nil), do: title
+
+  # `Multilang.get_language_data/2` (matching
+  # `EntityData.get_title_translation/2`'s own path) rather than a naive
+  # `data[language]["_title"]` key lookup, so a value translated under a
+  # base code ("fr") is still found from a dialect-precision page
+  # ("fr-FR") and vice versa, and `data[primary]["_title"]` is consulted
+  # before falling back to the untranslated `title` column.
+  defp value_label(%{title: title, data: data}, language) do
+    case Map.get(Multilang.get_language_data(data, language), "_title") do
+      value when is_binary(value) and value != "" -> value
+      _ -> title
+    end
+  end
+
+  # Items with no category (`category_uuid: nil`) are never hidden by a
+  # category's own `shop_status` — there is no category to check.
+  defp exclude_hidden_categories(query, false), do: query
+
+  defp exclude_hidden_categories(query, true) do
+    hidden_category_uuids =
+      from(c in CatCategory,
+        where: fragment("COALESCE(?->'ecommerce'->>'shop_status', 'active')", c.data) == "hidden",
+        select: c.uuid
+      )
+
+    where(
+      query,
+      [i],
+      is_nil(i.category_uuid) or i.category_uuid not in subquery(hidden_category_uuids)
+    )
   end
 
   # ============================================================

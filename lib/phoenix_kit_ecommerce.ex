@@ -659,11 +659,108 @@ defmodule PhoenixKitEcommerce do
 
   @doc """
   Returns only enabled storefront filters, sorted by position.
+
+  `category` (a `%Category{}`, or `nil` for the global list unmodified)
+  applies its `storefront_filters` overrides on top of the global config
+  first — see `merge_storefront_filters/2`. `language` (default `nil`)
+  additionally translates each `attribute_set`/`metadata_option`
+  filter's `"label"` to that language's attribute-set display name —
+  see `maybe_translate_filter_labels/2`.
   """
-  def get_enabled_storefront_filters do
+  def get_enabled_storefront_filters(category \\ nil, language \\ nil) do
     get_storefront_filters()
+    |> merge_storefront_filters(category_filter_overrides(category))
     |> Enum.filter(& &1["enabled"])
     |> Enum.sort_by(& &1["position"])
+    |> maybe_translate_filter_labels(language)
+  end
+
+  # `attribute_set`/`metadata_option` filter labels are otherwise a
+  # single flat string an admin typed once (`update_storefront_filters/1`)
+  # — the underlying attribute set has its OWN per-language name, which
+  # only `ProductSource.Catalogue` (via `phoenix_kit_catalogue`) can
+  # resolve. `translate_filter_label/2` isn't a `ProductSource`
+  # `@behaviour` callback (this facade must stay adapter-agnostic, and
+  # `Legacy` has no attribute sets to translate) — duck-typed via
+  # `function_exported?/3`, same pattern `View.base_currency_code/0`
+  # uses for the reverse direction.
+  defp maybe_translate_filter_labels(filters, nil), do: filters
+
+  defp maybe_translate_filter_labels(filters, language) do
+    current = ProductSource.current()
+
+    if Code.ensure_loaded?(current) and function_exported?(current, :translate_filter_label, 2) do
+      # `apply/3`, not a direct `current.translate_filter_label(...)` call:
+      # the latter trips the compiler's cross-reference check the moment
+      # `current` is provably `Legacy` in some branch, which has no
+      # matching function by design (see the moduledoc above) — same
+      # workaround `View.base_currency_code/0` uses for the reverse
+      # direction.
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      Enum.map(filters, &apply(current, :translate_filter_label, [&1, language]))
+    else
+      filters
+    end
+  end
+
+  defp category_filter_overrides(%Category{storefront_filters: overrides})
+       when is_map(overrides),
+       do: overrides
+
+  defp category_filter_overrides(_category), do: %{}
+
+  @doc """
+  Merges a category's `storefront_filters` overrides onto the global
+  filter list.
+
+  `category_filters` is a map of `filter key => override attrs` — the
+  shape stored at `Category.storefront_filters` (and, for the catalogue
+  source, `data["ecommerce"]["storefront_filters"]`). For a key that
+  matches a global filter, only `"enabled"`, `"position"`, `"label"` and
+  `"set_slug"` are taken from the override; every other attribute
+  (notably `"type"`) keeps the global filter's value. A key absent from
+  the global list is appended as a brand-new filter, taken from the
+  override attrs as they are (with `"key"` set to the map key, in case
+  the override itself omits it).
+  """
+  @spec merge_storefront_filters([map()], map()) :: [map()]
+  def merge_storefront_filters(global_filters, category_filters)
+      when is_list(global_filters) and is_map(category_filters) do
+    existing_keys = MapSet.new(global_filters, & &1["key"])
+
+    merged =
+      Enum.map(global_filters, fn filter ->
+        case Map.get(category_filters, filter["key"]) do
+          nil -> filter
+          override -> apply_category_filter_override(filter, override)
+        end
+      end)
+
+    # Sorted explicitly by `{position, key}` rather than left in
+    # `category_filters`' own (map, so unspecified) enumeration order —
+    # two category-only filters sharing a position, or both omitting
+    # it, must not have the sidebar's order depend on that. A missing
+    # `"position"` defaults to `0` (this codebase's floor elsewhere,
+    # `Settings.gated_event/3`'s `Enum.max(fn -> 0 end) + 1`), not
+    # whatever `nil`'s accidental placement in term ordering gives it.
+    category_only =
+      category_filters
+      |> Enum.reject(fn {key, _override} -> MapSet.member?(existing_keys, key) end)
+      |> Enum.map(fn {key, override} -> Map.put(override, "key", key) end)
+      |> Enum.sort_by(&{&1["position"] || 0, &1["key"]})
+
+    merged ++ category_only
+  end
+
+  @category_override_attrs ~w(enabled position label set_slug)
+
+  defp apply_category_filter_override(filter, override) do
+    Enum.reduce(@category_override_attrs, filter, fn attr, acc ->
+      case Map.fetch(override, attr) do
+        {:ok, value} -> Map.put(acc, attr, value)
+        :error -> acc
+      end
+    end)
   end
 
   @doc """
@@ -2224,14 +2321,26 @@ defmodule PhoenixKitEcommerce do
   # `validate_locked_product_purchasable!/2` right after this then refuses
   # one that is no longer active. A product deleted/archived since is
   # treated as unavailable rather than falling back to the stale struct.
-  defp lock_or_reload_product(%Product{__meta__: %Ecto.Schema.Metadata{state: :built}} = product) do
-    case ProductSource.current().get_product(product.uuid, []) do
+  #
+  # `language` is threaded into the catalogue reload because the SAME
+  # attribute-set value renders under a different label per language
+  # (`View.product_view/2`'s `:language` opt) — `_option_values` and
+  # `_price_modifiers` on the reloaded product must key on whatever label
+  # the shopper's page (and `selected_specs`) used, or a priced option
+  # picked on `/fr/...` reloads with English modifier keys, matches
+  # nothing in `calculate_product_price/2`, and the line is inserted at
+  # the base price while the page showed base+modifier.
+  defp lock_or_reload_product(
+         %Product{__meta__: %Ecto.Schema.Metadata{state: :built}} = product,
+         language
+       ) do
+    case ProductSource.current().get_product(product.uuid, language: language) do
       %Product{} = fresh -> fresh
       nil -> %{product | status: "archived"}
     end
   end
 
-  defp lock_or_reload_product(%Product{} = product) do
+  defp lock_or_reload_product(%Product{} = product, _language) do
     Product
     |> where([p], p.uuid == ^product.uuid)
     |> lock("FOR UPDATE")
@@ -2267,7 +2376,7 @@ defmodule PhoenixKitEcommerce do
       repo().transaction(fn ->
         # Lock product row to prevent price changes during cart update
         # This ensures price snapshot is consistent with current product state
-        locked_product = lock_or_reload_product(product)
+        locked_product = lock_or_reload_product(product, language)
 
         validate_locked_product_purchasable!(repo(), locked_product)
 
@@ -2360,7 +2469,7 @@ defmodule PhoenixKitEcommerce do
     result =
       repo().transaction(fn ->
         # Lock product row to prevent price/metadata changes during cart update
-        locked_product = lock_or_reload_product(product)
+        locked_product = lock_or_reload_product(product, language)
 
         validate_locked_product_purchasable!(repo(), locked_product)
 

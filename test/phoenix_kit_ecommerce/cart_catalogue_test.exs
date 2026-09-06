@@ -16,12 +16,15 @@ defmodule PhoenixKitEcommerce.CartCatalogueTest do
   @moduletag :catalogue
 
   # Quiets the compiler's static xref check for `mix test` runs where the
-  # optional `phoenix_kit_catalogue` dependency isn't declared — every test
-  # in this module is excluded in that case (see `test_helper.exs`), so the
-  # calls below are never actually reached.
+  # optional `phoenix_kit_catalogue`/`phoenix_kit_entities` dependencies
+  # aren't declared — every test in this module is excluded in that case
+  # (see `test_helper.exs`), so the calls below are never actually reached.
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue}
+  @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue.AttributeSets}
+  @compile {:no_warn_undefined, PhoenixKitEntities.EntityData}
 
   alias PhoenixKitCatalogue.Catalogue
+  alias PhoenixKitCatalogue.Catalogue.AttributeSets
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.ProductSource.Catalogue, as: CatalogueSource
   alias PhoenixKitEcommerce.ShopConfig
@@ -103,6 +106,59 @@ defmodule PhoenixKitEcommerce.CartCatalogueTest do
 
       assert {:error, {:product_not_available, _uuid}} =
                Shop.add_to_cart(new_cart(), product, 1)
+    end
+  end
+
+  describe "add_to_cart/4 with a priced option on a translated (non-primary-language) page" do
+    setup do
+      AttributeSets.register_deletion_guard()
+      PhoenixKit.Settings.update_setting("entities_enabled", "true")
+      on_exit(fn -> PhoenixKit.Settings.update_setting("entities_enabled", "false") end)
+
+      {:ok, catalogue} = Catalogue.create_catalogue(%{name: "decor3dprint-colors"})
+      {:ok, set} = AttributeSets.create_set(%{name: "Color"}, actor_uuid: Ecto.UUID.generate())
+
+      {:ok, red} =
+        AttributeSets.create_value(set, %{label: "Red", slug: "red"},
+          actor_uuid: Ecto.UUID.generate()
+        )
+
+      {:ok, _} = PhoenixKitEntities.EntityData.set_title_translation(red, "fr-FR", "Rouge")
+
+      {:ok, item} =
+        Catalogue.create_item(%{
+          catalogue_uuid: catalogue.uuid,
+          name: "Colored Vase",
+          base_price: Decimal.new("20.00"),
+          status: "active",
+          data: %{
+            "ecommerce" => %{
+              "shop_status" => "active",
+              "price_modifiers" => %{"color" => %{"red" => "5.00"}}
+            }
+          }
+        })
+
+      {:ok, _} = AttributeSets.attach_set(item.uuid, set.uuid)
+      :ok = AttributeSets.set_attachment_selection(item.uuid, set.uuid, ["red"])
+
+      %{item: item}
+    end
+
+    test "the fr-FR cart line is priced with the modifier, keyed by the SAME label the fr-FR page showed",
+         %{item: item} do
+      product = CatalogueSource.get_product(item.uuid, language: "fr-FR")
+      assert product.metadata["_option_values"] == %{"color" => ["Rouge"]}
+      assert product.metadata["_price_modifiers"] == %{"color" => %{"Rouge" => "5.00"}}
+
+      {:ok, cart} =
+        Shop.add_to_cart(new_cart(), product, 1,
+          selected_specs: %{"color" => "Rouge"},
+          language: "fr-FR"
+        )
+
+      assert [cart_item] = cart.items
+      assert Decimal.equal?(cart_item.unit_price, Decimal.new("25.00"))
     end
   end
 

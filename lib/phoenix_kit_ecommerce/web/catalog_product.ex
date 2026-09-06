@@ -55,7 +55,10 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     current_language =
       params |> Helpers.get_language_from_params_or_default() |> Helpers.put_content_locale()
 
-    case Shop.get_product_by_slug_localized(slug, current_language, preload: [:category]) do
+    case Shop.get_product_by_slug_localized(slug, current_language,
+           preload: [:category],
+           language: current_language
+         ) do
       {:error, :not_found} ->
         handle_cross_language_redirect(slug, current_language, params, session, socket)
 
@@ -92,7 +95,14 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     selected_specs = build_default_specs(selectable_specs, product.metadata || %{})
 
     category_uuid = if product.category, do: product.category.uuid, else: nil
-    {enabled_filters, _fv} = FilterHelpers.load_filter_data(category_uuid: category_uuid)
+
+    {enabled_filters, _fv} =
+      FilterHelpers.load_filter_data(
+        category_uuid: category_uuid,
+        category: product.category,
+        language: current_language
+      )
+
     active_filters = FilterHelpers.parse_filter_params(params, enabled_filters)
 
     localized_title = Translations.get(product, :title, current_language)
@@ -159,7 +169,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   # Handle cross-language slug redirect
   # When user visits with a slug from a different language, redirect to correct localized URL
   defp handle_cross_language_redirect(slug, current_language, params, session, socket) do
-    case Shop.get_product_by_any_slug(slug, preload: [:category]) do
+    case Shop.get_product_by_any_slug(slug, preload: [:category], language: current_language) do
       {:error, :not_found} ->
         # Product truly not found
         {:ok,
@@ -290,7 +300,14 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
 
     # Compute filter_qs from URL params (preserves filters across cross-language redirect)
     category_uuid = if product.category, do: product.category.uuid, else: nil
-    {enabled_filters, _fv} = FilterHelpers.load_filter_data(category_uuid: category_uuid)
+
+    {enabled_filters, _fv} =
+      FilterHelpers.load_filter_data(
+        category_uuid: category_uuid,
+        category: product.category,
+        language: current_language
+      )
+
     active_filters = FilterHelpers.parse_filter_params(params, enabled_filters)
     filter_qs = FilterHelpers.build_query_string(active_filters, enabled_filters)
 

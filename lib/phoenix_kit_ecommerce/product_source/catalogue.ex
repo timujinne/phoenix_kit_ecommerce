@@ -129,11 +129,25 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue do
 
   @impl PhoenixKitEcommerce.ProductSource
   def aggregate_filter_values(opts \\ []) do
-    filters = PhoenixKitEcommerce.get_enabled_storefront_filters()
-    category_uuid = Keyword.get(opts, :category_uuid)
+    # `:category` (the `%Category{}` being viewed, when the caller has
+    # one — `Web.Components.FilterHelpers.load_filter_data/1` on the
+    # category page) makes this category-aware: a `storefront_filters`
+    # key that only exists on the category (Task 2, 2026-09-06 plan)
+    # must still get its facet counted here, not just appear in the
+    # sidebar's filter list with an empty "No options available".
+    language = Keyword.get(opts, :language)
+
+    filters =
+      PhoenixKitEcommerce.get_enabled_storefront_filters(Keyword.get(opts, :category), language)
+
+    scope = [
+      category_uuid: Keyword.get(opts, :category_uuid),
+      language: language,
+      exclude_hidden_categories: Keyword.get(opts, :exclude_hidden_categories, false)
+    ]
 
     Enum.reduce(filters, %{}, fn filter, acc ->
-      Map.put(acc, filter["key"], aggregate_single_filter(filter, category_uuid))
+      Map.put(acc, filter["key"], aggregate_single_filter(filter, scope))
     end)
   end
 
@@ -142,49 +156,152 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue do
     Query.price_range(opts)
   end
 
-  defp aggregate_single_filter(%{"type" => "price_range"}, category_uuid) do
-    {min_price, max_price} = get_price_range_for(category_uuid: category_uuid)
+  defp aggregate_single_filter(%{"type" => "price_range"}, scope) do
+    {min_price, max_price} = get_price_range_for(category_uuid: scope[:category_uuid])
     %{min: min_price, max: max_price}
   end
 
-  defp aggregate_single_filter(%{"type" => "vendor"}, category_uuid) do
-    Query.vendor_counts(category_uuid: category_uuid)
+  defp aggregate_single_filter(%{"type" => "vendor"}, scope) do
+    Query.vendor_counts(category_uuid: scope[:category_uuid])
   end
 
-  # `metadata_option` facets are disabled until Block 5 wires the
-  # storefront filter UI against catalogue attribute sets (self-review,
-  # 2026-09-05 design doc §5 "Блок 3"): `Query.list_items/1`'s
-  # `:metadata_filters` option already accepts value-slug filters for
-  # that later wiring, but no facet-with-counts surface exists yet.
-  defp aggregate_single_filter(%{"type" => "metadata_option"}, _category_uuid), do: []
-  defp aggregate_single_filter(_filter, _category_uuid), do: []
+  # `attribute_set` facets, backed by `Query.attribute_set_counts/2`.
+  # `metadata_option` (`option_key`) is an alias of `attribute_set`
+  # (`set_slug`) so a filter config saved before this block — the live
+  # "size" filter — keeps working unchanged (2026-09-06 design doc §5
+  # "Блок 5"). `:exclude_hidden_categories` is forwarded from the
+  # caller's own `opts` (the global catalog page listing already scopes
+  # its product query by it, shop_catalog.ex) so a hidden category's
+  # items don't inflate a facet count past what the listing actually
+  # shows.
+  defp aggregate_single_filter(%{"type" => "attribute_set"} = filter, scope) do
+    case filter["set_slug"] || filter["key"] do
+      slug when is_binary(slug) ->
+        Query.attribute_set_counts(slug,
+          category_uuid: scope[:category_uuid],
+          language: scope[:language],
+          exclude_hidden_categories: scope[:exclude_hidden_categories]
+        )
+
+      _ ->
+        []
+    end
+  end
+
+  defp aggregate_single_filter(%{"type" => "metadata_option"} = filter, scope) do
+    case filter["option_key"] || filter["key"] do
+      slug when is_binary(slug) ->
+        Query.attribute_set_counts(slug,
+          category_uuid: scope[:category_uuid],
+          language: scope[:language],
+          exclude_hidden_categories: scope[:exclude_hidden_categories]
+        )
+
+      _ ->
+        []
+    end
+  end
+
+  defp aggregate_single_filter(_filter, _scope), do: []
+
+  @doc """
+  For `attribute_set`/`metadata_option` filters, swaps `"label"` for the
+  underlying attribute set's translated display name (falling back to
+  whatever the filter config already had when the set can't be
+  resolved, or there's no translation) — the sidebar's section header
+  should read the SET's own (per-language) name, not the single flat
+  string an admin typed once into `update_storefront_filters/1`. Every
+  other filter type is returned unchanged.
+
+  NOT a `ProductSource` `@behaviour` callback: `PhoenixKitEcommerce.
+  get_enabled_storefront_filters/2` reaches this via `function_exported?/3`
+  (mirroring `View.base_currency_code/0`'s pattern for the reverse
+  direction), so `Legacy` — which has no attribute sets to translate —
+  needs no matching no-op.
+  """
+  @spec translate_filter_label(map(), String.t()) :: map()
+  def translate_filter_label(%{"type" => type} = filter, language)
+      when type in ["attribute_set", "metadata_option"] and is_binary(language) do
+    slug = filter["set_slug"] || filter["option_key"] || filter["key"]
+
+    with slug when is_binary(slug) <- slug,
+         label when is_binary(label) <- Query.set_label(slug, language) do
+      Map.put(filter, "label", label)
+    else
+      _ -> filter
+    end
+  end
+
+  def translate_filter_label(filter, _language), do: filter
 
   # ============================================================
   # Helpers
   # ============================================================
 
   defp build_products(items, opts) do
-    sets_by_item = resolve_sets(items)
+    language = Keyword.get(opts, :language)
+    sets_by_item = items |> resolve_sets() |> translate_set_names_by_item(language)
     categories_by_uuid = maybe_categories_by_uuid(items, opts)
 
     Enum.map(items, fn item ->
       View.product_view(item,
         sets: Map.get(sets_by_item, item.uuid, []),
-        category: category_for(item, categories_by_uuid)
+        category: category_for(item, categories_by_uuid),
+        language: language
       )
     end)
   end
 
   defp build_product(item, opts) do
-    sets = AttributeSets.resolve_for_item(item.uuid)
+    language = Keyword.get(opts, :language)
+    sets = item.uuid |> AttributeSets.resolve_for_item() |> translate_set_names(language)
     category = single_category(item, opts)
-    View.product_view(item, sets: sets, category: category)
+    View.product_view(item, sets: sets, category: category, language: language)
   end
 
   defp resolve_sets([]), do: %{}
 
   defp resolve_sets(items) do
     items |> Enum.map(& &1.uuid) |> AttributeSets.resolve_for_items()
+  end
+
+  # Swaps every set's `:name` for its translated display name (`Query.
+  # set_display_names/2`, one lookup per DISTINCT set across the WHOLE
+  # batch — never per item) before `sets` reaches `View.product_view/2`,
+  # which is pure and has no way to read `settings["translations"]`
+  # itself (see the moduledoc note on `View.product_view/2`'s
+  # `:language`). `language: nil` is a no-op — every call site before
+  # this option existed keeps building the exact same `sets_by_item`.
+  defp translate_set_names_by_item(sets_by_item, nil), do: sets_by_item
+
+  defp translate_set_names_by_item(sets_by_item, language) do
+    set_uuids =
+      sets_by_item
+      |> Map.values()
+      |> Enum.flat_map(fn %{sets: sets} -> Enum.map(sets, & &1.uuid) end)
+      |> Enum.uniq()
+
+    labels = Query.set_display_names(set_uuids, language)
+
+    Map.new(sets_by_item, fn {item_uuid, resolved} ->
+      {item_uuid, apply_set_labels(resolved, labels)}
+    end)
+  end
+
+  # Single-item counterpart of `translate_set_names_by_item/2`, for
+  # `build_product/2`'s one `AttributeSets.resolve_for_item/1` result.
+  defp translate_set_names(resolved, nil), do: resolved
+
+  defp translate_set_names(%{sets: sets} = resolved, language) do
+    set_uuids = sets |> Enum.map(& &1.uuid) |> Enum.uniq()
+    apply_set_labels(resolved, Query.set_display_names(set_uuids, language))
+  end
+
+  defp apply_set_labels(%{sets: sets} = resolved, labels) do
+    translated =
+      Enum.map(sets, fn set -> Map.put(set, :name, Map.get(labels, set.uuid, set.name)) end)
+
+    %{resolved | sets: translated}
   end
 
   defp maybe_categories_by_uuid(items, opts) do

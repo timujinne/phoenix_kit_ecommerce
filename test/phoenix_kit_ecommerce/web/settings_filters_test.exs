@@ -80,4 +80,90 @@ defmodule PhoenixKitEcommerce.Web.SettingsFiltersTest do
       assert [%{"key" => "search"} | _] = Shop.get_enabled_storefront_filters()
     end
   end
+
+  describe "attribute-set filter form" do
+    test "adds a filter keyed by the submitted set slug", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+
+      view
+      |> element(~s{form[phx-submit="add_attribute_set_filter"]})
+      |> render_submit(%{"set_slug" => "size"})
+
+      saved = Shop.get_storefront_filters()
+
+      assert %{"type" => "attribute_set", "set_slug" => "size"} =
+               Enum.find(saved, &(&1["key"] == "size"))
+    end
+
+    test "rejects a slug that already names an existing filter", %{conn: conn} do
+      {:ok, _} =
+        Shop.update_storefront_filters([
+          %{
+            "key" => "size",
+            "type" => "attribute_set",
+            "set_slug" => "size",
+            "label" => "Size",
+            "enabled" => true,
+            "position" => 0
+          }
+        ])
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+
+      view
+      |> element(~s{form[phx-submit="add_attribute_set_filter"]})
+      |> render_submit(%{"set_slug" => "size"})
+
+      assert Shop.get_storefront_filters() == [
+               %{
+                 "key" => "size",
+                 "type" => "attribute_set",
+                 "set_slug" => "size",
+                 "label" => "Size",
+                 "enabled" => true,
+                 "position" => 0
+               }
+             ]
+    end
+
+    test "the remove button appears for an attribute_set filter row", %{conn: conn} do
+      {:ok, _} =
+        Shop.update_storefront_filters([
+          %{
+            "key" => "size",
+            "type" => "attribute_set",
+            "set_slug" => "size",
+            "label" => "Size",
+            "enabled" => true,
+            "position" => 0
+          }
+        ])
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/settings")
+      assert html =~ ~s(phx-click="remove_filter")
+    end
+
+    test "adding a filter doesn't crash when an existing saved filter has no position (review fix)",
+         %{conn: conn} do
+      {:ok, _} =
+        Shop.update_storefront_filters([
+          %{
+            "key" => "vendor",
+            "type" => "vendor",
+            "label" => "Vendor",
+            "enabled" => true
+          }
+        ])
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+
+      view
+      |> element(~s{form[phx-submit="add_attribute_set_filter"]})
+      |> render_submit(%{"set_slug" => "size"})
+
+      saved = Shop.get_storefront_filters()
+      assert %{"position" => position} = Enum.find(saved, &(&1["key"] == "size"))
+      assert is_integer(position)
+    end
+  end
 end

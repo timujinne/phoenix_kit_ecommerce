@@ -15,6 +15,9 @@ defmodule PhoenixKitEcommerce.Category do
   - `status` - Category status: "active", "hidden", "archived"
   - `metadata` - JSONB for custom fields
   - `option_schema` - Category-specific product option definitions (JSONB array)
+  - `storefront_filters` - Per-category storefront filter overrides (virtual,
+    not persisted on this schema/table; see
+    `PhoenixKitEcommerce.merge_storefront_filters/2`)
 
   ## Status Values
 
@@ -48,6 +51,13 @@ defmodule PhoenixKitEcommerce.Category do
     field :status, :string, default: "active"
     field :metadata, :map, default: %{}
     field :option_schema, {:array, :map}, default: []
+
+    # Not stored on this (Legacy) table - only the catalogue adapter's
+    # `ProductSource.Catalogue.View.category_view/2` ever populates this,
+    # from `data["ecommerce"]["storefront_filters"]`. Kept virtual so
+    # Legacy categories always read back `%{}` (no override) without a
+    # migration.
+    field :storefront_filters, :map, default: %{}, virtual: true
 
     # Self-referential for nesting
     belongs_to :parent, __MODULE__, foreign_key: :parent_uuid, references: :uuid, type: UUIDv7

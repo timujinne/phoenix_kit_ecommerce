@@ -235,6 +235,72 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
     end
   end
 
+  describe "product_view/2 with :language (2026-09-06 plan, Task 3)" do
+    # A value's per-language override lives in its OWN `:extras` (whatever
+    # `AttributeSets.resolve_set/2` read off the value's `EntityData.data`
+    # column — see `View`'s `translated_value_label/2` doc), not on the
+    # item's own `data` at all — no `build_item/2` override needed here.
+    @color_sets [
+      %{
+        key: "color",
+        values: [
+          %{
+            key: "red",
+            label: "Red",
+            extras: %{"_primary_language" => "en-US", "fr-FR" => %{"_title" => "Rouge"}}
+          }
+        ],
+        selected: ["red"]
+      }
+    ]
+
+    test "picks data[language]['_title'] over the untranslated label" do
+      item =
+        build_item(%{"ecommerce" => %{"price_modifiers" => %{"color" => %{"red" => "5.00"}}}})
+
+      fr = View.product_view(item, sets: @color_sets, language: "fr-FR")
+      assert fr.metadata["_option_values"] == %{"color" => ["Rouge"]}
+      # Consistency: the picker's displayed option and its price-modifier
+      # lookup key on the SAME translated label — `selected_specs` built
+      # from what's on screen must find the modifier `Options.
+      # get_price_modifier/2` looks up by that exact label.
+      assert fr.metadata["_price_modifiers"] == %{"color" => %{"Rouge" => "5.00"}}
+      assert fr.metadata["_value_slugs"] == %{"color" => %{"Rouge" => "red"}}
+    end
+
+    test "language: en-US (no fr-FR override) keeps the untranslated label" do
+      item =
+        build_item(%{"ecommerce" => %{"price_modifiers" => %{"color" => %{"red" => "5.00"}}}})
+
+      en = View.product_view(item, sets: @color_sets, language: "en-US")
+      assert en.metadata["_option_values"] == %{"color" => ["Red"]}
+      assert en.metadata["_price_modifiers"] == %{"color" => %{"Red" => "5.00"}}
+      assert en.metadata["_value_slugs"] == %{"color" => %{"Red" => "red"}}
+    end
+
+    test "no :language given (default) behaves exactly as before this option existed" do
+      item = build_item()
+
+      metadata = View.product_view(item, sets: @color_sets).metadata
+      assert metadata["_option_values"] == %{"color" => ["Red"]}
+    end
+
+    test "_option_labels carries each set's own :name, stripped of the catalogue_set_ prefix" do
+      item = build_item()
+      sets = [%{key: "catalogue_set_color", name: "Color", values: [], selected: []}]
+
+      assert View.product_view(item, sets: sets).metadata["_option_labels"] == %{
+               "color" => "Color"
+             }
+    end
+
+    test "_option_labels omits a set with no resolvable :name" do
+      item = build_item()
+
+      refute Map.has_key?(View.product_view(item, sets: @color_sets).metadata, "_option_labels")
+    end
+  end
+
   describe "category_view/2" do
     defp build_category(data_overrides \\ %{}) do
       data =
@@ -281,11 +347,26 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert view.image_uuid == "cat-img-uuid"
       assert view.featured_product_uuid == "feat-item-uuid"
       assert view.metadata == %{}
+      assert view.storefront_filters == %{}
     end
 
     test "status defaults to active when shop_status is absent" do
       category = build_category(%{"ecommerce" => %{"shop_status" => nil}})
       assert View.category_view(category).status == "active"
+    end
+
+    test "storefront_filters is read from data.ecommerce.storefront_filters" do
+      overrides = %{
+        "ecommerce" => %{
+          "storefront_filters" => %{"price" => %{"enabled" => false}}
+        }
+      }
+
+      category = build_category(overrides)
+
+      assert View.category_view(category).storefront_filters == %{
+               "price" => %{"enabled" => false}
+             }
     end
   end
 
@@ -299,7 +380,13 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
                "_option_slots" => [%{"key" => "size", "type" => "select"}],
                "_image_mappings" => %{"size" => %{"5-inches-13-cm" => @image_uuid}},
                "_option_values" => %{"size" => ["5 inches (13 cm)", "4 inches (10 cm)"]},
-               "_price_modifiers" => %{"size" => %{"5 inches (13 cm)" => "9.00"}}
+               "_price_modifiers" => %{"size" => %{"5 inches (13 cm)" => "9.00"}},
+               "_value_slugs" => %{
+                 "size" => %{
+                   "5 inches (13 cm)" => "5-inches-13-cm",
+                   "4 inches (10 cm)" => "4-inches-10-cm"
+                 }
+               }
              }
     end
 

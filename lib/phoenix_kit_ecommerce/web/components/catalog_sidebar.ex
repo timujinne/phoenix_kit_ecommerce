@@ -275,7 +275,7 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
   end
 
   def filter_section(%{filter: %{"type" => type}} = assigns)
-      when type in ["vendor", "metadata_option"] do
+      when type in ["vendor", "metadata_option", "attribute_set"] do
     values = if is_list(assigns.values), do: assigns.values, else: []
     active_list = assigns.active || []
     assigns = assign(assigns, values: values, active_list: active_list)
@@ -296,17 +296,25 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
         <%= if @values == [] do %>
           <p class="text-xs text-base-content/40 italic">{gettext("No options available")}</p>
         <% else %>
+          <%!-- `vendor`/legacy `metadata_option` facets carry `:value` (the
+               same string is both the display text and the filter value);
+               `attribute_set` facets — and `metadata_option` on the
+               catalogue source, which is an alias of it — carry a
+               `:slug`/`:label` pair instead, so the checkbox submits the
+               slug while showing the label. --%>
           <%= for item <- @values do %>
+            <% item_value = Map.get(item, :slug) || Map.get(item, :value) %>
+            <% item_label = Map.get(item, :label) || Map.get(item, :value) %>
             <label class="flex items-center gap-2 cursor-pointer hover:bg-base-200 rounded px-1 py-0.5">
               <input
                 type="checkbox"
                 class="checkbox checkbox-primary checkbox-xs"
-                checked={item.value in @active_list}
+                checked={item_value in @active_list}
                 phx-click="toggle_filter"
                 phx-value-key={@filter["key"]}
-                phx-value-val={item.value}
+                phx-value-val={item_value}
               />
-              <span class="text-sm flex-1 truncate">{item.value}</span>
+              <span class="text-sm flex-1 truncate">{item_label}</span>
               <span class="badge badge-ghost badge-xs">{item.count}</span>
             </label>
           <% end %>

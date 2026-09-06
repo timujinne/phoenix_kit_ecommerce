@@ -266,6 +266,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   end
 
   @impl true
+  def handle_event("add_attribute_set_filter", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("add_attribute_set_filter", params, socket)
+    end)
+  end
+
+  @impl true
   def handle_event("remove_filter", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("remove_filter", params, socket)
@@ -823,7 +830,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                         />
                       </td>
                       <td>
-                        <%= if filter["type"] == "metadata_option" do %>
+                        <%= if filter["type"] in ["metadata_option", "attribute_set"] do %>
                           <button
                             phx-click="remove_filter"
                             phx-value-key={filter["key"]}
@@ -865,6 +872,28 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                 <% end %>
               </div>
             <% end %>
+
+            <%!-- Attribute-set filter (catalogue source: characteristics
+                 defined in Attributes, e.g. "size", "color") --%>
+            <div class="divider">{gettext("Attribute Set Filter")}</div>
+            <p class="text-sm text-base-content/70 mb-3">
+              {gettext(
+                "Add a storefront filter backed by a catalogue attribute set, by its slug."
+              )}
+            </p>
+            <form phx-submit="add_attribute_set_filter" class="flex flex-wrap items-end gap-2">
+              <input
+                type="text"
+                id="attribute-set-slug-input"
+                name="set_slug"
+                placeholder={gettext("Set slug, e.g. size")}
+                class="input input-sm w-48"
+                required
+              />
+              <button type="submit" class="btn btn-outline btn-sm gap-1">
+                <.icon name="hero-plus" class="w-3 h-3" /> {gettext("Add")}
+              </button>
+            </form>
           </div>
         </div>
 
@@ -1453,18 +1482,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       {:noreply,
        put_flash(socket, :error, gettext("Filter for '%{key}' already exists", key: option_key))}
     else
-      max_pos =
-        socket.assigns.storefront_filters
-        |> Enum.map(& &1["position"])
-        |> Enum.max(fn -> 0 end)
-
       new_filter = %{
         "key" => option_key,
         "type" => "metadata_option",
         "option_key" => option_key,
         "label" => String.capitalize(option_key),
         "enabled" => true,
-        "position" => max_pos + 1
+        "position" => next_filter_position(socket.assigns.storefront_filters)
       }
 
       filters = socket.assigns.storefront_filters ++ [new_filter]
@@ -1479,6 +1503,43 @@ defmodule PhoenixKitEcommerce.Web.Settings do
         {:error, _} ->
           {:noreply, put_flash(socket, :error, gettext("Failed to add filter"))}
       end
+    end
+  end
+
+  defp gated_event("add_attribute_set_filter", %{"set_slug" => raw_slug}, socket) do
+    set_slug = String.trim(raw_slug)
+    existing_keys = Enum.map(socket.assigns.storefront_filters, & &1["key"])
+
+    cond do
+      set_slug == "" ->
+        {:noreply, put_flash(socket, :error, gettext("Set slug can't be blank"))}
+
+      set_slug in existing_keys ->
+        {:noreply,
+         put_flash(socket, :error, gettext("Filter for '%{key}' already exists", key: set_slug))}
+
+      true ->
+        new_filter = %{
+          "key" => set_slug,
+          "type" => "attribute_set",
+          "set_slug" => set_slug,
+          "label" => String.capitalize(set_slug),
+          "enabled" => true,
+          "position" => next_filter_position(socket.assigns.storefront_filters)
+        }
+
+        filters = socket.assigns.storefront_filters ++ [new_filter]
+
+        case Shop.update_storefront_filters(filters) do
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> assign(:storefront_filters, filters)
+             |> put_flash(:info, gettext("Filter '%{key}' added", key: set_slug))}
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, gettext("Failed to add filter"))}
+        end
     end
   end
 
@@ -1510,6 +1571,19 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       {:error, _} ->
         {:noreply, put_flash(socket, :error, gettext("Failed to reset filters"))}
     end
+  end
+
+  # `Enum.max/2`'s fallback only fires on an EMPTY list — a filter saved
+  # with no `"position"` at all (nil) sitting alongside numbered ones
+  # would otherwise win `Enum.max` outright (Erlang term order ranks
+  # atoms, `nil` included, above every number) and then crash `+ 1` on
+  # `nil`. Defaulting each missing position to `0` before taking the max
+  # avoids both.
+  defp next_filter_position(filters) do
+    filters
+    |> Enum.map(&(&1["position"] || 0))
+    |> Enum.max(fn -> 0 end)
+    |> Kernel.+(1)
   end
 
   defp vocabulary_label("services"), do: gettext("Services")

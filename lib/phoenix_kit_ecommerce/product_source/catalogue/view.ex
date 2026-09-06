@@ -27,6 +27,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   # don't declare the optional dependency.
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue}
 
+  alias PhoenixKit.Utils.Multilang
   alias PhoenixKitCatalogue.Catalogue
   alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.PriceDisplay
@@ -41,11 +42,26 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   callers that already have the per-item list, the bare `sets` list
   itself. `opts[:category]` is a `category_view/2` result, attached as
   `:category` when the caller preloaded one.
+
+  `opts[:language]` (a language code, or `nil` for the untranslated
+  labels `sets` already carries) picks the language `metadata`'s
+  `_option_values`/`_price_modifiers`/`_value_slugs` use for each
+  attribute-set VALUE's label — see `legacy_metadata/3`. It does NOT
+  translate a set's own `:name` (`_option_labels`, below) — a value's
+  translation lives right on it (`values[].extras`, whatever
+  `resolve_set/2` read off the value's `EntityData.data`), so this
+  pure module can pick it with a plain map lookup, but a set's
+  `settings["translations"]` isn't part of the resolved shape at all;
+  translating `:name` needs an actual read
+  (`ProductSource.Catalogue.Query.set_display_names/2`) that only the
+  caller building `sets` (`ProductSource.Catalogue`) can do before
+  handing them to this pure function.
   """
   @spec product_view(map(), keyword()) :: Product.t()
   def product_view(item, opts \\ []) do
     sets = Keyword.get(opts, :sets, [])
     category = Keyword.get(opts, :category)
+    language = Keyword.get(opts, :language)
 
     data = item.data || %{}
     ecommerce = Map.get(data, "ecommerce", %{})
@@ -78,7 +94,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
       image_uuids: Map.get(data, "media_order") || [],
       images: [],
       featured_image: nil,
-      metadata: metadata(item, ecommerce, sets),
+      metadata: metadata(item, ecommerce, sets, language),
       category_uuid: item.category_uuid,
       category: category,
       inserted_at: Map.get(item, :inserted_at),
@@ -99,6 +115,11 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   the first template that does a plain `if category.parent do` truthy
   check, same as `PhoenixKitEcommerce.ProductSource.Catalogue`'s
   `single_category/2` already resolves `:category` for products.
+
+  `:storefront_filters` is read straight off
+  `data["ecommerce"]["storefront_filters"]` (`%{}` when absent) — see
+  `PhoenixKitEcommerce.merge_storefront_filters/2` for how it overrides
+  the global filter config.
   """
   @spec category_view(map(), keyword()) :: Category.t()
   def category_view(category, opts \\ []) do
@@ -118,6 +139,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
       option_schema: Map.get(ecommerce, "option_schema") || [],
       image_uuid: Map.get(ecommerce, "image_uuid"),
       featured_product_uuid: Map.get(ecommerce, "featured_item_uuid"),
+      storefront_filters: Map.get(ecommerce, "storefront_filters") || %{},
       metadata: %{},
       inserted_at: Map.get(category, :inserted_at),
       updated_at: Map.get(category, :updated_at)
@@ -129,26 +151,45 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   @doc """
   Synthesizes the legacy `metadata` sub-map every option/price-display
   reader (`Options`, variant picker, `CartItem.from_product/3`) expects:
-  `_option_values` (labels in the item's stored selection order) and
+  `_option_values` (labels in the item's stored selection order),
   `_price_modifiers` (slug-keyed `ecommerce.price_modifiers` swapped to
-  the label keys those readers match on), computed fresh from `sets` on
-  every call, merged over whatever else `data["ecommerce"]["legacy_metadata"]`
-  snapshotted (`_option_slots`, `_image_mappings`, `_price_display`, …) —
-  minus those same two keys, so a stale snapshot never shadows the live
-  attachment state.
+  the label keys those readers match on), `_option_labels` (`%{set_slug
+  => set display name}`, read straight off `sets` — see the moduledoc
+  note on `product_view/2`'s `:language`, since a set's OWN translated
+  name has to already be sitting on it by the time it gets here) and
+  `_value_slugs` (`%{set_slug => %{label => value slug}}`, every value in
+  the set, not only the ones selected — Block 6/7's future slug-based
+  `selected_specs` reads this; nothing in THIS block writes it back).
+  All four computed fresh from `sets` on every call, merged over whatever
+  else `data["ecommerce"]["legacy_metadata"]` snapshotted (`_option_slots`,
+  `_image_mappings`, `_price_display`, …) — minus those same four keys,
+  so a stale snapshot never shadows the live attachment state.
 
   `sets` accepts the same shapes `product_view/2`'s `:sets` option does.
+  `language` (default `nil`) picks which translation of each VALUE's
+  label `_option_values`/`_price_modifiers`/`_value_slugs` key on —
+  `nil` keeps every one of them exactly as `product_view/2` built it
+  before this option existed. `_option_labels` doesn't take `language`
+  at all: it reads whatever `:name` already sits on each set in `sets`.
   """
-  @spec legacy_metadata(map(), list() | map()) :: map()
-  def legacy_metadata(item, sets) do
+  @spec legacy_metadata(map(), list() | map(), String.t() | nil) :: map()
+  def legacy_metadata(item, sets, language \\ nil) do
     snapshot =
       get_in(item.data || %{}, ["ecommerce", "legacy_metadata"]) || %{}
 
-    base = Map.drop(snapshot, ["_option_values", "_price_modifiers"])
+    base =
+      Map.drop(snapshot, [
+        "_option_values",
+        "_price_modifiers",
+        "_option_labels",
+        "_value_slugs"
+      ])
 
     base
-    |> maybe_put("_option_values", option_values_from_sets(sets))
-    |> maybe_put("_price_modifiers", price_modifiers_from_sets(sets, item))
+    |> maybe_put("_option_values", option_values_from_sets(sets, language))
+    |> maybe_put("_price_modifiers", price_modifiers_from_sets(sets, item, language))
+    |> maybe_put("_option_labels", option_labels_from_sets(sets))
+    |> maybe_put("_value_slugs", value_slugs_from_sets(sets, language))
   end
 
   # ============================================================
@@ -169,8 +210,8 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   # Metadata
   # ============================================================
 
-  defp metadata(item, ecommerce, sets) do
-    legacy_metadata(item, sets)
+  defp metadata(item, ecommerce, sets, language) do
+    legacy_metadata(item, sets, language)
     |> maybe_put_price_display(ecommerce)
     |> maybe_put("_shopify", Map.get(ecommerce, "shopify"))
   end
@@ -196,13 +237,13 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   defp sets_list(sets) when is_list(sets), do: sets
   defp sets_list(_), do: []
 
-  defp option_values_from_sets(sets) do
+  defp option_values_from_sets(sets, language) do
     sets
     |> sets_list()
     |> Enum.reduce(%{}, fn set, acc ->
       key = set |> Map.get(:key) |> strip_set_prefix()
       selected = Map.get(set, :selected) || []
-      labels_by_value = value_labels(set)
+      labels_by_value = value_labels(set, language)
 
       labels =
         selected
@@ -213,16 +254,68 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
     end)
   end
 
-  defp price_modifiers_from_sets(sets, item) do
+  defp price_modifiers_from_sets(sets, item, language) do
     raw_modifiers = get_in(item.data || %{}, ["ecommerce", "price_modifiers"]) || %{}
     sets_by_key = sets_by_key_index(sets)
 
     Enum.reduce(raw_modifiers, %{}, fn {key, slug_amounts}, acc ->
       case Map.get(sets_by_key, key) do
         nil -> acc
-        set -> put_labeled_modifiers(acc, key, slug_amounts, value_labels(set))
+        set -> put_labeled_modifiers(acc, key, slug_amounts, value_labels(set, language))
       end
     end)
+  end
+
+  # `%{set_slug (bare) => set display name}` — the picker's legend, and
+  # the sidebar's would-be built-in label, read the SET's own name
+  # rather than an admin-typed string. `:name` on `sets` (a
+  # `resolve_for_item/2`-shaped value) is whatever the caller already
+  # resolved it to (untranslated `display_name`, or a translated one —
+  # `ProductSource.Catalogue` swaps it in via `Query.set_display_names/2`
+  # before calling `product_view/2` when `:language` is given); this
+  # function only ever reads it, never resolves a translation itself.
+  # Skips a set with no name at all (a bare test fixture — see
+  # `ViewTest`'s `@sets` — or a broken blueprint) rather than putting a
+  # blank legend.
+  defp option_labels_from_sets(sets) do
+    sets
+    |> sets_list()
+    |> Enum.reduce(%{}, fn set, acc ->
+      key = set |> Map.get(:key) |> strip_set_prefix()
+
+      case {key, Map.get(set, :name)} do
+        {nil, _} -> acc
+        {_key, name} when not is_binary(name) or name == "" -> acc
+        {key, name} -> Map.put(acc, key, name)
+      end
+    end)
+  end
+
+  # `%{set_slug (bare) => %{label => value slug}}`, every value in the
+  # set (not only `:selected` — a future slug-based `selected_specs`
+  # write needs to resolve whichever label the shopper just picked, not
+  # only the ones the product started with). The label side matches
+  # whatever `_option_values`/`_price_modifiers` used for the SAME
+  # `language`, by construction (both come out of `translated_value_label/2`) —
+  # the picker's displayed option and its price-modifier/slug lookups can
+  # never disagree.
+  defp value_slugs_from_sets(sets, language) do
+    sets
+    |> sets_list()
+    |> Enum.reduce(%{}, &put_value_slugs(&2, &1, language))
+  end
+
+  defp put_value_slugs(acc, set, language) do
+    key = set |> Map.get(:key) |> strip_set_prefix()
+    mapping = value_slug_mapping(set, language)
+
+    if is_nil(key) or mapping == %{}, do: acc, else: Map.put(acc, key, mapping)
+  end
+
+  defp value_slug_mapping(set, language) do
+    set
+    |> Map.get(:values, [])
+    |> Map.new(&{translated_value_label(&1, language), Map.get(&1, :key)})
   end
 
   # A resolved set's `:key` is the entities blueprint NAME
@@ -265,10 +358,40 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
     end)
   end
 
-  defp value_labels(set) do
+  defp value_labels(set, language) do
     set
     |> Map.get(:values, [])
-    |> Map.new(&{Map.get(&1, :key), Map.get(&1, :label)})
+    |> Map.new(&{Map.get(&1, :key), translated_value_label(&1, language)})
+  end
+
+  # A value's `:label` is `AttributeSets.resolve_set/2`'s bare
+  # `record.title` (the primary/default language); `:extras` is that
+  # SAME `EntityData` row's raw `data` column, which — whenever a
+  # translation was ever saved for the value (`set_title_translation/3`)
+  # — also carries `data[lang]["_title"]` overrides for every OTHER
+  # language, untouched by `resolve_set/2` (it reads `extras` straight
+  # off the column, no `:lang` option involved). `language: nil` (every
+  # call site before this option existed, and every caller that hasn't
+  # opted in) skips the lookup entirely and returns the untranslated
+  # `:label`, unchanged.
+  #
+  # Goes through `Multilang.get_language_data/2` (matching
+  # `EntityData.get_title_translation/2`'s own path) rather than a naive
+  # `data[language]["_title"]` key lookup, so a value translated under a
+  # base code ("fr") is still found from a dialect-precision page
+  # ("fr-FR") and vice versa, and `data[primary]["_title"]` (the
+  # PRIMARY language's own override, distinct from `:label`'s
+  # `record.title` whenever the two diverge) is consulted before falling
+  # back to `:label`.
+  defp translated_value_label(value, nil), do: Map.get(value, :label)
+
+  defp translated_value_label(value, language) do
+    extras = Map.get(value, :extras) || %{}
+
+    case Map.get(Multilang.get_language_data(extras, language), "_title") do
+      title when is_binary(title) and title != "" -> title
+      _ -> Map.get(value, :label)
+    end
   end
 
   # ============================================================
