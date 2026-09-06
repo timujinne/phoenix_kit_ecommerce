@@ -4779,3 +4779,58 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "This item is priced in a different currency and cannot be added right now."
 msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:755
+#, elixir-autogen, elixir-format
+msgid "Sync variants & prices"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:756
+#, elixir-autogen, elixir-format
+msgid "Sync images"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:757
+#, elixir-autogen, elixir-format
+msgid "Sync collections"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:769
+#, elixir-autogen, elixir-format
+msgid "Sync queued — running in the background."
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:773
+#, elixir-autogen, elixir-format
+msgid "A sync of this kind is already running."
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:777
+#, elixir-autogen, elixir-format
+msgid "Could not queue the sync — try again."
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:787
+#, elixir-autogen, elixir-format
+msgid "finished"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:787
+#, elixir-autogen, elixir-format
+msgid "running"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:789
+#, elixir-autogen, elixir-format
+msgid "%{kind}: %{status} (%{done}/%{total}, %{error_count} errors)"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1386
+#, elixir-autogen, elixir-format
+msgid "Media & collections"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1388
+#, elixir-autogen, elixir-format
+msgid "Runs in the background: product images into Storage, options into attribute sets and price modifiers, and Shopify collections into catalogue categories."
+msgstr ""

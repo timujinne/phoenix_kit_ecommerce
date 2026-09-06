@@ -65,12 +65,15 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   import PhoenixKitWeb.Components.Core.EmptyState
 
   alias PhoenixKit.Integrations
+  alias PhoenixKit.PubSub.Manager
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce.Activity
+  alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
   alias PhoenixKitEcommerce.Shopify.Sync
   alias PhoenixKitEcommerce.Shopify.TextDiff
   alias PhoenixKitEcommerce.Web.Authz
+  alias PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker
 
   # Section order — price first, per spec. Order only: the plural section
   # headers live in `section_label/1` and the singular per-field wording
@@ -112,10 +115,14 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket), do: Manager.subscribe(ShopifyMediaSyncWorker.topic())
+
     {:ok,
      socket
      |> assign(:page_title, gettext("Shopify Sync"))
      |> assign(:connection, shopify_connection())
+     |> assign(:catalogue_source_active?, catalogue_source_active?())
+     |> assign(:media_sync_progress, ShopifyMediaSyncWorker.get_progress())
      |> assign(:checking, false)
      |> assign(:changes, nil)
      |> assign(:error, nil)
@@ -155,6 +162,33 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
              pending: nil
            )
            |> start_async(:check_diff, fn -> Sync.check(uuid) end)}
+      end
+    end)
+  end
+
+  # "Media & collections" panel — three buttons, one event, `kind` in the
+  # payload (unlike the field-section buttons above, which smuggle their
+  # field into the event NAME: these payloads are plain `phx-value-kind`,
+  # no JS hook is involved). Enqueueing is authorized here, same as
+  # `"check"` — `ShopifyMediaSyncWorker`'s own moduledoc: "Background jobs
+  # are authorized at ENQUEUE time by the LiveView that starts them; the
+  # workers themselves run without a scope by design." Oban's own
+  # `unique:` on the worker is the real guard against a double-enqueue —
+  # the in-flight check here is UX only (an already-disabled button).
+  def handle_event("run_media_sync", %{"kind" => kind}, socket)
+      when kind in ~w(images variants collections) do
+    Authz.authorize(socket, :run_imports, fn ->
+      if media_sync_in_flight?(socket.assigns.media_sync_progress, kind) do
+        {:noreply, socket}
+      else
+        actor_uuid = socket.assigns.phoenix_kit_current_scope.user.uuid
+
+        result =
+          %{"kind" => kind, "actor_uuid" => actor_uuid}
+          |> ShopifyMediaSyncWorker.new()
+          |> Oban.insert()
+
+        {:noreply, flash_media_sync_enqueue(socket, result)}
       end
     end)
   end
@@ -378,6 +412,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   # for zero actual writes.
   defp open_pending(socket, [], _pending), do: {:noreply, socket}
   defp open_pending(socket, _eligible, pending), do: {:noreply, assign(socket, :pending, pending)}
+
+  # `ShopifyMediaSyncWorker`'s own broadcast — live progress for the
+  # "Media & collections" panel, no polling.
+  @impl true
+  def handle_info({:media_sync_progress, progress}, socket) do
+    {:noreply, assign(socket, :media_sync_progress, progress)}
+  end
 
   @impl true
   def handle_async(
@@ -699,6 +740,62 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       [] -> nil
     end
   end
+
+  # ============================================================
+  # "Media & collections" panel
+  # ============================================================
+
+  defp catalogue_source_active?, do: ProductSource.current() == ProductSource.Catalogue
+
+  # `label` is a real `gettext/1` call at each list entry, not a stored
+  # runtime string reused from a module attribute — see `@sections`'
+  # own comment above for why that distinction matters for extraction.
+  defp media_sync_kinds do
+    [
+      {"variants", gettext("Sync variants & prices")},
+      {"images", gettext("Sync images")},
+      {"collections", gettext("Sync collections")}
+    ]
+  end
+
+  defp media_sync_in_flight?(%{"kind" => kind, "finished_at" => nil}, kind), do: true
+  defp media_sync_in_flight?(_progress, _kind), do: false
+
+  # `Oban.insert/1`'s result, not just its call, decides the flash: on a
+  # unique-constraint hit it returns `{:ok, %Job{conflict?: true}}` —
+  # nothing was actually queued — and on a DB error `{:error, changeset}`;
+  # only a genuine fresh insert gets the "running in the background" copy.
+  defp flash_media_sync_enqueue(socket, {:ok, %Oban.Job{conflict?: false}}) do
+    put_flash(socket, :info, gettext("Sync queued — running in the background."))
+  end
+
+  defp flash_media_sync_enqueue(socket, {:ok, %Oban.Job{conflict?: true}}) do
+    put_flash(socket, :info, gettext("A sync of this kind is already running."))
+  end
+
+  defp flash_media_sync_enqueue(socket, {:error, _changeset}) do
+    put_flash(socket, :error, gettext("Could not queue the sync — try again."))
+  end
+
+  defp media_sync_summary(%{
+         "kind" => kind,
+         "total" => total,
+         "done" => done,
+         "errors" => errors,
+         "finished_at" => finished_at
+       }) do
+    status = if finished_at, do: gettext("finished"), else: gettext("running")
+
+    gettext("%{kind}: %{status} (%{done}/%{total}, %{error_count} errors)",
+      kind: kind,
+      status: status,
+      done: done,
+      total: total,
+      error_count: length(errors || [])
+    )
+  end
+
+  defp media_sync_summary(_progress), do: nil
 
   # Groups `changes` by field, in `@sections` order, dropping fields with
   # no matching changes. A change appears once per field it differs on.
@@ -1275,6 +1372,49 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
         <div :if={@connection} class="text-sm text-base-content/70">
           {gettext("Connected: %{name}", name: @connection.name)}
+        </div>
+
+        <%!-- Outside the field-diff report below: these three writers act
+             directly on the catalogue (images, variants/prices,
+             collections → categories) rather than on the reviewed diff,
+             so they only ever show under the catalogue product source. --%>
+        <div
+          :if={@connection && @catalogue_source_active?}
+          id="media-sync-panel"
+          class="border border-base-300 rounded-lg bg-base-100 p-4 space-y-3"
+        >
+          <div class="font-semibold">{gettext("Media & collections")}</div>
+          <p class="text-sm text-base-content/70">
+            {gettext(
+              "Runs in the background: product images into Storage, options into attribute sets and price modifiers, and Shopify collections into catalogue categories."
+            )}
+          </p>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              :for={{kind, label} <- media_sync_kinds()}
+              type="button"
+              id={"sync-media-#{kind}"}
+              class="btn btn-sm"
+              phx-click="run_media_sync"
+              phx-value-kind={kind}
+              disabled={media_sync_in_flight?(@media_sync_progress, kind)}
+            >
+              <span
+                :if={media_sync_in_flight?(@media_sync_progress, kind)}
+                class="loading loading-spinner loading-xs"
+              />
+              {label}
+            </button>
+          </div>
+
+          <div
+            :if={media_sync_summary(@media_sync_progress)}
+            id="media-sync-progress"
+            class="text-sm text-base-content/70"
+          >
+            {media_sync_summary(@media_sync_progress)}
+          </div>
         </div>
 
         <div :if={@error} class="alert alert-error">

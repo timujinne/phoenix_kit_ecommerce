@@ -4791,6 +4791,7 @@ msgstr "Вес (граммы)"
 #, elixir-autogen, elixir-format
 msgid "comma, separated, tags"
 msgstr "теги, через, запятую"
+
 #: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:193
 #, elixir-autogen, elixir-format
 msgid "No default currency configured"
@@ -4800,3 +4801,58 @@ msgstr "Валюта по умолчанию не настроена"
 #, elixir-autogen, elixir-format
 msgid "This item is priced in a different currency and cannot be added right now."
 msgstr "Этот товар указан в другой валюте и сейчас не может быть добавлен."
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:190
+#, elixir-autogen, elixir-format
+msgid "Sync queued — running in the background."
+msgstr "Синхронизация поставлена в очередь — выполняется в фоновом режиме."
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:754
+#, elixir-autogen, elixir-format
+msgid "Sync variants & prices"
+msgstr "Синхронизировать варианты и цены"
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:755
+#, elixir-autogen, elixir-format
+msgid "Sync images"
+msgstr "Синхронизировать изображения"
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:756
+#, elixir-autogen, elixir-format
+msgid "Sync collections"
+msgstr "Синхронизировать коллекции"
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:770
+#, elixir-autogen, elixir-format
+msgid "finished"
+msgstr "завершено"
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:770
+#, elixir-autogen, elixir-format
+msgid "running"
+msgstr "выполняется"
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:772
+#, elixir-autogen, elixir-format
+msgid "%{kind}: %{status} (%{done}/%{total}, %{error_count} errors)"
+msgstr "%{kind}: %{status} (%{done}/%{total}, %{error_count} ошибок)"
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1369
+#, elixir-autogen, elixir-format
+msgid "Media & collections"
+msgstr "Медиа и коллекции"
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1372
+#, elixir-autogen, elixir-format
+msgid "Runs in the background: product images into Storage, options into attribute sets and price modifiers, and Shopify collections into catalogue categories."
+msgstr "Выполняется в фоновом режиме: изображения товаров загружаются в хранилище, опции становятся наборами атрибутов и модификаторами цены, а коллекции Shopify становятся категориями каталога."
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:773
+#, elixir-autogen, elixir-format
+msgid "A sync of this kind is already running."
+msgstr "Синхронизация этого вида уже выполняется."
+
+#: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:777
+#, elixir-autogen, elixir-format
+msgid "Could not queue the sync — try again."
+msgstr "Не удалось поставить синхронизацию в очередь — попробуйте снова."

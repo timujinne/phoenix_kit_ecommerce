@@ -170,4 +170,111 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
       assert Agent.get(counter, & &1) == 2
     end
   end
+
+  describe "fetch_collections/1" do
+    test "returns an error when :integration_uuid is missing from opts" do
+      assert {:error, :missing_integration_uuid} =
+               AdminClient.fetch_collections(req_options())
+    end
+
+    test "concatenates custom then smart collections, tagged by kind, positioned across both" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        case conn.request_path do
+          "/admin/api/2025-01/custom_collections.json" ->
+            json_response(conn, 200, %{
+              "custom_collections" => [
+                %{"id" => 1, "handle" => "featured", "title" => "Featured"}
+              ]
+            })
+
+          "/admin/api/2025-01/smart_collections.json" ->
+            json_response(conn, 200, %{
+              "smart_collections" => [
+                %{"id" => 2, "handle" => "auto", "title" => "Auto"}
+              ]
+            })
+        end
+      end)
+
+      assert {:ok, collections} =
+               AdminClient.fetch_collections(Keyword.put(req_options(), :integration_uuid, uuid))
+
+      assert [
+               %{"id" => 1, "handle" => "featured", "kind" => "custom", "position" => 0},
+               %{"id" => 2, "handle" => "auto", "kind" => "smart", "position" => 1}
+             ] = collections
+    end
+
+    test "follows pagination independently for each collection kind" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        conn = Plug.Conn.fetch_query_params(conn)
+
+        case {conn.request_path, conn.query_params["page_info"]} do
+          {"/admin/api/2025-01/custom_collections.json", nil} ->
+            next_url =
+              "https://test-shop.myshopify.com/admin/api/2025-01/custom_collections.json?limit=250&page_info=custom2"
+
+            conn
+            |> Plug.Conn.put_resp_header("link", "<#{next_url}>; rel=\"next\"")
+            |> json_response(200, %{
+              "custom_collections" => [%{"id" => 1, "handle" => "first"}]
+            })
+
+          {"/admin/api/2025-01/custom_collections.json", "custom2"} ->
+            json_response(conn, 200, %{
+              "custom_collections" => [%{"id" => 2, "handle" => "second"}]
+            })
+
+          {"/admin/api/2025-01/smart_collections.json", _} ->
+            json_response(conn, 200, %{"smart_collections" => []})
+        end
+      end)
+
+      assert {:ok, collections} =
+               AdminClient.fetch_collections(Keyword.put(req_options(), :integration_uuid, uuid))
+
+      assert [
+               %{"handle" => "first", "position" => 0},
+               %{"handle" => "second", "position" => 1}
+             ] = collections
+    end
+  end
+
+  describe "fetch_collection_product_ids/2" do
+    test "returns an error when :integration_uuid is missing from opts" do
+      assert {:error, :missing_integration_uuid} =
+               AdminClient.fetch_collection_product_ids(99, req_options())
+    end
+
+    test "follows pagination, preserving Shopify's own order" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        conn = Plug.Conn.fetch_query_params(conn)
+
+        assert conn.request_path == "/admin/api/2025-01/collections/99/products.json"
+
+        if conn.query_params["page_info"] do
+          json_response(conn, 200, %{"products" => [%{"id" => 20}]})
+        else
+          next_url =
+            "https://test-shop.myshopify.com/admin/api/2025-01/collections/99/products.json?limit=250&fields=id&page_info=abc123"
+
+          conn
+          |> Plug.Conn.put_resp_header("link", "<#{next_url}>; rel=\"next\"")
+          |> json_response(200, %{"products" => [%{"id" => 10}]})
+        end
+      end)
+
+      assert {:ok, [10, 20]} =
+               AdminClient.fetch_collection_product_ids(
+                 99,
+                 Keyword.put(req_options(), :integration_uuid, uuid)
+               )
+    end
+  end
 end

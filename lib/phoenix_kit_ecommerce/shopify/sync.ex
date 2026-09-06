@@ -200,16 +200,28 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
     fields_to_apply = resolve_fields(fields, change.changes)
 
     change_fields =
-      Enum.reduce(fields_to_apply, %{}, fn field, acc ->
+      fields_to_apply
+      |> Enum.reduce(%{}, fn field, acc ->
         %{incoming: incoming} = Map.fetch!(change.changes, field)
         Map.put(acc, field, incoming)
       end)
+      |> Map.put(:handle, change.handle)
+      |> maybe_put_product_id(change.product_id)
 
     case Writer.update_from_shopify(item, change_fields, base_locale) do
       {:ok, item} -> {:ok, CatalogueView.product_view(item)}
       error -> error
     end
   end
+
+  # `change.product_id` is carried on every `Change` regardless of `fields`
+  # (see `ProductDiff.Change`'s moduledoc) — this backfills
+  # `data["ecommerce"]["shopify"]["product_id"]` on every applied change,
+  # not just ones that happened to touch a comparable field.
+  defp maybe_put_product_id(change_fields, nil), do: change_fields
+
+  defp maybe_put_product_id(change_fields, product_id),
+    do: Map.put(change_fields, :product_id, product_id)
 
   @doc """
   Applies `fields` to every change in `changes`, partitioning them by outcome.

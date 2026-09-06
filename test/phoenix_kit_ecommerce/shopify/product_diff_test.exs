@@ -70,6 +70,15 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
       # back into the same locale this change was diffed against.
       assert change.base_locale == @base_locale
     end
+
+    test "the returned Change carries the Shopify product id, even though it isn't a diffed field" do
+      local = [product([])]
+      # Any real field difference is enough to surface a Change — `id` is
+      # carried regardless of which fields actually differ.
+      shopify = [shopify_product(%{"id" => 987, "title" => "New Title"})]
+
+      assert [%Change{product_id: 987}] = diff(local, shopify)
+    end
   end
 
   describe "field: title" do
@@ -335,6 +344,18 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
       assert change.title == "Brand New Mug"
       assert change.changes == %{}
       assert change.shopify_product == %{"handle" => "brand-new-mug", "title" => "Brand New Mug"}
+    end
+
+    test "carries the Shopify product id on a create-Change too" do
+      local = [product(slug: %{"en" => "planter"})]
+
+      shopify = [
+        shopify_product(%{}),
+        %{"handle" => "brand-new-mug", "title" => "Brand New Mug", "id" => 42}
+      ]
+
+      assert [change] = ProductDiff.new_product_changes(local, shopify, @base_locale)
+      assert change.product_id == 42
     end
 
     test "a Shopify handle already matched by diff/4 is not surfaced as a create-Change" do

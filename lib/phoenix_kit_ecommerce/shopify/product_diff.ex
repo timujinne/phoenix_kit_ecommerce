@@ -67,6 +67,17 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
     `Shopify.Sync.apply_change/2` hands to
     `PhoenixKitEcommerce.Catalogue.Writer.create_from_shopify/2`. A
     regular diff-`Change` never sets `shopify_product`.
+
+    `product_id` is the Shopify product's own `"id"` — carried on every
+    `Change` (regular or create), independent of `changes`/`opts[:only]`:
+    it isn't diffed against a current value, just carried through, so
+    `Shopify.Sync.apply_change/2` can backfill `data["ecommerce"]
+    ["shopify"]["product_id"]` on a matched item even when the caller
+    only asked to apply a subset of the comparable fields. This does NOT
+    reach every local product on its own — `diff/4` still only returns a
+    `Change` when some comparable field actually differs (see its own
+    moduledoc); `product_id` just rides along on whichever `Change`s
+    already exist.
     """
     @enforce_keys [:product_uuid, :handle, :title, :base_locale]
     defstruct [
@@ -75,6 +86,7 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
       :title,
       :base_locale,
       :shopify_product,
+      :product_id,
       changes: %{},
       price_extreme?: false,
       create?: false
@@ -88,7 +100,8 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
             changes: %{atom() => %{current: term(), incoming: term()}},
             price_extreme?: boolean(),
             create?: boolean(),
-            shopify_product: map() | nil
+            shopify_product: map() | nil,
+            product_id: term() | nil
           }
   end
 
@@ -228,6 +241,7 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
       title: shopify_product["title"] || shopify_product["handle"],
       base_locale: base_locale,
       shopify_product: shopify_product,
+      product_id: shopify_product["id"],
       changes: %{},
       create?: true
     }
@@ -298,7 +312,8 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
       title: current_title || shopify_product["handle"],
       base_locale: base_locale,
       changes: changes,
-      price_extreme?: extreme_price?(changes)
+      price_extreme?: extreme_price?(changes),
+      product_id: shopify_product["id"]
     }
   end
 

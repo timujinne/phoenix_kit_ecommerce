@@ -211,7 +211,10 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCatalogueTest do
       assert item.name == "Brand New Mug"
       assert item.slug["en"] == Catalogue.Slugs.from_title("Brand New Mug", "en")
       assert item.data["ecommerce"]["shopify"]["handle"] == "brand-new-mug"
-      assert item.data["ecommerce"]["shopify"]["product_id"] == 999
+      # Stringified, same as `update_from_shopify/3`'s own backfill —
+      # `CollectionSync`/the Task 5 worker both match `product_id` as a
+      # string.
+      assert item.data["ecommerce"]["shopify"]["product_id"] == "999"
       assert item.data["ecommerce"]["shop_status"] == "active"
       assert Decimal.equal?(item.markup_percentage, Decimal.new(0))
       assert Decimal.equal?(item.base_price, Decimal.new("12.50"))
