@@ -110,6 +110,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     if connected?(socket) do
       Events.subscribe_product(product.uuid)
       Events.subscribe_inventory()
+      Events.subscribe_currencies()
     end
 
     seo = SEOHelpers.product_seo(product, current_language)
@@ -321,6 +322,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     if connected?(socket) do
       Events.subscribe_product(product.uuid)
       Events.subscribe_inventory()
+      Events.subscribe_currencies()
     end
 
     seo = SEOHelpers.product_seo(product, current_language)
@@ -1498,6 +1500,12 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     else
       {:noreply, socket}
     end
+  end
+
+  # §4.2.1 п.5: a currency-table change re-renders this tab's prices.
+  @impl true
+  def handle_info({:currencies_changed, _code}, socket) do
+    {:noreply, Helpers.refresh_display_currency(socket)}
   end
 
   # Catch-all: an unrecognised message must not take the LiveView down.

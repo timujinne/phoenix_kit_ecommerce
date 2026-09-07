@@ -17,8 +17,12 @@ defmodule PhoenixKitEcommerce.CartItem do
   - `product_slug` - Product slug snapshot
   - `product_sku` - Product SKU snapshot
   - `product_image` - Product image URL snapshot
-  - `unit_price` - Price per unit at time of adding (required)
-  - `compare_at_price` - Original price for showing discounts
+  - `unit_price` - Price per unit at time of adding (required), frozen in
+    the CART's own currency (§4.3.1, §4.4, §12.1)
+  - `compare_at_price` - Original price for showing discounts, frozen the
+    same way and at the same rate as `unit_price` (§4.3.1) — never a raw
+    base amount alongside an already-converted `unit_price`, or the
+    displayed discount misstates itself
   - `quantity` - Number of items (required, > 0)
   - `line_total` - Calculated: unit_price * quantity
   - `weight_grams` - Weight for shipping calculation
@@ -165,6 +169,12 @@ defmodule PhoenixKitEcommerce.CartItem do
       # after calling `from_product/3`, the same as `unit_price` above.
       base_unit_price:
         if(PriceDisplay.on_request?(product), do: Decimal.new(0), else: product.price),
+      # Default only, same as `unit_price`/`base_unit_price` above — a base
+      # amount here. Both cart-context callers convert it forward into the
+      # cart's own currency, through the SAME `snapshot_unit_price/2` the
+      # unit price uses, right after calling `from_product/3` (§4.3.1: a
+      # cart line's "was" price must discount from the same currency frame
+      # as its "now" price, or the displayed percentage off is wrong).
       compare_at_price:
         if(PriceDisplay.on_request?(product), do: nil, else: product.compare_at_price),
       # Line amounts are summed in the CART's currency frame, so the line

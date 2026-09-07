@@ -5128,3 +5128,28 @@ msgstr "Le slug de l'ensemble ne peut pas être vide"
 #, elixir-autogen, elixir-format
 msgid "Set slug, e.g. size"
 msgstr "Slug de l'ensemble, ex. size"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1094
+#, elixir-autogen, elixir-format
+msgid "Reprice at the current rate"
+msgstr "Recalculer au taux actuel"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:512
+#, elixir-autogen, elixir-format
+msgid "The cart could not be repriced — please try again"
+msgstr "Le panier n'a pas pu être recalculé — veuillez réessayer"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1077
+#, elixir-autogen, elixir-format
+msgid "The exchange rate has changed since you started this cart"
+msgstr "Le taux de change a changé depuis la création de ce panier"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:508
+#, elixir-autogen, elixir-format
+msgid "Your cart has been repriced at the current exchange rate"
+msgstr "Votre panier a été recalculé au taux actuel"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1080
+#, elixir-autogen, elixir-format
+msgid "Your cart is priced at rate %{frozen}; the current rate is %{current} (%{pct}% apart). Your prices stay as shown unless you reprice."
+msgstr "Votre panier est calculé au taux %{frozen} ; le taux actuel est %{current} (écart de %{pct} %). Vos prix restent tels qu'affichés tant que vous ne recalculez pas."

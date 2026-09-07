@@ -9,6 +9,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
   alias PhoenixKit.Settings
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Vocabulary
@@ -38,6 +39,8 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
   end
 
   defp do_mount(%{"slug" => slug} = params, _session, socket) do
+    if connected?(socket), do: Events.subscribe_currencies()
+
     # Determine language: use URL locale param if present, otherwise default
     # This ensures /shop/... always uses default language, not session
     current_language =
@@ -224,6 +227,16 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
         end
     end
   end
+
+  # §4.2.1 п.5: a currency-table change re-renders this tab's prices.
+  @impl true
+  def handle_info({:currencies_changed, _code}, socket) do
+    {:noreply, Helpers.refresh_display_currency(socket)}
+  end
+
+  # Catch-all: an unrecognised message must not take the LiveView down.
+  @impl true
+  def handle_info(_message, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("filter_price", params, socket) do

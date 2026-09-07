@@ -5128,3 +5128,28 @@ msgstr "Set-Slug darf nicht leer sein"
 #, elixir-autogen, elixir-format
 msgid "Set slug, e.g. size"
 msgstr "Set-Slug, z. B. size"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1094
+#, elixir-autogen, elixir-format
+msgid "Reprice at the current rate"
+msgstr "Zum aktuellen Kurs neu berechnen"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:512
+#, elixir-autogen, elixir-format
+msgid "The cart could not be repriced — please try again"
+msgstr "Der Warenkorb konnte nicht neu berechnet werden – bitte erneut versuchen"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1077
+#, elixir-autogen, elixir-format
+msgid "The exchange rate has changed since you started this cart"
+msgstr "Der Wechselkurs hat sich seit dem Anlegen dieses Warenkorbs geändert"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:508
+#, elixir-autogen, elixir-format
+msgid "Your cart has been repriced at the current exchange rate"
+msgstr "Ihr Warenkorb wurde zum aktuellen Kurs neu berechnet"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1080
+#, elixir-autogen, elixir-format
+msgid "Your cart is priced at rate %{frozen}; the current rate is %{current} (%{pct}% apart). Your prices stay as shown unless you reprice."
+msgstr "Ihr Warenkorb ist zum Kurs %{frozen} berechnet; der aktuelle Kurs ist %{current} (%{pct} % Abweichung). Ihre Preise bleiben wie angezeigt, solange Sie nicht neu berechnen."

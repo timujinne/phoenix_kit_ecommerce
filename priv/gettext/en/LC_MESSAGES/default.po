@@ -5127,3 +5127,28 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "Set slug, e.g. size"
 msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1094
+#, elixir-autogen, elixir-format
+msgid "Reprice at the current rate"
+msgstr "Reprice at the current rate"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:512
+#, elixir-autogen, elixir-format
+msgid "The cart could not be repriced — please try again"
+msgstr "The cart could not be repriced — please try again"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1077
+#, elixir-autogen, elixir-format
+msgid "The exchange rate has changed since you started this cart"
+msgstr "The exchange rate has changed since you started this cart"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:508
+#, elixir-autogen, elixir-format
+msgid "Your cart has been repriced at the current exchange rate"
+msgstr "Your cart has been repriced at the current exchange rate"
+
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1080
+#, elixir-autogen, elixir-format
+msgid "Your cart is priced at rate %{frozen}; the current rate is %{current} (%{pct}% apart). Your prices stay as shown unless you reprice."
+msgstr "Your cart is priced at rate %{frozen}; the current rate is %{current} (%{pct}% apart). Your prices stay as shown unless you reprice."

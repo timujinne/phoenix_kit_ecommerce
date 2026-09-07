@@ -4,7 +4,10 @@ defmodule PhoenixKitEcommerce.CartFxFreezeTest do
   (per-domain-currency spec §4.4, §12.2): a line snapshots in the cart's
   frozen currency at the cart's frozen rate — never a fresh table lookup —
   and only emptying the cart (never a plain add/remove with items left
-  over) refreshes the rate.
+  over) refreshes the rate. `compare_at_price` snapshots at the same rate
+  as `unit_price`, not as a leftover base amount (§4.3.1) — a "was" price
+  in the wrong currency frame from the "now" price next to it misstates
+  the discount shown.
   """
 
   use PhoenixKitEcommerce.DataCase, async: false
@@ -73,6 +76,33 @@ defmodule PhoenixKitEcommerce.CartFxFreezeTest do
     assert Decimal.equal?(item.base_unit_price, Decimal.new("138.00"))
     assert item.currency == "EUR"
     assert Decimal.equal?(cart.subtotal, Decimal.new("125.45"))
+  end
+
+  test "compare_at_price freezes at the same rate as unit_price, preserving the discount (§4.3.1)" do
+    Currency.put_request_currency("EUR")
+    {:ok, cart} = Shop.create_cart(session_id: "s-#{System.unique_integer([:positive])}")
+
+    {:ok, product} =
+      Shop.create_product(
+        product_attrs(%{
+          "price" => Decimal.new("138.00"),
+          "compare_at_price" => Decimal.new("180.00")
+        })
+      )
+
+    {:ok, cart} = Shop.add_to_cart(cart, product, 1)
+    [item] = cart.items
+    assert Decimal.equal?(item.unit_price, Decimal.new("125.45"))
+    assert Decimal.equal?(item.compare_at_price, Decimal.new("163.64"))
+
+    # The discount ratio the shopper sees must match the product's own,
+    # not one distorted by comparing a converted price against a raw
+    # base one. 163.64/125.45 and 180/138 agree to within a cent on a
+    # 138.00 base line.
+    frozen_ratio = Decimal.div(item.compare_at_price, item.unit_price)
+    base_ratio = Decimal.div(Decimal.new("180.00"), Decimal.new("138.00"))
+
+    assert_in_delta Decimal.to_float(frozen_ratio), Decimal.to_float(base_ratio), 0.001
   end
 
   test "the frozen rate wins over a later table change on a non-empty cart (§4.4)" do

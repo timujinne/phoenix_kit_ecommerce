@@ -132,8 +132,9 @@ defmodule PhoenixKitEcommerce.Cart do
 
   `:currency`/`:base_currency`/`:exchange_rate` are only ever present in
   `attrs` when the cart was just emptied (§4.4) — see
-  `recalculate_cart_totals!/1`'s `fx_refresh` map — never as a side
-  effect of a normal totals recompute over existing items.
+  `recalculate_cart_totals!/1`'s `fx_refresh` map — or on the shopper's
+  explicit `refresh_cart_rate/1` (§4.4) — never as a side effect of a
+  normal totals recompute over existing items.
   """
   def totals_changeset(cart, attrs) do
     cart

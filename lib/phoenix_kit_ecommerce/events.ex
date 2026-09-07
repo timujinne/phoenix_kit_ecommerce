@@ -14,6 +14,9 @@ defmodule PhoenixKitEcommerce.Events do
   - `shop:categories` - Category events (created, updated, deleted)
   - `shop:inventory` - Inventory events (stock changes)
   - `shop:products:{product_uuid}` - Individual product events
+  - `phoenix_kit:billing:currencies` - Currency-table changes (rate, rounding
+    rule, enabled flag, base) — this is Billing's own topic, exposed here so
+    storefront LiveViews only need `PhoenixKitEcommerce.Events`
 
   ## Events
 
@@ -39,6 +42,10 @@ defmodule PhoenixKitEcommerce.Events do
 
   ### Inventory Events
   - `{:inventory_updated, product_uuid, stock_change}` - Stock level changed
+
+  ### Currency Events
+  - `{:currencies_changed, code}` - A currency row changed (rate, rounding
+    rule, enabled flag, or which currency is the base)
 
   ## Examples
 
@@ -170,6 +177,21 @@ defmodule PhoenixKitEcommerce.Events do
   """
   def subscribe_inventory do
     Manager.subscribe(@inventory_topic)
+  end
+
+  # --------------------------------------------
+  # Currency Subscriptions
+  # --------------------------------------------
+
+  @doc """
+  Subscribes to currency-table changes (rate, rounding rule, enabled flag,
+  base) — published by `PhoenixKitBilling.Events` after Billing clears its
+  currency cache. Message: `{:currencies_changed, code}`. Storefront
+  LiveViews answer with `Helpers.refresh_display_currency/1`
+  (per-domain-currency spec §4.2.1 п.5).
+  """
+  def subscribe_currencies do
+    PhoenixKitBilling.Events.subscribe_currencies()
   end
 
   @doc """

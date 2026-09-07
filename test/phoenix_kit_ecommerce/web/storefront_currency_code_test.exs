@@ -8,21 +8,9 @@ defmodule PhoenixKitEcommerce.Web.StorefrontCurrencyCodeTest do
   (a fresh page load, or a new visitor) rather than staying pinned to
   whatever rate was live when a still-open tab first mounted.
 
-  NOT tested here: whether an ALREADY-MOUNTED LiveView's price display
-  updates itself without any further interaction. It does not, and that
-  is a LiveView mechanic, not a currency-conversion bug — HEEx's
-  compile-time change tracking only re-evaluates an expression when one
-  of the `@assign`s it statically reads has itself changed; a currency
-  row changing in the database touches no assign, so `render(view)`
-  alone keeps showing the last-rendered figure. An interaction whose
-  event handler reassigns `@quantity` DOES force the whole template to
-  re-render — and the total (which also multiplies by `@quantity`)
-  picks up the new rate then — but the bare price display next to it,
-  reading only `@product`/`@currency`/`@calculated_price`, is skipped by
-  change tracking and stays stale until something re-touches ITS OWN
-  assigns. Flagged to the team lead as a real gap outside this task's
-  scope (no PubSub/broadcast exists yet to push a currency change to
-  open storefront tabs); not fixed here.
+  An already-mounted tab DOES re-render since stage Э2 — see
+  `PhoenixKitEcommerce.Web.StorefrontFxRefreshTest`; this file stays
+  about the next-mount path.
   """
 
   use PhoenixKitEcommerce.LiveCase, async: false
