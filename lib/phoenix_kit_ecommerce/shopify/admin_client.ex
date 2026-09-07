@@ -43,6 +43,46 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClient do
   end
 
   @doc """
+  Fetches the connected store's own `shop.json` — its name, domain, and
+  crucially its `currency`. Per the per-domain-currency design (§7.5), a
+  Shopify sync must be able to check the store's own currency against
+  the base currency and refuse price updates on a mismatch rather than
+  silently reimporting numbers that no longer mean what they used to.
+
+  A single, unpaginated request — unlike `fetch_products/2` and its
+  siblings, there is only ever one shop.
+
+  ## Options
+
+    * `:req_options` — as `fetch_products/2`.
+  """
+  @spec fetch_shop(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def fetch_shop(integration_uuid, opts \\ []) do
+    with {:ok, {shop_domain, req}} <-
+           resolve_client(integration_uuid, Keyword.get(opts, :req_options, [])) do
+      req
+      |> Req.get(url: shop_url(shop_domain))
+      |> parse_shop_response()
+    end
+  end
+
+  @doc false
+  # Split out of `fetch_shop/2` so the response-shape handling can be
+  # covered directly (`AdminClientTest`) without a network call — the
+  # error atoms mirror `fetch_all/5`'s own status-code handling above,
+  # so the two clients agree on what a given Shopify status means.
+  @spec parse_shop_response({:ok, Req.Response.t()} | {:error, term()}) ::
+          {:ok, map()} | {:error, term()}
+  def parse_shop_response({:ok, %{status: 200, body: %{"shop" => shop}}}), do: {:ok, shop}
+  def parse_shop_response({:ok, %{status: 401}}), do: {:error, :unauthorized}
+  def parse_shop_response({:ok, %{status: 403}}), do: {:error, :forbidden}
+  def parse_shop_response({:ok, %{status: 404}}), do: {:error, :shop_not_found}
+  def parse_shop_response({:ok, %{status: status}}), do: {:error, {:unexpected_status, status}}
+  def parse_shop_response({:error, reason}), do: {:error, reason}
+
+  defp shop_url(shop_domain), do: "https://#{shop_domain}/admin/api/#{@api_version}/shop.json"
+
+  @doc """
   Fetches every collection from the connected store — `custom_collections`
   and `smart_collections` concatenated, each paginated like
   `fetch_products/2`. Each returned collection carries `"kind"` (`"custom"`
