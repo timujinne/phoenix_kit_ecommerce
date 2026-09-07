@@ -394,12 +394,16 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     known_image_ids =
       get_in(item.data || %{}, ["ecommerce", "shopify", "image_ids"]) || %{}
 
-    url_index = shop_url_index()
+    # A caller syncing the whole catalogue passes ONE index in (see
+    # `build_url_index/0`) so the shop-wide lookup costs one query per
+    # run rather than one per product; a single-item caller omits it and
+    # gets a freshly built one.
+    url_index = Keyword.get(opts, :url_index) || build_url_index()
 
     images = (shopify_product["images"] || []) |> Enum.sort_by(&(&1["position"] || 0))
 
-    {image_ids, file_uuids, downloaded, reused, errors} =
-      Enum.reduce(images, {%{}, [], 0, 0, []}, fn image, acc ->
+    {image_ids, file_uuids, downloaded, reused, errors, fresh_urls} =
+      Enum.reduce(images, {%{}, [], 0, 0, [], %{}}, fn image, acc ->
         resolve_image(image, known_image_ids, url_index, downloader, user_uuid, acc)
       end)
 
@@ -413,7 +417,16 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     with {:ok, item_with_ids} <- put_image_ids(item, image_ids),
          {:ok, _final_item} <- attach_images(item_with_ids, file_uuids) do
       {:ok,
-       %{downloaded: downloaded, reused: reused, attached: length(file_uuids), errors: errors}}
+       %{
+         downloaded: downloaded,
+         reused: reused,
+         attached: length(file_uuids),
+         errors: errors,
+         # The index the caller passed in, plus what this product just
+         # downloaded — a catalogue-wide run threads this into the next
+         # product so a shared image is fetched once, not once per item.
+         url_index: Map.merge(url_index, fresh_urls)
+       }}
     end
   end
 
@@ -443,7 +456,9 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   defp download_image(id, src, downloader, user_uuid, acc) do
     case downloader.(src, user_uuid, []) do
       {:ok, uuid} ->
-        put_resolved(acc, id, uuid, :downloaded)
+        acc
+        |> put_fresh_url(src, uuid)
+        |> put_resolved(id, uuid, :downloaded)
 
       {:error, reason} ->
         # No provable prior binding for this id (see `reused_file_uuid/4`
@@ -453,16 +468,33 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     end
   end
 
-  defp put_resolved({image_ids, file_uuids, downloaded, reused, errors}, id, uuid, :downloaded) do
-    {Map.put(image_ids, id, uuid), [uuid | file_uuids], downloaded + 1, reused, errors}
+  defp put_resolved(
+         {image_ids, file_uuids, downloaded, reused, errors, fresh},
+         id,
+         uuid,
+         :downloaded
+       ) do
+    {Map.put(image_ids, id, uuid), [uuid | file_uuids], downloaded + 1, reused, errors, fresh}
   end
 
-  defp put_resolved({image_ids, file_uuids, downloaded, reused, errors}, id, uuid, :reused) do
-    {Map.put(image_ids, id, uuid), [uuid | file_uuids], downloaded, reused + 1, errors}
+  defp put_resolved({image_ids, file_uuids, downloaded, reused, errors, fresh}, id, uuid, :reused) do
+    {Map.put(image_ids, id, uuid), [uuid | file_uuids], downloaded, reused + 1, errors, fresh}
   end
 
-  defp put_error({image_ids, file_uuids, downloaded, reused, errors}, id, reason) do
-    {image_ids, file_uuids, downloaded, reused, [{id, reason} | errors]}
+  # A file this run just downloaded is reusable by the next product in
+  # the same run, before any index rebuild would have seen it.
+  defp put_fresh_url({image_ids, file_uuids, downloaded, reused, errors, fresh}, src, uuid) do
+    fresh =
+      case normalize_image_url(src) do
+        url when is_binary(url) -> Map.put_new(fresh, url, uuid)
+        _ -> fresh
+      end
+
+    {image_ids, file_uuids, downloaded, reused, errors, fresh}
+  end
+
+  defp put_error({image_ids, file_uuids, downloaded, reused, errors, fresh}, id, reason) do
+    {image_ids, file_uuids, downloaded, reused, [{id, reason} | errors], fresh}
   end
 
   defp put_image_ids(item, image_ids) do
@@ -497,7 +529,18 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   # is just as reusable as one already linked to THIS item, and Shopify
   # products commonly share the exact same image `src` across a whole
   # product line.
-  defp shop_url_index do
+  @doc """
+  The shop-wide "download source URL -> file uuid" index `sync_images/3`
+  matches against, built once.
+
+  Pass it back in as `opts[:url_index]` when syncing many products in a
+  row: the index is one query over every active file in Storage, and
+  rebuilding it per product turns a catalogue-wide media sync into one
+  full scan per item. `merge_url_index/2` folds the files a product just
+  downloaded into it, so later products in the same run still reuse them.
+  """
+  @spec build_url_index() :: %{optional(String.t()) => String.t()}
+  def build_url_index do
     from(f in StorageFile,
       where: f.status == "active" and fragment("?->>'source_url' IS NOT NULL", f.metadata)
     )

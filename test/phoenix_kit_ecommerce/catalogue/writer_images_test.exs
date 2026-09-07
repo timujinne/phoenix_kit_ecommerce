@@ -517,4 +517,51 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterImagesTest do
       assert file.user_uuid == expected_actor_uuid
     end
   end
+
+  describe "url_index option" do
+    test "a caller-supplied index is used, and comes back grown by this product's downloads",
+         %{item: item, user_uuid: user_uuid} do
+      # A catalogue-wide run builds the index once and threads it from one
+      # product to the next; rebuilding it per product would scan every
+      # stored file per item.
+      set_product_source("catalogue")
+
+      src = "https://cdn.shopify.com/s/files/1/fresh.jpg?v=9"
+      product = %{"images" => [%{"id" => 901, "src" => src, "position" => 1}]}
+      {downloader, counter} = counting_downloader(user_uuid)
+
+      {:ok, result} =
+        Writer.sync_images(item, product,
+          downloader: downloader,
+          user_uuid: user_uuid,
+          url_index: %{}
+        )
+
+      assert result.downloaded == 1
+      assert Agent.get(counter, & &1) == 1
+
+      # The freshly downloaded file is in the index handed back, so the
+      # next product sharing this src reuses it inside the same run.
+      assert Map.has_key?(result.url_index, "https://cdn.shopify.com/s/files/1/fresh.jpg")
+
+      {:ok, sibling} =
+        Catalogue.create_item(%{
+          catalogue_uuid: item.catalogue_uuid,
+          name: "Sibling Mug",
+          base_price: Decimal.new("10.00"),
+          status: "active",
+          data: %{"ecommerce" => %{"shop_status" => "active"}}
+        })
+
+      {:ok, second} =
+        Writer.sync_images(sibling, product,
+          downloader: fn _url, _uuid, _opts -> {:error, :should_not_download} end,
+          user_uuid: user_uuid,
+          url_index: result.url_index
+        )
+
+      assert second.reused == 1
+      assert second.downloaded == 0
+    end
+  end
 end
