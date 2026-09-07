@@ -18,21 +18,54 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   `:new_products`, which `apply_change/2`/`apply_changes/2` dispatch to
   `Writer.create_from_shopify/2`. Under the legacy source `:new_products`
   is always `[]` — creating products there stays the CSV importer's job.
+
+  ## Currency guard (per-domain-currency design §7.5)
+
+  `apply_change/3`/`apply_changes/3` compare the connected Shopify
+  store's OWN currency (`AdminClient.fetch_shop/2`) against the shop's
+  base currency before writing any PRICE field (`:price`,
+  `:compare_at_price`) — never before writing anything else. On a
+  mismatch the price fields are dropped from what gets applied (an
+  otherwise-eligible non-price field on the SAME change, e.g. `:title`,
+  still gets written) and a `Logger.error/1` names both currencies; a
+  change whose ONLY requested fields were price fields returns
+  `{:error, {:currency_mismatch, shop_currency, base_currency}}` instead
+  of a silent no-op success. This never applies to a create-`Change`
+  (`create?: true`) — `Writer.create_from_shopify/2` always labels a new
+  item's price with the base currency code (§4.6) unconditionally, since
+  there is no prior local price for a mismatch to corrupt.
+
+  The shop lookup itself happens ONCE per `apply_changes/3` call (a
+  batch of N products, one lookup, not N — see `shop_currency_verdict/1`),
+  not once per `apply_change/3` (a single call is its own batch of one).
+  A lookup failure (no Shopify connection, network, bad credentials)
+  never blocks a sync that was otherwise working: it logs one
+  `Logger.warning/1` and proceeds exactly as if the guard were absent —
+  see `shop_currency_verdict/1`'s own doc for why this fails in the
+  OTHER direction from the mismatch case above.
   """
 
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue}
 
+  require Logger
+
+  alias PhoenixKit.Integrations
   alias PhoenixKitCatalogue.Catalogue, as: CatalogueApi
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Catalogue.Writer
   alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.ProductSource.Catalogue.View, as: CatalogueView
+  alias PhoenixKitEcommerce.Shopify.AdminClient
   alias PhoenixKitEcommerce.Shopify.ProductDiff
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
   alias PhoenixKitEcommerce.Shopify.Source
   alias PhoenixKitEcommerce.Translations
 
   @localized_fields [:title, :body_html, :description]
+
+  # The two fields the per-domain-currency design (§7.5) forbids writing
+  # on a shop-currency mismatch — see `resolve_priced_fields/3`.
+  @price_fields [:price, :compare_at_price]
 
   @doc """
   Fetches Shopify products for `integration_uuid` via `Source.fetch/2`
@@ -160,23 +193,49 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   so it's fetched with `PhoenixKitCatalogue.Catalogue.get_item!/1`, not
   `Shop.get_product!/1` (which would hand back a read-only view-struct
   `Shop.update_product/2` refuses).
-  """
-  @spec apply_change(Change.t(), :all | [atom()]) ::
-          {:ok, PhoenixKitEcommerce.Product.t()} | {:error, Ecto.Changeset.t() | term()}
-  def apply_change(change, fields \\ :all)
 
-  def apply_change(%Change{create?: true} = change, _fields) do
+  Before writing, `:price`/`:compare_at_price` are subject to the
+  currency guard (this module's moduledoc, §7.5): on a shop-currency
+  mismatch they are dropped from `fields_to_apply` (a non-price field on
+  the same change still gets written) and, if that was the only thing
+  `fields` asked for, this returns `{:error, {:currency_mismatch,
+  shop_currency, base_currency}}` instead of a silent no-op success. A
+  create-`Change` is never subject to this guard — see the moduledoc for
+  why.
+
+  `opts[:admin_options]` forwards to `AdminClient.fetch_shop/2` for the
+  currency-guard lookup (e.g. `req_options:` to stub the transport in
+  tests) — the same option name `check/2` already uses for its own Admin
+  API call.
+  """
+  @spec apply_change(Change.t(), :all | [atom()], keyword()) ::
+          {:ok, PhoenixKitEcommerce.Product.t()} | {:error, Ecto.Changeset.t() | term()}
+  def apply_change(change, fields \\ :all, opts \\ [])
+
+  def apply_change(%Change{create?: true} = change, _fields, _opts), do: create_change(change)
+
+  def apply_change(%Change{} = change, fields, opts) do
+    do_apply_change(change, fields, shop_currency_verdict(opts))
+  end
+
+  defp create_change(%Change{} = change) do
     case Writer.create_from_shopify(change.shopify_product, change.base_locale) do
       {:ok, item} -> {:ok, CatalogueView.product_view(item)}
       error -> error
     end
   end
 
-  def apply_change(%Change{} = change, fields) do
-    if ProductSource.current() == ProductSource.Catalogue do
-      apply_catalogue_change(change, fields)
-    else
-      apply_legacy_change(change, fields)
+  defp do_apply_change(%Change{} = change, fields, verdict) do
+    case resolve_priced_fields(fields, change.changes, verdict) do
+      {:error, {shop_currency, base_currency}} ->
+        {:error, {:currency_mismatch, shop_currency, base_currency}}
+
+      {:ok, fields_to_apply} ->
+        if ProductSource.current() == ProductSource.Catalogue do
+          apply_catalogue_change(change, fields_to_apply)
+        else
+          apply_legacy_change(change, fields_to_apply)
+        end
     end
   end
 
@@ -230,21 +289,135 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   attempted. Returns `%{succeeded: [Change.t()], failed: [Change.t()]}`,
   each preserving the input order — so a caller can drop `succeeded` and
   keep offering `failed` for retry instead of reporting them as done.
+
+  The currency guard's shop lookup (this module's moduledoc, §7.5) runs
+  ONCE for the whole batch, not once per change in `changes` — see
+  `shop_currency_verdict/1`. `opts[:admin_options]` is the same option
+  `apply_change/3` takes for that lookup.
   """
-  @spec apply_changes([Change.t()], :all | [atom()]) :: %{
+  @spec apply_changes([Change.t()], :all | [atom()], keyword()) :: %{
           succeeded: [Change.t()],
           failed: [Change.t()]
         }
-  def apply_changes(changes, fields \\ :all) do
+  def apply_changes(changes, fields \\ :all, opts \\ []) do
+    verdict = shop_currency_verdict(opts)
+
     %{succeeded: succeeded, failed: failed} =
       Enum.reduce(changes, %{succeeded: [], failed: []}, fn change, acc ->
-        case apply_change(change, fields) do
+        case apply_change_with_verdict(change, fields, verdict) do
           {:ok, _product} -> %{acc | succeeded: [change | acc.succeeded]}
           {:error, _changeset} -> %{acc | failed: [change | acc.failed]}
         end
       end)
 
     %{succeeded: Enum.reverse(succeeded), failed: Enum.reverse(failed)}
+  end
+
+  defp apply_change_with_verdict(%Change{create?: true} = change, _fields, _verdict),
+    do: create_change(change)
+
+  defp apply_change_with_verdict(%Change{} = change, fields, verdict),
+    do: do_apply_change(change, fields, verdict)
+
+  # Looks up the connected Shopify store's own currency and compares it
+  # against the base currency (§7.5) — see this module's moduledoc for
+  # the mismatch/lookup-failure behaviour this feeds `resolve_priced_fields/3`.
+  #
+  # `:match` covers three cases identically, on purpose: currencies
+  # actually agree, no Shopify connection exists at all (nothing to
+  # mismatch against), and the lookup failed (fail OPEN — an unreachable
+  # Shopify must never stop a sync that was otherwise working).
+  # `opts[:admin_options]` forwards to `AdminClient.fetch_shop/2`.
+  @spec shop_currency_verdict(keyword()) :: :match | {:mismatch, String.t(), String.t()}
+  defp shop_currency_verdict(opts) do
+    case shopify_integration_uuid() do
+      nil ->
+        :match
+
+      uuid ->
+        admin_options = Keyword.get(opts, :admin_options, [])
+
+        case AdminClient.fetch_shop(uuid, admin_options) do
+          {:ok, %{"currency" => shop_currency}} when is_binary(shop_currency) ->
+            compare_currency(shop_currency)
+
+          {:ok, _shop} ->
+            log_lookup_failure(:missing_currency)
+
+          {:error, reason} ->
+            log_lookup_failure(reason)
+        end
+    end
+  end
+
+  defp shopify_integration_uuid do
+    case Integrations.list_connections("shopify", owner: :system) do
+      [%{uuid: uuid} | _rest] -> uuid
+      [] -> nil
+    end
+  end
+
+  defp compare_currency(shop_currency) do
+    case base_currency_code() do
+      nil -> :match
+      base when base == shop_currency -> :match
+      base -> {:mismatch, shop_currency, base}
+    end
+  end
+
+  defp base_currency_code do
+    case Shop.get_base_currency() do
+      %{code: code} -> code
+      nil -> nil
+    end
+  end
+
+  defp log_lookup_failure(reason) do
+    Logger.warning(
+      "Shopify sync: could not verify the shop's currency (#{inspect(reason)}) — " <>
+        "proceeding without the currency guard"
+    )
+
+    :match
+  end
+
+  # Strips `@price_fields` from what `fields` would otherwise resolve to
+  # against `changes` (see `resolve_fields/2`) on a mismatch — reusing
+  # that same resolution rather than adding a parallel one, since a
+  # pre-filtered list is safe to hand back into it (`resolve_fields/2`
+  # on an already-filtered list is idempotent).
+  #
+  # `{:ok, fields}` — nothing to refuse (no price field was requested),
+  # or a price field was refused but something else survives to apply.
+  # `{:error, {shop, base}}` only when EVERY field this change would
+  # have applied was a price field — there's nothing left to write, so
+  # this reports the refusal as this call's own error instead of a
+  # silent, empty "success".
+  defp resolve_priced_fields(fields, changes, :match), do: {:ok, resolve_fields(fields, changes)}
+
+  defp resolve_priced_fields(fields, changes, {:mismatch, shop, base}) do
+    resolved = resolve_fields(fields, changes)
+    priced = Enum.filter(resolved, &(&1 in @price_fields))
+
+    case resolved -- priced do
+      _remaining when priced == [] ->
+        {:ok, resolved}
+
+      [] ->
+        log_price_refusal(priced, shop, base)
+        {:error, {shop, base}}
+
+      remaining ->
+        log_price_refusal(priced, shop, base)
+        {:ok, remaining}
+    end
+  end
+
+  defp log_price_refusal(fields, shop_currency, base_currency) do
+    Logger.error(
+      "Shopify sync: refusing to write #{inspect(fields)} — shop currency " <>
+        "#{shop_currency} does not match base currency #{base_currency} (design spec §7.5)"
+    )
   end
 
   defp resolve_fields(:all, changes), do: Map.keys(changes)
