@@ -4191,16 +4191,22 @@ defmodule PhoenixKitEcommerce do
     - `shipping_methods.price`, `.free_above_amount`, `.min_order_amount`,
       `.max_order_amount`
 
-  KNOWN RISK, not fixed here (pre-existing and app-wide, out of scope for
-  this operation): writing a product's overrides goes through
+  GUARDED HAZARD: writing a product's overrides goes through
   `update_product/2`, whose `MetadataValidator.normalize_product_attrs/1`
   collapses an explicit `%{"type" => ..., "value" => ...}` override to a
-  bare string on ANY save, this one included — so a product whose override
-  type disagrees with its option schema's default would silently have
-  that override's type reverted during a currency change, an operation
-  where an operator has the least reason to expect unrelated data to
-  move. See `MetadataValidator.normalize_product_attrs/1` for the
-  existing behavior.
+  bare string on ANY save, this one included — so a product whose
+  override type disagrees with its option schema's default would
+  silently have that override's type reverted, an operation where an
+  operator has the least reason to expect unrelated data to move. Rather
+  than let that happen silently, this function scans every product's
+  overrides BEFORE any write and refuses the ENTIRE operation with
+  `{:error, {:ambiguous_modifier_overrides, mismatches}}` — `mismatches`
+  a list of `%{product_uuid:, option_key:, stored_type:, schema_type:}`
+  — if any explicit override's own type disagrees with its option's
+  schema default. An explicit override whose type AGREES with the
+  schema default is harmless (the normalizer's collapse is lossless
+  there) and does not refuse. See `MetadataValidator.normalize_product_attrs/1`
+  for the underlying behavior this guards against.
 
   Never touches carts or orders (§4.9 step 6) — they carry their own
   frozen `currency`/`exchange_rate` (§4.4, §4.5), which is the entire
@@ -4245,7 +4251,9 @@ defmodule PhoenixKitEcommerce do
   price-modifier VALUES touched in that store; percent entries are never
   counted because they are never touched. Returns `{:error, term}` on the
   first failure encountered — including `{:error, {:unsupported_product_source, _}}`
-  from the check above.
+  from the product-source check and `{:error, {:ambiguous_modifier_overrides, _}}`
+  from the pre-flight override scan, both above, both raised before any
+  write happens.
   """
   @spec reprice_for_base_change(String.t(), String.t(), Decimal.t()) ::
           {:ok,
@@ -4259,10 +4267,19 @@ defmodule PhoenixKitEcommerce do
           | {:error, term()}
   def reprice_for_base_change(old_base_code, new_base_code, %Decimal{} = multiplier)
       when is_binary(old_base_code) and is_binary(new_base_code) do
-    with :ok <- reject_unsupported_product_source(),
+    case reject_unsupported_product_source() do
+      :ok -> do_reprice_for_base_change(new_base_code, multiplier)
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp do_reprice_for_base_change(new_base_code, multiplier) do
+    products = repo().all(Product)
+
+    with :ok <- reject_ambiguous_modifier_overrides(products),
          {:ok, decimal_places} <- fetch_currency_decimal_places(new_base_code),
-         {:ok, products, product_modifiers} <-
-           reprice_products_for_base_change(new_base_code, multiplier, decimal_places),
+         {:ok, product_count, product_modifiers} <-
+           reprice_products_for_base_change(products, new_base_code, multiplier, decimal_places),
          {:ok, global_modifiers} <-
            reprice_global_options_for_base_change(multiplier, decimal_places),
          {:ok, category_modifiers} <-
@@ -4271,12 +4288,69 @@ defmodule PhoenixKitEcommerce do
            reprice_shipping_methods_for_base_change(multiplier, decimal_places) do
       {:ok,
        %{
-         products: products,
+         products: product_count,
          shipping_methods: shipping_methods,
          global_modifiers: global_modifiers,
          category_modifiers: category_modifiers,
          product_modifiers: product_modifiers
        }}
+    end
+  end
+
+  # Pre-flight, before any write: refuses the WHOLE operation if any
+  # product's override is stored in the explicit `%{"type" => ...,
+  # "value" => ...}` format with a type that disagrees with its option's
+  # schema default — see the moduledoc's "GUARDED HAZARD" paragraph for
+  # why. Reuses `override_effective_type_and_amount/2` rather than a
+  # second parser: that function's contract already guarantees its
+  # returned type can differ from the schema default ONLY when the
+  # override carried an explicit, disagreeing `"type"` of its own — a
+  # bare-string or type-less override always echoes the schema default
+  # back unchanged (see that function's clauses).
+  defp reject_ambiguous_modifier_overrides(products) do
+    case Enum.flat_map(products, &product_modifier_mismatches/1) do
+      [] -> :ok
+      mismatches -> {:error, {:ambiguous_modifier_overrides, mismatches}}
+    end
+  end
+
+  defp product_modifier_mismatches(product) do
+    overrides = get_in(product.metadata || %{}, ["_price_modifiers"]) || %{}
+
+    if overrides == %{} do
+      []
+    else
+      schema_by_key = product_option_schema_by_key(product)
+
+      Enum.flat_map(overrides, fn {key, values} ->
+        option_modifier_mismatches(product.uuid, key, values, Map.get(schema_by_key, key))
+      end)
+    end
+  end
+
+  defp option_modifier_mismatches(product_uuid, key, values, schema_type) when is_map(values) do
+    Enum.reduce(values, [], fn {_value, modifier}, acc ->
+      accumulate_modifier_mismatch(acc, product_uuid, key, modifier, schema_type)
+    end)
+  end
+
+  defp option_modifier_mismatches(_product_uuid, _key, _values, _schema_type), do: []
+
+  defp accumulate_modifier_mismatch(acc, product_uuid, key, modifier, schema_type) do
+    case override_effective_type_and_amount(modifier, schema_type) do
+      {stored_type, amount}
+      when not is_nil(schema_type) and not is_nil(amount) and stored_type != schema_type ->
+        mismatch = %{
+          product_uuid: product_uuid,
+          option_key: key,
+          stored_type: stored_type,
+          schema_type: schema_type
+        }
+
+        [mismatch | acc]
+
+      _ ->
+        acc
     end
   end
 
@@ -4348,10 +4422,8 @@ defmodule PhoenixKitEcommerce do
 
   # ---- Products ----
 
-  defp reprice_products_for_base_change(new_base_code, multiplier, decimal_places) do
-    Product
-    |> repo().all()
-    |> Enum.reduce_while({:ok, 0, 0}, fn product, {:ok, products, modifiers} ->
+  defp reprice_products_for_base_change(products, new_base_code, multiplier, decimal_places) do
+    Enum.reduce_while(products, {:ok, 0, 0}, fn product, {:ok, products, modifiers} ->
       {new_metadata, changed} = reprice_product_overrides(product, multiplier, decimal_places)
 
       attrs =
@@ -4390,10 +4462,7 @@ defmodule PhoenixKitEcommerce do
     if overrides == %{} do
       {product.metadata, 0}
     else
-      schema_by_key =
-        product
-        |> Options.get_option_schema_for_product()
-        |> Map.new(fn opt -> {opt["key"], opt["modifier_type"]} end)
+      schema_by_key = product_option_schema_by_key(product)
 
       {new_overrides, count} =
         Enum.reduce(overrides, {%{}, 0}, fn {key, values}, {acc, count} ->
@@ -4407,6 +4476,16 @@ defmodule PhoenixKitEcommerce do
 
       {Map.put(product.metadata, "_price_modifiers", new_overrides), count}
     end
+  end
+
+  # Shared by the reprice pass and the pre-flight ambiguous-override scan
+  # — both need "what modifier_type does the merged (global + category)
+  # option schema declare for this product's option key", keyed for O(1)
+  # lookup per override key.
+  defp product_option_schema_by_key(product) do
+    product
+    |> Options.get_option_schema_for_product()
+    |> Map.new(fn opt -> {opt["key"], opt["modifier_type"]} end)
   end
 
   defp reprice_override_values(values, default_type, multiplier, decimal_places)

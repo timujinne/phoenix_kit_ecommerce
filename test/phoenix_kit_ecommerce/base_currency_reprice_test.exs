@@ -38,6 +38,7 @@ defmodule PhoenixKitEcommerce.BaseCurrencyRepriceTest do
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Options
+  alias PhoenixKitEcommerce.Product
 
   defp lang do
     PhoenixKitEcommerce.SlugResolver.normalize_language_public(
@@ -137,6 +138,32 @@ defmodule PhoenixKitEcommerce.BaseCurrencyRepriceTest do
       base_total: order.base_total,
       line_items: order.line_items
     }
+  end
+
+  defp money_snapshot_product(product_uuid) do
+    product = Shop.get_product!(product_uuid)
+
+    %{
+      price: product.price,
+      compare_at_price: product.compare_at_price,
+      cost_per_item: product.cost_per_item,
+      currency: product.currency,
+      metadata: product.metadata
+    }
+  end
+
+  # `create_product/1` runs every attrs map through
+  # `MetadataValidator.normalize_product_attrs/1`, which collapses an
+  # explicit `%{"type" => ..., "value" => ...}` override to a bare string
+  # on the way in — so building a fixture that actually PERSISTS the
+  # explicit format (the only way to exercise the pre-flight guard at
+  # all) has to go around that context function, straight through the
+  # changeset, the same way data imported before this normalizer existed
+  # would already sit in the table.
+  defp insert_product_with_raw_metadata!(attrs) do
+    %Product{}
+    |> Product.changeset(attrs)
+    |> Repo.insert!()
   end
 
   defp billing_data(n) do
@@ -300,5 +327,95 @@ defmodule PhoenixKitEcommerce.BaseCurrencyRepriceTest do
 
     override = reloaded_product.metadata["_price_modifiers"]["size"]["L"]
     assert Decimal.equal?(Decimal.new(override), Decimal.new("13.64"))
+  end
+
+  test "refuses when an explicit override's type disagrees with its option's schema, and writes nothing" do
+    n = System.unique_integer([:positive])
+
+    {:ok, control_product} =
+      Shop.create_product(%{
+        "title" => %{"en" => "Control #{n}", lang() => "Control #{n}"},
+        "slug" => %{lang() => "reprice-control-#{n}"},
+        "price" => Decimal.new("100.00"),
+        "status" => "active",
+        "currency" => "USD",
+        "requires_shipping" => false
+      })
+
+    # "material" is schema `modifier_type: "fixed"` (see setup); this
+    # override explicitly claims "percent" for the same option/value —
+    # exactly the disagreement the pre-flight guard exists to catch.
+    ambiguous_product =
+      insert_product_with_raw_metadata!(%{
+        "title" => %{"en" => "Ambiguous #{n}", lang() => "Ambiguous #{n}"},
+        "slug" => %{lang() => "reprice-ambiguous-#{n}"},
+        "price" => Decimal.new("60.00"),
+        "status" => "active",
+        "currency" => "USD",
+        "requires_shipping" => false,
+        "metadata" => %{
+          "_price_modifiers" => %{
+            "material" => %{"PETG" => %{"type" => "percent", "value" => "5"}}
+          }
+        }
+      })
+
+    control_before = money_snapshot_product(control_product.uuid)
+    ambiguous_before = money_snapshot_product(ambiguous_product.uuid)
+    global_options_before = Options.get_global_options()
+
+    assert {:error, {:ambiguous_modifier_overrides, mismatches}} =
+             Shop.reprice_for_base_change("USD", "EUR", Decimal.new("0.909091"))
+
+    assert mismatches == [
+             %{
+               product_uuid: ambiguous_product.uuid,
+               option_key: "material",
+               stored_type: "percent",
+               schema_type: "fixed"
+             }
+           ]
+
+    # Nothing written anywhere — not even the unrelated, otherwise-fine
+    # control product — proving the WHOLE operation refused up front
+    # rather than skipping just the one bad row.
+    assert money_snapshot_product(control_product.uuid) == control_before
+    assert money_snapshot_product(ambiguous_product.uuid) == ambiguous_before
+    assert Options.get_global_options() == global_options_before
+  end
+
+  test "an explicit override whose type agrees with its schema does not refuse, and reprices normally" do
+    n = System.unique_integer([:positive])
+
+    # Same explicit-map shape as the mismatch case, but "type" agrees
+    # with "material"'s schema default ("fixed") — the normalizer's
+    # eventual collapse to a bare string is lossless here, so this must
+    # NOT refuse.
+    product =
+      insert_product_with_raw_metadata!(%{
+        "title" => %{"en" => "Agrees #{n}", lang() => "Agrees #{n}"},
+        "slug" => %{lang() => "reprice-agrees-#{n}"},
+        "price" => Decimal.new("70.00"),
+        "status" => "active",
+        "currency" => "USD",
+        "requires_shipping" => false,
+        "metadata" => %{
+          "_price_modifiers" => %{
+            "material" => %{"PETG" => %{"type" => "fixed", "value" => "12.00"}}
+          }
+        }
+      })
+
+    assert {:ok, %{products: 1, product_modifiers: product_modifiers}} =
+             Shop.reprice_for_base_change("USD", "EUR", Decimal.new("0.909091"))
+
+    assert product_modifiers == 1
+
+    reloaded = Shop.get_product!(product.uuid)
+    assert Decimal.equal?(reloaded.price, Decimal.new("63.64"))
+    assert reloaded.currency == "EUR"
+
+    override = reloaded.metadata["_price_modifiers"]["material"]["PETG"]
+    assert Decimal.equal?(Decimal.new(override), Decimal.new("10.91"))
   end
 end
