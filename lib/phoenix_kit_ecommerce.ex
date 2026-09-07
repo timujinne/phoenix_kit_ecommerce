@@ -4152,6 +4152,368 @@ defmodule PhoenixKitEcommerce do
   end
 
   # ============================================
+  # BASE CURRENCY CHANGE (§4.9 steps 2-4)
+  # ============================================
+
+  @doc """
+  Reprices the catalog after a base-currency change (spec §4.9, steps 2-4).
+
+  This is the `:reprice` callback `PhoenixKitBilling.change_base_currency/2`
+  invokes — see that function's moduledoc for the full contract. In short:
+  it runs strictly INSIDE billing's own transaction, AFTER every currency
+  rate has already been renormalized and BEFORE the new base is promoted,
+  so it must NEVER open a transaction of its own — every `repo()` call it
+  makes joins the caller's transaction automatically (both packages resolve
+  `PhoenixKit.RepoHelper.repo()` to the same host repo). Returning
+  `{:error, _}` here rolls back the ENTIRE base-currency change, including
+  the rate renormalization — the catalog and the currency table can never
+  end up disagreeing about which currency is base.
+
+  `multiplier` is the new base currency's PRE-operation exchange rate
+  (billing hands it over explicitly because it stops being derivable from
+  the currency table the moment renormalization has run). Every stored
+  FIXED authoring amount is multiplied by it and rounded to
+  `new_base_code`'s `decimal_places` — nothing else. This is arithmetic on
+  stored prices, not a display conversion: `Currency.present/3` and
+  `rounding_rule` (§5) never enter here (§4.9's third consequence).
+
+  Touches, regardless of a product's own currency:
+
+    - `products.price`, `.compare_at_price`, `.cost_per_item`, `.currency`
+      (set to `new_base_code` — §4.6: the field means "the currency the
+      stored price is in")
+    - the global option schema's and every category's option schema's
+      FIXED `price_modifiers` entries (percent entries are currency-free
+      and are left untouched)
+    - a product's own `metadata["_price_modifiers"]` overrides whose
+      EFFECTIVE type — its own explicit override type if given, else the
+      schema option's `modifier_type` — is fixed
+    - `shipping_methods.price`, `.free_above_amount`, `.min_order_amount`,
+      `.max_order_amount`
+
+  Never touches carts or orders (§4.9 step 6) — they carry their own
+  frozen `currency`/`exchange_rate` (§4.4, §4.5), which is the entire
+  point of freezing them; this function does not reference either schema.
+
+  NOTE (this branch): the catalogue product source (`ProductSource` /
+  `phoenix_kit_catalogue`) is not part of this checkout's dependency graph
+  or `lib/` tree — it lives only on a separate, not-yet-merged branch. This
+  function therefore reprices only the LEGACY `PhoenixKitEcommerce.Product`
+  path. Catalogue-item repricing needs to be added here once that source
+  merges into this stack.
+
+  Returns `{:ok, %{products: n, shipping_methods: n, modifiers: n}}` where
+  `modifiers` counts individual FIXED price-modifier VALUES touched across
+  the global schema, every category schema, and every product override —
+  or `{:error, term}` on the first failure encountered.
+  """
+  @spec reprice_for_base_change(String.t(), String.t(), Decimal.t()) ::
+          {:ok,
+           %{
+             products: non_neg_integer(),
+             shipping_methods: non_neg_integer(),
+             modifiers: non_neg_integer()
+           }}
+          | {:error, term()}
+  def reprice_for_base_change(old_base_code, new_base_code, %Decimal{} = multiplier)
+      when is_binary(old_base_code) and is_binary(new_base_code) do
+    with {:ok, decimal_places} <- fetch_currency_decimal_places(new_base_code),
+         {:ok, products, product_modifiers} <-
+           reprice_products_for_base_change(new_base_code, multiplier, decimal_places),
+         {:ok, schema_modifiers} <-
+           reprice_option_schemas_for_base_change(multiplier, decimal_places),
+         {:ok, shipping_methods} <-
+           reprice_shipping_methods_for_base_change(multiplier, decimal_places) do
+      {:ok,
+       %{
+         products: products,
+         shipping_methods: shipping_methods,
+         modifiers: product_modifiers + schema_modifiers
+       }}
+    end
+  end
+
+  defp fetch_currency_decimal_places(code) do
+    case repo().get_by(Currency, code: code) do
+      %Currency{decimal_places: places} -> {:ok, places}
+      nil -> {:error, {:unknown_currency, code}}
+    end
+  end
+
+  defp reprice_amount(nil, _multiplier, _decimal_places), do: nil
+
+  defp reprice_amount(%Decimal{} = amount, multiplier, decimal_places) do
+    amount
+    |> Decimal.mult(multiplier)
+    |> Decimal.round(decimal_places)
+  end
+
+  defp maybe_put_repriced(attrs, _field, nil, _multiplier, _decimal_places), do: attrs
+
+  defp maybe_put_repriced(attrs, field, %Decimal{} = amount, multiplier, decimal_places) do
+    Map.put(attrs, field, reprice_amount(amount, multiplier, decimal_places))
+  end
+
+  # Reprices a FIXED modifier's stored decimal string. Non-numeric or
+  # empty values are left untouched rather than raising — a malformed
+  # stored value is a pre-existing data problem this operation should not
+  # newly fail on.
+  defp reprice_modifier_string(amount_str, multiplier, decimal_places) do
+    case Decimal.parse(amount_str) do
+      {decimal, ""} ->
+        new_amount =
+          decimal
+          |> Decimal.mult(multiplier)
+          |> Decimal.round(decimal_places)
+
+        {:ok, Decimal.to_string(new_amount)}
+
+      _ ->
+        :skip
+    end
+  end
+
+  # ---- Products ----
+
+  defp reprice_products_for_base_change(new_base_code, multiplier, decimal_places) do
+    Product
+    |> repo().all()
+    |> Enum.reduce_while({:ok, 0, 0}, fn product, {:ok, products, modifiers} ->
+      {new_metadata, changed} = reprice_product_overrides(product, multiplier, decimal_places)
+
+      attrs =
+        %{"currency" => new_base_code}
+        |> Map.put("price", reprice_amount(product.price, multiplier, decimal_places))
+        |> maybe_put_repriced(
+          "compare_at_price",
+          product.compare_at_price,
+          multiplier,
+          decimal_places
+        )
+        |> maybe_put_repriced("cost_per_item", product.cost_per_item, multiplier, decimal_places)
+        |> maybe_put_metadata(changed, new_metadata)
+
+      case update_product(product, attrs) do
+        {:ok, _updated} -> {:cont, {:ok, products + 1, modifiers + changed}}
+        {:error, reason} -> {:halt, {:error, {:product_reprice_failed, product.uuid, reason}}}
+      end
+    end)
+  end
+
+  defp maybe_put_metadata(attrs, 0, _new_metadata), do: attrs
+
+  defp maybe_put_metadata(attrs, _changed, new_metadata),
+    do: Map.put(attrs, "metadata", new_metadata)
+
+  # Reprices a product's own `metadata["_price_modifiers"]` overrides
+  # (options/options.ex) whose EFFECTIVE type is fixed. An override may be
+  # a bare decimal string (inherits the option's own `modifier_type`) or a
+  # `%{"type" => ..., "value" => ...}` map (explicit override type) —
+  # `options/options.ex`'s `get_effective_modifier_info/3` uses the same
+  # precedence to decide what a shopper is charged.
+  defp reprice_product_overrides(product, multiplier, decimal_places) do
+    overrides = get_in(product.metadata || %{}, ["_price_modifiers"]) || %{}
+
+    if overrides == %{} do
+      {product.metadata, 0}
+    else
+      schema_by_key =
+        product
+        |> Options.get_option_schema_for_product()
+        |> Map.new(fn opt -> {opt["key"], opt["modifier_type"]} end)
+
+      {new_overrides, count} =
+        Enum.reduce(overrides, {%{}, 0}, fn {key, values}, {acc, count} ->
+          default_type = Map.get(schema_by_key, key)
+
+          {new_values, changed} =
+            reprice_override_values(values, default_type, multiplier, decimal_places)
+
+          {Map.put(acc, key, new_values), count + changed}
+        end)
+
+      {Map.put(product.metadata, "_price_modifiers", new_overrides), count}
+    end
+  end
+
+  defp reprice_override_values(values, default_type, multiplier, decimal_places)
+       when is_map(values) do
+    Enum.reduce(values, {%{}, 0}, fn {value, modifier}, {acc, count} ->
+      reprice_one_override_value(
+        {acc, count},
+        value,
+        modifier,
+        override_effective_type_and_amount(modifier, default_type),
+        multiplier,
+        decimal_places
+      )
+    end)
+  end
+
+  defp reprice_override_values(values, _default_type, _multiplier, _decimal_places),
+    do: {values, 0}
+
+  defp reprice_one_override_value(
+         {acc, count},
+         value,
+         modifier,
+         {"fixed", amount_str},
+         multiplier,
+         decimal_places
+       ) do
+    case reprice_modifier_string(amount_str, multiplier, decimal_places) do
+      {:ok, new_amount} -> {Map.put(acc, value, new_amount), count + 1}
+      :skip -> {Map.put(acc, value, modifier), count}
+    end
+  end
+
+  defp reprice_one_override_value(
+         {acc, count},
+         value,
+         modifier,
+         _not_fixed,
+         _multiplier,
+         _decimal_places
+       ) do
+    {Map.put(acc, value, modifier), count}
+  end
+
+  # Mirrors the precedence `options/options.ex`'s private
+  # `get_override_info/2` + `parse_modifier_value/1` use: an explicit
+  # `"type"` on the override wins, otherwise the option schema's own
+  # `modifier_type` applies.
+  defp override_effective_type_and_amount(%{"type" => type, "value" => value}, default_type)
+       when is_binary(value) and value != "" do
+    {type || default_type, value}
+  end
+
+  defp override_effective_type_and_amount(%{"value" => value}, default_type)
+       when is_binary(value) and value != "" do
+    {default_type, value}
+  end
+
+  defp override_effective_type_and_amount(value, default_type)
+       when is_binary(value) and value != "" do
+    {default_type, value}
+  end
+
+  defp override_effective_type_and_amount(_modifier, _default_type), do: {nil, nil}
+
+  # ---- Option schemas (global + category) ----
+
+  defp reprice_option_schemas_for_base_change(multiplier, decimal_places) do
+    with {:ok, global_count} <- reprice_global_options_for_base_change(multiplier, decimal_places),
+         {:ok, category_count} <-
+           reprice_category_options_for_base_change(multiplier, decimal_places) do
+      {:ok, global_count + category_count}
+    end
+  end
+
+  defp reprice_global_options_for_base_change(multiplier, decimal_places) do
+    case Options.get_global_options() do
+      [] ->
+        {:ok, 0}
+
+      options ->
+        {new_options, count} = reprice_option_definitions(options, multiplier, decimal_places)
+
+        case Options.update_global_options(new_options) do
+          {:ok, _} -> {:ok, count}
+          {:error, reason} -> {:error, {:global_options_reprice_failed, reason}}
+        end
+    end
+  end
+
+  defp reprice_category_options_for_base_change(multiplier, decimal_places) do
+    Category
+    |> repo().all()
+    |> Enum.reduce_while({:ok, 0}, fn category, {:ok, count} ->
+      reprice_one_category(category, count, multiplier, decimal_places)
+    end)
+  end
+
+  defp reprice_one_category(%Category{option_schema: []}, count, _multiplier, _decimal_places) do
+    {:cont, {:ok, count}}
+  end
+
+  defp reprice_one_category(
+         %Category{option_schema: options} = category,
+         count,
+         multiplier,
+         decimal_places
+       ) do
+    {new_options, changed} = reprice_option_definitions(options, multiplier, decimal_places)
+
+    case Options.update_category_options(category, new_options) do
+      {:ok, _} ->
+        {:cont, {:ok, count + changed}}
+
+      {:error, reason} ->
+        {:halt, {:error, {:category_options_reprice_failed, category.uuid, reason}}}
+    end
+  end
+
+  defp reprice_option_definitions(options, multiplier, decimal_places) do
+    Enum.map_reduce(options, 0, fn opt, count ->
+      case opt do
+        %{"modifier_type" => "fixed", "price_modifiers" => modifiers} when is_map(modifiers) ->
+          {new_modifiers, changed} = reprice_modifier_map(modifiers, multiplier, decimal_places)
+          {Map.put(opt, "price_modifiers", new_modifiers), count + changed}
+
+        _ ->
+          {opt, count}
+      end
+    end)
+  end
+
+  defp reprice_modifier_map(modifiers, multiplier, decimal_places) do
+    Enum.reduce(modifiers, {%{}, 0}, fn {value, amount_str}, {acc, count} ->
+      case reprice_modifier_string(amount_str, multiplier, decimal_places) do
+        {:ok, new_amount} -> {Map.put(acc, value, new_amount), count + 1}
+        :skip -> {Map.put(acc, value, amount_str), count}
+      end
+    end)
+  end
+
+  # ---- Shipping methods ----
+
+  defp reprice_shipping_methods_for_base_change(multiplier, decimal_places) do
+    ShippingMethod
+    |> repo().all()
+    |> Enum.reduce_while({:ok, 0}, fn method, {:ok, count} ->
+      attrs =
+        %{}
+        |> Map.put("price", reprice_amount(method.price, multiplier, decimal_places))
+        |> maybe_put_repriced(
+          "free_above_amount",
+          method.free_above_amount,
+          multiplier,
+          decimal_places
+        )
+        |> maybe_put_repriced(
+          "min_order_amount",
+          method.min_order_amount,
+          multiplier,
+          decimal_places
+        )
+        |> maybe_put_repriced(
+          "max_order_amount",
+          method.max_order_amount,
+          multiplier,
+          decimal_places
+        )
+
+      case update_shipping_method(method, attrs) do
+        {:ok, _updated} ->
+          {:cont, {:ok, count + 1}}
+
+        {:error, reason} ->
+          {:halt, {:error, {:shipping_method_reprice_failed, method.uuid, reason}}}
+      end
+    end)
+  end
+
+  # ============================================
   # PRIVATE HELPERS
   # ============================================
 
