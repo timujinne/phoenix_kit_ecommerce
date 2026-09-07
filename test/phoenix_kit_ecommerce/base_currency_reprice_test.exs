@@ -197,14 +197,24 @@ defmodule PhoenixKitEcommerce.BaseCurrencyRepriceTest do
     order_before = money_snapshot_order(order.uuid)
 
     # -- the operation under test --
-    assert {:ok, %{products: products, shipping_methods: shipping_methods, modifiers: modifiers}} =
-             Shop.reprice_for_base_change("USD", "EUR", Decimal.new("0.909091"))
+    assert {:ok,
+            %{
+              products: products,
+              shipping_methods: shipping_methods,
+              global_modifiers: global_modifiers,
+              category_modifiers: category_modifiers,
+              product_modifiers: product_modifiers
+            }} = Shop.reprice_for_base_change("USD", "EUR", Decimal.new("0.909091"))
 
     assert products == 1
     assert shipping_methods == 1
     # "material" is fixed: both its entries ("PLA" => "0", "PETG" =>
     # "10.00") are touched = 2. "finish" is percent and contributes 0.
-    assert modifiers == 2
+    assert global_modifiers == 2
+    # No categories exist in this test.
+    assert category_modifiers == 0
+    # This test's product has no metadata override.
+    assert product_modifiers == 0
 
     reloaded_product = Shop.get_product!(product.uuid)
     assert Decimal.equal?(reloaded_product.price, Decimal.new("125.45"))
@@ -262,15 +272,23 @@ defmodule PhoenixKitEcommerce.BaseCurrencyRepriceTest do
         "metadata" => %{"_price_modifiers" => %{"size" => %{"L" => "15.00"}}}
       })
 
-    assert {:ok, %{products: 1, shipping_methods: 0, modifiers: modifiers}} =
-             Shop.reprice_for_base_change("USD", "EUR", Decimal.new("0.909091"))
+    assert {:ok,
+            %{
+              products: 1,
+              shipping_methods: 0,
+              global_modifiers: global_modifiers,
+              category_modifiers: category_modifiers,
+              product_modifiers: product_modifiers
+            }} = Shop.reprice_for_base_change("USD", "EUR", Decimal.new("0.909091"))
 
     # The `setup` block's global schema is still in effect (each test gets
     # its own sandboxed transaction, so it runs fresh here too): "material"
-    # (fixed, 2 entries: "PLA"/"PETG") = 2. Plus this test's own category
-    # schema ("size", fixed, 2 entries: "S"/"L") = 2. Plus the product's
-    # own override on "L" = 1. Total 5.
-    assert modifiers == 5
+    # (fixed, 2 entries: "PLA"/"PETG").
+    assert global_modifiers == 2
+    # This test's own category schema ("size", fixed, 2 entries: "S"/"L").
+    assert category_modifiers == 2
+    # The product's own override on "L".
+    assert product_modifiers == 1
 
     reloaded_category = Shop.get_category!(category.uuid)
     [size_option] = reloaded_category.option_schema

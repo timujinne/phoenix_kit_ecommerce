@@ -4195,41 +4195,103 @@ defmodule PhoenixKitEcommerce do
   frozen `currency`/`exchange_rate` (§4.4, §4.5), which is the entire
   point of freezing them; this function does not reference either schema.
 
-  NOTE (this branch): the catalogue product source (`ProductSource` /
-  `phoenix_kit_catalogue`) is not part of this checkout's dependency graph
-  or `lib/` tree — it lives only on a separate, not-yet-merged branch. This
-  function therefore reprices only the LEGACY `PhoenixKitEcommerce.Product`
-  path. Catalogue-item repricing needs to be added here once that source
-  merges into this stack.
+  ## Product source scope — READ BEFORE EXTENDING
 
-  Returns `{:ok, %{products: n, shipping_methods: n, modifiers: n}}` where
-  `modifiers` counts individual FIXED price-modifier VALUES touched across
-  the global schema, every category schema, and every product override —
-  or `{:error, term}` on the first failure encountered.
+  This function reprices the LEGACY `PhoenixKitEcommerce.Product` store
+  ONLY. This checkout's `lib/` tree carries no `PhoenixKitEcommerce.ProductSource`
+  module and no `phoenix_kit_catalogue` dependency at all — that adapter
+  layer exists only on a separate, not-yet-merged branch — so there is
+  nothing else here to reprice.
+
+  A build where the catalogue product source IS present is a different
+  situation: silently repricing shipping and option modifiers while every
+  catalogue item's stored price stays in the old base currency is exactly
+  the silent shop-wide mispricing §4.9 exists to prevent, made worse by
+  looking like a working reprice because the counts come back non-zero.
+  To make that impossible rather than merely undocumented, this function
+  checks for `PhoenixKitEcommerce.ProductSource` at runtime (via
+  `Code.ensure_loaded?/1` and a dynamic dispatch — no compile-time
+  reference to a module this branch does not have) and REFUSES with
+  `{:error, {:unsupported_product_source, current}}` when a source other
+  than `Legacy` is active, instead of silently doing a partial job.
+
+  Whoever wires the catalogue source in must EXTEND this function with an
+  equivalent pass over the catalogue item's stored price column and its
+  `data["ecommerce"]` fields (`compare_at_price`, `cost_per_item`,
+  `currency`, `price_modifiers`) — through
+  `PhoenixKitCatalogue.Catalogue.update_item/3`, not a second, parallel
+  `reprice_for_base_change`-like function. `:reprice` is one callback;
+  billing does not know or care which product source is active, and must
+  never have to.
+
+  Returns `{:ok, %{products: n, shipping_methods: n, global_modifiers: n,
+  category_modifiers: n, product_modifiers: n}}` on success. The modifier
+  counts are broken out per store — rather than a single total — because
+  the admin confirmation screen (§4.9's first required consequence) has
+  to show an operator the blast radius of what they are about to commit
+  to, and "N modifiers" alone does not: "3 global, 12 category, 32
+  product" does. Each count is the number of individual FIXED
+  price-modifier VALUES touched in that store; percent entries are never
+  counted because they are never touched. Returns `{:error, term}` on the
+  first failure encountered — including `{:error, {:unsupported_product_source, _}}`
+  from the check above.
   """
   @spec reprice_for_base_change(String.t(), String.t(), Decimal.t()) ::
           {:ok,
            %{
              products: non_neg_integer(),
              shipping_methods: non_neg_integer(),
-             modifiers: non_neg_integer()
+             global_modifiers: non_neg_integer(),
+             category_modifiers: non_neg_integer(),
+             product_modifiers: non_neg_integer()
            }}
           | {:error, term()}
   def reprice_for_base_change(old_base_code, new_base_code, %Decimal{} = multiplier)
       when is_binary(old_base_code) and is_binary(new_base_code) do
-    with {:ok, decimal_places} <- fetch_currency_decimal_places(new_base_code),
+    with :ok <- reject_unsupported_product_source(),
+         {:ok, decimal_places} <- fetch_currency_decimal_places(new_base_code),
          {:ok, products, product_modifiers} <-
            reprice_products_for_base_change(new_base_code, multiplier, decimal_places),
-         {:ok, schema_modifiers} <-
-           reprice_option_schemas_for_base_change(multiplier, decimal_places),
+         {:ok, global_modifiers} <-
+           reprice_global_options_for_base_change(multiplier, decimal_places),
+         {:ok, category_modifiers} <-
+           reprice_category_options_for_base_change(multiplier, decimal_places),
          {:ok, shipping_methods} <-
            reprice_shipping_methods_for_base_change(multiplier, decimal_places) do
       {:ok,
        %{
          products: products,
          shipping_methods: shipping_methods,
-         modifiers: product_modifiers + schema_modifiers
+         global_modifiers: global_modifiers,
+         category_modifiers: category_modifiers,
+         product_modifiers: product_modifiers
        }}
+    end
+  end
+
+  # No compile-time reference to `PhoenixKitEcommerce.ProductSource` —
+  # built entirely from atoms via `Module.concat/2` and dispatched
+  # dynamically (`product_source.current()`, a runtime call because the
+  # receiver is a variable, not a literal alias) — because that module
+  # does not exist anywhere in this checkout's compiled tree (see the
+  # moduledoc's "Product source scope").
+  # `Code.ensure_loaded?/1` is the same pattern this file already uses
+  # elsewhere to call into a module without a hard compile-time reference
+  # to it (`billing_tax_enabled?/0` and friends, further down).
+  defp reject_unsupported_product_source do
+    product_source = Module.concat(PhoenixKitEcommerce, ProductSource)
+
+    if Code.ensure_loaded?(product_source) do
+      legacy = Module.concat(product_source, Legacy)
+      current = product_source.current()
+
+      if current == legacy do
+        :ok
+      else
+        {:error, {:unsupported_product_source, current}}
+      end
+    else
+      :ok
     end
   end
 
@@ -4400,14 +4462,6 @@ defmodule PhoenixKitEcommerce do
   defp override_effective_type_and_amount(_modifier, _default_type), do: {nil, nil}
 
   # ---- Option schemas (global + category) ----
-
-  defp reprice_option_schemas_for_base_change(multiplier, decimal_places) do
-    with {:ok, global_count} <- reprice_global_options_for_base_change(multiplier, decimal_places),
-         {:ok, category_count} <-
-           reprice_category_options_for_base_change(multiplier, decimal_places) do
-      {:ok, global_count + category_count}
-    end
-  end
 
   defp reprice_global_options_for_base_change(multiplier, decimal_places) do
     case Options.get_global_options() do
