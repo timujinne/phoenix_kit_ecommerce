@@ -477,17 +477,33 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
            )
          )}
 
-      {:error, _changeset} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           gettext("Could not update %{title}'s %{field}.",
-             title: change.title,
-             field: field_label(field)
-           )
-         )}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, apply_error_flash(reason, change.title, field))}
     end
+  end
+
+  # `{:currency_mismatch, shop, base}` (`Sync.apply_change/3`'s own
+  # error, per-domain-currency design §7.5) is the one failure reason
+  # worth naming specifically: "sync failed" tells an operator nothing
+  # actionable, while naming the two currencies that disagree tells them
+  # exactly what changed and where to look. Anything else (a changeset
+  # error, in practice) keeps the pre-existing generic wording — this
+  # page has never surfaced changeset field errors here, and that stays
+  # unchanged; only the reason this module can name in one sentence
+  # gets a sentence.
+  defp apply_error_flash({:currency_mismatch, shop_currency, base_currency}, title, field) do
+    gettext(
+      "Could not update %{title}'s %{field}: the store is now in %{shop_currency} " <>
+        "while this shop's base currency is %{base_currency}.",
+      title: title,
+      field: field_label(field),
+      shop_currency: shop_currency,
+      base_currency: base_currency
+    )
+  end
+
+  defp apply_error_flash(_reason, title, field) do
+    gettext("Could not update %{title}'s %{field}.", title: title, field: field_label(field))
   end
 
   defp apply_section_changes(socket, field) do

@@ -30,10 +30,19 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   still gets written) and a `Logger.error/1` names both currencies; a
   change whose ONLY requested fields were price fields returns
   `{:error, {:currency_mismatch, shop_currency, base_currency}}` instead
-  of a silent no-op success. This never applies to a create-`Change`
-  (`create?: true`) — `Writer.create_from_shopify/2` always labels a new
-  item's price with the base currency code (§4.6) unconditionally, since
-  there is no prior local price for a mismatch to corrupt.
+  of a silent no-op success.
+
+  A create-`Change` (`create?: true`) is guarded too, but ALL-OR-NOTHING
+  rather than field-by-field: `Writer.create_from_shopify/2` writes a
+  price unconditionally (there is no `fields`/`changes` to filter it out
+  of), so on a mismatch the whole create is refused —
+  `{:error, {:currency_mismatch, shop_currency, base_currency}}`, item
+  never created — rather than creating it without a price or with a
+  wrong one. This is the WORSE case, not a safer one: an update at
+  least leaves an existing, correct price alone; a create would mint a
+  brand-new record whose price is wrong from the moment it exists,
+  labelled with the base currency by `Writer` itself (§4.6), with no
+  prior value anywhere to reveal the error.
 
   The shop lookup itself happens ONCE per `apply_changes/3` call (a
   batch of N products, one lookup, not N — see `shop_currency_verdict/1`),
@@ -200,8 +209,9 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   the same change still gets written) and, if that was the only thing
   `fields` asked for, this returns `{:error, {:currency_mismatch,
   shop_currency, base_currency}}` instead of a silent no-op success. A
-  create-`Change` is never subject to this guard — see the moduledoc for
-  why.
+  create-`Change` is subject to the same guard too, but all-or-nothing —
+  see the moduledoc for why a create can't be partially refused the way
+  an update can.
 
   `opts[:admin_options]` forwards to `AdminClient.fetch_shop/2` for the
   currency-guard lookup (e.g. `req_options:` to stub the transport in
@@ -212,17 +222,35 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
           {:ok, PhoenixKitEcommerce.Product.t()} | {:error, Ecto.Changeset.t() | term()}
   def apply_change(change, fields \\ :all, opts \\ [])
 
-  def apply_change(%Change{create?: true} = change, _fields, _opts), do: create_change(change)
+  def apply_change(%Change{create?: true} = change, _fields, opts) do
+    create_change(change, shop_currency_verdict(opts))
+  end
 
   def apply_change(%Change{} = change, fields, opts) do
     do_apply_change(change, fields, shop_currency_verdict(opts))
   end
 
-  defp create_change(%Change{} = change) do
+  # A create writes a price UNCONDITIONALLY (`Writer.create_from_shopify/2`
+  # always sets `base_price` from the cheapest variant — there is no
+  # `fields`/`changes` to filter it out of, unlike an update). On a
+  # mismatch this is the WORSE case, not the safer one: an update at
+  # least leaves an existing, correct price alone, while a create would
+  # mint a brand-new record whose price is wrong from the moment it
+  # exists, labelled with the base currency by `Writer` itself, with no
+  # prior value anywhere to reveal the error. So the whole create is
+  # refused — never partially, e.g. "create it without a price" — a
+  # product with the right title and images but a wrong price is not a
+  # partial success.
+  defp create_change(%Change{} = change, :match) do
     case Writer.create_from_shopify(change.shopify_product, change.base_locale) do
       {:ok, item} -> {:ok, CatalogueView.product_view(item)}
       error -> error
     end
+  end
+
+  defp create_change(%Change{} = change, {:mismatch, shop_currency, base_currency}) do
+    log_create_refusal(change.handle, shop_currency, base_currency)
+    {:error, {:currency_mismatch, shop_currency, base_currency}}
   end
 
   defp do_apply_change(%Change{} = change, fields, verdict) do
@@ -313,8 +341,8 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
     %{succeeded: Enum.reverse(succeeded), failed: Enum.reverse(failed)}
   end
 
-  defp apply_change_with_verdict(%Change{create?: true} = change, _fields, _verdict),
-    do: create_change(change)
+  defp apply_change_with_verdict(%Change{create?: true} = change, _fields, verdict),
+    do: create_change(change, verdict)
 
   defp apply_change_with_verdict(%Change{} = change, fields, verdict),
     do: do_apply_change(change, fields, verdict)
@@ -416,6 +444,13 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   defp log_price_refusal(fields, shop_currency, base_currency) do
     Logger.error(
       "Shopify sync: refusing to write #{inspect(fields)} — shop currency " <>
+        "#{shop_currency} does not match base currency #{base_currency} (design spec §7.5)"
+    )
+  end
+
+  defp log_create_refusal(handle, shop_currency, base_currency) do
+    Logger.error(
+      "Shopify sync: refusing to create #{inspect(handle)} — shop currency " <>
         "#{shop_currency} does not match base currency #{base_currency} (design spec §7.5)"
     )
   end

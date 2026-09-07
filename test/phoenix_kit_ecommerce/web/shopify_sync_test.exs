@@ -46,6 +46,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
 
   alias PhoenixKit.Integrations
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Test.Repo
 
   @stub __MODULE__
 
@@ -1415,6 +1416,69 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
         resource_uuid: product.uuid,
         metadata_has: %{"fields" => ["price"]}
       )
+    end
+
+    # `Sync.apply_change/3`'s currency guard (per-domain-currency design
+    # §7.5) surfaces as an opaque `{:error, {:currency_mismatch, _, _}}`
+    # unless this page translates it — see `apply_error_flash/3`. The
+    # shop.json request the guard makes lands on the SAME `@stub` as the
+    # products.json request `Sync.check/2` makes (this describe block's
+    # own `Req.default_options/1` mechanism, see the moduledoc), routed
+    # here by request path.
+    test "a price row refused by the currency guard shows a flash naming both currencies, and leaves the price untouched",
+         %{conn: conn} do
+      PhoenixKit.Cache.clear(:billing_currencies)
+      Repo.delete_all(PhoenixKitBilling.Currency)
+
+      {:ok, _} =
+        PhoenixKitBilling.create_currency(%{
+          code: "USD",
+          name: "Dollar",
+          symbol: "$",
+          is_default: true,
+          exchange_rate: "1.0"
+        })
+
+      {:ok, product} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Widget"},
+          "slug" => %{"en" => "widget"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      Req.Test.stub(@stub, fn conn ->
+        cond do
+          String.ends_with?(conn.request_path, "/shop.json") ->
+            json_response(conn, 200, %{"shop" => %{"currency" => "EUR"}})
+
+          admin_request?(conn) ->
+            json_response(conn, 200, %{
+              "products" => [
+                %{
+                  "handle" => "widget",
+                  "title" => "Widget",
+                  "status" => "draft",
+                  "variants" => [%{"price" => "12.00"}]
+                }
+              ]
+            })
+
+          true ->
+            json_response(conn, 200, %{"products" => []})
+        end
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      check_and_await(view)
+
+      view |> element("#toggle-section-price") |> render_click()
+      view |> element("#apply-row-price-#{product.uuid}") |> render_click()
+      html = confirm!(view)
+
+      assert Decimal.eq?(Shop.get_product!(product.uuid).price, Decimal.new("10.00"))
+      assert html =~ "the store is now in EUR"
+      assert html =~ "base currency is USD"
     end
 
     # The "large change" badge is the only signal, other than the

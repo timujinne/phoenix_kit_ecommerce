@@ -234,39 +234,67 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCurrencyTest do
     end
   end
 
-  describe "currency guard — shop currency matches base" do
+  describe "currency guard — create path" do
     @describetag :catalogue
 
-    test "a newly-created product's ecommerce data carries the base currency label" do
-      set_base_currency("USD")
-      # "decor3dprint" is `Query.catalogue_uuid/0`'s own default name
-      # (`shop_catalogue` config unset) — `create_from_shopify/2` looks
-      # up the catalogue by that name, not by any catalogue existing.
-      {:ok, _catalogue} = Catalogue.create_catalogue(%{name: "decor3dprint"})
+    defp new_product_change(overrides \\ %{}) do
+      shopify_product =
+        Map.merge(
+          %{
+            "handle" => "currency-mug",
+            "title" => "Currency Mug",
+            "id" => 4242,
+            "status" => "active",
+            "variants" => [%{"price" => "9.00"}]
+          },
+          overrides
+        )
 
-      shopify_product = %{
-        "handle" => "currency-mug",
-        "title" => "Currency Mug",
-        "id" => 4242,
-        "status" => "active",
-        "variants" => [%{"price" => "9.00"}]
-      }
-
-      change = %Change{
+      %Change{
         product_uuid: nil,
-        handle: "currency-mug",
-        title: "Currency Mug",
+        handle: shopify_product["handle"],
+        title: shopify_product["title"],
         base_locale: "en",
         shopify_product: shopify_product,
-        product_id: 4242,
+        product_id: shopify_product["id"],
         create?: true
       }
+    end
 
-      assert {:ok, created_view} = Sync.apply_change(change)
+    # "decor3dprint" is `Query.catalogue_uuid/0`'s own default name
+    # (`shop_catalogue` config unset) — `create_from_shopify/2` looks up
+    # the catalogue by that name, not by any catalogue existing.
+    setup do
+      {:ok, _catalogue} = Catalogue.create_catalogue(%{name: "decor3dprint"})
+      :ok
+    end
+
+    test "shop currency matches base: a newly-created product's ecommerce data carries the base currency label" do
+      set_base_currency("USD")
+
+      assert {:ok, created_view} = Sync.apply_change(new_product_change())
 
       item = Catalogue.get_item!(created_view.uuid)
       assert item.data["ecommerce"]["currency"] == "USD"
       assert Decimal.equal?(item.base_price, Decimal.new("9.00"))
+    end
+
+    # A create is the WORSE case, not a safer one: an update at least
+    # leaves an existing, correct price alone, while a create would mint
+    # a brand-new record whose price is wrong from the moment it exists
+    # (labelled with the base currency unconditionally by
+    # create_ecommerce_params/1), with no prior value anywhere to reveal
+    # the mistake. So the whole create is refused, not created without a
+    # price or with a wrong one.
+    test "shop currency differs from base: the create is refused outright, nothing is created" do
+      set_base_currency("USD")
+      connect_shopify()
+      stub_shop_currency("EUR")
+
+      assert {:error, {:currency_mismatch, "EUR", "USD"}} =
+               Sync.apply_change(new_product_change(), :all, admin_options())
+
+      assert Catalogue.list_items() == []
     end
   end
 end
