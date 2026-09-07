@@ -12,7 +12,11 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
       uuid: Ecto.UUID.generate(),
       slug: %{"en" => "planter"},
       title: %{"en" => "Planter"},
-      body_html: %{"en" => "<p>Original</p>"},
+      # Already-Markdown, as a real product would hold after being
+      # synced once through the `HtmlToMarkdown.convert/1` normalization
+      # in `build_change/4` — `shopify_product/1`'s raw-HTML default
+      # below converts to this exact string, so the two fixtures agree.
+      body_html: %{"en" => "Original"},
       description: %{"en" => "Original"},
       vendor: "Acme",
       tags: ["clay", "garden"],
@@ -99,20 +103,36 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
   end
 
   describe "field: body_html" do
-    test "changed body_html is included" do
-      local = [product(body_html: %{"en" => "<p>Old</p>"})]
-      shopify = [shopify_product(%{"body_html" => "<p>New</p>"})]
+    test "changed body_html is included, incoming already converted to Markdown" do
+      local = [product(body_html: %{"en" => "Old"})]
+      shopify = [shopify_product(%{"body_html" => "<p><strong>New</strong> item</p>"})]
 
-      assert [%Change{changes: %{body_html: %{current: "<p>Old</p>", incoming: "<p>New</p>"}}}] =
+      assert [%Change{changes: %{body_html: %{current: "Old", incoming: "**New** item"}}}] =
                diff(local, shopify)
     end
 
     test "unchanged body_html does not appear in changes" do
       local = [
-        product(body_html: %{"en" => "<p>Same</p>"}, description: %{"en" => "Same"})
+        product(body_html: %{"en" => "Same"}, description: %{"en" => "Same"})
       ]
 
       shopify = [shopify_product(%{"body_html" => "<p>Same</p>"})]
+
+      assert diff(local, shopify) == []
+    end
+
+    # The exact bug this normalization fixes: Shopify's API always
+    # returns raw HTML, so comparing it byte-for-byte against a stored
+    # Markdown value would report every synced product as "changed" on
+    # every single check, forever — even when a human reading both would
+    # call them identical. Converting the incoming side first means a
+    # real no-op compares as one.
+    test "raw HTML wrapping the same Markdown as the stored value produces no false diff" do
+      local = [
+        product(body_html: %{"en" => "**Bold** intro."}, description: %{"en" => "Bold intro."})
+      ]
+
+      shopify = [shopify_product(%{"body_html" => "<p><strong>Bold</strong> intro.</p>"})]
 
       assert diff(local, shopify) == []
     end
@@ -134,7 +154,7 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
     end
 
     test "unchanged description does not appear in changes" do
-      local = [product(description: %{"en" => "Same"}, body_html: %{"en" => "<p>Same</p>"})]
+      local = [product(description: %{"en" => "Same"}, body_html: %{"en" => "Same"})]
       shopify = [shopify_product(%{"body_html" => "<p>Same</p>"})]
 
       assert diff(local, shopify) == []

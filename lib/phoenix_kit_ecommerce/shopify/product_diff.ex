@@ -24,12 +24,26 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
   value would otherwise be reported as a deletion, and applying such a
   change would erase real data.
 
+  `body_html` is normalized through `HtmlToMarkdown.convert/1` BEFORE it is
+  compared or stored as `incoming` — Shopify's API always returns raw HTML,
+  but the locally stored value is Markdown (the storefront renders it
+  through a Markdown component, and raw HTML embeds any Markdown a seller
+  already hand-wrote instead of rendering it). Comparing raw-HTML-incoming
+  against Markdown-current directly would report every synced product as
+  "changed" on every single check, forever, since the two sides can never
+  be byte-equal even when the content is identical. Converting first means
+  both sides really are the same format, so a real no-op compares as one;
+  `description` still runs `HtmlText.extract_description/1` against the
+  ORIGINAL raw `body_html`, unconverted — it strips tags for a plain-text
+  summary and must not pick up Markdown syntax as literal characters.
+
   `diff/4` (and its `diff/2`/`diff/3` arities) is pure — no network or
   database access — so it can be tested directly with in-memory product
   structs and Shopify API response maps.
   """
 
   alias PhoenixKitEcommerce.HtmlText
+  alias PhoenixKitEcommerce.HtmlToMarkdown
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.Translations
 
@@ -284,6 +298,7 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
 
   defp build_change(product, shopify_product, base_locale, only) do
     current_title = local(product, :title, base_locale)
+    incoming_body_markdown = HtmlToMarkdown.convert(shopify_product["body_html"])
 
     changes =
       %{}
@@ -291,7 +306,7 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
       |> maybe_put(
         :body_html,
         local(product, :body_html, base_locale),
-        shopify_product["body_html"],
+        incoming_body_markdown,
         only
       )
       |> maybe_put(
