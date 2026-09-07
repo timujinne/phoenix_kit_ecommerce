@@ -153,7 +153,6 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   end
 
   @impl true
-  @impl true
   def handle_event("toggle_notify_cart_first_item", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("toggle_notify_cart_first_item", params, socket)
