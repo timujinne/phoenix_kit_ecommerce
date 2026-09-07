@@ -44,6 +44,7 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   alias PhoenixKitCatalogue.Catalogue.AttributeSets
   alias PhoenixKitCatalogue.Schemas.Item
   alias PhoenixKitEcommerce.Catalogue.ItemCommerce
+  alias PhoenixKitEcommerce.HtmlToMarkdown
   alias PhoenixKitEcommerce.Catalogue.ValueResolver
   alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.ProductSource.Catalogue.Query
@@ -147,7 +148,12 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
       attrs = %{
         catalogue_uuid: catalogue_uuid,
         name: title,
-        description: shopify_product["body_html"],
+        # Shopify always hands back raw HTML; the storefront renders
+        # descriptions as Markdown, so a stored `<p>` block would make the
+        # `**bold**` inside it print literally. The UPDATE path gets this
+        # for free (`ProductDiff.build_change/4` normalises before it
+        # compares), but a freshly created item reads the raw product.
+        description: HtmlToMarkdown.convert(shopify_product["body_html"]),
         base_price: min_variant_price(shopify_product["variants"]),
         markup_percentage: Decimal.new(0),
         unit: "piece",
