@@ -32,6 +32,27 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   `CollectionSync`'s (which halts on a write failure because collection
   membership assignment is one connected pass, not independent rows).
 
+  ## `"variants"` and the currency guard (per-domain-currency design §7.5)
+
+  `Writer.sync_variants/2` writes per-option-value price modifiers
+  straight from Shopify's variant `"price"` strings — a second
+  price-writing path entirely outside `Shopify.Sync.apply_change/3`/
+  `apply_changes/3`, which this worker never calls. Without its own
+  guard, a store-currency switch would leave a product's base price
+  frozen in the old currency right next to option modifiers freshly
+  computed in the new one — worse than either being wrong alone, since
+  the two halves of one price would then disagree with nothing to
+  reveal it. So a `"variants"` run calls `Sync.currency_verdict/1`
+  ONCE, before the per-product loop (not once per product — this is the
+  same batch philosophy `apply_changes/3` uses, reusing that exact
+  function rather than a second implementation of its lookup/fail-open
+  rules); on a mismatch every product in the run is skipped for
+  `"variants"` with `{:error, {:currency_mismatch, shop, base}}`
+  recorded in its own `errors` entry, and `Writer.sync_variants/2` is
+  never called at all. `"images"` and `"collections"` carry no money
+  and are entirely unaffected — the lookup isn't even attempted for
+  them.
+
   ## `"collections"`
 
   Delegates entirely to `PhoenixKitEcommerce.Shopify.CollectionSync.run/1`
@@ -84,6 +105,8 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
       states: [:available, :scheduled, :executing, :retryable]
     ]
 
+  require Logger
+
   alias PhoenixKit.Integrations
   alias PhoenixKit.PubSub.Manager
   alias PhoenixKitCatalogue.Catalogue
@@ -94,6 +117,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   alias PhoenixKitEcommerce.ShopConfig
   alias PhoenixKitEcommerce.Shopify.AdminClient
   alias PhoenixKitEcommerce.Shopify.CollectionSync
+  alias PhoenixKitEcommerce.Shopify.Sync
 
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue}
 
@@ -168,6 +192,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
       index = items_index(catalogue_uuid)
       total = length(products)
       started_at = start_progress(kind, total)
+      opts = Keyword.put(opts, :currency_verdict, currency_verdict_for(kind, opts))
 
       # `raw_errors` stays newest-first (plain prepend) for the whole
       # loop — reversing it into display order happens exactly once,
@@ -228,9 +253,48 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
     Writer.sync_images(item, product, downloader: downloader, user_uuid: actor_uuid)
   end
 
-  defp apply_writer("variants", item, product, _actor_uuid, _opts) do
-    Writer.sync_variants(item, product)
+  defp apply_writer("variants", item, product, _actor_uuid, opts) do
+    case Keyword.fetch!(opts, :currency_verdict) do
+      :match ->
+        Writer.sync_variants(item, product)
+
+      {:mismatch, shop_currency, base_currency} ->
+        {:error, {:currency_mismatch, shop_currency, base_currency}}
+    end
   end
+
+  # Only `"variants"` writes money (`Writer.sync_variants/2`'s price
+  # modifiers) — `"images"` never reaches this clause (`run_kind/2`'s
+  # `dispatch/3` sends `"collections"` down its own path entirely), so
+  # `:match` here for anything but `"variants"` isn't a real lookup, it's
+  # "the guard doesn't apply to this kind at all" (this module's own
+  # moduledoc). Logged ONCE for the whole run, not once per product —
+  # `run_products/3` calls this exactly once, before the loop.
+  defp currency_verdict_for("variants", opts) do
+    # `Sync.currency_verdict/1`'s `opts[:admin_options]` is forwarded
+    # verbatim to `AdminClient.fetch_shop/2`, whose OWN `opts` reads
+    # `:req_options` out of it — so this worker's flat `opts[:req_options]`
+    # (the same key its own `client.fetch_products/2` call takes) has to
+    # be re-nested one level to satisfy that shape, not passed straight
+    # through.
+    admin_options = [req_options: Keyword.get(opts, :req_options, [])]
+    verdict = Sync.currency_verdict(admin_options: admin_options)
+
+    case verdict do
+      {:mismatch, shop_currency, base_currency} ->
+        Logger.warning(
+          "Shopify media sync: skipping variants/price sync — shop currency " <>
+            "#{shop_currency} does not match base currency #{base_currency} (design spec §7.5)"
+        )
+
+      :match ->
+        :ok
+    end
+
+    verdict
+  end
+
+  defp currency_verdict_for(_kind, _opts), do: :match
 
   defp image_downloader(url, user_uuid, opts),
     do: ImageDownloader.download_and_store(url, user_uuid, opts)

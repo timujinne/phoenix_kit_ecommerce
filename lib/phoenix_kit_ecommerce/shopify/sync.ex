@@ -27,7 +27,7 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   `:compare_at_price`) — never before writing anything else. On a
   mismatch the price fields are dropped from what gets applied (an
   otherwise-eligible non-price field on the SAME change, e.g. `:title`,
-  still gets written) and a `Logger.error/1` names both currencies; a
+  still gets written) and a `Logger.warning/1` names both currencies; a
   change whose ONLY requested fields were price fields returns
   `{:error, {:currency_mismatch, shop_currency, base_currency}}` instead
   of a silent no-op success.
@@ -45,12 +45,12 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   prior value anywhere to reveal the error.
 
   The shop lookup itself happens ONCE per `apply_changes/3` call (a
-  batch of N products, one lookup, not N — see `shop_currency_verdict/1`),
+  batch of N products, one lookup, not N — see `currency_verdict/1`),
   not once per `apply_change/3` (a single call is its own batch of one).
   A lookup failure (no Shopify connection, network, bad credentials)
   never blocks a sync that was otherwise working: it logs one
   `Logger.warning/1` and proceeds exactly as if the guard were absent —
-  see `shop_currency_verdict/1`'s own doc for why this fails in the
+  see `currency_verdict/1`'s own doc for why this fails in the
   OTHER direction from the mismatch case above.
   """
 
@@ -223,11 +223,11 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   def apply_change(change, fields \\ :all, opts \\ [])
 
   def apply_change(%Change{create?: true} = change, _fields, opts) do
-    create_change(change, shop_currency_verdict(opts))
+    create_change(change, currency_verdict(opts))
   end
 
   def apply_change(%Change{} = change, fields, opts) do
-    do_apply_change(change, fields, shop_currency_verdict(opts))
+    do_apply_change(change, fields, currency_verdict(opts))
   end
 
   # A create writes a price UNCONDITIONALLY (`Writer.create_from_shopify/2`
@@ -320,7 +320,7 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
 
   The currency guard's shop lookup (this module's moduledoc, §7.5) runs
   ONCE for the whole batch, not once per change in `changes` — see
-  `shop_currency_verdict/1`. `opts[:admin_options]` is the same option
+  `currency_verdict/1`. `opts[:admin_options]` is the same option
   `apply_change/3` takes for that lookup.
   """
   @spec apply_changes([Change.t()], :all | [atom()], keyword()) :: %{
@@ -328,7 +328,7 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
           failed: [Change.t()]
         }
   def apply_changes(changes, fields \\ :all, opts \\ []) do
-    verdict = shop_currency_verdict(opts)
+    verdict = currency_verdict(opts)
 
     %{succeeded: succeeded, failed: failed} =
       Enum.reduce(changes, %{succeeded: [], failed: []}, fn change, acc ->
@@ -347,17 +347,31 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   defp apply_change_with_verdict(%Change{} = change, fields, verdict),
     do: do_apply_change(change, fields, verdict)
 
-  # Looks up the connected Shopify store's own currency and compares it
-  # against the base currency (§7.5) — see this module's moduledoc for
-  # the mismatch/lookup-failure behaviour this feeds `resolve_priced_fields/3`.
-  #
-  # `:match` covers three cases identically, on purpose: currencies
-  # actually agree, no Shopify connection exists at all (nothing to
-  # mismatch against), and the lookup failed (fail OPEN — an unreachable
-  # Shopify must never stop a sync that was otherwise working).
-  # `opts[:admin_options]` forwards to `AdminClient.fetch_shop/2`.
-  @spec shop_currency_verdict(keyword()) :: :match | {:mismatch, String.t(), String.t()}
-  defp shop_currency_verdict(opts) do
+  @doc """
+  Looks up the connected Shopify store's own currency and compares it
+  against the base currency (§7.5) — public so `Workers.ShopifyMediaSyncWorker`
+  (the variants/prices media sync, a second price-writing path that
+  bypasses `apply_change/3`/`apply_changes/3` entirely) can reuse this
+  exact lookup and fail-open policy instead of re-implementing it.
+
+  `:match` covers three cases identically, on purpose: currencies
+  actually agree, no Shopify connection exists at all (nothing to
+  mismatch against), and the lookup failed (fail OPEN — an unreachable
+  Shopify must never stop a sync that was otherwise working, logged once
+  as a warning). `opts[:admin_options]` forwards to `AdminClient.fetch_shop/2`
+  (e.g. `req_options:` to stub the transport in tests).
+
+  Re-resolves the connected Shopify integration on every call rather
+  than accepting one as a parameter — safe only because this codebase
+  supports exactly one Shopify connection everywhere (`Provider`,
+  `Shop.list_connections("shopify", owner: :system)` elsewhere all make
+  the same assumption); a caller batching many writes still gets the
+  ONE-lookup-per-batch behaviour described above, but a caller with more
+  than one connection to compare against would need a different
+  function, not another argument to this one.
+  """
+  @spec currency_verdict(keyword()) :: :match | {:mismatch, String.t(), String.t()}
+  def currency_verdict(opts \\ []) do
     case shopify_integration_uuid() do
       nil ->
         :match
@@ -385,11 +399,22 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
     end
   end
 
+  # Case-folded on both sides — insurance, not a fix: every code this
+  # shop deals with is an upper-case ISO 4217 code today (Shopify's own
+  # `shop.currency` and `PhoenixKitBilling.Currency.code` alike), but a
+  # comparison this consequential shouldn't depend on that staying true
+  # forever.
   defp compare_currency(shop_currency) do
     case base_currency_code() do
-      nil -> :match
-      base when base == shop_currency -> :match
-      base -> {:mismatch, shop_currency, base}
+      nil ->
+        :match
+
+      base ->
+        if String.upcase(base) == String.upcase(shop_currency) do
+          :match
+        else
+          {:mismatch, shop_currency, base}
+        end
     end
   end
 
@@ -441,15 +466,18 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
     end
   end
 
+  # `:warning`, not `:error` — a store switching currency is an admin
+  # decision, not a system fault, and a host that pages on error-level
+  # logs would page someone for a state no incident response can fix.
   defp log_price_refusal(fields, shop_currency, base_currency) do
-    Logger.error(
+    Logger.warning(
       "Shopify sync: refusing to write #{inspect(fields)} — shop currency " <>
         "#{shop_currency} does not match base currency #{base_currency} (design spec §7.5)"
     )
   end
 
   defp log_create_refusal(handle, shop_currency, base_currency) do
-    Logger.error(
+    Logger.warning(
       "Shopify sync: refusing to create #{inspect(handle)} — shop currency " <>
         "#{shop_currency} does not match base currency #{base_currency} (design spec §7.5)"
     )

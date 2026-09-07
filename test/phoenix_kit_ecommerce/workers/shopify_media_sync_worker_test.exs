@@ -31,6 +31,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue.AttributeSets}
   @compile {:no_warn_undefined, PhoenixKitEntities}
 
+  alias PhoenixKit.Integrations
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.PubSub.Manager
   alias PhoenixKitCatalogue.Catalogue
@@ -38,6 +39,8 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
   alias PhoenixKitEcommerce.ShopConfig
   alias PhoenixKitEcommerce.Test.Repo
   alias PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker, as: Worker
+
+  @stub __MODULE__
 
   setup do
     on_exit(fn -> set_product_source("legacy") end)
@@ -87,6 +90,48 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
   end
 
   defp reload(item), do: Catalogue.get_item!(item.uuid)
+
+  # ============================================================
+  # Currency guard (per-domain-currency design §7.5) — real Shopify
+  # connection + Req.Test stub, since `Sync.currency_verdict/1` always
+  # calls the REAL `AdminClient.fetch_shop/2`, independent of whatever
+  # fake `client:` module a test passes for `fetch_products/2`.
+  # ============================================================
+
+  defp connect_shopify do
+    {:ok, %{uuid: uuid}} =
+      Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
+
+    {:ok, _} =
+      Integrations.save_setup(uuid, %{
+        "shop_domain" => "test-shop.myshopify.com",
+        "access_token" => "shpat_test_token"
+      })
+
+    uuid
+  end
+
+  defp set_base_currency(code) do
+    PhoenixKit.Cache.clear(:billing_currencies)
+    Repo.delete_all(PhoenixKitBilling.Currency)
+
+    {:ok, _} =
+      PhoenixKitBilling.create_currency(%{
+        code: code,
+        name: code,
+        symbol: code,
+        is_default: true,
+        exchange_rate: "1.0"
+      })
+
+    :ok
+  end
+
+  defp json_response(conn, status, body) do
+    conn
+    |> Plug.Conn.put_resp_content_type("application/json")
+    |> Plug.Conn.send_resp(status, JSON.encode!(body))
+  end
 
   # ============================================================
   # "images" — client/downloader stubs
@@ -291,6 +336,50 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
       assert progress["kind"] == "variants"
       assert progress["finished_at"] != nil
       assert progress["errors"] == []
+    end
+
+    test "variants: a shop-currency mismatch skips every product, writes no price_modifiers, and reports the refusal",
+         %{catalogue: catalogue} do
+      set_base_currency("USD")
+      integration_uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{"shop" => %{"currency" => "EUR"}})
+      end)
+
+      item =
+        create_item(catalogue.uuid, "Two-Option Mug", %{"handle" => "two-option-mug"}, %{
+          data: %{
+            "_primary_language" => "en",
+            "ecommerce" => %{
+              "shop_status" => "active",
+              "shopify" => %{"handle" => "two-option-mug"}
+            }
+          }
+        })
+
+      assert {:ok, %{total: 1, done: 1, errors: [error]}} =
+               Worker.run("variants", nil,
+                 client: VariantsStub,
+                 integration_uuid: integration_uuid,
+                 req_options: [plug: {Req.Test, @stub}]
+               )
+
+      assert %{"product" => "two-option-mug", "reason" => reason} = error
+      assert reason =~ "currency_mismatch"
+      assert reason =~ "EUR"
+      assert reason =~ "USD"
+
+      # `Writer.sync_variants/2` was never called: no attribute set, no
+      # price_modifiers — the whole write is refused, not half-done.
+      assert AttributeSets.list_attachments(item.uuid) == []
+      reloaded = reload(item)
+      assert get_in(reloaded.data, ["ecommerce", "price_modifiers"]) in [nil, %{}]
+
+      progress = Worker.get_progress()
+      assert progress["kind"] == "variants"
+      assert progress["finished_at"] != nil
+      assert length(progress["errors"]) == 1
     end
 
     test "collections: delegates to CollectionSync.run/1 and keeps its result on the progress record",

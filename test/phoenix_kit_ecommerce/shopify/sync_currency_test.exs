@@ -279,6 +279,25 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCurrencyTest do
       assert Decimal.equal?(item.base_price, Decimal.new("9.00"))
     end
 
+    # `Writer.base_currency_code/0`'s "USD" fallback is right (it matches
+    # `ProductSource.Catalogue.View`'s own read-side fallback), but §4.9
+    # warns this is exactly the edge case that hurts when it's silently
+    # wrong — it should not be the one branch nothing exercises. No
+    # currency row exists at all here (not even a non-default one), so
+    # `PhoenixKitEcommerce.get_base_currency/0` returns `nil` and
+    # `Sync.currency_verdict/1`'s own `compare_currency/1` falls back to
+    # `:match` for the same reason — this create is never refused, it's
+    # just labelled "USD" by default.
+    test "no base currency configured at all: falls back to USD" do
+      PhoenixKit.Cache.clear(:billing_currencies)
+      Repo.delete_all(PhoenixKitBilling.Currency)
+
+      assert {:ok, created_view} = Sync.apply_change(new_product_change())
+
+      item = Catalogue.get_item!(created_view.uuid)
+      assert item.data["ecommerce"]["currency"] == "USD"
+    end
+
     # A create is the WORSE case, not a safer one: an update at least
     # leaves an existing, correct price alone, while a create would mint
     # a brand-new record whose price is wrong from the moment it exists
