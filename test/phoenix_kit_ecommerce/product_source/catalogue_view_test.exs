@@ -19,6 +19,26 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.ProductSource.Catalogue.View
 
+  # `View.product_view/2`/`category_view/2` fall back to two live reads
+  # whenever a caller doesn't override them: `base_currency_code/0` (a DB
+  # read via `PhoenixKitBilling.with_currency_cache/2`) when the item has
+  # no `data["ecommerce"]["currency"]` of its own, and
+  # `Translations.enabled_languages/0` (the Languages module's settings,
+  # disabled by default with no DB row) to decide which of `data`'s
+  # per-language keys `language_keys/2` treats as translations at all.
+  # None of the fixtures below set a currency, and every fixture below
+  # carries both "en-US" and "fr-FR" entries that the tests assert on. This
+  # module is pure logic with no sandbox connection (see the moduledoc
+  # above), so every call here pins both opts to skip those reads entirely
+  # rather than reach for a real DB connection.
+  @default_test_opts [base_currency: "USD", languages: ["en-US", "fr-FR"]]
+
+  defp product_view(item, opts),
+    do: View.product_view(item, Keyword.merge(@default_test_opts, opts))
+
+  defp category_view(category, opts \\ []),
+    do: View.category_view(category, Keyword.merge(@default_test_opts, opts))
+
   @item_uuid "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
   @image_uuid "11111111-1111-1111-1111-111111111111"
   @second_image_uuid "22222222-2222-2222-2222-222222222222"
@@ -95,7 +115,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
     test "builds a read-only view-struct with translated fields, price, status and metadata" do
       item = build_item()
 
-      product = View.product_view(item, sets: @sets)
+      product = product_view(item, sets: @sets)
 
       assert %PhoenixKitEcommerce.Product{} = product
       assert product.__meta__.state == :built
@@ -105,8 +125,12 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert product.body_html["fr-FR"] == "<p>Un joli cache-pot</p>"
       assert product.description["en-US"] == "A lovely planter."
       assert product.seo_title["en-US"] == "Buy Geometric Planter"
-      # fr-FR has no _seo_title override — omitted, not inherited.
-      refute Map.has_key?(product.seo_title, "fr-FR")
+      # fr-FR has no _seo_title override of its own, so it inherits the
+      # primary language's value — `Multilang.get_language_data/2` always
+      # merges primary ⊕ override (verified directly against
+      # `Catalogue.translated_seo_title/2`), same as every other
+      # localized field on this struct.
+      assert product.seo_title["fr-FR"] == "Buy Geometric Planter"
 
       assert product.price == Decimal.new("23.76")
       assert product.status == "active"
@@ -135,10 +159,10 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       item =
         build_item(%{"ecommerce" => %{"shop_status" => nil, "price_modifiers" => %{}}})
 
-      assert View.product_view(item, sets: []).status == "active"
+      assert product_view(item, sets: []).status == "active"
 
       inactive = build_item(%{"ecommerce" => %{"shop_status" => nil}}, %{status: "inactive"})
-      assert View.product_view(inactive, sets: []).status == "archived"
+      assert product_view(inactive, sets: []).status == "archived"
     end
 
     test "description falls back to the first 300 chars of stripped body_html when _summary is absent" do
@@ -147,14 +171,14 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
           "en-US" => %{"_summary" => nil, "_description" => "<p>Only body, no summary</p>"}
         })
 
-      assert View.product_view(item, sets: []).description["en-US"] == "Only body, no summary"
+      assert product_view(item, sets: []).description["en-US"] == "Only body, no summary"
     end
 
     test "accepts sets as either a bare list or a resolve_for_item/2-shaped map" do
       item = build_item()
 
-      from_list = View.product_view(item, sets: @sets)
-      from_wrapped = View.product_view(item, sets: %{schema_version: 2, sets: @sets})
+      from_list = product_view(item, sets: @sets)
+      from_wrapped = product_view(item, sets: %{schema_version: 2, sets: @sets})
 
       assert from_list.metadata["_option_values"] == from_wrapped.metadata["_option_values"]
     end
@@ -180,7 +204,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
 
       item = build_item()
 
-      metadata = View.product_view(item, sets: prefixed_sets).metadata
+      metadata = product_view(item, sets: prefixed_sets).metadata
 
       assert metadata["_option_values"] == %{
                "size" => ["5 inches (13 cm)", "4 inches (10 cm)"]
@@ -194,7 +218,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
     test "omits _option_values/_price_modifiers when there are no attachments" do
       item = build_item()
 
-      metadata = View.product_view(item, sets: []).metadata
+      metadata = product_view(item, sets: []).metadata
 
       refute Map.has_key?(metadata, "_option_values")
       refute Map.has_key?(metadata, "_price_modifiers")
@@ -211,7 +235,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
           }
         })
 
-      metadata = View.product_view(item, sets: []).metadata
+      metadata = product_view(item, sets: []).metadata
 
       assert metadata[PriceDisplay.metadata_key()] == %{
                "unit" => %{"en-US" => "per hour"},
@@ -222,14 +246,14 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
     test "omits _price_display entirely when nothing is set (matches build/3's empty-map contract)" do
       item = build_item()
 
-      refute Map.has_key?(View.product_view(item, sets: []).metadata, PriceDisplay.metadata_key())
+      refute Map.has_key?(product_view(item, sets: []).metadata, PriceDisplay.metadata_key())
     end
 
     test "attaches a preloaded category view-struct when given" do
       category = struct(PhoenixKitCatalogue.Schemas.Category, uuid: "cat-uuid", name: "Planters")
       item = build_item()
 
-      product = View.product_view(item, sets: [], category: category)
+      product = product_view(item, sets: [], category: category)
 
       assert product.category == category
     end
@@ -258,7 +282,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       item =
         build_item(%{"ecommerce" => %{"price_modifiers" => %{"color" => %{"red" => "5.00"}}}})
 
-      fr = View.product_view(item, sets: @color_sets, language: "fr-FR")
+      fr = product_view(item, sets: @color_sets, language: "fr-FR")
       assert fr.metadata["_option_values"] == %{"color" => ["Rouge"]}
       # Consistency: the picker's displayed option and its price-modifier
       # lookup key on the SAME translated label — `selected_specs` built
@@ -272,7 +296,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       item =
         build_item(%{"ecommerce" => %{"price_modifiers" => %{"color" => %{"red" => "5.00"}}}})
 
-      en = View.product_view(item, sets: @color_sets, language: "en-US")
+      en = product_view(item, sets: @color_sets, language: "en-US")
       assert en.metadata["_option_values"] == %{"color" => ["Red"]}
       assert en.metadata["_price_modifiers"] == %{"color" => %{"Red" => "5.00"}}
       assert en.metadata["_value_slugs"] == %{"color" => %{"Red" => "red"}}
@@ -281,7 +305,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
     test "no :language given (default) behaves exactly as before this option existed" do
       item = build_item()
 
-      metadata = View.product_view(item, sets: @color_sets).metadata
+      metadata = product_view(item, sets: @color_sets).metadata
       assert metadata["_option_values"] == %{"color" => ["Red"]}
     end
 
@@ -289,7 +313,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       item = build_item()
       sets = [%{key: "catalogue_set_color", name: "Color", values: [], selected: []}]
 
-      assert View.product_view(item, sets: sets).metadata["_option_labels"] == %{
+      assert product_view(item, sets: sets).metadata["_option_labels"] == %{
                "color" => "Color"
              }
     end
@@ -297,7 +321,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
     test "_option_labels omits a set with no resolvable :name" do
       item = build_item()
 
-      refute Map.has_key?(View.product_view(item, sets: @color_sets).metadata, "_option_labels")
+      refute Map.has_key?(product_view(item, sets: @color_sets).metadata, "_option_labels")
     end
   end
 
@@ -334,7 +358,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
     test "builds a read-only view-struct from a catalogue category" do
       category = build_category()
 
-      view = View.category_view(category)
+      view = category_view(category)
 
       assert %PhoenixKitEcommerce.Category{} = view
       assert view.__meta__.state == :built
@@ -352,7 +376,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
 
     test "status defaults to active when shop_status is absent" do
       category = build_category(%{"ecommerce" => %{"shop_status" => nil}})
-      assert View.category_view(category).status == "active"
+      assert category_view(category).status == "active"
     end
 
     test "storefront_filters is read from data.ecommerce.storefront_filters" do
@@ -364,7 +388,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
 
       category = build_category(overrides)
 
-      assert View.category_view(category).storefront_filters == %{
+      assert category_view(category).storefront_filters == %{
                "price" => %{"enabled" => false}
              }
     end

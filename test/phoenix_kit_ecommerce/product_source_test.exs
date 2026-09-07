@@ -2,10 +2,11 @@ defmodule PhoenixKitEcommerce.ProductSourceTest do
   @moduledoc """
   Pins two things for the `ProductSource` switch:
 
-    1. `ProductSource.current/0`'s selection logic (config absent, or set
-       to "catalogue" while `phoenix_kit_catalogue` isn't loaded — both
-       fall back to `Legacy`, since this fork carries no dependency on
-       the catalogue package).
+    1. `ProductSource.current/0`'s selection logic: the config key absent
+       always falls back to `Legacy`; the key set to "catalogue" selects
+       `Catalogue` when `phoenix_kit_catalogue` is loaded (the `:catalogue`
+       test bridge in `mix.exs`) and falls back to `Legacy` otherwise (a
+       plain `mix test` run, with no dependency on the catalogue package).
     2. The facade's product/category read functions now delegate to
        `ProductSource.current()` with no observable behavior change —
        verified by comparing facade results directly against calling
@@ -23,6 +24,7 @@ defmodule PhoenixKitEcommerce.ProductSourceTest do
   alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.ProductSource
+  alias PhoenixKitEcommerce.ProductSource.Catalogue
   alias PhoenixKitEcommerce.ProductSource.Legacy
   alias PhoenixKitEcommerce.ShopConfig
   alias PhoenixKitEcommerce.Test.Repo, as: TestRepo
@@ -60,12 +62,18 @@ defmodule PhoenixKitEcommerce.ProductSourceTest do
       assert Shop.get_config("shop_product_source") == "catalogue"
     end
 
-    test "stays on Legacy for \"catalogue\" because phoenix_kit_catalogue isn't loaded here" do
-      refute Code.ensure_loaded?(PhoenixKitCatalogue)
-
+    test "\"catalogue\" only selects the Catalogue adapter when phoenix_kit_catalogue is loaded" do
       put_product_source_config!("catalogue")
 
-      assert ProductSource.current() == Legacy
+      # This fork declares `phoenix_kit_catalogue` as an optional dependency
+      # (see mix.exs's `catalogue_test_deps/0`) — present under the
+      # `:catalogue`-tagged test bridge, absent from a plain `mix test` run.
+      # Either way, `ProductSource.current/0` must reflect it precisely:
+      # falling back to `Legacy` without the dependency, switching to the
+      # `Catalogue` adapter with it.
+      expected = if Code.ensure_loaded?(PhoenixKitCatalogue), do: Catalogue, else: Legacy
+
+      assert ProductSource.current() == expected
     end
 
     test "stays on Legacy for any other stored value" do

@@ -56,6 +56,19 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   (`ProductSource.Catalogue.Query.set_display_names/2`) that only the
   caller building `sets` (`ProductSource.Catalogue`) can do before
   handing them to this pure function.
+
+  `opts[:base_currency]` overrides the shop's configured base currency
+  code used as the fallback when the item's own `data["ecommerce"]["currency"]`
+  is absent — every real caller omits it (falling through to
+  `base_currency_code/0`, which reads `PhoenixKitEcommerce.get_base_currency/0`),
+  so this stays a pure function for callers (tests included) that want to
+  avoid that DB read entirely.
+
+  `opts[:languages]` overrides which language codes `language_keys/2` treats
+  as enabled (see its doc) — every real caller omits it (falling through to
+  `Translations.enabled_languages/0`, itself backed by the Languages
+  module's settings), so tests can pin a fixed set of languages without
+  that dependency either.
   """
   @spec product_view(map(), keyword()) :: Product.t()
   def product_view(item, opts \\ []) do
@@ -65,7 +78,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
 
     data = item.data || %{}
     ecommerce = Map.get(data, "ecommerce", %{})
-    langs = language_keys(data)
+    langs = language_keys(data, opts)
 
     fields = %{
       uuid: item.uuid,
@@ -78,7 +91,9 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
       price: item.base_price,
       compare_at_price: to_decimal(Map.get(ecommerce, "compare_at_price")),
       cost_per_item: to_decimal(Map.get(ecommerce, "cost_per_item")),
-      currency: Map.get(ecommerce, "currency") || base_currency_code(),
+      currency:
+        Map.get(ecommerce, "currency") || Keyword.get(opts, :base_currency) ||
+          base_currency_code(),
       taxable: Map.get(ecommerce, "taxable", true),
       weight_grams: Map.get(ecommerce, "weight_grams") || 0,
       requires_shipping: Map.get(ecommerce, "requires_shipping", true),
@@ -125,7 +140,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   def category_view(category, opts \\ []) do
     data = category.data || %{}
     ecommerce = Map.get(data, "ecommerce", %{})
-    langs = language_keys(data)
+    langs = language_keys(data, opts)
 
     fields = %{
       uuid: category.uuid,
@@ -412,9 +427,9 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   # `original_unit` — the import mapper) and a hardcoded blacklist would
   # have to keep discovering catalogue's future top-level keys one probe
   # at a time.
-  defp language_keys(data) do
+  defp language_keys(data, opts) do
     primary = Map.get(data, "_primary_language") || Translations.default_language()
-    enabled = Translations.enabled_languages()
+    enabled = Keyword.get(opts, :languages) || Translations.enabled_languages()
     langs = data |> Map.keys() |> Enum.filter(&(&1 in enabled))
 
     if primary in langs, do: Enum.uniq(langs), else: Enum.uniq([primary | langs])

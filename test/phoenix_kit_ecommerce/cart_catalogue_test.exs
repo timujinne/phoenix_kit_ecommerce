@@ -115,7 +115,14 @@ defmodule PhoenixKitEcommerce.CartCatalogueTest do
       PhoenixKit.Settings.update_setting("entities_enabled", "true")
       on_exit(fn -> PhoenixKit.Settings.update_setting("entities_enabled", "false") end)
 
-      {:ok, catalogue} = Catalogue.create_catalogue(%{name: "decor3dprint-colors"})
+      # `Query.catalogue_uuid/0` (what `CatalogueSource.get_product/2` scopes
+      # every read to) resolves by NAME against the `shop_catalogue` config
+      # (defaulting to "decor3dprint") — not by whichever catalogue this
+      # item happens to live in. The module-level `setup` above already
+      # created that one; reusing it here (instead of a second,
+      # differently-named catalogue) is what makes this item visible to
+      # `get_product/2` at all.
+      catalogue = Catalogue.list_catalogues() |> Enum.find(&(&1.name == "decor3dprint"))
       {:ok, set} = AttributeSets.create_set(%{name: "Color"}, actor_uuid: Ecto.UUID.generate())
 
       {:ok, red} =
@@ -231,6 +238,13 @@ defmodule PhoenixKitEcommerce.CartCatalogueTest do
 
   describe "legacy path" do
     test "is unchanged: product_uuid stays set, no catalogue_item_uuid key appears" do
+      # The module `setup` switches the read/write source to "catalogue",
+      # and `create_product/1` refuses to write while it's active (see
+      # `PhoenixKitEcommerce.create_product/1`'s `catalogue_source_active?/0`
+      # guard) — flip back to "legacy" just long enough to create this
+      # fixture, same as any other legacy-path write would need to.
+      set_product_source("legacy")
+
       {:ok, legacy_product} =
         Shop.create_product(%{
           "title" => %{"en" => "Legacy Widget"},
@@ -238,6 +252,8 @@ defmodule PhoenixKitEcommerce.CartCatalogueTest do
           "status" => "active",
           "currency" => "USD"
         })
+
+      set_product_source("catalogue")
 
       {:ok, cart} = Shop.add_to_cart(new_cart(), legacy_product, 1)
 
