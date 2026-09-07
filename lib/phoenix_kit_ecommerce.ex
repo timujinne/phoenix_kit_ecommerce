@@ -4191,6 +4191,17 @@ defmodule PhoenixKitEcommerce do
     - `shipping_methods.price`, `.free_above_amount`, `.min_order_amount`,
       `.max_order_amount`
 
+  KNOWN RISK, not fixed here (pre-existing and app-wide, out of scope for
+  this operation): writing a product's overrides goes through
+  `update_product/2`, whose `MetadataValidator.normalize_product_attrs/1`
+  collapses an explicit `%{"type" => ..., "value" => ...}` override to a
+  bare string on ANY save, this one included — so a product whose override
+  type disagrees with its option schema's default would silently have
+  that override's type reverted during a currency change, an operation
+  where an operator has the least reason to expect unrelated data to
+  move. See `MetadataValidator.normalize_product_attrs/1` for the
+  existing behavior.
+
   Never touches carts or orders (§4.9 step 6) — they carry their own
   frozen `currency`/`exchange_rate` (§4.4, §4.5), which is the entire
   point of freezing them; this function does not reference either schema.
