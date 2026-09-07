@@ -2,7 +2,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   @moduledoc """
   E-Commerce module settings LiveView.
 
-  Allows configuration of e-commerce settings including inventory tracking.
+  Allows configuration of e-commerce settings.
   """
 
   use PhoenixKitEcommerce.Web, :live_view
@@ -35,7 +35,6 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       socket
       |> assign(:page_title, gettext("E-Commerce Settings"))
       |> assign(:enabled, config.enabled)
-      |> assign(:inventory_tracking, config.inventory_tracking)
       |> assign(:billing_enabled, billing_enabled?())
       |> assign(:category_name_display, get_category_name_display())
       |> assign(:catalog_vocabulary, Vocabulary.current())
@@ -154,12 +153,6 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   end
 
   @impl true
-  def handle_event("toggle_inventory_tracking", params, socket) do
-    Authz.authorize(socket, :manage_settings, fn ->
-      gated_event("toggle_inventory_tracking", params, socket)
-    end)
-  end
-
   @impl true
   def handle_event("toggle_notify_cart_first_item", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
@@ -333,23 +326,6 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           title={gettext("E-Commerce Settings")}
           subtitle={gettext("Configure your e-commerce store")}
         />
-
-        <%!-- Inventory Settings (toggle pattern) --%>
-        <div class="card bg-base-100 shadow-xl mb-6">
-          <div class="card-body">
-            <h2 class="card-title text-xl mb-6">
-              <.icon name="hero-archive-box" class="w-6 h-6" /> Inventory
-            </h2>
-
-            <.setting_toggle
-              title={gettext("Track Inventory")}
-              description={gettext("Enable stock tracking for products (Phase 2)")}
-              checked={@inventory_tracking}
-              event="toggle_inventory_tracking"
-              toggle_class="toggle-secondary"
-            />
-          </div>
-        </div>
 
         <%!-- Shipping requirement & where it is picked. Both settings were
              read by the storefront and the conversion from the day they
@@ -1060,28 +1036,6 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     else
       {:noreply,
        put_flash(socket, :error, gettext("Enter a two-letter country code, or leave it blank."))}
-    end
-  end
-
-  defp gated_event("toggle_inventory_tracking", _params, socket) do
-    new_value = !socket.assigns.inventory_tracking
-    value_str = if(new_value, do: "true", else: "false")
-
-    case Settings.update_setting("shop_inventory_tracking", value_str) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> assign(:inventory_tracking, new_value)
-         |> put_flash(
-           :info,
-           if(new_value,
-             do: gettext("Inventory tracking enabled"),
-             else: gettext("Inventory tracking disabled")
-           )
-         )}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, gettext("Failed to update inventory setting"))}
     end
   end
 
