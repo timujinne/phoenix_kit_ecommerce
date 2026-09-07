@@ -341,22 +341,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
               <.icon name="hero-archive-box" class="w-6 h-6" /> Inventory
             </h2>
 
-            <div class="fieldset">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">{gettext("Track Inventory")}</span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext("Enable stock tracking for products (Phase 2)")}
-                  </div>
-                </span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-secondary"
-                  checked={@inventory_tracking}
-                  phx-click="toggle_inventory_tracking"
-                />
-              </label>
-            </div>
+            <.setting_toggle
+              title={gettext("Track Inventory")}
+              description={gettext("Enable stock tracking for products (Phase 2)")}
+              checked={@inventory_tracking}
+              event="toggle_inventory_tracking"
+              toggle_class="toggle-secondary"
+            />
           </div>
         </div>
 
@@ -368,7 +359,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           <div class="card-body">
             <h2 class="card-title">{gettext("Shipping requirement")}</h2>
 
-            <div class="fieldset">
+            <div>
               <p class="text-sm text-base-content/70 mb-3">
                 {gettext(
                   "What happens when no active shipping method covers the buyer's country."
@@ -386,7 +377,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                       {"always", gettext("Never ask for a shipping method")}
                     ]
                   }
-                  class="label cursor-pointer justify-start gap-3"
+                  class="flex items-center gap-3 cursor-pointer"
                 >
                   <input
                     type="radio"
@@ -398,19 +389,15 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_shipping_skip_mode"
                     phx-value-mode={value}
                   />
-                  <span class="fieldset-legend">{label}</span>
+                  <span>{label}</span>
                 </label>
               </div>
             </div>
 
             <div class="divider"></div>
 
-            <div class="fieldset">
-              <label class="label">
-                <span class="fieldset-legend text-lg font-semibold">
-                  {gettext("Where the buyer picks a shipping method")}
-                </span>
-              </label>
+            <div>
+              <h3 class="font-medium mb-1">{gettext("Where the buyer picks a shipping method")}</h3>
               <p class="text-sm text-base-content/70 mb-3">
                 {gettext(
                   "On the cart page the destination country is not known yet, so every method is listed. As a checkout step after billing, methods are filtered by the real country."
@@ -424,7 +411,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                       {"checkout", gettext("Checkout step, after billing")}
                     ]
                   }
-                  class="label cursor-pointer justify-start gap-3"
+                  class="flex items-center gap-3 cursor-pointer"
                 >
                   <input
                     type="radio"
@@ -436,7 +423,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_shipping_selection_position"
                     phx-value-position={value}
                   />
-                  <span class="fieldset-legend">{label}</span>
+                  <span>{label}</span>
                 </label>
               </div>
             </div>
@@ -453,42 +440,30 @@ defmodule PhoenixKitEcommerce.Web.Settings do
               )}
             </p>
 
-            <div class="fieldset">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend">{gettext("First item added to a cart")}</span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-secondary"
-                  id="toggle-notify-cart-first-item"
-                  checked={@notify_cart_first_item}
-                  phx-click="toggle_notify_cart_first_item"
-                />
-              </label>
-            </div>
-            <div class="fieldset">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend">{gettext("Every item added to a cart")}</span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-secondary"
-                  id="toggle-notify-cart-item"
-                  checked={@notify_cart_item}
-                  phx-click="toggle_notify_cart_item"
-                />
-              </label>
-            </div>
-            <div class="fieldset">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend">{gettext("Buyer proceeded to checkout")}</span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-secondary"
-                  id="toggle-notify-checkout-started"
-                  checked={@notify_checkout_started}
-                  phx-click="toggle_notify_checkout_started"
-                />
-              </label>
-            </div>
+            <.setting_toggle
+              id="toggle-notify-cart-first-item"
+              title={gettext("First item added to a cart")}
+              checked={@notify_cart_first_item}
+              event="toggle_notify_cart_first_item"
+              toggle_class="toggle-secondary"
+              class="py-2"
+            />
+            <.setting_toggle
+              id="toggle-notify-cart-item"
+              title={gettext("Every item added to a cart")}
+              checked={@notify_cart_item}
+              event="toggle_notify_cart_item"
+              toggle_class="toggle-secondary"
+              class="py-2"
+            />
+            <.setting_toggle
+              id="toggle-notify-checkout-started"
+              title={gettext("Buyer proceeded to checkout")}
+              checked={@notify_checkout_started}
+              event="toggle_notify_checkout_started"
+              toggle_class="toggle-secondary"
+              class="py-2"
+            />
 
             <form
               phx-submit="save_notification_recipients"
@@ -502,7 +477,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                 )}
               </p>
               <%= for user <- @recipient_candidates do %>
-                <label class="label cursor-pointer justify-start gap-3">
+                <label class="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     class="checkbox checkbox-sm"
@@ -510,7 +485,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     value="true"
                     checked={user.uuid in @notification_recipients}
                   />
-                  <span class="fieldset-legend">{user.email}</span>
+                  <span>{user.email}</span>
                 </label>
               <% end %>
               <button type="submit" class="btn btn-primary btn-sm mt-2">
@@ -533,83 +508,53 @@ defmodule PhoenixKitEcommerce.Web.Settings do
               )}
             </p>
 
-            <div class="fieldset mb-4">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">{gettext("Order pages need the buyer's session")}</span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext(
-                      "On: an order confirmation page opens only for the person who placed the order. Off: anyone with the order link can read its name, address, phone and email — turn this off only if you deliberately mail shareable order links."
-                    )}
-                  </div>
-                </span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-secondary"
-                  checked={@order_lookup_strict}
-                  phx-click="toggle_order_lookup_policy"
-                />
-              </label>
-            </div>
+            <.setting_toggle
+              title={gettext("Order pages need the buyer's session")}
+              description={
+                gettext(
+                "On: an order confirmation page opens only for the person who placed the order. Off: anyone with the order link can read its name, address, phone and email — turn this off only if you deliberately mail shareable order links."
+                )
+              }
+              checked={@order_lookup_strict}
+              event="toggle_order_lookup_policy"
+              toggle_class="toggle-secondary"
+            />
 
-            <div class="fieldset mb-4">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">{gettext("Allow raw HTML in product descriptions")}</span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext(
-                      "Off (recommended): descriptions are sanitized before display. On: descriptions render as-is, which trusts everyone who can edit a product — or supply a CSV import — with running scripts in every shopper's browser."
-                    )}
-                  </div>
-                </span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-warning"
-                  checked={@allow_raw_html}
-                  phx-click="toggle_allow_raw_html"
-                />
-              </label>
-            </div>
+            <.setting_toggle
+              title={gettext("Allow raw HTML in product descriptions")}
+              description={
+                gettext(
+                "Off (recommended): descriptions are sanitized before display. On: descriptions render as-is, which trusts everyone who can edit a product — or supply a CSV import — with running scripts in every shopper's browser."
+                )
+              }
+              checked={@allow_raw_html}
+              event="toggle_allow_raw_html"
+              toggle_class="toggle-warning"
+            />
 
-            <div class="fieldset mb-4">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">{gettext("Allow SVG images from import")}</span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext(
-                      "Off (recommended): SVG files are rejected by the image importer. SVG can carry scripts and stored images are served inline."
-                    )}
-                  </div>
-                </span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-warning"
-                  checked={@allow_svg}
-                  phx-click="toggle_allow_svg"
-                />
-              </label>
-            </div>
+            <.setting_toggle
+              title={gettext("Allow SVG images from import")}
+              description={
+                gettext(
+                "Off (recommended): SVG files are rejected by the image importer. SVG can carry scripts and stored images are served inline."
+                )
+              }
+              checked={@allow_svg}
+              event="toggle_allow_svg"
+              toggle_class="toggle-warning"
+            />
 
-            <div class="fieldset">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">
-                    {gettext("Let image import reach internal addresses")}
-                  </span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext(
-                      "Off (recommended): the importer refuses private and loopback addresses. Turn on only when importing from an image host inside your own network."
-                    )}
-                  </div>
-                </span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-warning"
-                  checked={@allow_private_networks}
-                  phx-click="toggle_allow_private_networks"
-                />
-              </label>
-            </div>
+            <.setting_toggle
+              title={gettext("Let image import reach internal addresses")}
+              description={
+                gettext(
+                "Off (recommended): the importer refuses private and loopback addresses. Turn on only when importing from an image host inside your own network."
+                )
+              }
+              checked={@allow_private_networks}
+              event="toggle_allow_private_networks"
+              toggle_class="toggle-warning"
+            />
           </div>
         </div>
 
@@ -621,26 +566,17 @@ defmodule PhoenixKitEcommerce.Web.Settings do
               {gettext("Import Behaviour")}
             </h2>
 
-            <div class="fieldset">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">
-                    {gettext("Cleanup removes only categories the import created")}
-                  </span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext(
-                      "On (recommended): the post-import cleanup only deletes empty categories that the import itself created. Off: it deletes every empty category in your catalog, including ones you left empty on purpose."
-                    )}
-                  </div>
-                </span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-secondary"
-                  checked={@cleanup_auto_created_only}
-                  phx-click="toggle_import_cleanup_scope"
-                />
-              </label>
-            </div>
+            <.setting_toggle
+              title={gettext("Cleanup removes only categories the import created")}
+              description={
+                gettext(
+                "On (recommended): the post-import cleanup only deletes empty categories that the import itself created. Off: it deletes every empty category in your catalog, including ones you left empty on purpose."
+                )
+              }
+              checked={@cleanup_auto_created_only}
+              event="toggle_import_cleanup_scope"
+              toggle_class="toggle-secondary"
+            />
           </div>
         </div>
 
@@ -691,25 +627,17 @@ defmodule PhoenixKitEcommerce.Web.Settings do
               <.icon name="hero-tag" class="w-6 h-6" /> {gettext("Product Options")}
             </h2>
 
-            <div class="fieldset">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">{gettext("Global Product Options")}</span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext("Define options that apply to all products (size, color, material, etc.)")}
-                  </div>
-                  <div class="text-xs text-base-content/50 mt-1">
-                    {gettext("Price override is configured per-option in the options settings.")}
-                  </div>
-                </span>
-                <.link
-                  navigate={Routes.path("/admin/shop/settings/options")}
-                  class="btn btn-primary"
-                >
-                  <.icon name="hero-cog-6-tooth" class="w-4 h-4 mr-2" /> {gettext("Configure")}
-                </.link>
-              </label>
-            </div>
+            <.setting_row
+              title={gettext("Global Product Options")}
+              description={
+                gettext("Define options that apply to all products (size, color, material, etc.)")
+              }
+              note={gettext("Price override is configured per-option in the options settings.")}
+            >
+              <.link navigate={Routes.path("/admin/shop/settings/options")} class="btn btn-primary">
+                <.icon name="hero-cog-6-tooth" class="w-4 h-4 mr-2" /> {gettext("Configure")}
+              </.link>
+            </.setting_row>
           </div>
         </div>
 
@@ -720,22 +648,19 @@ defmodule PhoenixKitEcommerce.Web.Settings do
               <.icon name="hero-funnel" class="w-6 h-6" /> {gettext("Import Configurations")}
             </h2>
 
-            <div class="fieldset">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">{gettext("CSV Import Filters")}</span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext("Configure keyword filters and category rules for CSV product imports")}
-                  </div>
-                </span>
-                <.link
-                  navigate={Routes.path("/admin/shop/settings/import-configs")}
-                  class="btn btn-primary"
-                >
-                  <.icon name="hero-cog-6-tooth" class="w-4 h-4 mr-2" /> {gettext("Configure")}
-                </.link>
-              </label>
-            </div>
+            <.setting_row
+              title={gettext("CSV Import Filters")}
+              description={
+                gettext("Configure keyword filters and category rules for CSV product imports")
+              }
+            >
+              <.link
+                navigate={Routes.path("/admin/shop/settings/import-configs")}
+                class="btn btn-primary"
+              >
+                <.icon name="hero-cog-6-tooth" class="w-4 h-4 mr-2" /> {gettext("Configure")}
+              </.link>
+            </.setting_row>
           </div>
         </div>
 
@@ -746,29 +671,24 @@ defmodule PhoenixKitEcommerce.Web.Settings do
               <.icon name="hero-arrow-path" class="w-6 h-6" /> {gettext("Shopify Sync")}
             </h2>
 
-            <div class="fieldset">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">{gettext("One-way sync from Shopify")}</span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext(
-                      "Connect a Shopify Admin API token in Integrations settings, then review and apply catalog changes from the Shopify Sync page."
-                    )}
-                  </div>
-                </span>
-                <div class="flex gap-2">
-                  <.link
-                    navigate={Routes.path("/admin/settings/integrations/website")}
-                    class="btn btn-ghost"
-                  >
-                    {gettext("Connect")}
-                  </.link>
-                  <.link navigate={Routes.path("/admin/shop/shopify-sync")} class="btn btn-primary">
-                    <.icon name="hero-arrow-path" class="w-4 h-4 mr-2" /> {gettext("Open Sync")}
-                  </.link>
-                </div>
-              </label>
-            </div>
+            <.setting_row
+              title={gettext("One-way sync from Shopify")}
+              description={
+                gettext(
+                  "Connect a Shopify Admin API token in Integrations settings, then review and apply catalog changes from the Shopify Sync page."
+                )
+              }
+            >
+              <.link
+                navigate={Routes.path("/admin/settings/integrations/website")}
+                class="btn btn-ghost"
+              >
+                {gettext("Connect")}
+              </.link>
+              <.link navigate={Routes.path("/admin/shop/shopify-sync")} class="btn btn-primary">
+                <.icon name="hero-arrow-path" class="w-4 h-4 mr-2" /> {gettext("Open Sync")}
+              </.link>
+            </.setting_row>
           </div>
         </div>
 
@@ -905,57 +825,37 @@ defmodule PhoenixKitEcommerce.Web.Settings do
             </h2>
 
             <%!-- Show Categories in Shop --%>
-            <div class="fieldset mb-6">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">{gettext("Show Categories in Shop")}</span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext("Display category cards above products in the main shop page")}
-                  </div>
-                </span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-primary"
-                  checked={@sidebar_show_categories}
-                  phx-click="toggle_sidebar_categories"
-                />
-              </label>
-            </div>
+            <.setting_toggle
+              title={gettext("Show Categories in Shop")}
+              description={gettext("Display category cards above products in the main shop page")}
+              checked={@sidebar_show_categories}
+              event="toggle_sidebar_categories"
+            />
 
             <div class="divider"></div>
 
             <%!-- Storefront cart bar --%>
-            <div class="fieldset mb-6">
-              <label class="label cursor-pointer justify-between">
-                <span class="fieldset-legend text-lg">
-                  <span class="font-semibold">{gettext("Show the storefront cart bar")}</span>
-                  <div class="text-sm text-base-content/70 mt-1">
-                    {gettext(
-                      "A compact Shop / Cart bar on catalog pages. Turn it off if your own site header already links to the cart."
-                    )}
-                  </div>
-                </span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-primary"
-                  checked={@show_cart_bar}
-                  phx-click="toggle_cart_bar"
-                />
-              </label>
-            </div>
+            <.setting_toggle
+              title={gettext("Show the storefront cart bar")}
+              description={
+                gettext(
+                "A compact Shop / Cart bar on catalog pages. Turn it off if your own site header already links to the cart."
+                )
+              }
+              checked={@show_cart_bar}
+              event="toggle_cart_bar"
+            />
 
             <div class="divider"></div>
 
             <%!-- Category Name Display --%>
-            <div class="fieldset mb-6">
-              <label class="label">
-                <span class="fieldset-legend text-lg font-semibold">{gettext("Category Name Display")}</span>
-              </label>
+            <div class="mb-6">
+              <h3 class="font-medium mb-1">{gettext("Category Name Display")}</h3>
               <p class="text-sm text-base-content/70 mb-3">
                 {gettext("How category names should be displayed in the sidebar")}
               </p>
               <div class="flex gap-4">
-                <label class="label cursor-pointer gap-2">
+                <label class="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
                     name="category_display"
@@ -965,9 +865,9 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_category_display"
                     phx-value-display="truncate"
                   />
-                  <span class="fieldset-legend">{gettext("Truncate (single line)")}</span>
+                  <span>{gettext("Truncate (single line)")}</span>
                 </label>
-                <label class="label cursor-pointer gap-2">
+                <label class="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
                     name="category_display"
@@ -977,7 +877,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_category_display"
                     phx-value-display="wrap"
                   />
-                  <span class="fieldset-legend">{gettext("Wrap (multi-line)")}</span>
+                  <span>{gettext("Wrap (multi-line)")}</span>
                 </label>
               </div>
             </div>
@@ -991,14 +891,14 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                   "Storefront only. Invoices and receipts always keep two decimals."
                 )}
               </p>
-              <label class="label cursor-pointer gap-2 justify-start">
+              <label class="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   class="checkbox checkbox-primary"
                   checked={@hide_zero_decimals}
                   phx-click="toggle_hide_zero_decimals"
                 />
-                <span class="fieldset-legend">{gettext("Hide .00 on whole prices (40 instead of 40.00)")}</span>
+                <span>{gettext("Hide .00 on whole prices (40 instead of 40.00)")}</span>
               </label>
             </div>
 
@@ -1017,7 +917,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                      be missing from the UI. --%>
                 <%= for value <- Vocabulary.options() do %>
                   <% label = vocabulary_label(value) %>
-                  <label class="label cursor-pointer gap-2">
+                  <label class="flex items-center gap-2 cursor-pointer">
                     <input
                       type="radio"
                       name="catalog_vocabulary"
@@ -1027,7 +927,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                       phx-click="update_catalog_vocabulary"
                       phx-value-vocabulary={value}
                     />
-                    <span class="fieldset-legend">{label}</span>
+                    <span>{label}</span>
                   </label>
                 <% end %>
               </div>
@@ -1036,15 +936,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
             <div class="divider"></div>
 
             <%!-- Category Icon Mode --%>
-            <div class="fieldset">
-              <label class="label">
-                <span class="fieldset-legend text-lg font-semibold">{gettext("Category Icons")}</span>
-              </label>
+            <div>
+              <h3 class="font-medium mb-1">{gettext("Category Icons")}</h3>
               <p class="text-sm text-base-content/70 mb-3">
                 {gettext("Show icons next to category names in sidebar")}
               </p>
               <div class="flex gap-4">
-                <label class="label cursor-pointer gap-2">
+                <label class="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
                     name="category_icon"
@@ -1054,9 +952,9 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_category_icon"
                     phx-value-mode="none"
                   />
-                  <span class="fieldset-legend">{gettext("No icons")}</span>
+                  <span>{gettext("No icons")}</span>
                 </label>
-                <label class="label cursor-pointer gap-2">
+                <label class="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
                     name="category_icon"
@@ -1066,9 +964,9 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_category_icon"
                     phx-value-mode="folder"
                   />
-                  <span class="fieldset-legend">{gettext("Folder icon")}</span>
+                  <span>{gettext("Folder icon")}</span>
                 </label>
-                <label class="label cursor-pointer gap-2">
+                <label class="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
                     name="category_icon"
@@ -1078,7 +976,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                     phx-click="update_category_icon"
                     phx-value-mode="category"
                   />
-                  <span class="fieldset-legend">{gettext("Category image")}</span>
+                  <span>{gettext("Category image")}</span>
                 </label>
               </div>
             </div>

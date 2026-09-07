@@ -50,6 +50,7 @@ defmodule PhoenixKitEcommerce.Web do
       import PhoenixKitWeb.Components.Core.AdminPageHeader
       import PhoenixKitWeb.Components.Core.DraggableList
       import PhoenixKitWeb.Components.Core.Markdown
+      import PhoenixKitEcommerce.Web.Components.SettingRows
     end
   end
 
