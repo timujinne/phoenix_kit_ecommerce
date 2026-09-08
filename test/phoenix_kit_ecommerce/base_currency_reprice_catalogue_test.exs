@@ -41,6 +41,7 @@ defmodule PhoenixKitEcommerce.BaseCurrencyRepriceCatalogueTest do
   alias PhoenixKitBilling.Currency
   alias PhoenixKitCatalogue.Catalogue
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.ProductSource.Catalogue, as: CatalogueSource
   alias PhoenixKitEcommerce.ShopConfig
 
@@ -364,5 +365,134 @@ defmodule PhoenixKitEcommerce.BaseCurrencyRepriceCatalogueTest do
     # Nothing written anywhere — the whole operation refused up front.
     assert Catalogue.get_item!(item.uuid) == item_before
     assert Catalogue.get_category!(category.uuid) == category_before
+  end
+
+  test "reprices a category's own fixed option-schema modifiers even with no items in it, leaving its percentage alone" do
+    n = System.unique_integer([:positive])
+
+    {:ok, cat} = Catalogue.create_catalogue(%{name: "decor3dprint"})
+
+    {:ok, category} =
+      Catalogue.create_category(%{
+        name: "Empty Category #{n}",
+        catalogue_uuid: cat.uuid,
+        data: %{
+          "ecommerce" => %{
+            "option_schema" => [
+              %{
+                "key" => "material",
+                "label" => "Material",
+                "type" => "select",
+                "options" => ["PLA", "PETG"],
+                "affects_price" => true,
+                "modifier_type" => "fixed",
+                "price_modifiers" => %{"PLA" => "0", "PETG" => "10.00"}
+              },
+              %{
+                "key" => "finish",
+                "label" => "Finish",
+                "type" => "select",
+                "options" => ["Standard", "Premium"],
+                "affects_price" => true,
+                "modifier_type" => "percent",
+                "price_modifiers" => %{"Standard" => "0", "Premium" => "20"}
+              }
+            ]
+          }
+        }
+      })
+
+    assert {:ok,
+            %{
+              catalogue_items: 0,
+              catalogue_category_modifiers: catalogue_category_modifiers
+            }} = Shop.reprice_for_base_change("USD", "EUR", Decimal.new("0.909091"))
+
+    # "material" (fixed, 2 entries: PLA/PETG). "finish" is percent and
+    # contributes 0. Reached purely by listing categories, not through any
+    # item — proves the category leg doesn't depend on having items.
+    assert catalogue_category_modifiers == 2
+
+    reloaded_category = Catalogue.get_category!(category.uuid)
+    [material, finish] = reloaded_category.data["ecommerce"]["option_schema"]
+
+    assert Decimal.equal?(Decimal.new(material["price_modifiers"]["PLA"]), Decimal.new("0"))
+
+    assert Decimal.equal?(
+             Decimal.new(material["price_modifiers"]["PETG"]),
+             Decimal.new("9.09")
+           )
+
+    assert finish["modifier_type"] == "percent"
+    assert finish["price_modifiers"]["Premium"] == "20"
+    assert finish["price_modifiers"]["Standard"] == "0"
+  end
+
+  test "reprices an item with no category without crashing; price_modifiers resolve only against the global schema" do
+    n = System.unique_integer([:positive])
+
+    {:ok, _} =
+      Options.update_global_options([
+        %{
+          "key" => "material",
+          "label" => "Material",
+          "type" => "select",
+          "options" => ["PLA", "PETG"],
+          "affects_price" => true,
+          "modifier_type" => "fixed",
+          "price_modifiers" => %{"PLA" => "0", "PETG" => "10.00"}
+        }
+      ])
+
+    {:ok, cat} = Catalogue.create_catalogue(%{name: "decor3dprint"})
+
+    {:ok, item} =
+      Catalogue.create_item(%{
+        catalogue_uuid: cat.uuid,
+        name: "Uncategorized Vase #{n}",
+        base_price: Decimal.new("50.00"),
+        status: "active",
+        data: %{
+          "ecommerce" => %{
+            "shop_status" => "active",
+            "currency" => "USD",
+            "price_modifiers" => %{
+              # Resolves via the GLOBAL schema — there is no category to
+              # check at all.
+              "material" => %{"petg" => "10.00"},
+              # Orphaned: matches no option in any schema. Left untouched,
+              # not refused (see `reprice_catalogue_price_modifiers/4`'s
+              # comment) — this is the SAME code path a categorized item's
+              # unmatched key takes, just reached via a `nil` category
+              # instead of a category whose schema doesn't have the key.
+              "size" => %{"large" => "7.00"}
+            }
+          }
+        }
+      })
+
+    assert item.category_uuid == nil
+
+    assert {:ok,
+            %{
+              catalogue_items: 1,
+              catalogue_item_modifiers: catalogue_item_modifiers
+            }} = Shop.reprice_for_base_change("USD", "EUR", Decimal.new("0.909091"))
+
+    assert catalogue_item_modifiers == 1
+
+    reloaded_item = Catalogue.get_item!(item.uuid)
+    assert Decimal.equal?(reloaded_item.base_price, Decimal.new("45.45"))
+
+    ecommerce = reloaded_item.data["ecommerce"]
+    assert ecommerce["currency"] == "EUR"
+
+    assert Decimal.equal?(
+             Decimal.new(ecommerce["price_modifiers"]["material"]["petg"]),
+             Decimal.new("9.09")
+           )
+
+    # Orphaned key: byte-identical, not repriced, not refused.
+    assert ecommerce["price_modifiers"]["size"]["large"] == "7.00"
   end
 end

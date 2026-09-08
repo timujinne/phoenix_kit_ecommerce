@@ -4833,6 +4833,21 @@ defmodule PhoenixKitEcommerce do
 
   defp catalogue_decimal(_), do: nil
 
+  # `Map.get(schema_by_key, key)` is `nil` for a `price_modifiers` key with
+  # no matching option anywhere in the merged schema (global + category) —
+  # an orphaned key from a deleted/renamed option, or (see
+  # `catalogue_category_option_schema/1`) an item with no category at all.
+  # `reprice_override_values/4` then leaves every value under that key
+  # untouched rather than repricing or refusing it — deliberate, not an
+  # oversight, and NOT the same situation as the pre-flight scan's
+  # explicit-type mismatch below: an option that does not exist in the
+  # schema cannot be selected by any shopper and cannot appear in any
+  # total, so it is not money this operation can mis-price by skipping it,
+  # and refusing the WHOLE base-currency change over dead data would be
+  # strictly worse than leaving a stale, unreachable number sitting in a
+  # JSONB blob. Mirrors the legacy pass's identical behavior for a `nil`
+  # `schema_type` (`accumulate_modifier_mismatch/5`'s `not is_nil(schema_type)`
+  # guard never flags this case either).
   defp reprice_catalogue_price_modifiers(
          price_modifiers,
          schema_by_key,
@@ -4873,6 +4888,13 @@ defmodule PhoenixKitEcommerce do
     get_in(data, ["ecommerce", "option_schema"]) || []
   end
 
+  # Also the "no category" case: an uncategorized item's preloaded
+  # `:category` is `nil`, which doesn't match the clause above (`nil` is
+  # not a map) — falls through here to an empty category schema rather
+  # than raising. `catalogue_option_schema_by_key/1` still resolves such
+  # an item's `price_modifiers` types against the GLOBAL schema alone; a
+  # key that matches nothing there either becomes the orphaned-key case
+  # `reprice_catalogue_price_modifiers/4` documents, not a crash.
   defp catalogue_category_option_schema(_), do: []
 
   # Pre-flight, before any catalogue write — same contract as
