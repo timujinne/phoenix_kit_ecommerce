@@ -199,6 +199,17 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   def tags_visible?(_language), do: false
 
   @doc """
+  Whether the storefront's category navigation is switched on
+  (`shop_sidebar_show_categories`, default `true`). Read by every public page
+  that renders a category list, so the catalog aside, the catalog grid and
+  the product page's category panel cannot disagree about the default.
+  """
+  @spec sidebar_categories_enabled?() :: boolean()
+  def sidebar_categories_enabled? do
+    PhoenixKit.Settings.get_setting_cached("shop_sidebar_show_categories", "true") == "true"
+  end
+
+  @doc """
   Point this module's Gettext backend at `language`, falling back to the base
   language when the catalogue has no dialect.
 

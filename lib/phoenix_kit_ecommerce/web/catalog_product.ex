@@ -153,6 +153,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
         socket.assigns[:url_path] || Shop.product_url(product, current_language)
       )
       |> assign(:categories, Shop.list_active_categories(preload: [:featured_product]))
+      |> assign(:show_categories?, Helpers.sidebar_categories_enabled?())
       |> assign(:filter_qs, FilterHelpers.build_query_string(active_filters, enabled_filters))
       |> assign(
         :category_name_wrap,
@@ -358,6 +359,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
       |> assign(:missing_required_specs, missing_required_specs)
       |> assign(:current_path, current_path)
       |> assign(:categories, all_categories)
+      |> assign(:show_categories?, Helpers.sidebar_categories_enabled?())
       |> assign(:filter_qs, filter_qs)
       |> assign(
         :category_name_wrap,
@@ -733,7 +735,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   def render(assigns) do
     ~H"""
     <ShopLayouts.shop_layout {assigns}>
-      <div class="container flex-col mx-auto px-4 py-6 max-w-7xl">
+      <div class="container flex-col mx-auto px-4 py-6 max-w-[96rem]">
         
         <ShopCards.storefront_bar language={@current_language} cart_count={@cart_count} />
         <%!-- Breadcrumbs --%>
@@ -756,23 +758,12 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
           </ul>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_2fr_2fr] gap-6 lg:gap-8">
-          <%!-- Category navigation (no filters on product page) --%>
-          <aside class="hidden lg:block">
-            <div class="card bg-base-100 shadow-lg sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto">
-              <div class="card-body p-4">
-                <CatalogSidebar.category_nav
-                  categories={@categories}
-                  current_category={@product.category}
-                  current_language={@current_language}
-                  category_icon_mode={@category_icon_mode}
-                  category_name_wrap={@category_name_wrap}
-                  open={true}
-                  filter_qs={@filter_qs}
-                />
-              </div>
-            </div>
-          </aside>
+        <%!-- Two columns: gallery | buy box. The category column that used to
+              sit on the left was dropped on purpose — it squeezed the buy box
+              into a fifth of the page, and a long description above the
+              options pushed "Add to Cart" off the first screen. Categories now
+              render in a collapsed panel under the product. --%>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-10">
           <%!-- Product Images --%>
           <div class="space-y-4">
             <%!-- Main Image --%>
@@ -865,7 +856,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
               </div>
 
               <%= if @product.vendor do %>
-                <p class="text-base-content/60">by {@product.vendor}</p>
+                <p class="text-base-content/60">{gettext("by %{vendor}", vendor: @product.vendor)}</p>
               <% end %>
             </div>
 
@@ -902,88 +893,6 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                 <% end %>
               <% end %>
             </div>
-
-            <%!-- Description --%>
-            <%!-- Sanitized unless an admin has explicitly opted into raw HTML.
-                  This renders on the UNAUTHENTICATED storefront, and product
-                  descriptions are writable by anyone holding the "shop"
-                  permission and by whoever supplies a CSV import file — so
-                  `sanitize={false}` here was a path from "can edit a product"
-                  to script execution in every shopper's and the Owner's
-                  browser. See PhoenixKitEcommerce.Policy. --%>
-            <%= if @localized_description do %>
-              <.markdown
-                content={@localized_description}
-                sanitize={not Policy.allow_raw_html_descriptions?()}
-                compact
-              />
-            <% end %>
-
-            <%!-- Full body (imports put the complete supplier description in
-                  body_html and only a short extract in description). Same
-                  sanitization policy as the description above. --%>
-            <%= if @localized_body && @localized_body != "" do %>
-              <div class="mt-4">
-                <.markdown
-                  content={@localized_body}
-                  sanitize={not Policy.allow_raw_html_descriptions?()}
-                />
-              </div>
-            <% end %>
-
-            <%!-- Product Details --%>
-            <div class="divider"></div>
-
-            <div class="grid grid-cols-2 gap-4 text-sm">
-              <%= if @product.weight_grams && @product.weight_grams > 0 do %>
-                <div>
-                  <span class="text-base-content/60">{gettext("Weight:")}</span>
-                  <span class="ml-2 font-medium">{@product.weight_grams}g</span>
-                </div>
-              <% end %>
-
-              <%= if @product.category do %>
-                <% cat_name = Translations.get(@product.category, :name, @current_language) %>
-                <div>
-                  <span class="text-base-content/60">{gettext("Category:")}</span>
-                  <.link
-                    navigate={Shop.category_url(@product.category, @current_language) <> @filter_qs}
-                    class="ml-2 link link-primary"
-                  >
-                    {cat_name}
-                  </.link>
-                </div>
-              <% end %>
-            </div>
-
-            <%!-- Specifications Table --%>
-            <%= if @specifications != [] do %>
-              <div class="divider"></div>
-
-              <h3 class="font-semibold text-lg mb-3">
-                <.icon name="hero-tag" class="w-5 h-5 inline" /> {gettext("Specifications")}
-              </h3>
-
-              <div class="overflow-x-auto">
-                <table class="table table-zebra table-sm">
-                  <tbody>
-                    <%= for {label, value, unit} <- @specifications do %>
-                      <tr>
-                        <td class="font-medium w-1/3 text-base-content/70">{label}</td>
-                        <td>
-                          {format_spec_value(value)}
-                          <%= if unit do %>
-                            <span class="text-base-content/50 ml-1">{unit}</span>
-                          <% end %>
-                        </td>
-                      </tr>
-                    <% end %>
-                  </tbody>
-                </table>
-              </div>
-            <% end %>
-
-            <div class="divider"></div>
 
             <%!-- Add to Cart Section --%>
             <%= if @product.status == "active" do %>
@@ -1156,6 +1065,31 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
               </div>
             <% end %>
 
+            <%!-- Product Details --%>
+            <div class="divider"></div>
+
+            <div class="grid grid-cols-2 gap-4 text-sm">
+              <%= if @product.weight_grams && @product.weight_grams > 0 do %>
+                <div>
+                  <span class="text-base-content/60">{gettext("Weight:")}</span>
+                  <span class="ml-2 font-medium">{@product.weight_grams}g</span>
+                </div>
+              <% end %>
+
+              <%= if @product.category do %>
+                <% cat_name = Translations.get(@product.category, :name, @current_language) %>
+                <div>
+                  <span class="text-base-content/60">{gettext("Category:")}</span>
+                  <.link
+                    navigate={Shop.category_url(@product.category, @current_language) <> @filter_qs}
+                    class="ml-2 link link-primary"
+                  >
+                    {cat_name}
+                  </.link>
+                </div>
+              <% end %>
+            </div>
+
             <%!-- Tags. Shown only in the default language: they arrive from
                   Shopify as one untranslated list, so on a translated page
                   they would be the only English text on the card. --%>
@@ -1168,6 +1102,94 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
             <% end %>
           </div>
         </div>
+
+        <%!-- Description, full width under the gallery and the buy box.
+              It used to sit inside the buy box column above the options,
+              where one long supplier text pushed "Add to Cart" off the first
+              screen. --%>
+        <%= if has_text?(@localized_description) or has_text?(@localized_body) do %>
+          <section class="mt-10 max-w-5xl">
+            <div class="divider"></div>
+            <h2 class="text-xl font-semibold mb-4">
+              <.icon name="hero-document-text" class="w-5 h-5 inline" /> {gettext("Description")}
+            </h2>
+
+            <%!-- Sanitized unless an admin has explicitly opted into raw HTML.
+                  This renders on the UNAUTHENTICATED storefront, and product
+                  descriptions are writable by anyone holding the "shop"
+                  permission and by whoever supplies a CSV import file — so
+                  `sanitize={false}` here was a path from "can edit a product"
+                  to script execution in every shopper's and the Owner's
+                  browser. See PhoenixKitEcommerce.Policy. --%>
+            <%= if has_text?(@localized_description) do %>
+              <.markdown
+                content={@localized_description}
+                sanitize={not Policy.allow_raw_html_descriptions?()}
+                compact
+              />
+            <% end %>
+
+            <%!-- Full body (imports put the complete supplier description in
+                  body_html and only a short extract in description). Same
+                  sanitization policy as the description above. --%>
+            <%= if has_text?(@localized_body) do %>
+              <div class="mt-4">
+                <.markdown
+                  content={@localized_body}
+                  sanitize={not Policy.allow_raw_html_descriptions?()}
+                />
+              </div>
+            <% end %>
+          </section>
+        <% end %>
+
+        <%!-- Specifications Table --%>
+        <%= if @specifications != [] do %>
+          <section class="mt-10 max-w-5xl">
+            <div class="divider"></div>
+            <h2 class="text-xl font-semibold mb-4">
+              <.icon name="hero-tag" class="w-5 h-5 inline" /> {gettext("Specifications")}
+            </h2>
+
+            <div class="overflow-x-auto">
+              <table class="table table-zebra table-sm">
+                <tbody>
+                  <%= for {label, value, unit} <- @specifications do %>
+                    <tr>
+                      <td class="font-medium w-1/3 text-base-content/70">{label}</td>
+                      <td>
+                        {format_spec_value(value)}
+                        <%= if unit do %>
+                          <span class="text-base-content/50 ml-1">{unit}</span>
+                        <% end %>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        <% end %>
+
+        <%!-- Category navigation, collapsed. Moved here from the left column. --%>
+        <%= if @show_categories? and @categories != [] do %>
+          <details class="collapse collapse-arrow bg-base-100 shadow mt-10 max-w-5xl">
+            <summary class="collapse-title font-semibold">
+              <.icon name="hero-squares-2x2" class="w-5 h-5 inline" /> {gettext("Categories")}
+            </summary>
+            <div class="collapse-content">
+              <CatalogSidebar.category_nav
+                categories={@categories}
+                current_category={@product.category}
+                current_language={@current_language}
+                category_icon_mode={@category_icon_mode}
+                category_name_wrap={@category_name_wrap}
+                open={true}
+                filter_qs={@filter_qs}
+              />
+            </div>
+          </details>
+        <% end %>
       </div>
     </ShopLayouts.shop_layout>
     """
@@ -1226,6 +1248,10 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   end
 
   # Private helpers
+
+  defp has_text?(nil), do: false
+  defp has_text?(text) when is_binary(text), do: String.trim(text) != ""
+  defp has_text?(_), do: false
 
   defp generate_session_id do
     :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)

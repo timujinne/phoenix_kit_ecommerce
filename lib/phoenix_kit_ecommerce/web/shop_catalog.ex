@@ -115,10 +115,7 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
         :category_icon_mode,
         PhoenixKit.Settings.get_setting_cached("shop_category_icon_mode", "none")
       )
-      |> assign(
-        :show_categories_grid,
-        PhoenixKit.Settings.get_setting_cached("shop_sidebar_show_categories", "true") == "true"
-      )
+      |> assign(:show_categories_grid, Helpers.sidebar_categories_enabled?())
       |> Helpers.maybe_assign_admin_edit(Routes.path("/admin/shop"), gettext("Manage Shop"))
 
     {:ok, socket}
