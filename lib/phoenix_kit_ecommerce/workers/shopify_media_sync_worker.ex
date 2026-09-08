@@ -174,13 +174,23 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
       # in `maybe_save_progress/5`/at the end, never on a value that
       # was already reversed on a previous iteration (that would
       # scramble the order past the second error).
-      {done, raw_errors} =
+      # One shop-wide "source URL -> file uuid" index for the whole run.
+      # `Writer.sync_images/3` matches against it and hands back the same
+      # index plus whatever this product downloaded, so a picture shared
+      # across a product line is fetched once — rebuilding it per product
+      # would mean one full scan of every stored file per item.
+      url_index = if kind == "images", do: Writer.build_url_index(), else: %{}
+
+      {done, raw_errors, _url_index} =
         products
         |> Enum.with_index(1)
-        |> Enum.reduce({0, []}, fn {product, position}, {_done, raw_errors} ->
-          raw_errors = process_product(kind, product, index, actor_uuid, opts, raw_errors)
+        |> Enum.reduce({0, [], url_index}, fn {product, position},
+                                              {_done, raw_errors, url_index} ->
+          {raw_errors, url_index} =
+            process_product(kind, product, index, actor_uuid, opts, raw_errors, url_index)
+
           maybe_save_progress(kind, total, position, raw_errors, started_at)
-          {position, raw_errors}
+          {position, raw_errors, url_index}
         end)
 
       errors = Enum.reverse(raw_errors)
@@ -193,16 +203,19 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
     end
   end
 
-  defp process_product(kind, product, index, actor_uuid, opts, errors) do
+  defp process_product(kind, product, index, actor_uuid, opts, errors, url_index) do
     case find_item(index, product) do
       {:ok, item} ->
-        case apply_writer(kind, item, product, actor_uuid, opts) do
-          {:ok, result} -> merge_writer_errors(errors, product, result)
-          {:error, reason} -> [product_error(product, reason) | errors]
+        case apply_writer(kind, item, product, actor_uuid, opts, url_index) do
+          {:ok, result} ->
+            {merge_writer_errors(errors, product, result), Map.get(result, :url_index, url_index)}
+
+          {:error, reason} ->
+            {[product_error(product, reason) | errors], url_index}
         end
 
       :error ->
-        [product_error(product, "no_matching_item") | errors]
+        {[product_error(product, "no_matching_item") | errors], url_index}
     end
   end
 
@@ -223,12 +236,17 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
 
   defp merge_writer_errors(errors, _product, _result), do: errors
 
-  defp apply_writer("images", item, product, actor_uuid, opts) do
+  defp apply_writer("images", item, product, actor_uuid, opts, url_index) do
     downloader = Keyword.get(opts, :downloader, &image_downloader/3)
-    Writer.sync_images(item, product, downloader: downloader, user_uuid: actor_uuid)
+
+    Writer.sync_images(item, product,
+      downloader: downloader,
+      user_uuid: actor_uuid,
+      url_index: url_index
+    )
   end
 
-  defp apply_writer("variants", item, product, _actor_uuid, _opts) do
+  defp apply_writer("variants", item, product, _actor_uuid, _opts, _url_index) do
     Writer.sync_variants(item, product)
   end
 

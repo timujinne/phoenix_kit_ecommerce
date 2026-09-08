@@ -112,7 +112,8 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterImagesTest do
         filename: Path.basename(url),
         content_type: "image/jpeg",
         size_bytes: byte_size(body),
-        user_uuid: user_uuid
+        user_uuid: user_uuid,
+        metadata: %{"source_url" => url}
       )
 
     File.rm(tmp)
@@ -278,6 +279,147 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterImagesTest do
       assert updated.data["featured_image_uuid"] == file1.uuid
     end
 
+    # Live-run finding (Block 7b Task 2): a run against 665 products
+    # re-downloaded 582 of them despite this exact source_url match
+    # already existing, because the match was scoped to files already
+    # linked to THIS item — and Shopify shops commonly reuse the exact
+    # same image `src` (a shared lifestyle photo, a size chart, ...)
+    # across many otherwise-unrelated products in the same line. The fix
+    # widens the match to any active file in the whole shop, so a file
+    # downloaded moments ago for a SIBLING item is found too.
+    test "reuses a file downloaded for a different item, by source_url, without a second download",
+         %{item: item, user_uuid: user_uuid} do
+      {:ok, other_catalogue} =
+        Catalogue.create_catalogue(%{
+          name: "writer-images-other-#{System.unique_integer([:positive])}"
+        })
+
+      {:ok, other_item} =
+        Catalogue.create_item(%{
+          catalogue_uuid: other_catalogue.uuid,
+          name: "Sibling Mug",
+          base_price: Decimal.new("10.00"),
+          status: "active",
+          data: %{
+            "ecommerce" => %{
+              "shop_status" => "active",
+              "shopify" => %{"handle" => "sibling-mug", "product_id" => "999"}
+            }
+          }
+        })
+
+      {downloader, counter} = counting_downloader(user_uuid)
+
+      shared_product = %{
+        "id" => 999,
+        "images" => [
+          %{"id" => 401, "src" => "https://cdn.example/shared-lifestyle.jpg", "position" => 1}
+        ]
+      }
+
+      assert {:ok, %{downloaded: 1, reused: 0, attached: 1}} =
+               Writer.sync_images(other_item, shared_product,
+                 downloader: downloader,
+                 user_uuid: user_uuid
+               )
+
+      assert Agent.get(counter, & &1) == 1
+
+      # A DIFFERENT catalogue item lists the exact same Shopify `src`
+      # (a `?v=` query away) under its own image id — never linked to
+      # `item`, never in its folder, only in `other_item`'s.
+      product = %{
+        "id" => 888,
+        "images" => [
+          %{
+            "id" => 101,
+            "src" => "https://cdn.example/shared-lifestyle.jpg?v=42",
+            "position" => 1
+          }
+        ]
+      }
+
+      assert {:ok, %{downloaded: 0, reused: 1, attached: 1, errors: []}} =
+               Writer.sync_images(item, product, downloader: downloader, user_uuid: user_uuid)
+
+      assert Agent.get(counter, & &1) == 1
+
+      other_updated = Catalogue.get_item!(other_item.uuid)
+      updated = Catalogue.get_item!(item.uuid)
+      shared_uuid = other_updated.data["ecommerce"]["shopify"]["image_ids"]["401"]
+
+      assert shared_uuid
+      assert updated.data["ecommerce"]["shopify"]["image_ids"]["101"] == shared_uuid
+      assert updated.data["media_order"] == [shared_uuid]
+    end
+
+    # The widened shop-wide match is still an exact `source_url` match —
+    # never a guess from a shared filename. Two files with the SAME
+    # `original_file_name` but genuinely different `source_url`s (e.g.
+    # two products' own "1.jpg") must resolve independently: reusing the
+    # wrong one would attach one item's picture to another.
+    test "a shop-wide filename collision does not cause cross-item reuse", %{
+      item: item,
+      user_uuid: user_uuid
+    } do
+      {:ok, other_catalogue} =
+        Catalogue.create_catalogue(%{
+          name: "writer-images-collision-#{System.unique_integer([:positive])}"
+        })
+
+      {:ok, other_item} =
+        Catalogue.create_item(%{
+          catalogue_uuid: other_catalogue.uuid,
+          name: "Collision Mug",
+          base_price: Decimal.new("10.00"),
+          status: "active",
+          data: %{
+            "ecommerce" => %{
+              "shop_status" => "active",
+              "shopify" => %{"handle" => "collision-mug", "product_id" => "777"}
+            }
+          }
+        })
+
+      {downloader, counter} = counting_downloader(user_uuid)
+
+      # Same basename ("photo.jpg") as `item`'s own image below, but a
+      # different Shopify shop path — genuinely different content.
+      other_product = %{
+        "id" => 777,
+        "images" => [
+          %{"id" => 701, "src" => "https://cdn.example/other-shop/photo.jpg", "position" => 1}
+        ]
+      }
+
+      assert {:ok, %{downloaded: 1}} =
+               Writer.sync_images(other_item, other_product,
+                 downloader: downloader,
+                 user_uuid: user_uuid
+               )
+
+      product = %{
+        "id" => 888,
+        "images" => [
+          %{"id" => 101, "src" => "https://cdn.example/this-shop/photo.jpg", "position" => 1}
+        ]
+      }
+
+      assert {:ok, %{downloaded: 1, reused: 0, attached: 1, errors: []}} =
+               Writer.sync_images(item, product, downloader: downloader, user_uuid: user_uuid)
+
+      assert Agent.get(counter, & &1) == 2
+
+      other_updated = Catalogue.get_item!(other_item.uuid)
+      updated = Catalogue.get_item!(item.uuid)
+
+      other_uuid = other_updated.data["ecommerce"]["shopify"]["image_ids"]["701"]
+      this_uuid = updated.data["ecommerce"]["shopify"]["image_ids"]["101"]
+
+      assert other_uuid && this_uuid
+      refute other_uuid == this_uuid
+    end
+
     # Review fix (Block 7b): a reverted version of this fallback bound a
     # failed image's Shopify id to whatever uuid happened to sit at the
     # SAME LIST POSITION in the item's previous `media_order` — wrong the
@@ -373,6 +515,53 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterImagesTest do
       file = Storage.get_file(file_uuid)
 
       assert file.user_uuid == expected_actor_uuid
+    end
+  end
+
+  describe "url_index option" do
+    test "a caller-supplied index is used, and comes back grown by this product's downloads",
+         %{item: item, user_uuid: user_uuid} do
+      # A catalogue-wide run builds the index once and threads it from one
+      # product to the next; rebuilding it per product would scan every
+      # stored file per item.
+      set_product_source("catalogue")
+
+      src = "https://cdn.shopify.com/s/files/1/fresh.jpg?v=9"
+      product = %{"images" => [%{"id" => 901, "src" => src, "position" => 1}]}
+      {downloader, counter} = counting_downloader(user_uuid)
+
+      {:ok, result} =
+        Writer.sync_images(item, product,
+          downloader: downloader,
+          user_uuid: user_uuid,
+          url_index: %{}
+        )
+
+      assert result.downloaded == 1
+      assert Agent.get(counter, & &1) == 1
+
+      # The freshly downloaded file is in the index handed back, so the
+      # next product sharing this src reuses it inside the same run.
+      assert Map.has_key?(result.url_index, "https://cdn.shopify.com/s/files/1/fresh.jpg")
+
+      {:ok, sibling} =
+        Catalogue.create_item(%{
+          catalogue_uuid: item.catalogue_uuid,
+          name: "Sibling Mug",
+          base_price: Decimal.new("10.00"),
+          status: "active",
+          data: %{"ecommerce" => %{"shop_status" => "active"}}
+        })
+
+      {:ok, second} =
+        Writer.sync_images(sibling, product,
+          downloader: fn _url, _uuid, _opts -> {:error, :should_not_download} end,
+          user_uuid: user_uuid,
+          url_index: result.url_index
+        )
+
+      assert second.reused == 1
+      assert second.downloaded == 0
     end
   end
 end

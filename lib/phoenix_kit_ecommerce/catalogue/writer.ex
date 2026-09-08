@@ -35,7 +35,6 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   import Ecto.Query, only: [from: 2]
 
   alias PhoenixKit.Modules.Storage.File, as: StorageFile
-  alias PhoenixKit.Modules.Storage.FolderLink
   alias PhoenixKit.RepoHelper
   alias PhoenixKit.Users.Auth
   alias PhoenixKit.Utils.Multilang
@@ -319,17 +318,27 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
 
   Resolves each Shopify image in this order: (a) an id already in `data
   ["ecommerce"]["shopify"]["image_ids"]` (`%{"<shopify image id>" =>
-  file_uuid}`) reuses its file uuid; (b) failing that, a Storage file
-  already linked to `item` — one of its `data["media_order"]`/
-  `featured_image_uuid` files, or any file living in (or folder-linked
-  into) its `data["files_folder_uuid"]` — whose `metadata["source_url"]`
-  matches the Shopify image's `src` once both are stripped of their
-  `?v=`-style query string reuses that file instead of downloading a
-  second copy of it (this is what lets a rerun against a catalogue item
-  migrated with plain Storage images, never tagged with a Shopify image
-  id, converge without duplicating every file); (c) otherwise downloads
-  via `opts[:downloader]` (default `&ImageDownloader.download_and_store/
-  3`, `(url, user_uuid, opts) -> {:ok, file_uuid} | {:error, reason}`).
+  file_uuid}`) reuses its file uuid; (b) failing that, ANY active Storage
+  file in the whole shop — not only ones already linked to `item` —
+  whose `metadata["source_url"]` matches the Shopify image's `src` once
+  both are stripped of their `?v=`-style query string reuses that file
+  instead of downloading a second copy of it; (c) otherwise downloads via
+  `opts[:downloader]` (default `&ImageDownloader.download_and_store/3`,
+  `(url, user_uuid, opts) -> {:ok, file_uuid} | {:error, reason}`).
+
+  (b) is shop-wide, not item-scoped, because a live run against 665
+  products found 582 of them re-downloading images that Storage already
+  held: many of a shop's Shopify "Files" library images are reused
+  verbatim (same `src`) across an entire product line (e.g. one lifestyle
+  photo shared by twenty near-identical listings), so the first product
+  in the line downloads it and every other product in the same run
+  re-downloads the identical URL because an item-scoped index can only
+  ever see files already attached to THAT item. Every active file in
+  Storage carries `metadata["source_url"]` already — `ImageDownloader.
+  download_and_store/3` is the only writer of that key — so this is
+  never a guess: it is the exact same provable exact-URL binding (b)
+  always was, just no longer artificially narrowed to one item's own
+  attachments.
 
   `opts[:user_uuid]` is the Storage file owner for anything downloaded;
   when omitted it falls back to `PhoenixKit.Users.Auth.
@@ -385,12 +394,16 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     known_image_ids =
       get_in(item.data || %{}, ["ecommerce", "shopify", "image_ids"]) || %{}
 
-    url_index = item |> linked_files() |> source_url_index()
+    # A caller syncing the whole catalogue passes ONE index in (see
+    # `build_url_index/0`) so the shop-wide lookup costs one query per
+    # run rather than one per product; a single-item caller omits it and
+    # gets a freshly built one.
+    url_index = Keyword.get(opts, :url_index) || build_url_index()
 
     images = (shopify_product["images"] || []) |> Enum.sort_by(&(&1["position"] || 0))
 
-    {image_ids, file_uuids, downloaded, reused, errors} =
-      Enum.reduce(images, {%{}, [], 0, 0, []}, fn image, acc ->
+    {image_ids, file_uuids, downloaded, reused, errors, fresh_urls} =
+      Enum.reduce(images, {%{}, [], 0, 0, [], %{}}, fn image, acc ->
         resolve_image(image, known_image_ids, url_index, downloader, user_uuid, acc)
       end)
 
@@ -404,7 +417,16 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     with {:ok, item_with_ids} <- put_image_ids(item, image_ids),
          {:ok, _final_item} <- attach_images(item_with_ids, file_uuids) do
       {:ok,
-       %{downloaded: downloaded, reused: reused, attached: length(file_uuids), errors: errors}}
+       %{
+         downloaded: downloaded,
+         reused: reused,
+         attached: length(file_uuids),
+         errors: errors,
+         # The index the caller passed in, plus what this product just
+         # downloaded — a catalogue-wide run threads this into the next
+         # product so a shared image is fetched once, not once per item.
+         url_index: Map.merge(url_index, fresh_urls)
+       }}
     end
   end
 
@@ -434,7 +456,9 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   defp download_image(id, src, downloader, user_uuid, acc) do
     case downloader.(src, user_uuid, []) do
       {:ok, uuid} ->
-        put_resolved(acc, id, uuid, :downloaded)
+        acc
+        |> put_fresh_url(src, uuid)
+        |> put_resolved(id, uuid, :downloaded)
 
       {:error, reason} ->
         # No provable prior binding for this id (see `reused_file_uuid/4`
@@ -444,16 +468,33 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     end
   end
 
-  defp put_resolved({image_ids, file_uuids, downloaded, reused, errors}, id, uuid, :downloaded) do
-    {Map.put(image_ids, id, uuid), [uuid | file_uuids], downloaded + 1, reused, errors}
+  defp put_resolved(
+         {image_ids, file_uuids, downloaded, reused, errors, fresh},
+         id,
+         uuid,
+         :downloaded
+       ) do
+    {Map.put(image_ids, id, uuid), [uuid | file_uuids], downloaded + 1, reused, errors, fresh}
   end
 
-  defp put_resolved({image_ids, file_uuids, downloaded, reused, errors}, id, uuid, :reused) do
-    {Map.put(image_ids, id, uuid), [uuid | file_uuids], downloaded, reused + 1, errors}
+  defp put_resolved({image_ids, file_uuids, downloaded, reused, errors, fresh}, id, uuid, :reused) do
+    {Map.put(image_ids, id, uuid), [uuid | file_uuids], downloaded, reused + 1, errors, fresh}
   end
 
-  defp put_error({image_ids, file_uuids, downloaded, reused, errors}, id, reason) do
-    {image_ids, file_uuids, downloaded, reused, [{id, reason} | errors]}
+  # A file this run just downloaded is reusable by the next product in
+  # the same run, before any index rebuild would have seen it.
+  defp put_fresh_url({image_ids, file_uuids, downloaded, reused, errors, fresh}, src, uuid) do
+    fresh =
+      case normalize_image_url(src) do
+        url when is_binary(url) -> Map.put_new(fresh, url, uuid)
+        _ -> fresh
+      end
+
+    {image_ids, file_uuids, downloaded, reused, errors, fresh}
+  end
+
+  defp put_error({image_ids, file_uuids, downloaded, reused, errors, fresh}, id, reason) do
+    {image_ids, file_uuids, downloaded, reused, [{id, reason} | errors], fresh}
   end
 
   defp put_image_ids(item, image_ids) do
@@ -480,54 +521,36 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   # this kind of programmatic write.
   defp default_actor_uuid, do: Auth.get_first_admin_uuid()
 
-  defp read_string_list(nil, _key), do: []
+  # Every active Storage file in the shop that carries a download
+  # `metadata["source_url"]` — regardless of which item (if any) it is
+  # currently attached to. `ImageDownloader.download_and_store/3` is the
+  # only writer of that key, so this is shop-wide, not per-item: a file
+  # downloaded a moment ago for a different product in the same sync run
+  # is just as reusable as one already linked to THIS item, and Shopify
+  # products commonly share the exact same image `src` across a whole
+  # product line.
+  @doc """
+  The shop-wide "download source URL -> file uuid" index `sync_images/3`
+  matches against, built once.
 
-  defp read_string_list(data, key) do
-    case data[key] do
-      list when is_list(list) -> Enum.filter(list, &is_binary/1)
-      _ -> []
-    end
-  end
-
-  # Storage files already linked to `item`: its `media_order`/
-  # `featured_image_uuid` uuids as they currently stand (even if an
-  # earlier run left them pointing at only some of the item's images)
-  # plus every file living in — or folder-linked into — its own
-  # attachment folder.
-  defp linked_files(item) do
-    data = item.data || %{}
-
-    explicit_uuids =
-      Enum.uniq(read_string_list(data, "media_order") ++ List.wrap(data["featured_image_uuid"]))
-
-    (explicit_files(explicit_uuids) ++ folder_files(data["files_folder_uuid"]))
-    |> Enum.uniq_by(& &1.uuid)
-  end
-
-  defp explicit_files([]), do: []
-
-  defp explicit_files(uuids) do
-    from(f in StorageFile, where: f.uuid in ^uuids and f.status == "active")
-    |> RepoHelper.repo().all()
-  end
-
-  defp folder_files(folder_uuid) when is_binary(folder_uuid) do
-    linked_subquery =
-      from(fl in FolderLink, where: fl.folder_uuid == ^folder_uuid, select: fl.file_uuid)
-
+  Pass it back in as `opts[:url_index]` when syncing many products in a
+  row: the index is one query over every active file in Storage, and
+  rebuilding it per product turns a catalogue-wide media sync into one
+  full scan per item. `merge_url_index/2` folds the files a product just
+  downloaded into it, so later products in the same run still reuse them.
+  """
+  @spec build_url_index() :: %{optional(String.t()) => String.t()}
+  def build_url_index do
     from(f in StorageFile,
-      where:
-        (f.folder_uuid == ^folder_uuid or f.uuid in subquery(linked_subquery)) and
-          f.status == "active"
+      where: f.status == "active" and fragment("?->>'source_url' IS NOT NULL", f.metadata)
     )
     |> RepoHelper.repo().all()
+    |> source_url_index()
   end
 
-  defp folder_files(_folder_uuid), do: []
-
-  # Indexes linked files by their (query-stripped) download source URL.
-  # When more than one file matches the same URL — e.g. a duplicate a
-  # previous buggy run created — the earliest-inserted one wins, since
+  # Indexes files by their (query-stripped) download source URL. When
+  # more than one file matches the same URL — e.g. a duplicate an
+  # earlier buggy run created — the earliest-inserted one wins, since
   # that is the original rather than the duplicate; `inserted_at` is
   # second-precision, so a `uuid` tie-break keeps the choice
   # deterministic for two rows inserted in the same second.
