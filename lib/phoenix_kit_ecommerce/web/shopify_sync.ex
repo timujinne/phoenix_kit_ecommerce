@@ -13,7 +13,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   that mode (see `visible_sections/2`).
 
   Changes are grouped into field sections (Prices, Titles, Descriptions,
-  HTML texts, Tags, Statuses, Vendors — in that order, price first). One
+  Full Descriptions, Tags, Statuses, Vendors — in that order, price first). One
   product's change can appear in more than one section if more than one
   of its fields differs. Sections are collapsed by default and show a
   count; expanding one reveals its rows, 25 at a time (see the module
@@ -945,18 +945,19 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   defp section_label(:price), do: gettext("Prices")
   defp section_label(:title), do: gettext("Titles")
   defp section_label(:description), do: gettext("Descriptions")
-  defp section_label(:body_html), do: gettext("HTML texts")
+  defp section_label(:body_html), do: gettext("Full Descriptions")
   defp section_label(:tags), do: gettext("Tags")
   defp section_label(:status), do: gettext("Statuses")
   defp section_label(:vendor), do: gettext("Vendors")
 
   # Singular wording for row/confirm text — kept in lockstep with
   # `section_label/1`'s plural headers above (drop the trailing "s").
-  # `:body_html` used to read "Description (HTML)" here while its own
-  # section header read "HTML texts" a few lines up — two different
-  # names for the same field on the same page, right next to the
-  # actually-different `:description` field's "Description"/"Descriptions".
-  # "HTML text(s)" now matches its section exactly.
+  # `:body_html` stores Markdown for Shopify-synced products (converted at
+  # sync time) as well as raw HTML for CSV-imported ones, so "HTML" is no
+  # longer an accurate name for it here; "Full Description(s)" matches the
+  # same field's admin-page label elsewhere (product_detail.ex,
+  # product_form.ex) and stays distinct from the actually-different
+  # `:description` field's "Description"/"Descriptions".
   #
   # ⚠️ These are interpolated into whole sentences as `%{field}`
   # ("Apply %{count} %{field} changes from Shopify?"), so a translator
@@ -970,7 +971,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   # want in another case. Do not copy this shape to a customer-facing
   # page.
   defp field_label(:title), do: gettext("Title")
-  defp field_label(:body_html), do: gettext("HTML text")
+  defp field_label(:body_html), do: gettext("Full Description")
   defp field_label(:description), do: gettext("Description")
   defp field_label(:vendor), do: gettext("Vendor")
   defp field_label(:tags), do: gettext("Tags")
