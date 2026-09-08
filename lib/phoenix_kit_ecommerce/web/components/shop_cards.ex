@@ -162,6 +162,12 @@ defmodule PhoenixKitEcommerce.Web.Components.ShopCards do
   attr :cart_count, :integer, default: 0
   attr :class, :string, default: ""
 
+  attr :admin_edit_url, :string,
+    default: nil,
+    doc: "when set, an edit link is rendered just before the cart link"
+
+  attr :admin_edit_label, :string, default: nil
+
   def storefront_bar(assigns) do
     ~H"""
     <div :if={show_cart_bar?()} class={["flex items-center justify-between gap-4 mb-6", @class]}>
@@ -170,11 +176,25 @@ defmodule PhoenixKitEcommerce.Web.Components.ShopCards do
         {gettext("Shop")}
       </.link>
 
-      <.link navigate={Shop.cart_url(@language)} class="btn btn-outline btn-sm gap-2">
-        <.icon name="hero-shopping-cart" class="w-4 h-4" />
-        {gettext("Cart")}
-        <span :if={@cart_count > 0} class="badge badge-primary badge-sm">{@cart_count}</span>
-      </.link>
+      <div class="flex items-center gap-2">
+        <%!-- Admin edit sits with the page's other navigation rather than
+              beside the product heading, where it changed how the title
+              itself was laid out for an admin. --%>
+        <.link
+          :if={@admin_edit_url}
+          navigate={@admin_edit_url}
+          class="btn btn-outline btn-sm gap-2"
+        >
+          <.icon name="hero-pencil-square" class="w-4 h-4" />
+          {@admin_edit_label || gettext("Edit")}
+        </.link>
+
+        <.link navigate={Shop.cart_url(@language)} class="btn btn-outline btn-sm gap-2">
+          <.icon name="hero-shopping-cart" class="w-4 h-4" />
+          {gettext("Cart")}
+          <span :if={@cart_count > 0} class="badge badge-primary badge-sm">{@cart_count}</span>
+        </.link>
+      </div>
     </div>
     """
   end

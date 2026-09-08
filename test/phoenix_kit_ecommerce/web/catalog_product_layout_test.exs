@@ -36,7 +36,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductLayoutTest do
     )
   end
 
-  test "buy box precedes the description; Markdown and body_html both render below", %{
+  test "the description renders in the gallery column, ahead of the buy box", %{
     conn: conn
   } do
     {:ok, product} =
@@ -51,8 +51,12 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductLayoutTest do
     description_at = :binary.match(html, "Short <strong>bold</strong> intro") |> elem(0)
     body_at = :binary.match(html, "Long supplier text") |> elem(0)
 
-    assert add_to_cart_at < description_at,
-           "the Add to Cart button must come before the description in the document"
+    # The description sits under the gallery, in the left column, so it
+    # precedes the buy box in document order while rendering beside it. What
+    # must not happen is the description landing INSIDE the buy box above the
+    # options, which is what used to push "Add to Cart" off the first screen.
+    assert description_at < add_to_cart_at,
+           "the description belongs to the gallery column, ahead of the buy box"
 
     assert description_at < body_at
     assert html =~ "<li>point one</li>"
@@ -76,7 +80,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductLayoutTest do
     refute html =~ ~s(<div class="mt-4">)
   end
 
-  test "the category tree renders under the gallery and honours the setting", %{
+  test "the category filter renders in the buy-box column and honours the setting", %{
     conn: conn
   } do
     {:ok, category} =
@@ -89,23 +93,20 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductLayoutTest do
     {:ok, product} = create_product(%{"category_uuid" => category.uuid})
 
     {:ok, _view, html} = live(conn, "/shop/product/#{product.slug[lang()]}")
+    assert html =~ ~s(id="product-category-filter")
     assert html =~ "Layout Cat"
 
-    # The tree belongs to the gallery column, above the buy box in source
-    # order — not to a collapsed panel at the foot of the page.
-    assert html =~ ~s(id="product-category-tree")
-
-    # The tree belongs to the gallery column, above the buy box in source
-    # order — not to a collapsed panel at the foot of the page.
-    tree = :binary.match(html, ~s(id="product-category-tree")) |> elem(0)
-    buy_box = :binary.match(html, "add_to_cart") |> elem(0)
-    assert tree < buy_box
+    # It sits below the cart button, in the same column — not in a panel at
+    # the foot of the page.
+    cart = :binary.match(html, "add_to_cart") |> elem(0)
+    filter = :binary.match(html, ~s(id="product-category-filter")) |> elem(0)
+    assert cart < filter
     refute html =~ ~s(<details class="collapse collapse-arrow)
 
     PhoenixKit.Settings.update_setting("shop_sidebar_show_categories", "false")
     on_exit(fn -> PhoenixKit.Settings.update_setting("shop_sidebar_show_categories", "true") end)
 
     {:ok, _view, html} = live(conn, "/shop/product/#{product.slug[lang()]}")
-    refute html =~ ~s(id="product-category-tree")
+    refute html =~ ~s(id="product-category-filter")
   end
 end
