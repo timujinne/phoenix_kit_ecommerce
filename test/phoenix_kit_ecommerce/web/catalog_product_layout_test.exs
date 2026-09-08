@@ -76,7 +76,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductLayoutTest do
     refute html =~ ~s(<div class="mt-4">)
   end
 
-  test "the category panel renders collapsed under the product and honours the setting", %{
+  test "the category tree renders under the gallery and honours the setting", %{
     conn: conn
   } do
     {:ok, category} =
@@ -89,13 +89,23 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductLayoutTest do
     {:ok, product} = create_product(%{"category_uuid" => category.uuid})
 
     {:ok, _view, html} = live(conn, "/shop/product/#{product.slug[lang()]}")
-    assert html =~ ~s(<details class="collapse collapse-arrow)
     assert html =~ "Layout Cat"
+
+    # The tree belongs to the gallery column, above the buy box in source
+    # order — not to a collapsed panel at the foot of the page.
+    assert html =~ ~s(id="product-category-tree")
+
+    # The tree belongs to the gallery column, above the buy box in source
+    # order — not to a collapsed panel at the foot of the page.
+    tree = :binary.match(html, ~s(id="product-category-tree")) |> elem(0)
+    buy_box = :binary.match(html, "add_to_cart") |> elem(0)
+    assert tree < buy_box
+    refute html =~ ~s(<details class="collapse collapse-arrow)
 
     PhoenixKit.Settings.update_setting("shop_sidebar_show_categories", "false")
     on_exit(fn -> PhoenixKit.Settings.update_setting("shop_sidebar_show_categories", "true") end)
 
     {:ok, _view, html} = live(conn, "/shop/product/#{product.slug[lang()]}")
-    refute html =~ ~s(<details class="collapse collapse-arrow)
+    refute html =~ ~s(id="product-category-tree")
   end
 end

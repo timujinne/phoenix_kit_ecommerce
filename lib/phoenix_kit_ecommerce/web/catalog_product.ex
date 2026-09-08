@@ -761,8 +761,8 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
         <%!-- Two columns: gallery | buy box. The category column that used to
               sit on the left was dropped on purpose — it squeezed the buy box
               into a fifth of the page, and a long description above the
-              options pushed "Add to Cart" off the first screen. Categories now
-              render in a collapsed panel under the product. --%>
+              options pushed "Add to Cart" off the first screen. The category
+              tree now sits under the gallery, in the same column. --%>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-10">
           <%!-- Product Images --%>
           <div class="space-y-4">
@@ -839,21 +839,36 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                 <% end %>
               </div>
             <% end %>
+
+            <%!-- The catalogue tree, directly under the gallery: this is the
+                  product's own place in the shop, so it belongs beside the
+                  picture rather than in a collapsed panel at the foot of the
+                  page. --%>
+            <%= if @show_categories? and @categories != [] do %>
+              <div id="product-category-tree" class="card bg-base-100 shadow">
+                <div class="card-body p-4">
+                  <CatalogSidebar.category_nav
+                    categories={@categories}
+                    current_category={@product.category}
+                    current_language={@current_language}
+                    category_icon_mode={@category_icon_mode}
+                    category_name_wrap={@category_name_wrap}
+                    open={true}
+                    filter_qs={@filter_qs}
+                  />
+                </div>
+              </div>
+            <% end %>
           </div>
 
           <%!-- Product Info --%>
           <div class="space-y-6">
             <div>
-              <div class="flex items-start justify-between gap-4">
-                <h1 class="text-3xl font-bold mb-2">{@localized_title}</h1>
-                <%!-- Admin Edit Button --%>
-                <%= if assigns[:admin_edit_url] do %>
-                  <.link navigate={@admin_edit_url} class="btn btn-sm btn-outline gap-2 shrink-0">
-                    <.icon name="hero-pencil-square" class="w-4 h-4" />
-                    {@admin_edit_label || "Edit"}
-                  </.link>
-                <% end %>
-              </div>
+              <%!-- The heading is rendered exactly as a shopper sees it: the
+                    admin edit link used to share this row and pushed a long
+                    title into a narrow column. It now sits above the cart
+                    button instead. --%>
+              <h1 class="text-3xl font-bold mb-2">{@localized_title}</h1>
 
               <%= if @product.vendor do %>
                 <p class="text-base-content/60">{gettext("by %{vendor}", vendor: @product.vendor)}</p>
@@ -1035,6 +1050,15 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                   </div>
                 <% end %>
 
+                <%!-- Admin edit link, directly above the cart button so it
+                      never displaces the product heading. --%>
+                <%= if assigns[:admin_edit_url] do %>
+                  <.link navigate={@admin_edit_url} class="btn btn-outline btn-block gap-2 mb-3">
+                    <.icon name="hero-pencil-square" class="w-4 h-4" />
+                    {@admin_edit_label || "Edit"}
+                  </.link>
+                <% end %>
+
                 <%!-- Add to Cart Button --%>
                 <button
                   phx-click="add_to_cart"
@@ -1171,25 +1195,6 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
           </section>
         <% end %>
 
-        <%!-- Category navigation, collapsed. Moved here from the left column. --%>
-        <%= if @show_categories? and @categories != [] do %>
-          <details class="collapse collapse-arrow bg-base-100 shadow mt-10 max-w-5xl">
-            <summary class="collapse-title font-semibold">
-              <.icon name="hero-squares-2x2" class="w-5 h-5 inline" /> {gettext("Categories")}
-            </summary>
-            <div class="collapse-content">
-              <CatalogSidebar.category_nav
-                categories={@categories}
-                current_category={@product.category}
-                current_language={@current_language}
-                category_icon_mode={@category_icon_mode}
-                category_name_wrap={@category_name_wrap}
-                open={true}
-                filter_qs={@filter_qs}
-              />
-            </div>
-          </details>
-        <% end %>
       </div>
     </ShopLayouts.shop_layout>
     """
