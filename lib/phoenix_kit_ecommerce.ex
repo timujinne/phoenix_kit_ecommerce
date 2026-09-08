@@ -37,6 +37,12 @@ defmodule PhoenixKitEcommerce do
   # never reaches the module when it's absent, only the compiler's static
   # xref check would otherwise complain about it.
   @compile {:no_warn_undefined, PhoenixKitEcommerce.ProductSource.Catalogue}
+  # `reprice_for_base_change/3`'s catalogue leg calls straight into
+  # `PhoenixKitCatalogue.Catalogue` (list/update items and categories) —
+  # same optional-dependency situation as above, same fix. Guarded at
+  # every call site by `catalogue_loaded?/0`, mirroring
+  # `product_source/catalogue/view.ex`'s identical directive.
+  @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue}
 
   import Ecto.Query, warn: false
   require Logger
@@ -52,6 +58,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitBilling.Currency
+  alias PhoenixKitCatalogue.Catalogue
   alias PhoenixKitEcommerce.Cart
   alias PhoenixKitEcommerce.CartItem
   alias PhoenixKitEcommerce.Category
@@ -4212,48 +4219,95 @@ defmodule PhoenixKitEcommerce do
   frozen `currency`/`exchange_rate` (§4.4, §4.5), which is the entire
   point of freezing them; this function does not reference either schema.
 
-  ## Product source scope — READ BEFORE EXTENDING
+  ## Product source scope
 
-  This function reprices the LEGACY `PhoenixKitEcommerce.Product` store
-  ONLY. This checkout's `lib/` tree carries no `PhoenixKitEcommerce.ProductSource`
-  module and no `phoenix_kit_catalogue` dependency at all — that adapter
-  layer exists only on a separate, not-yet-merged branch — so there is
-  nothing else here to reprice.
+  This checkout carries the CATALOGUE product source (`ProductSource`,
+  `phoenix_kit_catalogue`) on `stand/catalogue-product-source+currency-e1`
+  only — the legacy pass below was written on a branch without it
+  (`feature/currency-e3`) and ported here; the catalogue pass was added on
+  this branch to close the gap its own moduledoc used to warn about.
+  `reject_unsupported_product_source/0` now accepts `Legacy` and
+  `Catalogue`, refusing with `{:error, {:unsupported_product_source,
+  current}}` for anything else — same rationale as before: silently
+  repricing shipping and option modifiers while every product's stored
+  price stays in the old base currency is exactly the silent shop-wide
+  mispricing §4.9 exists to prevent, made worse by looking like a working
+  reprice because the counts come back non-zero.
 
-  A build where the catalogue product source IS present is a different
-  situation: silently repricing shipping and option modifiers while every
-  catalogue item's stored price stays in the old base currency is exactly
-  the silent shop-wide mispricing §4.9 exists to prevent, made worse by
-  looking like a working reprice because the counts come back non-zero.
-  To make that impossible rather than merely undocumented, this function
-  checks for `PhoenixKitEcommerce.ProductSource` at runtime (via
-  `Code.ensure_loaded?/1` and a dynamic dispatch — no compile-time
-  reference to a module this branch does not have) and REFUSES with
-  `{:error, {:unsupported_product_source, current}}` when a source other
-  than `Legacy` is active, instead of silently doing a partial job.
+  Both the legacy pass (`products`/`global_modifiers`/`category_modifiers`/
+  `product_modifiers`, unchanged from the branch this was ported from) and
+  the catalogue pass (`catalogue_items`/`catalogue_category_modifiers`/
+  `catalogue_item_modifiers`, below) always run, gated independently on
+  `Code.ensure_loaded?(PhoenixKitCatalogue.Catalogue)` rather than on which
+  source is `current/0` — a store can carry rows from both during a
+  migration window, and leaving either unrepriced because it wasn't the
+  "active" one at the moment of the switch would be exactly the silent
+  mispricing this operation exists to prevent. The legacy pass is a
+  harmless no-op once its table is empty (§0/catalogue migration status).
 
-  Whoever wires the catalogue source in must EXTEND this function with an
-  equivalent pass over the catalogue item's stored price column and its
-  `data["ecommerce"]` fields (`compare_at_price`, `cost_per_item`,
-  `currency`, `price_modifiers`) — through
-  `PhoenixKitCatalogue.Catalogue.update_item/3`, not a second, parallel
-  `reprice_for_base_change`-like function. `:reprice` is one callback;
-  billing does not know or care which product source is active, and must
-  never have to.
+  Catalogue money fields (`product_source/catalogue/view.ex`): the item's
+  own `base_price` column, and `data["ecommerce"]["compare_at_price"]`/
+  `["cost_per_item"]` (both stored as decimal STRINGS —
+  `Catalogue.ItemCommerce.to_storage_map/1`/`writer.ex`'s `decimal_param/1`
+  — never as JSON numbers or embedded `%Decimal{}`, which is why the
+  catalogue leg parses/re-stringifies instead of reusing `maybe_put_repriced/5`
+  as-is for these two). `data["ecommerce"]["currency"]` is set to
+  `new_base_code` exactly like `products.currency`. Item-level
+  `data["ecommerce"]["price_modifiers"]` is ALWAYS `option_key ->
+  value_slug -> decimal string` (`Catalogue.ItemCommerce` field doc,
+  `writer.ex`'s `amounts_by_slug/3`) — no per-value type tag — so its
+  FIXED-vs-percent split reuses the exact same mechanism the live
+  storefront price calc already trusts (`Options.get_option_schema_for_product/1`'s
+  `%{category: %Category{} = cat} -> get_category_options(cat)` clause):
+  the item's CATEGORY's `data["ecommerce"]["option_schema"][].modifier_type`,
+  merged with the global option schema exactly as `merge_schemas/2`
+  already does (category overrides global by key) —
+  `catalogue_option_schema_by_key/1`, since that merge can't reuse
+  `get_option_schema_for_product/1` directly: it pattern-matches on
+  `PhoenixKitEcommerce.Category`, not `PhoenixKitCatalogue.Schemas.Category`.
+  A category's own `option_schema` list is itself reused unchanged through
+  `reprice_option_definitions/3` (source-agnostic: a plain list of
+  `%{"key", "modifier_type", "price_modifiers"}` maps either way).
+
+  NOT money, deliberately untouched: `PhoenixKitCatalogue.Schemas.Item`'s
+  own `markup_percentage`/`discount_percentage` columns — both percentages
+  applied multiplicatively to `base_price` at READ time
+  (`Item.sale_price/2`, `final_price/3`), never cached as an absolute
+  amount anywhere, so they scale correctly against a repriced `base_price`
+  with zero change needed; touching them would double-apply the FX move.
+
+  Same GUARDED HAZARD as the legacy pass, catalogue-shaped: nothing in
+  the catalogue write paths this was checked against (`writer.ex`'s
+  Shopify sync) ever produces the explicit `%{"type" => ..., "value" =>
+  ...}` override shape for `price_modifiers` — always a bare string — but
+  `Catalogue.ItemCommerce`'s `field :price_modifiers, :map` has no
+  changeset-level shape validation stopping a raw write from creating one
+  anyway. `reject_ambiguous_catalogue_modifier_overrides/1` scans for
+  exactly that before any catalogue write, reusing
+  `override_effective_type_and_amount/2` unchanged (source-agnostic).
+  A `price_modifiers` key with NO matching option anywhere in the merged
+  schema is left untouched rather than refused — mirrors the legacy scan's
+  own handling of a nil `schema_type` (an override this operation cannot
+  identify as fixed is data this operation should not guess about; leaving
+  a possibly-fixed value stale is the lesser, non-corrupting failure mode
+  next to conflating it with a percentage).
 
   Returns `{:ok, %{products: n, shipping_methods: n, global_modifiers: n,
-  category_modifiers: n, product_modifiers: n}}` on success. The modifier
-  counts are broken out per store — rather than a single total — because
-  the admin confirmation screen (§4.9's first required consequence) has
-  to show an operator the blast radius of what they are about to commit
-  to, and "N modifiers" alone does not: "3 global, 12 category, 32
-  product" does. Each count is the number of individual FIXED
-  price-modifier VALUES touched in that store; percent entries are never
-  counted because they are never touched. Returns `{:error, term}` on the
-  first failure encountered — including `{:error, {:unsupported_product_source, _}}`
-  from the product-source check and `{:error, {:ambiguous_modifier_overrides, _}}`
-  from the pre-flight override scan, both above, both raised before any
-  write happens.
+  category_modifiers: n, product_modifiers: n, catalogue_items: n,
+  catalogue_category_modifiers: n, catalogue_item_modifiers: n}}` on
+  success. The modifier counts are broken out per store — rather than a
+  single total — because the admin confirmation screen (§4.9's first
+  required consequence) has to show an operator the blast radius of what
+  they are about to commit to, and "N modifiers" alone does not: "3
+  global, 12 category, 32 product, 9 catalogue category, 41 catalogue
+  item" does. Each count is the number of individual FIXED price-modifier
+  VALUES touched in that store; percent entries are never counted because
+  they are never touched. `catalogue_items` counts every catalogue item
+  processed (its `currency` label is always set, like `products`).
+  Returns `{:error, term}` on the first failure encountered — including
+  `{:error, {:unsupported_product_source, _}}` from the product-source
+  check and `{:error, {:ambiguous_modifier_overrides, _}}` from either
+  pre-flight override scan, all raised before any write happens.
   """
   @spec reprice_for_base_change(String.t(), String.t(), Decimal.t()) ::
           {:ok,
@@ -4262,7 +4316,10 @@ defmodule PhoenixKitEcommerce do
              shipping_methods: non_neg_integer(),
              global_modifiers: non_neg_integer(),
              category_modifiers: non_neg_integer(),
-             product_modifiers: non_neg_integer()
+             product_modifiers: non_neg_integer(),
+             catalogue_items: non_neg_integer(),
+             catalogue_category_modifiers: non_neg_integer(),
+             catalogue_item_modifiers: non_neg_integer()
            }}
           | {:error, term()}
   def reprice_for_base_change(old_base_code, new_base_code, %Decimal{} = multiplier)
@@ -4275,8 +4332,19 @@ defmodule PhoenixKitEcommerce do
 
   defp do_reprice_for_base_change(new_base_code, multiplier) do
     products = repo().all(Product)
+    catalogue_items = fetch_catalogue_items()
 
+    # Both pre-flight scans run BEFORE either store's writes start — see
+    # the moduledoc's "GUARDED HAZARD" paragraph. Hoisted here rather than
+    # left inside `reprice_catalogue_items_for_base_change/4` so a
+    # catalogue ambiguity is caught before the legacy passes below have
+    # written anything, not only before the catalogue pass's own writes —
+    # correct on every call, not only ones made inside billing's
+    # transaction (which would roll everything back regardless, but a
+    # direct call — this module's own test suite included — has no such
+    # safety net).
     with :ok <- reject_ambiguous_modifier_overrides(products),
+         :ok <- reject_ambiguous_catalogue_modifier_overrides(catalogue_items),
          {:ok, decimal_places} <- fetch_currency_decimal_places(new_base_code),
          {:ok, product_count, product_modifiers} <-
            reprice_products_for_base_change(products, new_base_code, multiplier, decimal_places),
@@ -4285,14 +4353,26 @@ defmodule PhoenixKitEcommerce do
          {:ok, category_modifiers} <-
            reprice_category_options_for_base_change(multiplier, decimal_places),
          {:ok, shipping_methods} <-
-           reprice_shipping_methods_for_base_change(multiplier, decimal_places) do
+           reprice_shipping_methods_for_base_change(multiplier, decimal_places),
+         {:ok, catalogue_item_count, catalogue_item_modifiers} <-
+           reprice_catalogue_items_for_base_change(
+             catalogue_items,
+             new_base_code,
+             multiplier,
+             decimal_places
+           ),
+         {:ok, catalogue_category_modifiers} <-
+           reprice_catalogue_categories_for_base_change(multiplier, decimal_places) do
       {:ok,
        %{
          products: product_count,
          shipping_methods: shipping_methods,
          global_modifiers: global_modifiers,
          category_modifiers: category_modifiers,
-         product_modifiers: product_modifiers
+         product_modifiers: product_modifiers,
+         catalogue_items: catalogue_item_count,
+         catalogue_category_modifiers: catalogue_category_modifiers,
+         catalogue_item_modifiers: catalogue_item_modifiers
        }}
     end
   end
@@ -4354,29 +4434,20 @@ defmodule PhoenixKitEcommerce do
     end
   end
 
-  # No compile-time reference to `PhoenixKitEcommerce.ProductSource` —
-  # built entirely from atoms via `Module.concat/2` and dispatched
-  # dynamically (`product_source.current()`, a runtime call because the
-  # receiver is a variable, not a literal alias) — because that module
-  # does not exist anywhere in this checkout's compiled tree (see the
-  # moduledoc's "Product source scope").
-  # `Code.ensure_loaded?/1` is the same pattern this file already uses
-  # elsewhere to call into a module without a hard compile-time reference
-  # to it (`billing_tax_enabled?/0` and friends, further down).
+  # Unlike the branch this function was ported from (`feature/currency-e3`,
+  # which had no `PhoenixKitEcommerce.ProductSource` at all and needed a
+  # `Module.concat/2` + `Code.ensure_loaded?/1` dance to avoid a
+  # compile-time reference to a module that didn't exist), `ProductSource`
+  # is part of THIS package on this branch and always compiled — a plain
+  # reference is correct, not merely simpler. `current/0` itself already
+  # falls back to `Legacy` when `phoenix_kit_catalogue` isn't loaded, so
+  # this refuses only a genuinely unsupported THIRD source, should one
+  # ever exist.
   defp reject_unsupported_product_source do
-    product_source = Module.concat(PhoenixKitEcommerce, ProductSource)
-
-    if Code.ensure_loaded?(product_source) do
-      legacy = Module.concat(product_source, Legacy)
-      current = product_source.current()
-
-      if current == legacy do
-        :ok
-      else
-        {:error, {:unsupported_product_source, current}}
-      end
-    else
-      :ok
+    case ProductSource.current() do
+      ProductSource.Legacy -> :ok
+      ProductSource.Catalogue -> :ok
+      other -> {:error, {:unsupported_product_source, other}}
     end
   end
 
@@ -4655,6 +4726,242 @@ defmodule PhoenixKitEcommerce do
           {:halt, {:error, {:shipping_method_reprice_failed, method.uuid, reason}}}
       end
     end)
+  end
+
+  # ---- Catalogue product source ----
+  #
+  # See `reprice_for_base_change/3`'s moduledoc ("Product source scope")
+  # for the full rationale. Every function below is a no-op — `{:ok, 0}`/
+  # `{:ok, 0, 0}` — when `phoenix_kit_catalogue` isn't loaded, checked via
+  # `catalogue_loaded?/0` rather than `catalogue_source_active?/0`: this is
+  # a data-integrity pass over whatever catalogue rows exist, independent
+  # of which product source is driving the storefront at this moment.
+
+  defp catalogue_loaded? do
+    Code.ensure_loaded?(PhoenixKitCatalogue.Catalogue)
+  end
+
+  defp fetch_catalogue_items do
+    if catalogue_loaded?(), do: Catalogue.list_items(), else: []
+  end
+
+  defp reprice_catalogue_items_for_base_change(items, new_base_code, multiplier, decimal_places) do
+    Enum.reduce_while(items, {:ok, 0, 0}, fn item, {:ok, count, modifiers} ->
+      case reprice_one_catalogue_item(item, new_base_code, multiplier, decimal_places) do
+        {:ok, changed} ->
+          {:cont, {:ok, count + 1, modifiers + changed}}
+
+        {:error, reason} ->
+          {:halt, {:error, {:catalogue_item_reprice_failed, item.uuid, reason}}}
+      end
+    end)
+  end
+
+  defp reprice_one_catalogue_item(item, new_base_code, multiplier, decimal_places) do
+    ecommerce = get_in(item.data || %{}, ["ecommerce"]) || %{}
+    schema_by_key = catalogue_option_schema_by_key(item)
+    price_modifiers = Map.get(ecommerce, "price_modifiers") || %{}
+
+    {new_price_modifiers, modifier_count} =
+      reprice_catalogue_price_modifiers(
+        price_modifiers,
+        schema_by_key,
+        multiplier,
+        decimal_places
+      )
+
+    new_ecommerce =
+      ecommerce
+      |> Map.put("currency", new_base_code)
+      |> maybe_reprice_ecommerce_amount(
+        "compare_at_price",
+        catalogue_decimal(Map.get(ecommerce, "compare_at_price")),
+        multiplier,
+        decimal_places
+      )
+      |> maybe_reprice_ecommerce_amount(
+        "cost_per_item",
+        catalogue_decimal(Map.get(ecommerce, "cost_per_item")),
+        multiplier,
+        decimal_places
+      )
+      |> Map.put("price_modifiers", new_price_modifiers)
+
+    new_data = Map.put(item.data || %{}, "ecommerce", new_ecommerce)
+
+    attrs = %{
+      "data" => new_data,
+      "base_price" => reprice_amount(item.base_price, multiplier, decimal_places)
+    }
+
+    case Catalogue.update_item(item, attrs) do
+      {:ok, _updated} -> {:ok, modifier_count}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Item-level `price_modifiers` values are always decimal STRINGS
+  # (`Catalogue.ItemCommerce` field doc, `writer.ex`'s `amounts_by_slug/3`)
+  # — unlike `products.metadata["_price_modifiers"]`, never embedded
+  # `%Decimal{}` — so `reprice_amount/3`'s result has to be re-stringified
+  # before going back into the JSONB map, rather than reusing
+  # `maybe_put_repriced/5` (which puts a bare `%Decimal{}` into the attrs
+  # map, correct only for the legacy path's real `:decimal` Ecto columns).
+  defp maybe_reprice_ecommerce_amount(ecommerce, _key, nil, _multiplier, _decimal_places),
+    do: ecommerce
+
+  defp maybe_reprice_ecommerce_amount(
+         ecommerce,
+         key,
+         %Decimal{} = amount,
+         multiplier,
+         decimal_places
+       ) do
+    new_amount = reprice_amount(amount, multiplier, decimal_places)
+    Map.put(ecommerce, key, Decimal.to_string(new_amount))
+  end
+
+  defp catalogue_decimal(nil), do: nil
+  defp catalogue_decimal(%Decimal{} = decimal), do: decimal
+
+  defp catalogue_decimal(value) when is_binary(value) do
+    case Decimal.parse(value) do
+      {decimal, ""} -> decimal
+      _ -> nil
+    end
+  end
+
+  defp catalogue_decimal(_), do: nil
+
+  defp reprice_catalogue_price_modifiers(
+         price_modifiers,
+         schema_by_key,
+         multiplier,
+         decimal_places
+       ) do
+    Enum.reduce(price_modifiers, {%{}, 0}, fn {key, values}, {acc, count} ->
+      default_type = Map.get(schema_by_key, key)
+
+      {new_values, changed} =
+        reprice_override_values(values, default_type, multiplier, decimal_places)
+
+      {Map.put(acc, key, new_values), count + changed}
+    end)
+  end
+
+  # Mirrors `Options.get_option_schema_for_product/1`'s merge
+  # (`merge_schemas(global, category_opts)`, category overrides global by
+  # key) — the exact schema resolution the live storefront price calc
+  # already uses — but can't call that function directly: its
+  # `%{category: %Category{} = cat} -> get_category_options(cat)` clause
+  # pattern-matches on `PhoenixKitEcommerce.Category`, and a catalogue
+  # item's preloaded `:category` is a `PhoenixKitCatalogue.Schemas.Category`
+  # (a different struct); the fallback `%{category_uuid: uuid} ->
+  # get_category_options(uuid)` clause would then query the LEGACY
+  # categories table with a catalogue category UUID and silently find
+  # nothing.
+  defp catalogue_option_schema_by_key(item) do
+    global = Options.get_enabled_global_options()
+    category_opts = catalogue_category_option_schema(item.category)
+
+    global
+    |> Options.merge_schemas(category_opts)
+    |> Map.new(fn opt -> {opt["key"], opt["modifier_type"]} end)
+  end
+
+  defp catalogue_category_option_schema(%{data: data}) when is_map(data) do
+    get_in(data, ["ecommerce", "option_schema"]) || []
+  end
+
+  defp catalogue_category_option_schema(_), do: []
+
+  # Pre-flight, before any catalogue write — same contract as
+  # `reject_ambiguous_modifier_overrides/1`, catalogue-shaped. Produces
+  # `item_uuid:` (not `product_uuid:`) in its mismatches so the two
+  # sources are never conflated in the error payload; reuses
+  # `override_effective_type_and_amount/2` unchanged since that logic
+  # doesn't care where the modifier or schema type came from.
+  defp reject_ambiguous_catalogue_modifier_overrides(items) do
+    case Enum.flat_map(items, &catalogue_item_modifier_mismatches/1) do
+      [] -> :ok
+      mismatches -> {:error, {:ambiguous_modifier_overrides, mismatches}}
+    end
+  end
+
+  defp catalogue_item_modifier_mismatches(item) do
+    price_modifiers = get_in(item.data || %{}, ["ecommerce", "price_modifiers"]) || %{}
+
+    if price_modifiers == %{} do
+      []
+    else
+      schema_by_key = catalogue_option_schema_by_key(item)
+
+      Enum.flat_map(price_modifiers, fn {key, values} ->
+        catalogue_option_modifier_mismatches(item.uuid, key, values, Map.get(schema_by_key, key))
+      end)
+    end
+  end
+
+  defp catalogue_option_modifier_mismatches(item_uuid, key, values, schema_type)
+       when is_map(values) do
+    Enum.reduce(values, [], fn {_value, modifier}, acc ->
+      accumulate_catalogue_modifier_mismatch(acc, item_uuid, key, modifier, schema_type)
+    end)
+  end
+
+  defp catalogue_option_modifier_mismatches(_item_uuid, _key, _values, _schema_type), do: []
+
+  defp accumulate_catalogue_modifier_mismatch(acc, item_uuid, key, modifier, schema_type) do
+    case override_effective_type_and_amount(modifier, schema_type) do
+      {stored_type, amount}
+      when not is_nil(schema_type) and not is_nil(amount) and stored_type != schema_type ->
+        mismatch = %{
+          item_uuid: item_uuid,
+          option_key: key,
+          stored_type: stored_type,
+          schema_type: schema_type
+        }
+
+        [mismatch | acc]
+
+      _ ->
+        acc
+    end
+  end
+
+  # ---- Catalogue categories ----
+
+  defp reprice_catalogue_categories_for_base_change(multiplier, decimal_places) do
+    if catalogue_loaded?() do
+      Catalogue.list_catalogues()
+      |> Enum.flat_map(&Catalogue.list_categories_for_catalogue(&1.uuid))
+      |> Enum.reduce_while({:ok, 0}, fn category, {:ok, count} ->
+        reprice_one_catalogue_category(category, count, multiplier, decimal_places)
+      end)
+    else
+      {:ok, 0}
+    end
+  end
+
+  defp reprice_one_catalogue_category(category, count, multiplier, decimal_places) do
+    ecommerce = get_in(category.data || %{}, ["ecommerce"]) || %{}
+    options = Map.get(ecommerce, "option_schema") || []
+
+    if options == [] do
+      {:cont, {:ok, count}}
+    else
+      {new_options, changed} = reprice_option_definitions(options, multiplier, decimal_places)
+      new_ecommerce = Map.put(ecommerce, "option_schema", new_options)
+      new_data = Map.put(category.data || %{}, "ecommerce", new_ecommerce)
+
+      case Catalogue.update_category(category, %{"data" => new_data}) do
+        {:ok, _updated} ->
+          {:cont, {:ok, count + changed}}
+
+        {:error, reason} ->
+          {:halt, {:error, {:catalogue_category_reprice_failed, category.uuid, reason}}}
+      end
+    end
   end
 
   # ============================================
