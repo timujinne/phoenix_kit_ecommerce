@@ -200,7 +200,19 @@ defmodule PhoenixKitEcommerce.MixProject do
 
       # `Phoenix.LiveViewTest` parses HTML via `lazy_html` for `element/2`,
       # `render(view) =~ "..."`, etc. Test-only.
-      {:lazy_html, ">= 0.1.0", only: :test}
+      {:lazy_html, ">= 0.1.0", only: :test},
+
+      # `html_to_markdown_test.exs` renders the converter's Markdown output
+      # back through `MDEx.to_html!/1` to assert on CommonMark nesting
+      # semantics. Declared explicitly (rather than relying on the
+      # transitive resolution through `phoenix_kit`) so the test suite
+      # doesn't depend on another dependency's dependency tree. No
+      # `only: :test` here: `leaf` (a `phoenix_kit` dep) already
+      # requires `mdex` unrestricted to every environment, and Mix
+      # rejects a narrower `:only` than what's already resolved for the
+      # same package. Version matches the constraint `phoenix_kit`/`leaf`
+      # already lock to.
+      {:mdex, "~> 0.13"}
     ] ++ catalogue_test_deps()
   end
 

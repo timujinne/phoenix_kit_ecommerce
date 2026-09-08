@@ -162,7 +162,9 @@ defmodule PhoenixKitEcommerce.I18nTest do
       # test fail on a correct catalogue. Every one of these seven does
       # differ in de and ru, so those two carry the pin.
       for locale <- ~w(de ru),
-          msgid <- ~w(Prices Titles Descriptions Statuses Vendors) ++ ["HTML texts", "HTML text"] do
+          msgid <-
+            ~w(Prices Titles Descriptions Statuses Vendors) ++
+              ["Full Descriptions", "Full Description"] do
         Gettext.put_locale(EcommerceGettext, locale)
         translated = Gettext.gettext(EcommerceGettext, msgid)
 

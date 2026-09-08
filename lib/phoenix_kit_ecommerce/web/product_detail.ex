@@ -9,7 +9,6 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
   alias PhoenixKit.Modules.Languages.DialectMapper
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
-  alias PhoenixKit.Utils.HtmlSanitizer
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
@@ -397,12 +396,21 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
                   <div class="divider"></div>
                   <div>
                     <span class="text-base-content/60 text-sm">{gettext("Full Description:")}</span>
-                    <%!-- Imported supplier HTML. Sanitized unless an admin
-                          opted in — a bare `raw/1` here executed whatever the
-                          CSV supplied, in an admin's browser. --%>
-                    <div class="prose prose-sm mt-2 max-w-none">
-                      {render_product_body(@product_body_html)}
-                    </div>
+                    <%!-- body_html is Markdown for Shopify-synced products
+                          (converted at sync time, see HtmlToMarkdown) and
+                          raw HTML for CSV-imported/legacy ones — the
+                          Markdown renderer passes raw HTML blocks through
+                          untouched, so both keep rendering correctly
+                          through the same component the public storefront
+                          uses for this field (catalog_product.ex). Same
+                          sanitization policy as there: sanitized unless an
+                          admin has explicitly opted into raw HTML. --%>
+                    <.markdown
+                      content={@product_body_html}
+                      sanitize={not Policy.allow_raw_html_descriptions?()}
+                      class="mt-2"
+                      compact
+                    />
                   </div>
                 <% end %>
               </div>
@@ -858,21 +866,6 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             name: lang.name || code
           }
         end)
-    end
-  end
-
-  # Imported supplier HTML for the "Full Description" block.
-  #
-  # This is third-party content — `body_html` is populated by the CSV
-  # import — so it goes through the core sanitizer unless an admin has
-  # explicitly opted into raw HTML. `HtmlSanitizer.sanitize/1` allowlists
-  # schemes and strips scripting constructs; `raw/1` is only reached once
-  # the content is either sanitized or deliberately trusted.
-  defp render_product_body(html) do
-    if Policy.allow_raw_html_descriptions?() do
-      Phoenix.HTML.raw(html)
-    else
-      html |> HtmlSanitizer.sanitize() |> Phoenix.HTML.raw()
     end
   end
 end
