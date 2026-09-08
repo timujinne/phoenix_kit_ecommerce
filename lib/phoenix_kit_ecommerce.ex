@@ -43,6 +43,15 @@ defmodule PhoenixKitEcommerce do
   # every call site by `catalogue_loaded?/0`, mirroring
   # `product_source/catalogue/view.ex`'s identical directive.
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue}
+  # Same reprice leg also queries `PhoenixKitCatalogue.Schemas.Item`/
+  # `.Category` directly (`fetch_catalogue_items/0`,
+  # `reprice_catalogue_categories_for_base_change/2`) instead of going
+  # through `Catalogue.list_items/1`/`list_categories_for_catalogue/1` —
+  # see those functions' comments for why. Same optional-dependency
+  # situation, same fix; mirrors `product_source/catalogue/query.ex`'s
+  # identical pair of directives.
+  @compile {:no_warn_undefined, PhoenixKitCatalogue.Schemas.Item}
+  @compile {:no_warn_undefined, PhoenixKitCatalogue.Schemas.Category}
 
   import Ecto.Query, warn: false
   require Logger
@@ -59,6 +68,8 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitBilling.Currency
   alias PhoenixKitCatalogue.Catalogue
+  alias PhoenixKitCatalogue.Schemas.Category, as: CatCategory
+  alias PhoenixKitCatalogue.Schemas.Item, as: CatItem
   alias PhoenixKitEcommerce.Cart
   alias PhoenixKitEcommerce.CartItem
   alias PhoenixKitEcommerce.Category
@@ -4245,6 +4256,20 @@ defmodule PhoenixKitEcommerce do
   mispricing this operation exists to prevent. The legacy pass is a
   harmless no-op once its table is empty (§0/catalogue migration status).
 
+  The catalogue pass also reaches TRASHED rows — items, categories, and
+  items/categories under a trashed category or catalogue — by querying
+  `PhoenixKitCatalogue.Schemas.Item`/`.Category` directly rather than
+  through `Catalogue.list_items/1`/`list_categories_for_catalogue/1`,
+  whose shopper-facing default excludes `status == "deleted"`. Trashing
+  never purges a row (`trash_item/2`/`trash_category/2`/`trash_catalogue/2`
+  only toggle `status`, indefinitely), so a row repriced only while
+  non-deleted comes back from `restore_item/2`/`restore_category/2`/
+  `restore_catalogue/2` still priced in the old base — the same silent
+  mispricing this operation exists to prevent, reached through restore
+  instead of a migration window. See `fetch_catalogue_items/0`'s and
+  `reprice_catalogue_categories_for_base_change/2`'s own comments for why
+  bypassing the public helpers here is deliberate, not a shortcut.
+
   Catalogue money fields (`product_source/catalogue/view.ex`): the item's
   own `base_price` column, and `data["ecommerce"]["compare_at_price"]`/
   `["cost_per_item"]` (both stored as decimal STRINGS —
@@ -4741,8 +4766,44 @@ defmodule PhoenixKitEcommerce do
     Code.ensure_loaded?(PhoenixKitCatalogue.Catalogue)
   end
 
+  # Queries `PhoenixKitCatalogue.Schemas.Item` directly rather than
+  # `Catalogue.list_items/1`. That helper's only mode excludes `status ==
+  # "deleted"` — correct for a shopper-facing listing, wrong here: this
+  # package's own trash system never purges a trashed row
+  # (`trash_item/2`, and `trash_category/2`'s/`trash_catalogue/2`'s
+  # default cascade, all just toggle `status`, indefinitely), and
+  # `restore_item/2`/`restore_category/2`/`restore_catalogue/2` bring a
+  # row back with whatever price it carried the moment it was trashed —
+  # never repriced in between, discovered by nobody until a shopper sees
+  # it on the restored page. That is the exact silent mispricing this
+  # whole operation exists to prevent, reached through restore instead of
+  # a migration window.
+  #
+  # No status filter at all (not even excluding "deleted") is the correct
+  # choice, not an oversight: `trash_catalogue/2` and `trash_category/2`'s
+  # default disposition both cascade `status: "deleted"` onto every item
+  # in their subtree, so a single unfiltered item query already reaches
+  # an item trashed directly, one whose category was trashed, and one
+  # whose whole catalogue was trashed — no join through category/
+  # catalogue status needed, or possible to get wrong. This also matches
+  # the LEGACY pass's own `repo().all(Product)` two functions up, which
+  # has never filtered by status either (draft/archived products are
+  # repriced same as active ones) — unconditional was already the
+  # established pattern here, not a new one.
+  #
+  # A trashed row is reached by exactly ONE of this module's queries:
+  # this one, for items — never also by `reprice_catalogue_categories_
+  # for_base_change/2` (a disjoint table, `phoenix_kit_cat_categories`,
+  # touching only `option_schema`) or by the legacy passes (disjoint
+  # tables again). No join, no `Enum.uniq`, nothing that could visit the
+  # same item row twice — a plain `repo().all/1` over one table returns
+  # each primary key once.
   defp fetch_catalogue_items do
-    if catalogue_loaded?(), do: Catalogue.list_items(), else: []
+    if catalogue_loaded?() do
+      repo().all(from(i in CatItem, preload: [:category]))
+    else
+      []
+    end
   end
 
   defp reprice_catalogue_items_for_base_change(items, new_base_code, multiplier, decimal_places) do
@@ -4953,10 +5014,22 @@ defmodule PhoenixKitEcommerce do
 
   # ---- Catalogue categories ----
 
+  # Queries `PhoenixKitCatalogue.Schemas.Category` directly across every
+  # catalogue, with no status filter anywhere — same reasoning as
+  # `fetch_catalogue_items/0`, and the gap here was actually worse:
+  # `Catalogue.list_catalogues/1` excludes a trashed CATALOGUE outright,
+  # which would have skipped every category under it, including ones
+  # still individually `"active"`, before `list_categories_for_catalogue/1`
+  # ever got a chance to filter them by their OWN status.
+  # `repo().all(CatCategory)` never joins through the catalogue at all,
+  # so a trashed catalogue, a trashed category, and an ordinary one are
+  # all reached the same way — one unfiltered query, one row per
+  # category, no double-reprice risk (disjoint table from the item pass
+  # and from both legacy passes, same as noted there).
   defp reprice_catalogue_categories_for_base_change(multiplier, decimal_places) do
     if catalogue_loaded?() do
-      Catalogue.list_catalogues()
-      |> Enum.flat_map(&Catalogue.list_categories_for_catalogue(&1.uuid))
+      CatCategory
+      |> repo().all()
       |> Enum.reduce_while({:ok, 0}, fn category, {:ok, count} ->
         reprice_one_catalogue_category(category, count, multiplier, decimal_places)
       end)

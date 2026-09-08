@@ -495,4 +495,157 @@ defmodule PhoenixKitEcommerce.BaseCurrencyRepriceCatalogueTest do
     # Orphaned key: byte-identical, not repriced, not refused.
     assert ecommerce["price_modifiers"]["size"]["large"] == "7.00"
   end
+
+  test "reprices a trashed item, invisible to Catalogue.list_items/1" do
+    n = System.unique_integer([:positive])
+
+    {:ok, cat} = Catalogue.create_catalogue(%{name: "decor3dprint"})
+
+    {:ok, item} =
+      Catalogue.create_item(%{
+        catalogue_uuid: cat.uuid,
+        name: "Trashed Vase #{n}",
+        base_price: Decimal.new("90.00"),
+        status: "active",
+        data: %{
+          "ecommerce" => %{
+            "shop_status" => "active",
+            "currency" => "USD",
+            "price_modifiers" => %{"material" => %{"petg" => "22.00"}}
+          }
+        }
+      })
+
+    {:ok, trashed} = Catalogue.trash_item(item)
+    assert trashed.status == "deleted"
+
+    # Confirms the gap this test closes: the public helper genuinely
+    # cannot see this row.
+    assert Catalogue.list_items() == []
+
+    assert {:ok,
+            %{
+              catalogue_items: 1,
+              catalogue_item_modifiers: catalogue_item_modifiers
+            }} = Shop.reprice_for_base_change("USD", "EUR", Decimal.new("0.909091"))
+
+    # No category, so "material" resolves against nothing and is left
+    # untouched (orphaned-key policy) — this test's fixed number is
+    # `base_price` alone.
+    assert catalogue_item_modifiers == 0
+
+    reloaded_item = Catalogue.get_item!(item.uuid)
+    assert reloaded_item.status == "deleted"
+    assert Decimal.equal?(reloaded_item.base_price, Decimal.new("81.82"))
+    assert reloaded_item.data["ecommerce"]["currency"] == "EUR"
+    # Untouched, byte-identical: orphaned, not fixed by any schema.
+    assert reloaded_item.data["ecommerce"]["price_modifiers"]["material"]["petg"] == "22.00"
+  end
+
+  test "reprices an item under a trashed category (and the category's own fixed defaults), invisible to the public list functions" do
+    n = System.unique_integer([:positive])
+
+    {:ok, cat} = Catalogue.create_catalogue(%{name: "decor3dprint"})
+
+    {:ok, category} =
+      Catalogue.create_category(%{
+        name: "Trashed Category #{n}",
+        catalogue_uuid: cat.uuid,
+        data: %{
+          "ecommerce" => %{
+            "option_schema" => [
+              %{
+                "key" => "material",
+                "label" => "Material",
+                "type" => "select",
+                "options" => ["PLA", "PETG"],
+                "affects_price" => true,
+                "modifier_type" => "fixed",
+                "price_modifiers" => %{"PLA" => "0", "PETG" => "8.00"}
+              },
+              %{
+                "key" => "finish",
+                "label" => "Finish",
+                "type" => "select",
+                "options" => ["Standard", "Premium"],
+                "affects_price" => true,
+                "modifier_type" => "percent",
+                "price_modifiers" => %{"Standard" => "0", "Premium" => "15"}
+              }
+            ]
+          }
+        }
+      })
+
+    {:ok, item} =
+      Catalogue.create_item(%{
+        catalogue_uuid: cat.uuid,
+        category_uuid: category.uuid,
+        name: "Item Under Trashed Category #{n}",
+        base_price: Decimal.new("44.00"),
+        status: "active",
+        data: %{
+          "ecommerce" => %{
+            "shop_status" => "active",
+            "currency" => "USD",
+            "price_modifiers" => %{
+              "material" => %{"petg" => "8.00"},
+              "finish" => %{"premium" => "15"}
+            }
+          }
+        }
+      })
+
+    # Default disposition (`:cascade`): trashing the category also
+    # trashes its items.
+    {:ok, trashed_category} = Catalogue.trash_category(category)
+    assert trashed_category.status == "deleted"
+    assert Catalogue.get_item!(item.uuid).status == "deleted"
+
+    # Confirms the gap: both public helpers genuinely cannot see these
+    # rows once the category is trashed.
+    assert Catalogue.list_items() == []
+    assert Catalogue.list_categories_for_catalogue(cat.uuid) == []
+
+    assert {:ok,
+            %{
+              catalogue_items: 1,
+              catalogue_item_modifiers: catalogue_item_modifiers,
+              catalogue_category_modifiers: catalogue_category_modifiers
+            }} = Shop.reprice_for_base_change("USD", "EUR", Decimal.new("0.909091"))
+
+    # Item's "material" override (fixed, via the trashed category's own
+    # schema — still resolvable, the category row still exists).
+    assert catalogue_item_modifiers == 1
+    # Category's own "material" defaults (PLA/PETG, fixed) = 2; "finish"
+    # is percent and contributes 0.
+    assert catalogue_category_modifiers == 2
+
+    reloaded_item = Catalogue.get_item!(item.uuid)
+    assert reloaded_item.status == "deleted"
+    assert Decimal.equal?(reloaded_item.base_price, Decimal.new("40.00"))
+    assert reloaded_item.data["ecommerce"]["currency"] == "EUR"
+
+    assert Decimal.equal?(
+             Decimal.new(reloaded_item.data["ecommerce"]["price_modifiers"]["material"]["petg"]),
+             Decimal.new("7.27")
+           )
+
+    # Percent entry: byte-identical, not repriced.
+    assert reloaded_item.data["ecommerce"]["price_modifiers"]["finish"]["premium"] == "15"
+
+    reloaded_category = Catalogue.get_category!(category.uuid)
+    assert reloaded_category.status == "deleted"
+    [material, finish] = reloaded_category.data["ecommerce"]["option_schema"]
+
+    assert Decimal.equal?(Decimal.new(material["price_modifiers"]["PLA"]), Decimal.new("0"))
+
+    assert Decimal.equal?(
+             Decimal.new(material["price_modifiers"]["PETG"]),
+             Decimal.new("7.27")
+           )
+
+    assert finish["modifier_type"] == "percent"
+    assert finish["price_modifiers"]["Premium"] == "15"
+  end
 end
