@@ -832,11 +832,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       assert html =~ "diff-del"
     end
 
-    # `body_html`'s section header ("HTML texts") and its row/confirm
-    # label used to disagree — the label read "Description (HTML)",
-    # easily misread as belonging to the separate `:description` field's
-    # own "Descriptions" section right next to it on the page. Pinned so
-    # a future edit to one can't silently reintroduce the mismatch.
+    # `body_html`'s section header ("Full Descriptions") and its
+    # row/confirm label ("Full Description") used to disagree with each
+    # other, and both used to be misleadingly named "HTML" for a field
+    # that also stores Markdown — easily misread as belonging to the
+    # separate `:description` field's own "Descriptions" section right
+    # next to it on the page. Pinned so a future edit to one can't
+    # silently reintroduce the mismatch.
     test "the body_html section header and its row's confirm text use the same wording",
          %{conn: conn} do
       {:ok, product} =
@@ -868,14 +870,14 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       html = check_and_await(view)
 
       assert html =~ ~s(id="field-section-body_html")
-      assert html =~ "HTML texts"
+      assert html =~ "Full Descriptions"
       refute html =~ "Description (HTML)"
 
       view |> element("#toggle-section-body_html") |> render_click()
       view |> element("#apply-row-body_html-#{product.uuid}") |> render_click()
       html = confirm!(view)
 
-      assert html =~ "Updated #{product.title["en"]}&#39;s HTML text."
+      assert html =~ "Updated #{product.title["en"]}&#39;s Full Description."
       refute html =~ "Description (HTML)"
     end
 

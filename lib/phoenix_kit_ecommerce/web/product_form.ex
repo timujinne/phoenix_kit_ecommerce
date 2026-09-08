@@ -1127,7 +1127,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                       },
                       %{
                         key: :body_html,
-                        label: gettext("Full Description (HTML)"),
+                        label: gettext("Full Description"),
                         type: :html,
                         placeholder: gettext("<p>Full translated description...</p>")
                       },
