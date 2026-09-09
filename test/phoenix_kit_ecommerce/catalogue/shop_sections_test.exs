@@ -90,9 +90,9 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSectionsTest do
       [radio] = Regex.run(~r/<input[^>]*value="#{item.uuid}"[^>]*>/, html)
       assert radio =~ "checked"
 
-      # The tile shows the picture the item would give the category, not
-      # just its name.
-      assert html =~ ~s(alt="Featured One")
+      # Each row leads with the picture the item would give the category,
+      # not just its name — and the closed dropdown shows the picked one.
+      assert html =~ "Featured One"
       assert html =~ "/file/img-1/small"
     end
 

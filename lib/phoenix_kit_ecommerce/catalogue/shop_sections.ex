@@ -285,6 +285,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
       assigns
       |> assign(:ecommerce, ecommerce)
       |> assign(:item_options, item_options)
+      |> assign(:selected_option, selected_option(item_options, ecommerce))
       |> assign(:shop_status_errors, field_errors(form, :shop_status))
       |> assign(:featured_item_uuid_errors, field_errors(form, :featured_item_uuid))
 
@@ -317,42 +318,67 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
                 </span>
               </label>
 
-              <%!-- Thumbnails, not a name list: the choice is which
-                    PICTURE the category shows, and an item's name says
-                    nothing about its photo. Radios rather than a select so
-                    the pictures themselves are the control. --%>
-              <div class="flex flex-wrap gap-3">
-                <label class="cursor-pointer">
-                  <input
-                    type="radio"
-                    name="category[ecommerce][featured_item_uuid]"
-                    value=""
-                    checked={Map.get(@ecommerce, "featured_item_uuid") in [nil, ""]}
-                    class="peer sr-only"
-                  />
-                  <span class="flex h-24 w-24 items-center justify-center rounded-lg border-2 border-base-300 p-2 text-center text-xs leading-tight peer-checked:border-primary">
-                    {gettext("Auto-detect (first item with an image)")}
-                  </span>
-                </label>
-
-                <label :for={option <- @item_options} class="cursor-pointer" title={option.name}>
-                  <input
-                    type="radio"
-                    name="category[ecommerce][featured_item_uuid]"
-                    value={option.uuid}
-                    checked={Map.get(@ecommerce, "featured_item_uuid") == option.uuid}
-                    class="peer sr-only"
-                  />
-                  <span class="block rounded-lg border-2 border-base-300 p-1 peer-checked:border-primary">
+              <%!-- A dropdown, not a grid: the list can be long, and it is
+                    one field among many on this form. Each row leads with
+                    the picture the item would give the category, because
+                    that is what the choice is about — a name says nothing
+                    about the photo. Native `<option>` cannot hold an
+                    image, so this is a details-dropdown over radios: no
+                    JavaScript, and the radio carries the value. --%>
+              <details class="dropdown w-full">
+                <summary class="btn btn-outline w-full justify-start gap-2 font-normal">
+                  <%= if @selected_option do %>
                     <img
-                      src={URLSigner.signed_url(option.image_uuid, "small")}
-                      alt={option.name}
-                      class="h-20 w-20 rounded object-cover"
+                      src={URLSigner.signed_url(@selected_option.image_uuid, "small")}
+                      alt=""
+                      class="h-8 w-8 rounded object-cover"
                     />
-                    <span class="mt-1 block w-20 truncate text-center text-xs">{option.name}</span>
-                  </span>
-                </label>
-              </div>
+                    <span class="truncate">{@selected_option.name}</span>
+                  <% else %>
+                    <.icon name="hero-sparkles" class="w-4 h-4" />
+                    <span class="truncate">
+                      {gettext("Auto-detect (first item with an image)")}
+                    </span>
+                  <% end %>
+                  <.icon name="hero-chevron-down" class="w-4 h-4 ml-auto" />
+                </summary>
+
+                <ul class="dropdown-content menu z-10 mt-1 max-h-72 w-full flex-nowrap overflow-y-auto rounded-box bg-base-100 p-1 shadow">
+                  <li>
+                    <label class="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="category[ecommerce][featured_item_uuid]"
+                        value=""
+                        checked={@selected_option == nil}
+                        class="radio radio-xs"
+                      />
+                      <.icon name="hero-sparkles" class="w-4 h-4" />
+                      <span class="truncate">
+                        {gettext("Auto-detect (first item with an image)")}
+                      </span>
+                    </label>
+                  </li>
+
+                  <li :for={option <- @item_options}>
+                    <label class="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="category[ecommerce][featured_item_uuid]"
+                        value={option.uuid}
+                        checked={@selected_option && @selected_option.uuid == option.uuid}
+                        class="radio radio-xs"
+                      />
+                      <img
+                        src={URLSigner.signed_url(option.image_uuid, "small")}
+                        alt=""
+                        class="h-8 w-8 rounded object-cover"
+                      />
+                      <span class="truncate">{option.name}</span>
+                    </label>
+                  </li>
+                </ul>
+              </details>
 
               <p :if={@featured_item_uuid_errors != []} class="text-error text-xs mt-1">
                 {Enum.join(@featured_item_uuid_errors, ", ")}
@@ -380,6 +406,16 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
   # list.
   defp category_uuid(%{uuid: uuid}) when is_binary(uuid), do: uuid
   defp category_uuid(_), do: nil
+
+  defp selected_option(item_options, ecommerce) do
+    case Map.get(ecommerce, "featured_item_uuid") do
+      uuid when is_binary(uuid) and uuid != "" ->
+        Enum.find(item_options, &(&1.uuid == uuid))
+
+      _ ->
+        nil
+    end
+  end
 
   # Keyed by category uuid in the process dictionary: a function component
   # has no assigns of its own to memoise into, and this runs inside the
