@@ -139,10 +139,20 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
   `PhoenixKitEcommerce.ProductSource.Legacy.list_products_by_ids/1`.
   """
   @spec list_items_by_uuids([Ecto.UUID.t()]) :: [CatItem.t()]
-  def list_items_by_uuids([]), do: []
+  def list_items_by_uuids(uuids, catalogue_uuid \\ :resolve)
 
-  def list_items_by_uuids(uuids) when is_list(uuids) do
-    case catalogue_uuid() do
+  def list_items_by_uuids([], _catalogue_uuid), do: []
+
+  # A caller that already resolved the shop's catalogue passes it in
+  # rather than paying for the lookup again.
+  def list_items_by_uuids(uuids, :resolve) when is_list(uuids) do
+    list_items_by_uuids(uuids, catalogue_uuid())
+  end
+
+  def list_items_by_uuids(_uuids, nil), do: []
+
+  def list_items_by_uuids(uuids, catalogue_uuid) when is_list(uuids) do
+    case catalogue_uuid do
       nil ->
         []
 
@@ -453,6 +463,150 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
         |> repo().all()
     end
   end
+
+  @doc """
+  Resolves `View.category_view/2`'s priority-2 image fallback for a batch
+  of categories, `category_uuid => image uuid`, in AT MOST two item
+  queries plus the one catalogue lookup they share — never one per
+  category (`ProductSource.Catalogue.list_categories/1` builds a view for
+  every category in one pass, and the storefront/admin category lists have
+  no pagination ceiling on that count). The cost is fixed: it does not
+  grow with how many categories are passed in.
+
+  For each category, the source is:
+  1. An explicit `data["ecommerce"]["featured_item_uuid"]` — that item's
+     own `data["featured_image_uuid"]`, falling back to the first entry
+     of its `data["media_order"]`. Resolved for every category that set
+     one, in a single `list_items_by_uuids/1` call.
+  2. Otherwise, auto-detect: the first `active_visibility/1` item in the
+     category (ordered by `position`, then `name`) that carries an image
+     by the same rule — exactly the old admin form's "Auto-detect (first
+     product with image)" hint. Resolved for every OTHER category in one
+     query fetching all their active items once, then walking the
+     (already category/position-ordered) rows in Elixir to keep the
+     first image-bearing one per category.
+
+  A category absent from the result has no image from either step (its
+  `image_uuid`, if any — priority 1 — is a category-view concern, not
+  this function's).
+  """
+  @spec resolve_category_images([CatCategory.t()]) :: %{Ecto.UUID.t() => Ecto.UUID.t()}
+  def resolve_category_images([]), do: %{}
+
+  def resolve_category_images(categories) when is_list(categories) do
+    {explicit, auto} = Enum.split_with(categories, &explicit_featured_item_uuid/1)
+
+    # Resolved once and threaded through: both halves need the shop's
+    # catalogue, and `catalogue_uuid/0` re-reads a setting and lists
+    # catalogues on every call — a mixed page paid that twice over plus
+    # the reads inside `list_items_by_uuids/1`.
+    catalogue_uuid = catalogue_uuid()
+
+    Map.merge(
+      resolve_explicit_images(explicit, catalogue_uuid),
+      resolve_auto_images(auto, catalogue_uuid)
+    )
+  end
+
+  @doc """
+  Items belonging to one category that carry an image (own
+  `featured_image_uuid` or a non-empty `media_order`), `{name, uuid}`
+  pairs ordered by position then name — the same candidates
+  `resolve_category_images/1`'s auto-detect step would pick the first
+  of. Backs the category form's featured-item picker (`ShopSections.
+  category/1`), so an admin only ever sees items eligible to actually
+  supply the category's fallback image. Soft-deleted items are excluded;
+  otherwise unfiltered by shop status — an explicit pick is allowed to
+  name a draft item, same as `featured_item_uuid` always could as a raw
+  uuid.
+  """
+  @spec category_item_image_options(Ecto.UUID.t() | nil) :: [{String.t(), Ecto.UUID.t()}]
+  def category_item_image_options(nil), do: []
+
+  def category_item_image_options(category_uuid) when is_binary(category_uuid) do
+    CatItem
+    |> where([i], i.category_uuid == ^category_uuid and i.status != "deleted")
+    |> order_by([i], asc: i.position, asc: i.name)
+    |> select([i], %{uuid: i.uuid, name: i.name, data: i.data})
+    |> repo().all()
+    |> Enum.filter(&(item_image(&1) not in [nil, ""]))
+    |> Enum.map(&{&1.name, &1.uuid})
+  end
+
+  defp explicit_featured_item_uuid(category) do
+    case get_in(category.data || %{}, ["ecommerce", "featured_item_uuid"]) do
+      uuid when is_binary(uuid) and uuid != "" -> uuid
+      _ -> nil
+    end
+  end
+
+  defp resolve_explicit_images([], _catalogue_uuid), do: %{}
+  defp resolve_explicit_images(_categories, nil), do: %{}
+
+  defp resolve_explicit_images(categories, catalogue_uuid) do
+    item_uuids =
+      categories
+      |> Enum.map(&explicit_featured_item_uuid/1)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    images_by_item =
+      item_uuids
+      |> list_items_by_uuids(catalogue_uuid)
+      |> Map.new(&{&1.uuid, item_image(&1)})
+
+    Enum.reduce(categories, %{}, fn category, acc ->
+      with item_uuid when is_binary(item_uuid) <- explicit_featured_item_uuid(category),
+           image when is_binary(image) and image != "" <- Map.get(images_by_item, item_uuid) do
+        Map.put(acc, category.uuid, image)
+      else
+        _ -> acc
+      end
+    end)
+  end
+
+  defp resolve_auto_images([], _catalogue_uuid), do: %{}
+  defp resolve_auto_images(_categories, nil), do: %{}
+
+  defp resolve_auto_images(categories, catalogue_uuid) do
+    category_uuids = Enum.map(categories, & &1.uuid)
+
+    CatItem
+    |> where([i], i.catalogue_uuid == ^catalogue_uuid)
+    |> where([i], i.category_uuid in ^category_uuids)
+    |> active_visibility()
+    |> order_by([i], asc: i.category_uuid, asc: i.position, asc: i.name)
+    |> select([i], %{category_uuid: i.category_uuid, data: i.data})
+    |> repo().all()
+    |> Enum.reduce(%{}, &put_first_image/2)
+  end
+
+  defp put_first_image(%{category_uuid: category_uuid} = row, acc) do
+    if Map.has_key?(acc, category_uuid) do
+      acc
+    else
+      case item_image(row) do
+        image when is_binary(image) and image != "" -> Map.put(acc, category_uuid, image)
+        _ -> acc
+      end
+    end
+  end
+
+  # Shared by `resolve_explicit_images/1`, `resolve_auto_images/1` and
+  # `category_item_image_options/1` — a real `CatItem` struct and the
+  # plain `%{data: ...}` maps `select/3` projects above both work, since
+  # this only ever reads `.data`.
+  defp item_image(%{data: data}) do
+    data = data || %{}
+
+    case Map.get(data, "featured_image_uuid") do
+      image when is_binary(image) and image != "" -> image
+      _ -> data |> Map.get("media_order") |> first_of_list()
+    end
+  end
+
+  defp first_of_list(list) when is_list(list), do: List.first(list)
+  defp first_of_list(_), do: nil
 
   # ============================================================
   # Item filters

@@ -251,4 +251,249 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.QueryTest do
              ) == [category.uuid]
     end
   end
+
+  describe "resolve_category_images/1" do
+    test "an explicit featured_item_uuid resolves to that item's own featured_image_uuid",
+         %{catalogue: catalogue} do
+      item =
+        create_item(catalogue, %{
+          name: "Vase",
+          base_price: Decimal.new("1.00"),
+          data: %{"featured_image_uuid" => "img-explicit"}
+        })
+
+      {:ok, category} =
+        Catalogue.create_category(%{
+          name: "Vases",
+          catalogue_uuid: catalogue.uuid,
+          data: %{"ecommerce" => %{"featured_item_uuid" => item.uuid}}
+        })
+
+      assert Query.resolve_category_images([category]) == %{category.uuid => "img-explicit"}
+    end
+
+    test "an explicit featured_item_uuid falls back to the first media_order entry when the item has no featured_image_uuid",
+         %{catalogue: catalogue} do
+      item =
+        create_item(catalogue, %{
+          name: "Vase",
+          base_price: Decimal.new("1.00"),
+          data: %{"media_order" => ["img-from-media-order", "img-second"]}
+        })
+
+      {:ok, category} =
+        Catalogue.create_category(%{
+          name: "Vases",
+          catalogue_uuid: catalogue.uuid,
+          data: %{"ecommerce" => %{"featured_item_uuid" => item.uuid}}
+        })
+
+      assert Query.resolve_category_images([category]) == %{
+               category.uuid => "img-from-media-order"
+             }
+    end
+
+    test "an explicit featured item with no image never falls back to auto-detect",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      featured_no_image =
+        create_item(catalogue, %{
+          name: "Featured No Image",
+          base_price: Decimal.new("1.00"),
+          category_uuid: category.uuid,
+          position: 0,
+          data: %{"ecommerce" => %{"shop_status" => "active"}}
+        })
+
+      create_item(catalogue, %{
+        name: "Other With Image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 1,
+        data: %{
+          "ecommerce" => %{"shop_status" => "active"},
+          "featured_image_uuid" => "img-other"
+        }
+      })
+
+      {:ok, category} =
+        Catalogue.update_category(category, %{
+          data: %{"ecommerce" => %{"featured_item_uuid" => featured_no_image.uuid}}
+        })
+
+      assert Query.resolve_category_images([category]) == %{}
+    end
+
+    test "with no explicit featured item, auto-detects the first active item (by position) that carries an image",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "First, no image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 0,
+        data: %{"ecommerce" => %{"shop_status" => "active"}}
+      })
+
+      create_item(catalogue, %{
+        name: "Second, inactive but has image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 1,
+        status: "inactive",
+        data: %{
+          "ecommerce" => %{"shop_status" => "active"},
+          "featured_image_uuid" => "img-inactive"
+        }
+      })
+
+      create_item(catalogue, %{
+        name: "Third, active with image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 2,
+        data: %{
+          "ecommerce" => %{"shop_status" => "active"},
+          "featured_image_uuid" => "img-third"
+        }
+      })
+
+      assert Query.resolve_category_images([category]) == %{category.uuid => "img-third"}
+    end
+
+    test "a category with no items (or none carrying an image) has no entry in the result",
+         %{catalogue: catalogue} do
+      {:ok, empty_category} =
+        Catalogue.create_category(%{name: "Empty", catalogue_uuid: catalogue.uuid})
+
+      {:ok, no_image_category} =
+        Catalogue.create_category(%{name: "No Images", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "No Image Item",
+        base_price: Decimal.new("1.00"),
+        category_uuid: no_image_category.uuid,
+        data: %{"ecommerce" => %{"shop_status" => "active"}}
+      })
+
+      assert Query.resolve_category_images([empty_category, no_image_category]) == %{}
+    end
+
+    test "resolves images for many categories without one query per category (no N+1)",
+         %{catalogue: catalogue} do
+      categories =
+        for n <- 1..6 do
+          {:ok, category} =
+            Catalogue.create_category(%{name: "Cat #{n}", catalogue_uuid: catalogue.uuid})
+
+          create_item(catalogue, %{
+            name: "Item #{n}",
+            base_price: Decimal.new("1.00"),
+            category_uuid: category.uuid,
+            data: %{
+              "ecommerce" => %{"shop_status" => "active"},
+              "featured_image_uuid" => "img-#{n}"
+            }
+          })
+
+          category
+        end
+
+      handler_id = {:resolve_category_images_query_count, self()}
+      test_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:phoenix_kit_ecommerce, :test, :repo, :query],
+        fn _event, _measurements, _metadata, _config -> send(test_pid, :query_ran) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      images = Query.resolve_category_images(categories)
+
+      assert map_size(images) == 6
+      assert images == Map.new(1..6, &{Enum.at(categories, &1 - 1).uuid, "img-#{&1}"})
+
+      query_count = count_received(:query_ran)
+
+      # One query fetching each category's active items (auto-detect —
+      # none of the 6 set an explicit featured_item_uuid here), never one
+      # per category. A generous ceiling (well under 6) proves the batch
+      # shape without pinning the exact count to an implementation detail.
+      assert query_count <= 3
+    end
+
+    defp count_received(message, acc \\ 0) do
+      receive do
+        ^message -> count_received(message, acc + 1)
+      after
+        0 -> acc
+      end
+    end
+  end
+
+  describe "category_item_image_options/1" do
+    test "lists only items with an image, labeled by name, ordered by position",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "No Image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 0
+      })
+
+      second =
+        create_item(catalogue, %{
+          name: "Second",
+          base_price: Decimal.new("1.00"),
+          category_uuid: category.uuid,
+          position: 2,
+          data: %{"featured_image_uuid" => "img-second"}
+        })
+
+      first =
+        create_item(catalogue, %{
+          name: "First",
+          base_price: Decimal.new("1.00"),
+          category_uuid: category.uuid,
+          position: 1,
+          data: %{"media_order" => ["img-first"]}
+        })
+
+      assert Query.category_item_image_options(category.uuid) == [
+               {first.name, first.uuid},
+               {second.name, second.uuid}
+             ]
+    end
+
+    test "an item from a different category is excluded", %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      {:ok, other_category} =
+        Catalogue.create_category(%{name: "Other", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "Elsewhere",
+        base_price: Decimal.new("1.00"),
+        category_uuid: other_category.uuid,
+        data: %{"featured_image_uuid" => "img-elsewhere"}
+      })
+
+      assert Query.category_item_image_options(category.uuid) == []
+    end
+
+    test "nil category_uuid returns an empty list" do
+      assert Query.category_item_image_options(nil) == []
+    end
+  end
 end

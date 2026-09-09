@@ -709,23 +709,25 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       page_1_rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
 
       assert page_1_rows == 25
-      assert html =~ ~s(id="page-info-vendor")
-      assert html =~ "Showing 1 to 25 of 30 results"
+      assert html =~ ~s(id="load-more-vendor")
+      assert html =~ "Showing 25 of 30 changes"
 
       # `data-bulk-total` drives the select-all checkbox's tri-state math
-      # (checked only once selected count == total) — it must be the
-      # CURRENT PAGE's row count (25), not the whole section's (30), or
-      # select-all on page 1 could never show fully checked.
+      # (checked only once selected count == total) — it must be the count
+      # of rows ON SCREEN, which for a load-more list is everything loaded
+      # so far, or select-all could never show fully checked.
       assert html =~ ~s(data-bulk-total="25")
       refute html =~ ~s(data-bulk-total="30")
 
-      html = view |> element("#page-next-vendor") |> render_click()
+      html = view |> element("#load-more-vendor button") |> render_click()
 
-      page_2_rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
+      loaded_rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
 
-      assert page_2_rows == 5
-      assert html =~ "Showing 26 to 30 of 30 results"
-      assert html =~ ~s(data-bulk-total="5")
+      # Appended, not replaced: the first 25 are still on screen, which is
+      # what keeps a bulk selection alive across a load.
+      assert loaded_rows == 30
+      assert html =~ "Showing 30 of 30 changes"
+      assert html =~ ~s(data-bulk-total="30")
 
       last_product = List.last(products)
       assert html =~ "id=\"change-row-vendor-#{last_product.uuid}\""
@@ -736,7 +738,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     # whatever the section was showing at request time. Paging away
     # must close it, not leave it able to confirm into a write for a
     # product that's no longer even on screen.
-    test "paging a section clears a pending confirmation instead of letting it survive to be confirmed",
+    test "loading more rows clears a pending confirmation instead of letting it survive to be confirmed",
          %{conn: conn} do
       products =
         for i <- 1..30 do
@@ -779,7 +781,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       html = view |> element("#apply-row-vendor-#{first_on_page_1.uuid}") |> render_click()
       assert html =~ "Update #{first_on_page_1.title["en"]}: Vendor"
 
-      html = view |> element("#page-next-vendor") |> render_click()
+      html = view |> element("#load-more-vendor button") |> render_click()
       refute html =~ "Update #{first_on_page_1.title["en"]}: Vendor"
 
       html = confirm!(view)
@@ -1384,7 +1386,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       check_and_await(view)
 
       view |> element("#toggle-section-vendor") |> render_click()
-      view |> element("#page-next-vendor") |> render_click()
+      view |> element("#load-more-vendor button") |> render_click()
 
       last = List.last(products)
       view |> element("#apply-row-vendor-#{last.uuid}") |> render_click()
@@ -1393,23 +1395,19 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
       assert rows == 25
 
-      # A single page (25 of 25 remaining) hides the pager entirely by
-      # design (`section.total_pages > 1`) — the regression this guards
-      # against is a STUCK page 2 with zero rows and no pager to escape
-      # via, not a visible "1-25 of 25" — so what matters is that the
-      # rows themselves are back, and there's no dangling prev/next.
-      refute html =~ ~s(id="page-prev-vendor")
-      refute html =~ ~s(id="page-next-vendor")
+      # Applying the only row past the first chunk leaves 25 — everything
+      # that remains is on screen, and the footer says so rather than
+      # offering a load that would add nothing.
+      assert html =~ "Showing 25 of 25 changes"
+      refute html =~ "Load more"
     end
 
-    # `bump_page/3` must clamp against the CURRENT count, not read the raw
-    # stored page: 51 rows (pages of 25/25/1), go to page 3 (its lone
-    # row), apply it — 50 remain (pages of 25/25), the DISPLAY clamps
-    # back to page 2, but the STORED page assign would stay 3 if it read
-    # the raw value. A `Prev` click from there must land on page 1 — if
-    # it instead computed "stored 3 minus 1 = 2", the operator (looking
-    # at displayed page 2) would see no change at all.
-    test "clicking Prev right after applying a trailing page's only row still moves back a page",
+    # `bump_page/3` still clamps against the CURRENT count rather than the
+    # raw stored page: 51 rows, load twice (25 -> 50 -> 51), apply the
+    # lone 51st — 50 remain, so the stored page 3 is out of range and the
+    # loaded set must settle at everything that is left rather than
+    # rendering a chunk past the end.
+    test "loading past the end settles on what remains after a row is applied",
          %{conn: conn} do
       products =
         for i <- 1..51 do
@@ -1417,9 +1415,9 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
             Shop.create_product(%{
               "title" => %{"en" => "Product #{i}"},
               "slug" => %{"en" => "product-#{i}"},
-              "vendor" => "Old Co",
-              "status" => "draft",
-              "price" => "10.00"
+              "price" => Decimal.new("10.00"),
+              "status" => "active",
+              "vendor" => "Old Co"
             })
 
           product
@@ -1447,17 +1445,15 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       check_and_await(view)
 
       view |> element("#toggle-section-vendor") |> render_click()
-      view |> element("#page-next-vendor") |> render_click()
-      view |> element("#page-next-vendor") |> render_click()
+      view |> element("#load-more-vendor button") |> render_click()
+      view |> element("#load-more-vendor button") |> render_click()
 
       last = List.last(products)
       view |> element("#apply-row-vendor-#{last.uuid}") |> render_click()
       html = confirm!(view)
 
-      assert html =~ "Showing 26 to 50 of 50 results"
-
-      html = view |> element("#page-prev-vendor") |> render_click()
-      assert html =~ "Showing 1 to 25 of 50 results"
+      assert html =~ "Showing 50 of 50 changes"
+      refute html =~ "Load more"
     end
 
     # `apply_row`'s `Map.has_key?(&1.changes, field)` guard: without it, a

@@ -16,7 +16,9 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
   # adapter test — see Global Constraints in the block-3 plan.
   @moduletag :catalogue
 
+  alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.PriceDisplay
+  alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.ProductSource.Catalogue.View
 
   # `View.product_view/2`/`category_view/2` fall back to two live reads
@@ -391,6 +393,42 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert category_view(category).storefront_filters == %{
                "price" => %{"enabled" => false}
              }
+    end
+
+    test "opts[:featured_image_uuid] is wrapped as :featured_product, the shape get_image_url/2's priority-2 step already reads" do
+      category = build_category(%{"ecommerce" => %{"image_uuid" => nil}})
+
+      view = category_view(category, featured_image_uuid: "resolved-img-uuid")
+
+      assert %Product{featured_image_uuid: "resolved-img-uuid"} = view.featured_product
+
+      assert Category.get_image_url(view) ==
+               Category.get_image_url(%Category{
+                 featured_product: %Product{featured_image_uuid: "resolved-img-uuid"}
+               })
+
+      assert Category.get_image_url(view) != nil
+    end
+
+    test "no :featured_image_uuid opt leaves :featured_product nil (no image, not NotLoaded)" do
+      category = build_category(%{"ecommerce" => %{"image_uuid" => nil}})
+
+      view = category_view(category)
+
+      assert view.featured_product == nil
+      assert Category.get_image_url(view) == nil
+    end
+
+    test "the category's own image_uuid still wins over a resolved featured_image_uuid" do
+      # build_category/1's default fixture already sets "image_uuid" => "cat-img-uuid"
+      category = build_category()
+
+      view = category_view(category, featured_image_uuid: "resolved-img-uuid")
+
+      assert view.image_uuid == "cat-img-uuid"
+
+      assert Category.get_image_url(view) ==
+               Category.get_image_url(%Category{image_uuid: "cat-img-uuid"})
     end
   end
 

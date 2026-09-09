@@ -17,7 +17,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   product's change can appear in more than one section if more than one
   of its fields differs. Sections are collapsed by default and show a
   count; expanding one reveals its rows, 25 at a time (see the module
-  attribute doc on `@per_page` for why pagination here is a correctness
+  attribute doc on `@per_page` for why chunking here is a correctness
   requirement, not polish). An operator can apply a single field on a
   single product, a whole section, or every pending change at once —
   always through `PhoenixKitEcommerce.Shopify.Sync`'s existing
@@ -102,15 +102,17 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   # `row_change_summary/1` already renders for `:vendor`/`:tags`/etc.
   @text_fields [:description, :body_html]
 
-  # Rows rendered per page within an expanded section. Not a display
+  # Rows added per load within an expanded section. Not a display
   # preference: `TextDiff`'s own moduledoc measures a wholly-rewritten
   # 1.7 KB body_html at 12 ms per row, and the live catalog's ~500
   # products commonly differ in title, description, AND body_html at
   # once — rendering a full section in one pass can spend several
   # seconds computing summaries inside the LiveView process, on top of
-  # producing a DOM no operator can usefully scroll. Bounding to 25 rows
-  # bounds both costs at once; summaries are computed only for the rows
-  # on the current page (`build_section/2` below).
+  # producing a DOM no operator can usefully scroll. Opening a section
+  # therefore costs one chunk, and each further chunk is the operator's
+  # own click; summaries are computed only for rows actually loaded
+  # (`build_section/2` below). Loaded rows stay on screen rather than
+  # being replaced, which is what lets a bulk selection survive a load.
   @per_page 25
 
   @impl true
@@ -216,11 +218,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     end
   end
 
-  def handle_event("page_prev", %{"field" => field_str}, socket) do
-    {:noreply, bump_page(socket, field_str, -1)}
-  end
-
-  def handle_event("page_next", %{"field" => field_str}, socket) do
+  # One event per section rather than one event carrying the section:
+  # core's `load_more/1` renders its own button and forwards nothing, so
+  # `phx-value-field` cannot reach the DOM on a released core. (Fixed
+  # upstream in phoenix_kit#798; collapse these back into one event with
+  # a value once this package's floor carries it.)
+  def handle_event("load_more_rows:" <> field_str, _params, socket) do
     {:noreply, bump_page(socket, field_str, 1)}
   end
 
@@ -891,8 +894,11 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
     rows =
       if expanded? do
+        # `take`, not a window: rows already on screen stay there when the
+        # operator loads more, which is what keeps a bulk selection alive
+        # across a load (selection lives in the DOM).
         field_changes
-        |> Enum.slice((page - 1) * @per_page, @per_page)
+        |> Enum.take(page * @per_page)
         |> Enum.map(&build_row(&1, field, assigns))
       else
         []
@@ -1684,37 +1690,19 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                 </.table_default>
               </.bulk_select_scope>
 
-              <div
-                :if={section.total_pages > 1}
-                class="flex items-center justify-between p-2 bg-base-200/50"
-              >
-                <button
-                  type="button"
-                  id={"page-prev-#{section.field}"}
-                  phx-click="page_prev"
-                  phx-value-field={section.field}
-                  class="btn btn-xs"
-                  disabled={section.page == 1}
-                >
-                  « {gettext("Prev")}
-                </button>
-                <div id={"page-info-#{section.field}"}>
-                  <.pagination_info
-                    page={section.page}
-                    per_page={section.per_page}
-                    total_count={section.count}
-                  />
-                </div>
-                <button
-                  type="button"
-                  id={"page-next-#{section.field}"}
-                  phx-click="page_next"
-                  phx-value-field={section.field}
-                  class="btn btn-xs"
-                  disabled={section.page == section.total_pages}
-                >
-                  {gettext("Next")} »
-                </button>
+              <%!-- Core's load-more footer, the same one the catalogue's
+                    own lists use: this page pages by LiveView event (each
+                    section pages on its own, and there is no URL to patch),
+                    and its rows carry a client-side bulk selection that only
+                    survives if loaded rows stay in the DOM. --%>
+              <div :if={section.count > 0} class="p-2 bg-base-200/50">
+                <.load_more
+                  id={"load-more-#{section.field}"}
+                  loaded={length(section.rows)}
+                  total={section.count}
+                  on_load_more={"load_more_rows:#{section.field}"}
+                  noun_plural={gettext("changes")}
+                />
               </div>
             </div>
           </div>

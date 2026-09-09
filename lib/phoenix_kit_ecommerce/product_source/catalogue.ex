@@ -84,7 +84,11 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue do
 
   @impl PhoenixKitEcommerce.ProductSource
   def list_categories(opts \\ []) do
-    opts |> Query.list_categories() |> Enum.map(&build_category(&1, opts))
+    categories = Query.list_categories(opts)
+    # One batch resolution for the whole page of categories — never one
+    # query per category (see `Query.resolve_category_images/1`'s doc).
+    images_by_uuid = Query.resolve_category_images(categories)
+    Enum.map(categories, &build_category(&1, opts, images_by_uuid))
   end
 
   @impl PhoenixKitEcommerce.ProductSource
@@ -93,7 +97,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue do
   def get_category(id, opts) when is_binary(id) do
     case Query.get_category(id) do
       nil -> nil
-      category -> build_category(category, opts)
+      category -> build_category(category, opts, Query.resolve_category_images([category]))
     end
   end
 
@@ -330,14 +334,19 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue do
     :category in List.wrap(Keyword.get(opts, :preload))
   end
 
-  # `build_category/2` is the category counterpart of `build_product/2` +
+  # `build_category/3` is the category counterpart of `build_product/2` +
   # `single_category/2`: `View.category_view/2` never leaves the
   # `:parent` field as the struct's own `Ecto.Association.NotLoaded`
   # default (a view-struct can never actually be `Repo.preload/2`'d), so
   # every category-returning callback routes through here instead of
-  # calling `View.category_view/1` directly.
-  defp build_category(category, opts) do
-    View.category_view(category, parent: resolve_parent(category, opts))
+  # calling `View.category_view/1` directly. `images_by_uuid` is the
+  # batch (or single-category) result of `Query.resolve_category_images/1`
+  # — defaults to `%{}` for any future call site that doesn't resolve one.
+  defp build_category(category, opts, images_by_uuid \\ %{}) do
+    View.category_view(category,
+      parent: resolve_parent(category, opts),
+      featured_image_uuid: Map.get(images_by_uuid, category.uuid)
+    )
   end
 
   defp resolve_parent(%{parent_uuid: nil}, _opts), do: nil

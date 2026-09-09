@@ -135,6 +135,18 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   `data["ecommerce"]["storefront_filters"]` (`%{}` when absent) — see
   `PhoenixKitEcommerce.merge_storefront_filters/2` for how it overrides
   the global filter config.
+
+  `opts[:featured_image_uuid]` is the image uuid `ProductSource.Catalogue.
+  resolve_category_images/1`'s (a `Query.resolve_category_images/1` call)
+  already resolved for THIS category — this module stays pure, so it
+  cannot look up the featured item's own image itself. When given, it's
+  wrapped as a `%Product{featured_image_uuid: ...}` and attached under
+  `:featured_product`, which is exactly the shape `Category.
+  get_image_url/2`'s priority-2 step (written for the legacy `Repo.
+  preload(:featured_product)` source) already reads — no change needed
+  there. `nil` (every call site before this option existed, and any
+  category with no resolved image) leaves `:featured_product` `nil`,
+  which that same priority-2/3 pattern match simply skips.
   """
   @spec category_view(map(), keyword()) :: Category.t()
   def category_view(category, opts \\ []) do
@@ -154,6 +166,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
       option_schema: Map.get(ecommerce, "option_schema") || [],
       image_uuid: Map.get(ecommerce, "image_uuid"),
       featured_product_uuid: Map.get(ecommerce, "featured_item_uuid"),
+      featured_product: featured_product_placeholder(Keyword.get(opts, :featured_image_uuid)),
       storefront_filters: Map.get(ecommerce, "storefront_filters") || %{},
       metadata: %{},
       inserted_at: Map.get(category, :inserted_at),
@@ -162,6 +175,12 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
 
     struct(Category, fields)
   end
+
+  defp featured_product_placeholder(image_uuid) when is_binary(image_uuid) and image_uuid != "" do
+    struct(Product, featured_image_uuid: image_uuid)
+  end
+
+  defp featured_product_placeholder(_), do: nil
 
   @doc """
   Synthesizes the legacy `metadata` sub-map every option/price-display
