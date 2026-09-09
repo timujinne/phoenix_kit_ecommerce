@@ -186,4 +186,41 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
       assert href =~ "return_to=%2Fen%2Fshop%2Fproduct%2Fx"
     end
   end
+
+  describe "admin list and detail pages" do
+    test "the products list edits in the catalogue and returns to the list", %{conn: conn} do
+      # Created first: with the catalogue source on, the legacy writer
+      # refuses, and this fixture only needs a uuid to build a path from.
+      {:ok, product} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Admin Listed"},
+          "slug" => %{"en" => "admin-listed-#{System.unique_integer([:positive])}"},
+          "price" => Decimal.new("10.00"),
+          "status" => "active"
+        })
+
+      set_product_source("catalogue")
+      on_exit(fn -> set_product_source("legacy") end)
+
+      href = Helpers.admin_edit_path(:item, product.uuid, "/en/admin/shop/products?page=2")
+
+      # The admin's own list is the place to come back to, not the
+      # catalogue's — an operator working through a shop list should not
+      # be dropped into a different one after saving.
+      assert href =~ "/admin/catalogue/items/#{product.uuid}/edit"
+      assert href =~ "return_to=%2Fen%2Fadmin%2Fshop%2Fproducts%3Fpage%3D2"
+    end
+
+    test "the categories list edits the catalogue category", %{conn: _conn} do
+      {:ok, category} = Shop.create_category(%{"name" => %{"en" => "Admin Cat"}})
+
+      set_product_source("catalogue")
+      on_exit(fn -> set_product_source("legacy") end)
+
+      href = Helpers.admin_edit_path(:category, category.uuid, "/en/admin/shop/categories")
+
+      assert href =~ "/admin/catalogue/categories/#{category.uuid}/edit"
+      assert href =~ "return_to=%2Fen%2Fadmin%2Fshop%2Fcategories"
+    end
+  end
 end

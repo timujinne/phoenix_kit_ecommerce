@@ -223,7 +223,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             <%!-- Action Buttons --%>
             <div class="flex gap-2">
               <.link
-                navigate={Routes.path("/admin/shop/products/#{@product.uuid}/edit")}
+                navigate={Helpers.admin_edit_path(:item, @product.uuid, assigns[:url_path])}
                 class="btn btn-primary"
               >
                 <.icon name="hero-pencil" class="w-4 h-4 mr-2" /> {gettext("Edit")}

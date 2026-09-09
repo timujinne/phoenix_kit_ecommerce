@@ -87,6 +87,39 @@ defmodule PhoenixKitEcommerce.ProductSource.CatalogueCategoriesTest do
       assert Category.get_image_url(result) == nil
     end
 
+    test "a picture uploaded for the category itself beats the chosen featured item", %{
+      catalogue: catalogue
+    } do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Own Picture", catalogue_uuid: catalogue.uuid})
+
+      {:ok, item} =
+        Catalogue.create_item(%{
+          name: "Demo Item",
+          base_price: Decimal.new("1.00"),
+          catalogue_uuid: catalogue.uuid,
+          category_uuid: category.uuid,
+          data: %{"featured_image_uuid" => "item-picture"}
+        })
+
+      # Both set at once: the category carries its own uploaded picture AND
+      # names this item as its demonstration piece.
+      {:ok, _category} =
+        Catalogue.update_category(category, %{
+          data: %{
+            "featured_image_uuid" => "category-own-picture",
+            "ecommerce" => %{"featured_item_uuid" => item.uuid}
+          }
+        })
+
+      [result] = CatalogueSource.list_categories()
+
+      assert result.image_uuid == "category-own-picture"
+
+      assert Category.get_image_url(result) ==
+               Category.get_image_url(%Category{image_uuid: "category-own-picture"})
+    end
+
     defp count_received(message, acc \\ 0) do
       receive do
         ^message -> count_received(message, acc + 1)
