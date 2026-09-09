@@ -87,11 +87,16 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSectionsTest do
           current_language: "en-US"
         )
 
-      [option_tag] = Regex.run(~r/<option[^>]*value="#{item.uuid}"[^>]*>/, html)
-      assert option_tag =~ "selected"
+      [radio] = Regex.run(~r/<input[^>]*value="#{item.uuid}"[^>]*>/, html)
+      assert radio =~ "checked"
+
+      # The tile shows the picture the item would give the category, not
+      # just its name.
+      assert html =~ ~s(alt="Featured One")
+      assert html =~ "/file/img-1/small"
     end
 
-    test "shows an explanatory message instead of an empty select when no items have images", %{
+    test "shows an explanatory message instead of an empty picker when no items have images", %{
       category: category
     } do
       html =

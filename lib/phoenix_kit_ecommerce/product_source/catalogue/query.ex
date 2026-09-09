@@ -520,7 +520,8 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
   name a draft item, same as `featured_item_uuid` always could as a raw
   uuid.
   """
-  @spec category_item_image_options(Ecto.UUID.t() | nil) :: [{String.t(), Ecto.UUID.t()}]
+  @spec category_item_image_options(Ecto.UUID.t() | nil) ::
+          [%{name: String.t(), uuid: Ecto.UUID.t(), image_uuid: Ecto.UUID.t()}]
   def category_item_image_options(nil), do: []
 
   def category_item_image_options(category_uuid) when is_binary(category_uuid) do
@@ -529,8 +530,18 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
     |> order_by([i], asc: i.position, asc: i.name)
     |> select([i], %{uuid: i.uuid, name: i.name, data: i.data})
     |> repo().all()
-    |> Enum.filter(&(item_image(&1) not in [nil, ""]))
-    |> Enum.map(&{&1.name, &1.uuid})
+    |> Enum.flat_map(fn item ->
+      # The image uuid rides along: the picker shows the picture each
+      # candidate would give the category, which is what the choice is
+      # actually about — a name alone says nothing about the photo.
+      case item_image(item) do
+        image when is_binary(image) and image != "" ->
+          [%{name: item.name, uuid: item.uuid, image_uuid: image}]
+
+        _ ->
+          []
+      end
+    end)
   end
 
   defp explicit_featured_item_uuid(category) do

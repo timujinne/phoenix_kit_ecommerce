@@ -165,12 +165,10 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
       parent: Keyword.get(opts, :parent),
       option_schema: Map.get(ecommerce, "option_schema") || [],
       # The category's picture comes from the catalogue, where it is picked
-      # on the form's Photos tab exactly as an item's is
-      # (`data["featured_image_uuid"]`). `data["ecommerce"]["image_uuid"]`
-      # is a retired shop-side field, still read so a host that set it
-      # before this module looked at the catalogue's own does not lose the
-      # picture; it is no longer offered anywhere to set.
-      image_uuid: Map.get(data, "featured_image_uuid") || Map.get(ecommerce, "image_uuid"),
+      # on the form's Photos tab exactly as an item's is. There is no
+      # shop-side copy of it: one uuid stored twice is one uuid that can
+      # disagree with itself.
+      image_uuid: Map.get(data, "featured_image_uuid"),
       featured_product_uuid: Map.get(ecommerce, "featured_item_uuid"),
       featured_product: featured_product_placeholder(Keyword.get(opts, :featured_image_uuid)),
       storefront_filters: Map.get(ecommerce, "storefront_filters") || %{},

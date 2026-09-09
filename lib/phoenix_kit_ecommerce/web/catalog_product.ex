@@ -753,7 +753,14 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
           <div class="breadcrumbs text-sm">
             <ul>
               <li>
-                <.link navigate={Shop.catalog_url(@current_language) <> @filter_qs}>
+                <%!-- The house marks this crumb as the way back to the shop's
+                      front page, so it reads as a destination rather than
+                      just the first word of a trail. --%>
+                <.link
+                  navigate={Shop.catalog_url(@current_language) <> @filter_qs}
+                  class="inline-flex items-center gap-1"
+                >
+                  <.icon name="hero-home" class="w-4 h-4" />
                   {gettext("Shop")}
                 </.link>
               </li>

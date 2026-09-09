@@ -21,6 +21,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
   import PhoenixKitWeb.Components.Core.Input
   import PhoenixKitWeb.Components.Core.Select
 
+  alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKitEcommerce.ProductSource.Catalogue.Query
 
   attr :form, :any, default: nil
@@ -310,14 +311,52 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
 
           <div class="fieldset w-full md:col-span-2">
             <%= if @item_options != [] do %>
-              <.select
-                name="category[ecommerce][featured_item_uuid]"
-                value={Map.get(@ecommerce, "featured_item_uuid")}
-                prompt={gettext("Auto-detect (first item with an image)")}
-                label={gettext("Featured item (image fallback)")}
-                options={@item_options}
-                errors={@featured_item_uuid_errors}
-              />
+              <label class="label">
+                <span class="fieldset-legend font-medium">
+                  {gettext("Featured item (image fallback)")}
+                </span>
+              </label>
+
+              <%!-- Thumbnails, not a name list: the choice is which
+                    PICTURE the category shows, and an item's name says
+                    nothing about its photo. Radios rather than a select so
+                    the pictures themselves are the control. --%>
+              <div class="flex flex-wrap gap-3">
+                <label class="cursor-pointer">
+                  <input
+                    type="radio"
+                    name="category[ecommerce][featured_item_uuid]"
+                    value=""
+                    checked={Map.get(@ecommerce, "featured_item_uuid") in [nil, ""]}
+                    class="peer sr-only"
+                  />
+                  <span class="flex h-24 w-24 items-center justify-center rounded-lg border-2 border-base-300 p-2 text-center text-xs leading-tight peer-checked:border-primary">
+                    {gettext("Auto-detect (first item with an image)")}
+                  </span>
+                </label>
+
+                <label :for={option <- @item_options} class="cursor-pointer" title={option.name}>
+                  <input
+                    type="radio"
+                    name="category[ecommerce][featured_item_uuid]"
+                    value={option.uuid}
+                    checked={Map.get(@ecommerce, "featured_item_uuid") == option.uuid}
+                    class="peer sr-only"
+                  />
+                  <span class="block rounded-lg border-2 border-base-300 p-1 peer-checked:border-primary">
+                    <img
+                      src={URLSigner.signed_url(option.image_uuid, "small")}
+                      alt={option.name}
+                      class="h-20 w-20 rounded object-cover"
+                    />
+                    <span class="mt-1 block w-20 truncate text-center text-xs">{option.name}</span>
+                  </span>
+                </label>
+              </div>
+
+              <p :if={@featured_item_uuid_errors != []} class="text-error text-xs mt-1">
+                {Enum.join(@featured_item_uuid_errors, ", ")}
+              </p>
             <% else %>
               <label class="label">
                 <span class="fieldset-legend font-medium">{gettext("Featured item (image fallback)")}</span>

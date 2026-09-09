@@ -290,6 +290,22 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
         {translate_label(@filter)}
         <%= if @active_list != [] do %>
           <span class="badge badge-primary badge-xs ml-1">{length(@active_list)}</span>
+          <%!-- Clears THIS filter only. The sidebar's "Clear filters"
+                empties every one of them, which is the wrong tool for
+                starting one facet over. `preventDefault` because the
+                button sits inside a <summary>, whose own click would
+                otherwise fold the section shut. --%>
+          <button
+            type="button"
+            phx-click="clear_filter"
+            phx-value-key={@filter["key"]}
+            onclick="event.preventDefault(); event.stopPropagation();"
+            class="btn btn-ghost btn-xs px-1 ml-auto"
+            title={gettext("Clear this filter")}
+            aria-label={gettext("Clear this filter")}
+          >
+            <.icon name="hero-x-mark" class="w-3 h-3" />
+          </button>
         <% end %>
       </summary>
       <div class="pt-1 pb-2 max-h-48 overflow-y-auto space-y-1">

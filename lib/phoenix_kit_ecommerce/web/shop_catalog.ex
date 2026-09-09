@@ -189,6 +189,13 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
   end
 
   @impl true
+  def handle_event("clear_filter", %{"key" => key}, socket) do
+    active_filters = FilterHelpers.clear_filter(socket.assigns.active_filters, key)
+    path = build_filter_path(socket.assigns, active_filters)
+    {:noreply, push_patch(socket, to: path)}
+  end
+
+  @impl true
   def handle_event("toggle_filter", %{"key" => key, "val" => value}, socket) do
     active_filters = FilterHelpers.toggle_filter_value(socket.assigns.active_filters, key, value)
     path = build_filter_path(socket.assigns, active_filters)
@@ -238,7 +245,10 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
         <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div class="breadcrumbs text-sm">
             <ul>
-              <li class="font-medium">{gettext("Shop")}</li>
+              <li class="font-medium inline-flex items-center gap-1">
+                <.icon name="hero-home" class="w-4 h-4" />
+                {gettext("Shop")}
+              </li>
             </ul>
           </div>
 

@@ -243,6 +243,17 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpers do
   end
 
   @doc """
+  Drops one filter entirely, leaving every other selection in place.
+
+  The sidebar's "Clear filters" button empties everything; this is the
+  per-filter counterpart, so narrowing by size and then starting the size
+  over does not also lose the colour the shopper picked.
+  """
+  def clear_filter(active_filters, filter_key) do
+    Map.delete(active_filters, filter_key)
+  end
+
+  @doc """
   Updates a text search filter.
   Returns updated active_filters map; a blank term removes the filter.
   """

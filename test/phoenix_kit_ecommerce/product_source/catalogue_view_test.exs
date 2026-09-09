@@ -337,7 +337,6 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
           "ecommerce" => %{
             "shop_status" => "active",
             "option_schema" => [%{"key" => "size"}],
-            "image_uuid" => "cat-img-uuid",
             "featured_item_uuid" => "feat-item-uuid"
           }
         }
@@ -370,7 +369,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert view.status == "active"
       assert view.position == 2
       assert view.option_schema == [%{"key" => "size"}]
-      assert view.image_uuid == "cat-img-uuid"
+      refute view.image_uuid
       assert view.featured_product_uuid == "feat-item-uuid"
       assert view.metadata == %{}
       assert view.storefront_filters == %{}
@@ -387,10 +386,12 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert view.image_uuid == "catalogue-picked-uuid"
     end
 
-    test "the shop-side override still wins when the catalogue has no picture" do
+    test "a category with no picture in the catalogue has none" do
+      # There is no shop-side copy of the uuid to fall back to: the
+      # catalogue's own field is the only place it lives.
       view = build_category() |> View.category_view()
 
-      assert view.image_uuid == "cat-img-uuid"
+      refute view.image_uuid
     end
 
     test "status defaults to active when shop_status is absent" do
@@ -436,16 +437,15 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert Category.get_image_url(view) == nil
     end
 
-    test "the category's own image_uuid still wins over a resolved featured_image_uuid" do
-      # build_category/1's default fixture already sets "image_uuid" => "cat-img-uuid"
-      category = build_category()
+    test "the catalogue's own picture wins over a resolved featured item image" do
+      category = build_category(%{"featured_image_uuid" => "catalogue-picked-uuid"})
 
       view = category_view(category, featured_image_uuid: "resolved-img-uuid")
 
-      assert view.image_uuid == "cat-img-uuid"
+      assert view.image_uuid == "catalogue-picked-uuid"
 
       assert Category.get_image_url(view) ==
-               Category.get_image_url(%Category{image_uuid: "cat-img-uuid"})
+               Category.get_image_url(%Category{image_uuid: "catalogue-picked-uuid"})
     end
   end
 

@@ -469,9 +469,11 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.QueryTest do
           data: %{"media_order" => ["img-first"]}
         })
 
+      # Each candidate carries the picture it would give the category, so
+      # the picker can show it rather than only the item's name.
       assert Query.category_item_image_options(category.uuid) == [
-               {first.name, first.uuid},
-               {second.name, second.uuid}
+               %{name: first.name, uuid: first.uuid, image_uuid: "img-first"},
+               %{name: second.name, uuid: second.uuid, image_uuid: "img-second"}
              ]
     end
 
