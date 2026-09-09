@@ -89,6 +89,80 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterTest do
     end
   end
 
+  describe "update_from_shopify/3 — primary-language column/bucket agreement" do
+    # Reproduces the live bug: an item whose primary-language ("en")
+    # override bucket already carries a value (written by the ordinary
+    # catalogue edit form, which writes both the column and the bucket)
+    # goes stale once a Shopify sync updates the :name/:description
+    # column ONLY — `Translations.translated_name/2` unconditionally
+    # prefers the bucket, so the sync "succeeds" but nothing visible
+    # changes.
+    setup %{item: item} do
+      {:ok, item} =
+        Catalogue.update_item(item, %{
+          data: %{
+            "_primary_language" => "en",
+            "en" => %{"_name" => "Stale Title", "_description" => "Stale description"},
+            "fr" => %{"_name" => "Titre existant"},
+            "ecommerce" => item.data["ecommerce"],
+            "featured_image_uuid" => "01a00000-0000-7000-0000-000000000001",
+            "media_order" => ["01a00000-0000-7000-0000-000000000002"]
+          }
+        })
+
+      %{item: item}
+    end
+
+    test "title synced at the primary locale overwrites both the :name column and the stale \"en\" _name override",
+         %{item: item} do
+      assert {:ok, updated} = Writer.update_from_shopify(item, %{title: "Fresh Title"}, "en")
+
+      assert updated.name == "Fresh Title"
+      assert updated.data["en"]["_name"] == "Fresh Title"
+    end
+
+    test "body_html synced at the primary locale overwrites both the :description column and the stale \"en\" _description override",
+         %{item: item} do
+      assert {:ok, updated} =
+               Writer.update_from_shopify(item, %{body_html: "Fresh description"}, "en")
+
+      assert updated.description == "Fresh description"
+      assert updated.data["en"]["_description"] == "Fresh description"
+    end
+
+    test "title synced at a SECONDARY locale still only writes the override bucket, column and primary bucket untouched",
+         %{item: item} do
+      assert {:ok, updated} = Writer.update_from_shopify(item, %{title: "Titre frais"}, "fr")
+
+      assert updated.data["fr"]["_name"] == "Titre frais"
+      assert updated.name == item.name
+      # The primary "en" bucket, stale or not, is exclusively the sync's
+      # business when base_locale IS "en" — a secondary-locale sync must
+      # not touch it.
+      assert updated.data["en"] == item.data["en"]
+    end
+
+    test "no pre-existing \"en\" bucket: a primary-locale sync creates one holding only the mirrored field",
+         %{item: item} do
+      {:ok, item} = Catalogue.update_item(item, %{data: Map.delete(item.data, "en")})
+
+      assert {:ok, updated} = Writer.update_from_shopify(item, %{title: "Brand New"}, "en")
+
+      assert updated.name == "Brand New"
+      assert updated.data["en"] == %{"_name" => "Brand New"}
+    end
+
+    test "sibling data survives untouched: other-language override, ecommerce sub-map, and top-level image/media keys",
+         %{item: item} do
+      assert {:ok, updated} = Writer.update_from_shopify(item, %{title: "Fresh Title"}, "en")
+
+      assert updated.data["fr"] == %{"_name" => "Titre existant"}
+      assert updated.data["ecommerce"]["shopify"]["handle"] == "backfill-mug"
+      assert updated.data["featured_image_uuid"] == "01a00000-0000-7000-0000-000000000001"
+      assert updated.data["media_order"] == ["01a00000-0000-7000-0000-000000000002"]
+    end
+  end
+
   describe "create_from_shopify/2 — Shopify identity" do
     setup do
       # `create_from_shopify/2` resolves ITS catalogue internally
@@ -130,6 +204,21 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterTest do
 
       assert item.description == "**Handmade.**\n\nShips in 2 days."
       refute item.description =~ "<p>"
+    end
+
+    test "writes name/description as columns only — no per-language override bucket for a brand new item" do
+      shopify_product = %{
+        "handle" => "no-bucket-widget",
+        "title" => "No Bucket Widget",
+        "id" => 555_125,
+        "body_html" => "<p>Plain.</p>",
+        "variants" => [%{"price" => "5.00"}]
+      }
+
+      assert {:ok, item} = Writer.create_from_shopify(shopify_product, "en")
+
+      assert item.name == "No Bucket Widget"
+      refute Map.has_key?(item.data, "en")
     end
   end
 end

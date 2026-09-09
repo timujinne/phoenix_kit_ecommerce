@@ -16,11 +16,16 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   (`PhoenixKitEcommerce.Catalogue.ItemCommerce`) — no diffing (that's
   `ProductDiff`'s job) and no network access.
 
-  `title`/`body_html` land on the item's own `:name`/`:description`
-  columns when writing in the item's PRIMARY language, else as a
-  multilang override (`data[lang]["_name"]`/`["_description"]`) — same
-  primary-vs-override split `PhoenixKitCatalogue.Catalogue.Translations`
-  reads. `description` (the ecommerce short summary,
+  `title`/`body_html` always land in the multilang override
+  (`data[lang]["_name"]`/`["_description"]`) at `base_locale`, AND, when
+  `base_locale` is the item's PRIMARY language, land on the item's own
+  `:name`/`:description` columns too — write-through, not either/or.
+  `PhoenixKitCatalogue.Catalogue.Translations.translated_name/2` and
+  `translated_description/2` unconditionally prefer the bucket over the
+  column at any locale, primary included; writing only the column would
+  leave a pre-existing primary-language override (e.g. one the ordinary
+  catalogue edit form wrote, which always writes both) shadowing the
+  fresh column value. `description` (the ecommerce short summary,
   `PhoenixKitEcommerce.Product.description`) always writes
   `data[lang]["_summary"]`: unlike name/body_html it has no primary-column
   counterpart at all, in either language.
@@ -99,7 +104,7 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
 
       data =
         (item.data || %{})
-        |> apply_translation_fields(change_fields, base_locale, item)
+        |> apply_translation_fields(change_fields, base_locale)
         |> Map.put("ecommerce", ecommerce)
 
       attrs =
@@ -585,24 +590,23 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   # Update: localized fields
   # ============================================================
 
-  defp apply_translation_fields(data, change_fields, base_locale, item) do
-    primary = item_primary_language(item)
-
+  defp apply_translation_fields(data, change_fields, base_locale) do
     data
-    |> maybe_override_field(:title, "_name", change_fields, base_locale, primary)
-    |> maybe_override_field(:body_html, "_description", change_fields, base_locale, primary)
+    |> maybe_override_field(:title, "_name", change_fields, base_locale)
+    |> maybe_override_field(:body_html, "_description", change_fields, base_locale)
     |> maybe_summary_override(change_fields, base_locale)
   end
 
-  # A primary-language change to :title/:body_html lands on the item's own
-  # column instead (see `maybe_put_primary_column/5`) — writing BOTH would
-  # make the column and the override disagree the moment the primary
-  # language ever changes again.
-  defp maybe_override_field(data, _field, _override_key, _change_fields, base_locale, primary)
-       when base_locale == primary,
-       do: data
-
-  defp maybe_override_field(data, field, override_key, change_fields, base_locale, _primary) do
+  # A primary-language change to :title/:body_html ALSO lands on the
+  # item's own column (see `maybe_put_primary_column/5`) — the bucket is
+  # written through with the same value regardless, so a primary-language
+  # override the item already carried (e.g. from the ordinary catalogue
+  # edit form, which writes both column and bucket) never goes stale and
+  # shadows the freshly-synced column
+  # (`PhoenixKitCatalogue.Catalogue.Translations.translated_name/2` and
+  # `translated_description/2` unconditionally prefer the bucket, at any
+  # locale including the primary one).
+  defp maybe_override_field(data, field, override_key, change_fields, base_locale) do
     case Map.fetch(change_fields, field) do
       :error -> data
       {:ok, value} -> put_language_field(data, base_locale, override_key, value)
