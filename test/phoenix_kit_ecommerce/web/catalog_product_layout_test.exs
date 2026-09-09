@@ -1,10 +1,12 @@
 defmodule PhoenixKitEcommerce.Web.CatalogProductLayoutTest do
   @moduledoc """
-  Pins the storefront product page layout after the description moved out
-  of the buy box: the purchase controls come BEFORE the description in the
-  document, and the description (Markdown as well as raw-ish HTML, both
-  through the same sanitizing `<.markdown>`), the `body_html`, the
-  specifications and the collapsed category panel all still render.
+  Pins the storefront product page layout. The gallery, the buy box and the
+  description are three sibling grid items: on a wide screen the description
+  sits under the gallery in the left column, and on the single column a phone
+  gets they stack gallery -> buy box -> description, so the purchase controls
+  still come BEFORE the description in the document. The description (Markdown
+  as well as raw-ish HTML, both through the same sanitizing `<.markdown>`), the
+  `body_html`, the specifications and the category filter all still render.
   """
 
   use PhoenixKitEcommerce.LiveCase, async: false
@@ -36,7 +38,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductLayoutTest do
     )
   end
 
-  test "the description renders in the gallery column, ahead of the buy box", %{
+  test "the buy box precedes the description, which is placed under the gallery", %{
     conn: conn
   } do
     {:ok, product} =
@@ -51,12 +53,15 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductLayoutTest do
     description_at = :binary.match(html, "Short <strong>bold</strong> intro") |> elem(0)
     body_at = :binary.match(html, "Long supplier text") |> elem(0)
 
-    # The description sits under the gallery, in the left column, so it
-    # precedes the buy box in document order while rendering beside it. What
-    # must not happen is the description landing INSIDE the buy box above the
-    # options, which is what used to push "Add to Cart" off the first screen.
-    assert description_at < add_to_cart_at,
-           "the description belongs to the gallery column, ahead of the buy box"
+    # Document order is what a phone stacks, so the purchase controls stay
+    # ahead of the description — the defect #44 fixed. The description is
+    # still under the gallery on a wide screen: it is a sibling grid item
+    # placed in the gallery's column, one row down.
+    assert add_to_cart_at < description_at,
+           "Add to Cart must precede the description, which is what a phone stacks"
+
+    assert html =~ ~s(<section class="md:col-start-1 md:row-start-2">),
+           "the description must be placed in the gallery's column, one row down"
 
     assert description_at < body_at
     assert html =~ "<li>point one</li>"
@@ -108,5 +113,31 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductLayoutTest do
 
     {:ok, _view, html} = live(conn, "/shop/product/#{product.slug[lang()]}")
     refute html =~ ~s(id="product-category-filter")
+  end
+
+  describe "the top row" do
+    test "breadcrumbs and the cart share one row, and the bar carries no Shop link", %{
+      conn: conn
+    } do
+      {:ok, product} = create_product(%{})
+
+      {:ok, _view, html} = live(conn, "/shop/product/#{product.slug[lang()]}")
+
+      # One row: the breadcrumbs open it, the cart link closes it, and the
+      # page heading comes after both.
+      crumbs = :binary.match(html, ~s(class="breadcrumbs text-sm")) |> elem(0)
+      cart = :binary.match(html, "/cart") |> elem(0)
+      heading = :binary.match(html, ~s(class="text-3xl font-bold)) |> elem(0)
+
+      assert crumbs < cart
+      assert cart < heading
+
+      # The bar used to carry its own "Shop" link beside the crumb that
+      # already links there; only the crumb is left.
+      assert html
+             |> String.split(~s(class="breadcrumbs))
+             |> hd()
+             |> String.contains?("hero-building-storefront") == false
+    end
   end
 end

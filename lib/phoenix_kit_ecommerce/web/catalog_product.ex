@@ -735,42 +735,53 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   def render(assigns) do
     ~H"""
     <ShopLayouts.shop_layout {assigns}>
-      <div class="container flex-col mx-auto px-4 py-6 max-w-[96rem]">
-        
-        <ShopCards.storefront_bar
-          language={@current_language}
-          cart_count={@cart_count}
-          admin_edit_url={assigns[:admin_edit_url]}
-          admin_edit_label={assigns[:admin_edit_label]}
-        />
-        <%!-- Breadcrumbs --%>
-        <div class="breadcrumbs text-sm mb-6">
-          <ul>
-            <li>
-              <.link navigate={Shop.catalog_url(@current_language) <> @filter_qs}>
-                {gettext("Shop")}
-              </.link>
-            </li>
-            <%= if @product.category do %>
-              <% cat_name = Translations.get(@product.category, :name, @current_language) %>
+      <%!-- `pt-0`: the host layout already pads the top of every page, and a
+            second helping of it pushed the first row of the shop below the
+            fold's most valuable strip. --%>
+      <div class="container flex-col mx-auto px-4 pt-0 pb-6 max-w-[96rem]">
+        <%!-- One row under the site header: breadcrumbs on the left, cart and
+              (for an admin) edit on the right. --%>
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <%!-- Breadcrumbs --%>
+          <div class="breadcrumbs text-sm">
+            <ul>
               <li>
-                <.link navigate={Shop.category_url(@product.category, @current_language) <> @filter_qs}>
-                  {cat_name}
+                <.link navigate={Shop.catalog_url(@current_language) <> @filter_qs}>
+                  {gettext("Shop")}
                 </.link>
               </li>
-            <% end %>
-            <li class="font-medium truncate max-w-[10rem] sm:max-w-xs">{@localized_title}</li>
-          </ul>
+              <%= if @product.category do %>
+                <% cat_name = Translations.get(@product.category, :name, @current_language) %>
+                <li>
+                  <.link navigate={
+                    Shop.category_url(@product.category, @current_language) <> @filter_qs
+                  }>
+                    {cat_name}
+                  </.link>
+                </li>
+              <% end %>
+              <li class="font-medium truncate max-w-[10rem] sm:max-w-xs">{@localized_title}</li>
+            </ul>
+          </div>
+
+          <ShopCards.storefront_bar
+            language={@current_language}
+            cart_count={@cart_count}
+            admin_edit_url={assigns[:admin_edit_url]}
+            admin_edit_label={assigns[:admin_edit_label]}
+          />
         </div>
 
-        <%!-- Two columns, 65/35: gallery and description on the left, the buy
-              box on the right. The gallery carries the description under it,
-              so the picture and the words about it read as one block, while
-              the narrower right column keeps "Add to Cart" on the first
-              screen. --%>
-        <div class="grid grid-cols-1 md:grid-cols-[65fr_35fr] gap-6 lg:gap-10">
+        <%!-- Two columns, 65/35: gallery with the description under it on the
+              left, buy box on the right. The three blocks are separate grid
+              items placed by row/column rather than nested, so the single
+              column a phone gets stacks them gallery -> buy box ->
+              description: the description sits under the picture on a wide
+              screen without pushing "Add to Cart" off the first screen on a
+              narrow one (what #44 fixed). --%>
+        <div class="grid grid-cols-1 md:grid-cols-[65fr_35fr] gap-6 lg:gap-10 md:items-start">
           <%!-- Product Images --%>
-          <div class="space-y-4">
+          <div class="space-y-4 md:col-start-1 md:row-start-1">
             <%!-- Main Image --%>
             <div class="aspect-square bg-base-200 rounded-lg overflow-hidden">
               <%= if @selected_image do %>
@@ -844,50 +855,10 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                 <% end %>
               </div>
             <% end %>
-
-            <%!-- Description, directly under the gallery and in the same
-                      column: the picture and the text about it belong together.
-                      It is kept out of the buy box, where one long supplier text
-                      used to push "Add to Cart" off the first screen. --%>
-            <%= if has_text?(@localized_description) or has_text?(@localized_body) do %>
-              <section class="mt-8">
-                <div class="divider"></div>
-                <h2 class="text-xl font-semibold mb-4">
-                  <.icon name="hero-document-text" class="w-5 h-5 inline" /> {gettext("Description")}
-                </h2>
-
-            <%!-- Sanitized unless an admin has explicitly opted into raw HTML.
-                      This renders on the UNAUTHENTICATED storefront, and product
-                      descriptions are writable by anyone holding the "shop"
-                      permission and by whoever supplies a CSV import file — so
-                      `sanitize={false}` here was a path from "can edit a product"
-                      to script execution in every shopper's and the Owner's
-                      browser. See PhoenixKitEcommerce.Policy. --%>
-                <%= if has_text?(@localized_description) do %>
-                  <.markdown
-                    content={@localized_description}
-                    sanitize={not Policy.allow_raw_html_descriptions?()}
-                    compact
-                  />
-                <% end %>
-
-            <%!-- Full body (imports put the complete supplier description in
-                      body_html and only a short extract in description). Same
-                      sanitization policy as the description above. --%>
-                <%= if has_text?(@localized_body) do %>
-                  <div class="mt-4">
-                    <.markdown
-                      content={@localized_body}
-                      sanitize={not Policy.allow_raw_html_descriptions?()}
-                    />
-                  </div>
-                <% end %>
-              </section>
-            <% end %>
           </div>
 
           <%!-- Product Info --%>
-          <div class="space-y-6">
+          <div class="space-y-6 md:col-start-2 md:row-start-1 md:row-span-2">
             <div>
               <%!-- Heading only: the admin edit link lives in the shop bar
                     above, so an admin sees the same title layout a shopper
@@ -1159,8 +1130,47 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
               </div>
             <% end %>
           </div>
-        </div>
 
+          <%!-- Description: its own grid item, placed in the gallery's column
+                on the row below it. Being a sibling rather than a child is
+                what lets a phone put the buy box between the picture and this
+                text. --%>
+          <%= if has_text?(@localized_description) or has_text?(@localized_body) do %>
+            <section class="md:col-start-1 md:row-start-2">
+              <div class="divider"></div>
+              <h2 class="text-xl font-semibold mb-4">
+                <.icon name="hero-document-text" class="w-5 h-5 inline" /> {gettext("Description")}
+              </h2>
+
+              <%!-- Sanitized unless an admin has explicitly opted into raw
+                    HTML. This renders on the UNAUTHENTICATED storefront, and
+                    product descriptions are writable by anyone holding the
+                    "shop" permission and by whoever supplies a CSV import
+                    file — so `sanitize={false}` here was a path from "can
+                    edit a product" to script execution in every shopper's
+                    and the Owner's browser. See PhoenixKitEcommerce.Policy. --%>
+              <%= if has_text?(@localized_description) do %>
+                <.markdown
+                  content={@localized_description}
+                  sanitize={not Policy.allow_raw_html_descriptions?()}
+                  compact
+                />
+              <% end %>
+
+              <%!-- Full body (imports put the complete supplier description
+                    in body_html and only a short extract in description).
+                    Same sanitization policy as the description above. --%>
+              <%= if has_text?(@localized_body) do %>
+                <div class="mt-4">
+                  <.markdown
+                    content={@localized_body}
+                    sanitize={not Policy.allow_raw_html_descriptions?()}
+                  />
+                </div>
+              <% end %>
+            </section>
+          <% end %>
+        </div>
 
         <%!-- Specifications Table --%>
         <%= if @specifications != [] do %>

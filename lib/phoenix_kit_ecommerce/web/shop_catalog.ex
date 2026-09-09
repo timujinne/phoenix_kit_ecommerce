@@ -230,9 +230,26 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
            app layout, so each public page brings its own wrapper; without it
            this page runs edge-to-edge on a host whose <main> has no padding.
            Matches catalog_category.ex. --%>
-      <div class="p-6 max-w-7xl mx-auto">
-        
-        <ShopCards.storefront_bar language={@current_language} cart_count={@cart_count} />
+      <%!-- `pt-0`: the host layout already pads the top of every page. --%>
+      <div class="px-6 pt-0 pb-6 max-w-7xl mx-auto">
+        <%!-- One row under the site header. This page is the first crumb
+              itself, so the left side carries the shop's own name rather than
+              a link back to where the visitor already is. --%>
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div class="breadcrumbs text-sm">
+            <ul>
+              <li class="font-medium">{gettext("Shop")}</li>
+            </ul>
+          </div>
+
+          <ShopCards.storefront_bar
+            language={@current_language}
+            cart_count={@cart_count}
+            admin_edit_url={assigns[:admin_edit_url]}
+            admin_edit_label={assigns[:admin_edit_label]}
+          />
+        </div>
+
         <%!-- Hero Section --%>
         <header class="w-full relative mb-6">
           <div class="text-center">
@@ -243,15 +260,6 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
               {Vocabulary.collection_blurb()}
             </p>
           </div>
-          <%!-- Admin Edit Button --%>
-          <%= if assigns[:admin_edit_url] do %>
-            <div class="flex justify-center mt-4">
-              <.link navigate={@admin_edit_url} class="btn btn-sm btn-outline gap-2">
-                <.icon name="hero-pencil-square" class="w-4 h-4" />
-                {@admin_edit_label || "Edit"}
-              </.link>
-            </div>
-          <% end %>
         </header>
 
         <%!-- Categories on mobile. The only other category list on this page is

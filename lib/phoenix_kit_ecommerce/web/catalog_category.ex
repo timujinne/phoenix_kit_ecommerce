@@ -294,11 +294,13 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
   def render(assigns) do
     ~H"""
     <ShopLayouts.shop_layout {assigns}>
-      <div class="p-6 max-w-7xl mx-auto">
-        
-        <ShopCards.storefront_bar language={@current_language} cart_count={@cart_count} />
-        <%!-- Breadcrumbs --%>
-        <div class="breadcrumbs text-sm mb-6">
+      <%!-- `pt-0`: the host layout already pads the top of every page. --%>
+      <div class="px-6 pt-0 pb-6 max-w-7xl mx-auto">
+        <%!-- One row under the site header: breadcrumbs on the left, cart and
+              (for an admin) edit on the right. --%>
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <%!-- Breadcrumbs --%>
+          <div class="breadcrumbs text-sm">
           <ul>
             <li>
               <.link navigate={Shop.catalog_url(@current_language) <> @filter_qs}>
@@ -314,7 +316,15 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
               </li>
             <% end %>
             <li class="font-medium">{@localized_name}</li>
-          </ul>
+            </ul>
+          </div>
+
+          <ShopCards.storefront_bar
+            language={@current_language}
+            cart_count={@cart_count}
+            admin_edit_url={assigns[:admin_edit_url]}
+            admin_edit_label={assigns[:admin_edit_label]}
+          />
         </div>
 
         <%!-- Categories on mobile — same treatment as the catalog page. The
@@ -393,17 +403,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
             <%!-- Main Content --%>
             <div class="lg:col-span-3">
               <%!-- Category Header --%>
-              <div class="mb-8">
-                <div class="flex items-start justify-between gap-4">
-                  <h1 class="text-3xl font-bold">{@localized_name}</h1>
-                  <%!-- Admin Edit Button --%>
-                  <%= if assigns[:admin_edit_url] do %>
-                    <.link navigate={@admin_edit_url} class="btn btn-sm btn-outline gap-2 shrink-0">
-                      <.icon name="hero-pencil-square" class="w-4 h-4" />
-                      {@admin_edit_label || "Edit"}
-                    </.link>
-                  <% end %>
-                </div>
+              <div class="mb-6">
+                <%!-- Heading only: the edit link rides in the row with the
+                      breadcrumbs and the cart, so an admin sees the same
+                      heading a shopper does. --%>
+                <h1 class="text-3xl font-bold">{@localized_name}</h1>
                 <%= if @localized_description do %>
                   <p class="text-base-content/70 mt-2">{@localized_description}</p>
                 <% end %>

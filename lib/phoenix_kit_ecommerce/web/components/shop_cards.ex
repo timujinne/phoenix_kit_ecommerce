@@ -147,7 +147,8 @@ defmodule PhoenixKitEcommerce.Web.Components.ShopCards do
   end
 
   @doc """
-  Compact "browse / cart" bar for storefront pages.
+  Compact cart-side actions for storefront pages, rendered on the same row
+  as the page's breadcrumbs.
 
   The storefront used to ship its own top-level layout carrying a cart
   link, a language switcher and a home link. Rendering inside the HOST's
@@ -157,6 +158,10 @@ defmodule PhoenixKitEcommerce.Web.Components.ShopCards do
   with any host chrome rather than competing with it), server-rendered,
   and switchable off via `shop_show_cart_bar` by hosts that carry their
   own.
+
+  It carries no "Shop" link: every page that renders it also renders
+  breadcrumbs, whose first crumb is that same link, and two of them side
+  by side only cost a row of vertical space.
   """
   attr :language, :string, required: true
   attr :cart_count, :integer, default: 0
@@ -170,10 +175,13 @@ defmodule PhoenixKitEcommerce.Web.Components.ShopCards do
 
   def storefront_bar(assigns) do
     ~H"""
-    <div :if={show_cart_bar?()} class={["flex items-center justify-between gap-4 mb-6", @class]}>
-      <.link navigate={Shop.catalog_url(@language)} class="btn btn-ghost btn-sm gap-2">
-        <.icon name="hero-building-storefront" class="w-4 h-4" />
-        {gettext("Shop")}
+    <div :if={show_cart_bar?()} class={["flex items-center gap-2", @class]}>
+      <%!-- Admin edit sits with the page's other navigation rather than
+            beside the page heading, where it changed how the heading itself
+            was laid out for an admin. --%>
+      <.link :if={@admin_edit_url} navigate={@admin_edit_url} class="btn btn-outline btn-sm gap-2">
+        <.icon name="hero-pencil-square" class="w-4 h-4" />
+        {@admin_edit_label || gettext("Edit")}
       </.link>
 
       <div class="flex items-center gap-2">
