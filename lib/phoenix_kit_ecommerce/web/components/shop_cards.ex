@@ -184,25 +184,11 @@ defmodule PhoenixKitEcommerce.Web.Components.ShopCards do
         {@admin_edit_label || gettext("Edit")}
       </.link>
 
-      <div class="flex items-center gap-2">
-        <%!-- Admin edit sits with the page's other navigation rather than
-              beside the product heading, where it changed how the title
-              itself was laid out for an admin. --%>
-        <.link
-          :if={@admin_edit_url}
-          navigate={@admin_edit_url}
-          class="btn btn-outline btn-sm gap-2"
-        >
-          <.icon name="hero-pencil-square" class="w-4 h-4" />
-          {@admin_edit_label || gettext("Edit")}
-        </.link>
-
-        <.link navigate={Shop.cart_url(@language)} class="btn btn-outline btn-sm gap-2">
-          <.icon name="hero-shopping-cart" class="w-4 h-4" />
-          {gettext("Cart")}
-          <span :if={@cart_count > 0} class="badge badge-primary badge-sm">{@cart_count}</span>
-        </.link>
-      </div>
+      <.link navigate={Shop.cart_url(@language)} class="btn btn-outline btn-sm gap-2">
+        <.icon name="hero-shopping-cart" class="w-4 h-4" />
+        {gettext("Cart")}
+        <span :if={@cart_count > 0} class="badge badge-primary badge-sm">{@cart_count}</span>
+      </.link>
     </div>
     """
   end
