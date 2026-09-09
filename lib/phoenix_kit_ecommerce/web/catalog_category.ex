@@ -7,7 +7,6 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
   use PhoenixKitEcommerce.Web, :live_view
 
   alias PhoenixKit.Settings
-  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.SlugResolver
@@ -140,7 +139,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
             Settings.get_setting_cached("shop_category_icon_mode", "none")
           )
           |> Helpers.maybe_assign_admin_edit(
-            Routes.path("/admin/shop/categories/#{category.uuid}/edit"),
+            Helpers.admin_edit_path(
+              :category,
+              category.uuid,
+              socket.assigns[:url_path] || Shop.category_url(category, current_language)
+            ),
             gettext("Edit Category")
           )
 

@@ -27,7 +27,6 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Settings
   alias PhoenixKit.Utils.Date, as: UtilsDate
-  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce.Vocabulary
 
   # Data URI placeholder for broken images - works without external file serving
@@ -164,7 +163,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
         Settings.get_setting_cached("shop_category_icon_mode", "none")
       )
       |> Helpers.maybe_assign_admin_edit(
-        Routes.path("/admin/shop/products/#{product.uuid}/edit"),
+        Helpers.admin_edit_path(
+          :item,
+          product.uuid,
+          socket.assigns[:url_path] || Shop.product_url(product, current_language)
+        ),
         gettext("Edit Product")
       )
 
@@ -370,7 +373,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
         Settings.get_setting_cached("shop_category_icon_mode", "none")
       )
       |> Helpers.maybe_assign_admin_edit(
-        Routes.path("/admin/shop/products/#{product.uuid}/edit"),
+        Helpers.admin_edit_path(
+          :item,
+          product.uuid,
+          socket.assigns[:url_path] || Shop.product_url(product, current_language)
+        ),
         gettext("Edit Product")
       )
 

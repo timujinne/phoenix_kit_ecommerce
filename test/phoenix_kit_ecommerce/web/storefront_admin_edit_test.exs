@@ -2,17 +2,50 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
   @moduledoc """
   The storefront's shop index, category and product pages each show an
   "Edit" link into the matching admin page — but only for a visitor who
-  can access the admin area. `Web.Helpers.maybe_assign_admin_edit/3`
-  delegates to core's `PhoenixKitWeb.AdminEditHelper.assign_admin_edit/3`,
-  which itself gates on `Scope.can_access_admin_area?/1`; these drive the
-  three real LiveViews end-to-end (anonymous vs. admin scope) to prove the
-  assign - and the render guard around it - actually withhold/show the
+  can manage the catalog. `Web.Helpers.maybe_assign_admin_edit/3` checks
+  `shop.manage_catalog` and then delegates to core's
+  `PhoenixKitWeb.AdminEditHelper.assign_admin_edit/3`, which gates on
+  admin-area access as well; these drive the three real LiveViews
+  end-to-end (anonymous, admin-without-the-permission, admin) to prove the
+  assign — and the render guard around it — actually withhold/show the
   link, not just that the helper function is correct in isolation.
+
+  The link's target follows the product source: with the catalogue source
+  on it opens the catalogue editor, since that is where the page's data
+  now lives, and it carries `return_to` so the editor's exit lands back on
+  the storefront page the visitor came from.
   """
 
   use PhoenixKitEcommerce.LiveCase, async: false
 
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.ShopConfig
+  alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Test.Repo
+
+  defp admin_edit_href(view) do
+    view
+    |> render()
+    |> then(&Regex.run(~r/href="([^"]*(?:products|items|categories)\/[^"]*edit[^"]*)"/, &1))
+    |> case do
+      [_, href] -> href
+      _ -> flunk("no admin edit link rendered")
+    end
+  end
+
+  defp set_product_source(value) do
+    case Repo.get(ShopConfig, "shop_product_source") do
+      nil ->
+        %ShopConfig{}
+        |> ShopConfig.changeset(%{key: "shop_product_source", value: %{"value" => value}})
+        |> Repo.insert!()
+
+      config ->
+        config
+        |> ShopConfig.changeset(%{value: %{"value" => value}})
+        |> Repo.update!()
+    end
+  end
 
   defp create_category_with_dialect_slug!(name) do
     {:ok, category} = Shop.create_category(%{"name" => %{"en" => name}})
@@ -73,9 +106,23 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
 
       assert html =~ "Edit Category"
 
-      assert view
-             |> element(~s{a[href="/en/admin/shop/categories/#{category.uuid}/edit"]})
-             |> has_element?()
+      href = admin_edit_href(view)
+
+      assert href =~ "/admin/shop/categories/#{category.uuid}/edit"
+      assert href =~ "return_to="
+      assert URI.decode(href) =~ "/shop/category/"
+    end
+
+    test "with the catalogue source on, the link opens the catalogue category editor", %{
+      category: category
+    } do
+      set_product_source("catalogue")
+      on_exit(fn -> set_product_source("legacy") end)
+
+      href = Helpers.admin_edit_path(:category, category.uuid, "/en/shop/category/x")
+
+      assert href =~ "/admin/catalogue/categories/#{category.uuid}/edit"
+      assert href =~ "return_to=%2Fen%2Fshop%2Fcategory%2Fx"
     end
   end
 
@@ -109,9 +156,34 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
 
       assert html =~ "Edit Product"
 
-      assert view
-             |> element(~s{a[href="/en/admin/shop/products/#{product.uuid}/edit"]})
-             |> has_element?()
+      href = admin_edit_href(view)
+
+      assert href =~ "/admin/shop/products/#{product.uuid}/edit"
+      assert href =~ "return_to=", "the editor must know where to send the visitor back to"
+      assert URI.decode(href) =~ "/shop/product/"
+    end
+
+    test "an admin without shop.manage_catalog is shown no link", %{conn: conn, path: path} do
+      conn = put_test_scope(conn, fake_scope(permissions: ["shop"]))
+
+      {:ok, _view, html} = live(conn, path)
+
+      refute html =~ "Edit Product"
+    end
+
+    test "with the catalogue source on, the link opens the catalogue item editor", %{
+      product: product
+    } do
+      # Driven through the helper rather than the page: an item created in
+      # the legacy tables is not visible at all once the catalogue source
+      # is on, so a LiveView mount would fail before reaching the link.
+      set_product_source("catalogue")
+      on_exit(fn -> set_product_source("legacy") end)
+
+      href = Helpers.admin_edit_path(:item, product.uuid, "/en/shop/product/x")
+
+      assert href =~ "/admin/catalogue/items/#{product.uuid}/edit"
+      assert href =~ "return_to=%2Fen%2Fshop%2Fproduct%2Fx"
     end
   end
 end

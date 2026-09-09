@@ -1647,7 +1647,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                     <%= for row <- section.rows do %>
                       <.table_default_row id={"change-row-#{section.field}-#{row.product_uuid}"}>
                         <.bulk_select_cell value={row.product_uuid} />
-                        <.table_default_cell class="font-medium max-w-xs truncate">
+                        <%!-- Wraps rather than truncating: a product's title
+                              is what the operator identifies the row by, and
+                              this shop's titles are long enough that a cut
+                              one left several rows reading identically. The
+                              incoming value in the next column already
+                              wraps. --%>
+                        <.table_default_cell class="font-medium max-w-xs break-words whitespace-normal">
                           {row.title}
                         </.table_default_cell>
                         <.table_default_cell>

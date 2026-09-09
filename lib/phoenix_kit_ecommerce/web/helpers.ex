@@ -10,7 +10,9 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   alias PhoenixKit.Modules.Languages.DialectMapper
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
+  alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
@@ -514,10 +516,66 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   def maybe_assign_admin_edit(socket, path, label) do
     mod = @admin_edit_helper_mod
 
-    if Code.ensure_loaded?(mod) and function_exported?(mod, :assign_admin_edit, 3) do
+    if Code.ensure_loaded?(mod) and function_exported?(mod, :assign_admin_edit, 3) and
+         can_manage_catalog?(socket) do
       mod.assign_admin_edit(socket, path, label)
     else
       socket
     end
   end
+
+  # Core's helper gates on "can this visitor reach the admin area at all",
+  # which is broader than what these links do: every one of them opens a
+  # catalog editor. An admin with, say, only order-desk permissions would
+  # have been shown a button that lands them on a page they cannot use.
+  defp can_manage_catalog?(socket) do
+    case socket.assigns[:phoenix_kit_current_scope] do
+      nil -> false
+      scope -> Scope.can?(scope, "shop.manage_catalog")
+    end
+  end
+
+  @doc """
+  Where the storefront's admin edit link should point for `kind` and `uuid`,
+  and where the editor should send the visitor back to.
+
+  The shop's products and categories live in `phoenix_kit_catalogue` once
+  the catalogue product source is on, so the link has to open the catalogue
+  editor rather than the legacy shop form, which no longer backs the page
+  being viewed. `return_to` carries the storefront URL the visitor came
+  from — both catalogue forms validate it (`safe_return_to/1`) and use it
+  for their exit, so "edit, save, back to the page I was on" works without
+  the visitor reaching for the browser's back button.
+
+  Falls back to the legacy shop path when the catalogue source is off or
+  the catalogue module isn't loaded at all (it is an optional dependency).
+  """
+  @spec admin_edit_path(:item | :category, String.t(), String.t() | nil) :: String.t()
+  def admin_edit_path(kind, uuid, return_to \\ nil)
+
+  def admin_edit_path(kind, uuid, return_to) when kind in [:item, :category] do
+    path =
+      if catalogue_source?() and Code.ensure_loaded?(PhoenixKitCatalogue.Paths) do
+        catalogue_edit_path(kind, uuid)
+      else
+        legacy_edit_path(kind, uuid)
+      end
+
+    append_return_to(path, return_to)
+  end
+
+  defp catalogue_edit_path(:item, uuid), do: PhoenixKitCatalogue.Paths.item_edit(uuid)
+  defp catalogue_edit_path(:category, uuid), do: PhoenixKitCatalogue.Paths.category_edit(uuid)
+
+  defp legacy_edit_path(:item, uuid), do: Routes.path("/admin/shop/products/#{uuid}/edit")
+  defp legacy_edit_path(:category, uuid), do: Routes.path("/admin/shop/categories/#{uuid}/edit")
+
+  defp catalogue_source?, do: ProductSource.current() == ProductSource.Catalogue
+
+  defp append_return_to(path, return_to) when is_binary(return_to) and return_to != "" do
+    separator = if String.contains?(path, "?"), do: "&", else: "?"
+    path <> separator <> URI.encode_query(%{"return_to" => return_to})
+  end
+
+  defp append_return_to(path, _return_to), do: path
 end
