@@ -376,6 +376,23 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert view.storefront_filters == %{}
     end
 
+    test "the catalogue's own featured image is the category's picture" do
+      # A category in the catalogue has a featured image and a picker for
+      # it; that is where an operator manages the picture, so the shop
+      # reads it rather than asking for the same thing twice.
+      view =
+        build_category(%{"featured_image_uuid" => "catalogue-picked-uuid"})
+        |> View.category_view()
+
+      assert view.image_uuid == "catalogue-picked-uuid"
+    end
+
+    test "the shop-side override still wins when the catalogue has no picture" do
+      view = build_category() |> View.category_view()
+
+      assert view.image_uuid == "cat-img-uuid"
+    end
+
     test "status defaults to active when shop_status is absent" do
       category = build_category(%{"ecommerce" => %{"shop_status" => nil}})
       assert category_view(category).status == "active"

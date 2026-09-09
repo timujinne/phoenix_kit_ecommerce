@@ -313,9 +313,14 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
               name="category[ecommerce][image_uuid]"
               value={Map.get(@ecommerce, "image_uuid")}
               type="text"
-              label={gettext("Category image (Storage uuid)")}
+              label={gettext("Category image override (Storage uuid)")}
               errors={@image_uuid_errors}
             />
+            <p class="text-xs text-base-content/60 mt-1">
+              {gettext(
+                "Normally leave this empty: the storefront uses the category's own featured image, which you pick on the Photos tab. Set it only to show the shop a different picture."
+              )}
+            </p>
             <label class="label">
               <span class="fieldset-label text-base-content/50">
                 {gettext("Takes priority over the featured item's image below.")}
