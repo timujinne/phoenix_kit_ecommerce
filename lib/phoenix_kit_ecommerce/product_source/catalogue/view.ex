@@ -164,12 +164,12 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
       parent_uuid: category.parent_uuid,
       parent: Keyword.get(opts, :parent),
       option_schema: Map.get(ecommerce, "option_schema") || [],
-      # The catalogue's own category picture first: a category in the
-      # catalogue already has a featured image and a picker for it
-      # (`data["featured_image_uuid"]`, same shape items use), and that is
-      # where an operator manages it. `data["ecommerce"]["image_uuid"]`
-      # stays readable as a shop-side override for anything that set it
-      # before this module read the catalogue's own field.
+      # The category's picture comes from the catalogue, where it is picked
+      # on the form's Photos tab exactly as an item's is
+      # (`data["featured_image_uuid"]`). `data["ecommerce"]["image_uuid"]`
+      # is a retired shop-side field, still read so a host that set it
+      # before this module looked at the catalogue's own does not lose the
+      # picture; it is no longer offered anywhere to set.
       image_uuid: Map.get(data, "featured_image_uuid") || Map.get(ecommerce, "image_uuid"),
       featured_product_uuid: Map.get(ecommerce, "featured_item_uuid"),
       featured_product: featured_product_placeholder(Keyword.get(opts, :featured_image_uuid)),

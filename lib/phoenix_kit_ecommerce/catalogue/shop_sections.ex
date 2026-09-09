@@ -285,7 +285,6 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
       |> assign(:ecommerce, ecommerce)
       |> assign(:item_options, item_options)
       |> assign(:shop_status_errors, field_errors(form, :shop_status))
-      |> assign(:image_uuid_errors, field_errors(form, :image_uuid))
       |> assign(:featured_item_uuid_errors, field_errors(form, :featured_item_uuid))
 
     ~H"""
@@ -308,25 +307,6 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
-            <.input
-              name="category[ecommerce][image_uuid]"
-              value={Map.get(@ecommerce, "image_uuid")}
-              type="text"
-              label={gettext("Category image override (Storage uuid)")}
-              errors={@image_uuid_errors}
-            />
-            <p class="text-xs text-base-content/60 mt-1">
-              {gettext(
-                "Normally leave this empty: the storefront uses the category's own featured image, which you pick on the Photos tab. Set it only to show the shop a different picture."
-              )}
-            </p>
-            <label class="label">
-              <span class="fieldset-label text-base-content/50">
-                {gettext("Takes priority over the featured item's image below.")}
-              </span>
-            </label>
-          </div>
 
           <div class="fieldset w-full md:col-span-2">
             <%= if @item_options != [] do %>
