@@ -46,6 +46,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
 
   alias PhoenixKit.Integrations
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Test.Repo
 
   @stub __MODULE__
 
@@ -207,6 +208,33 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
 
     defp admin_request?(conn), do: String.starts_with?(conn.request_path, "/admin/")
 
+    defp shop_json_request?(conn), do: String.ends_with?(conn.request_path, "/shop.json")
+
+    # Every apply/confirm in this describe block incidentally triggers
+    # `Sync`'s currency guard (`shop_currency_verdict/1`), which — since
+    # this describe's `setup` always connects a "shopify" integration —
+    # makes a real `AdminClient.fetch_shop/2` call against this SAME
+    # `@stub`. None of these tests configure a base currency, so the
+    # guard is always a no-op `:match` regardless of what that call
+    # returns — but relying on that coincidence to keep an unrelated
+    # test's arbitrarily-shaped products/collections stub harmless is
+    # fragile: a stub that happened to also carry a `"shop"` key could
+    # silently flip the guard's verdict without any test here noticing.
+    # Wrapping every stub function with this makes `/shop.json`
+    # deliberately answered (404, i.e. "no shop configured for this
+    # scenario" — `AdminClient.parse_shop_response/1`'s own
+    # `:shop_not_found`) rather than falling through to whatever that
+    # test's own handler happens to return for an unrecognized path.
+    defp with_shop_lookup(stub_fun) do
+      fn conn ->
+        if shop_json_request?(conn) do
+          json_response(conn, 404, %{"errors" => "Not Found"})
+        else
+          stub_fun.(conn)
+        end
+      end
+    end
+
     defp check_and_await(view, timeout \\ 100) do
       view |> element("#check-shopify-changes") |> render_click()
       render_async(view, timeout)
@@ -251,13 +279,16 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       # this LiveView calls Sync.check/2 with no opts, so there is no
       # way to pass page_delay_ms: 0 from here). All that matters for
       # this scenario is that the storefront path returns zero changes.
-      Req.Test.stub(@stub, fn conn ->
-        if admin_request?(conn) do
-          json_response(conn, 401, %{"errors" => "Invalid API key"})
-        else
-          json_response(conn, 200, %{"products" => []})
-        end
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          if admin_request?(conn) do
+            json_response(conn, 401, %{"errors" => "Invalid API key"})
+          else
+            json_response(conn, 200, %{"products" => []})
+          end
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
@@ -278,19 +309,22 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "30.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "gadget",
-              "title" => "Gadget",
-              "vendor" => "Acme",
-              "status" => "draft",
-              "variants" => [%{"price" => "30.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "gadget",
+                "title" => "Gadget",
+                "vendor" => "Acme",
+                "status" => "draft",
+                "variants" => [%{"price" => "30.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
@@ -308,13 +342,16 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     # failure (the actionable half), not just the storefront's own error.
     test "an error banner leads with the credential failure when the storefront fallback also fails",
          %{conn: conn} do
-      Req.Test.stub(@stub, fn conn ->
-        if admin_request?(conn) do
-          json_response(conn, 401, %{"errors" => "Invalid API key"})
-        else
-          json_response(conn, 500, %{})
-        end
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          if admin_request?(conn) do
+            json_response(conn, 401, %{"errors" => "Invalid API key"})
+          else
+            json_response(conn, 500, %{})
+          end
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
@@ -333,13 +370,16 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     # some other prose.
     test "a 403 credential failure names the missing scope instead of inspecting :forbidden",
          %{conn: conn} do
-      Req.Test.stub(@stub, fn conn ->
-        if admin_request?(conn) do
-          json_response(conn, 403, %{"errors" => "This action requires merchant approval"})
-        else
-          json_response(conn, 500, %{})
-        end
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          if admin_request?(conn) do
+            json_response(conn, 403, %{"errors" => "This action requires merchant approval"})
+          else
+            json_response(conn, 500, %{})
+          end
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
@@ -385,38 +425,41 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "matched-with-diff",
-              "title" => "Widget",
-              "vendor" => "New Co",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            },
-            %{
-              "handle" => "matched-no-diff",
-              "title" => "Widget",
-              "vendor" => "Acme",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            },
-            %{
-              "handle" => "shopify-only-x",
-              "title" => "Whatever",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            },
-            %{
-              "handle" => "shopify-only-y",
-              "title" => "Whatever",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "matched-with-diff",
+                "title" => "Widget",
+                "vendor" => "New Co",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              },
+              %{
+                "handle" => "matched-no-diff",
+                "title" => "Widget",
+                "vendor" => "Acme",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              },
+              %{
+                "handle" => "shopify-only-x",
+                "title" => "Whatever",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              },
+              %{
+                "handle" => "shopify-only-y",
+                "title" => "Whatever",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
@@ -457,30 +500,33 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "p1",
-              "title" => "Same Title",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            },
-            %{
-              "handle" => "p2",
-              "title" => "New Title B",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            },
-            %{
-              "handle" => "p3",
-              "title" => "New Title C",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "p1",
+                "title" => "Same Title",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              },
+              %{
+                "handle" => "p2",
+                "title" => "New Title B",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              },
+              %{
+                "handle" => "p3",
+                "title" => "New Title C",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
@@ -498,21 +544,24 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        if admin_request?(conn) do
-          json_response(conn, 401, %{"errors" => "Invalid API key"})
-        else
-          case storefront_page(conn) do
-            "1" ->
-              json_response(conn, 200, %{
-                "products" => [%{"handle" => "widget", "variants" => [%{"price" => "15.00"}]}]
-              })
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          if admin_request?(conn) do
+            json_response(conn, 401, %{"errors" => "Invalid API key"})
+          else
+            case storefront_page(conn) do
+              "1" ->
+                json_response(conn, 200, %{
+                  "products" => [%{"handle" => "widget", "variants" => [%{"price" => "15.00"}]}]
+                })
 
-            _ ->
-              json_response(conn, 200, %{"products" => []})
+              _ ->
+                json_response(conn, 200, %{"products" => []})
+            end
           end
-        end
-      end)
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view, 3000)
@@ -534,19 +583,22 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "widget",
-              "title" => "New Widget",
-              "vendor" => "New Co",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "widget",
+                "title" => "New Widget",
+                "vendor" => "New Co",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
@@ -576,18 +628,21 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "widget",
-              "title" => "New Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "widget",
+                "title" => "New Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -639,9 +694,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           }
         end
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{"products" => shopify_products})
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{"products" => shopify_products})
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -651,23 +709,25 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       page_1_rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
 
       assert page_1_rows == 25
-      assert html =~ ~s(id="page-info-vendor")
-      assert html =~ "Showing 1 to 25 of 30 results"
+      assert html =~ ~s(id="load-more-vendor")
+      assert html =~ "Showing 25 of 30 changes"
 
       # `data-bulk-total` drives the select-all checkbox's tri-state math
-      # (checked only once selected count == total) — it must be the
-      # CURRENT PAGE's row count (25), not the whole section's (30), or
-      # select-all on page 1 could never show fully checked.
+      # (checked only once selected count == total) — it must be the count
+      # of rows ON SCREEN, which for a load-more list is everything loaded
+      # so far, or select-all could never show fully checked.
       assert html =~ ~s(data-bulk-total="25")
       refute html =~ ~s(data-bulk-total="30")
 
-      html = view |> element("#page-next-vendor") |> render_click()
+      html = view |> element("#load-more-vendor button") |> render_click()
 
-      page_2_rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
+      loaded_rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
 
-      assert page_2_rows == 5
-      assert html =~ "Showing 26 to 30 of 30 results"
-      assert html =~ ~s(data-bulk-total="5")
+      # Appended, not replaced: the first 25 are still on screen, which is
+      # what keeps a bulk selection alive across a load.
+      assert loaded_rows == 30
+      assert html =~ "Showing 30 of 30 changes"
+      assert html =~ ~s(data-bulk-total="30")
 
       last_product = List.last(products)
       assert html =~ "id=\"change-row-vendor-#{last_product.uuid}\""
@@ -678,7 +738,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     # whatever the section was showing at request time. Paging away
     # must close it, not leave it able to confirm into a write for a
     # product that's no longer even on screen.
-    test "paging a section clears a pending confirmation instead of letting it survive to be confirmed",
+    test "loading more rows clears a pending confirmation instead of letting it survive to be confirmed",
          %{conn: conn} do
       products =
         for i <- 1..30 do
@@ -705,9 +765,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           }
         end
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{"products" => shopify_products})
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{"products" => shopify_products})
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -718,7 +781,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       html = view |> element("#apply-row-vendor-#{first_on_page_1.uuid}") |> render_click()
       assert html =~ "Update #{first_on_page_1.title["en"]}: Vendor"
 
-      html = view |> element("#page-next-vendor") |> render_click()
+      html = view |> element("#load-more-vendor button") |> render_click()
       refute html =~ "Update #{first_on_page_1.title["en"]}: Vendor"
 
       html = confirm!(view)
@@ -741,19 +804,22 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "widget",
-              "title" => "Widget",
-              "body_html" => "<p>New description text</p>",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "widget",
+                "title" => "Widget",
+                "body_html" => "<p>New description text</p>",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -785,19 +851,22 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "widget",
-              "title" => "Widget",
-              "body_html" => "<p>New body</p>",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "widget",
+                "title" => "Widget",
+                "body_html" => "<p>New body</p>",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
@@ -823,18 +892,21 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "widget",
-              "title" => "New Title",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "widget",
+                "title" => "New Title",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -874,18 +946,21 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "widget",
-              "title" => "New Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "widget",
+                "title" => "New Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -924,7 +999,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "20.00"
         })
 
-      Req.Test.stub(@stub, fn conn -> json_response(conn, 200, %{"products" => []}) end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn -> json_response(conn, 200, %{"products" => []}) end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
@@ -960,24 +1038,27 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "ok-product",
-              "title" => "OK Product",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            },
-            %{
-              "handle" => "bad-product",
-              "title" => "Bad Product",
-              "status" => "draft",
-              "variants" => [%{"price" => "-5.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "ok-product",
+                "title" => "OK Product",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              },
+              %{
+                "handle" => "bad-product",
+                "title" => "Bad Product",
+                "status" => "draft",
+                "variants" => [%{"price" => "-5.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -1012,18 +1093,21 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "widget",
-              "title" => "New Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "widget",
+                "title" => "New Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view)
@@ -1098,9 +1182,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           }
         end
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{"products" => shopify_products})
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{"products" => shopify_products})
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -1174,21 +1261,24 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        if admin_request?(conn) do
-          json_response(conn, 401, %{"errors" => "Invalid API key"})
-        else
-          case storefront_page(conn) do
-            "1" ->
-              json_response(conn, 200, %{
-                "products" => [%{"handle" => "widget", "variants" => [%{"price" => "15.00"}]}]
-              })
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          if admin_request?(conn) do
+            json_response(conn, 401, %{"errors" => "Invalid API key"})
+          else
+            case storefront_page(conn) do
+              "1" ->
+                json_response(conn, 200, %{
+                  "products" => [%{"handle" => "widget", "variants" => [%{"price" => "15.00"}]}]
+                })
 
-            _ ->
-              json_response(conn, 200, %{"products" => []})
+              _ ->
+                json_response(conn, 200, %{"products" => []})
+            end
           end
-        end
-      end)
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       html = check_and_await(view, 3000)
@@ -1224,19 +1314,22 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "widget",
-              "title" => "Old Widget",
-              "vendor" => "New Co",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "widget",
+                "title" => "Old Widget",
+                "vendor" => "New Co",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -1282,15 +1375,18 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           }
         end
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{"products" => shopify_products})
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{"products" => shopify_products})
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
 
       view |> element("#toggle-section-vendor") |> render_click()
-      view |> element("#page-next-vendor") |> render_click()
+      view |> element("#load-more-vendor button") |> render_click()
 
       last = List.last(products)
       view |> element("#apply-row-vendor-#{last.uuid}") |> render_click()
@@ -1299,23 +1395,19 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       rows = Regex.scan(~r/id="change-row-vendor-[a-f0-9-]+"/, html) |> length()
       assert rows == 25
 
-      # A single page (25 of 25 remaining) hides the pager entirely by
-      # design (`section.total_pages > 1`) — the regression this guards
-      # against is a STUCK page 2 with zero rows and no pager to escape
-      # via, not a visible "1-25 of 25" — so what matters is that the
-      # rows themselves are back, and there's no dangling prev/next.
-      refute html =~ ~s(id="page-prev-vendor")
-      refute html =~ ~s(id="page-next-vendor")
+      # Applying the only row past the first chunk leaves 25 — everything
+      # that remains is on screen, and the footer says so rather than
+      # offering a load that would add nothing.
+      assert html =~ "Showing 25 of 25 changes"
+      refute html =~ "Load more"
     end
 
-    # `bump_page/3` must clamp against the CURRENT count, not read the raw
-    # stored page: 51 rows (pages of 25/25/1), go to page 3 (its lone
-    # row), apply it — 50 remain (pages of 25/25), the DISPLAY clamps
-    # back to page 2, but the STORED page assign would stay 3 if it read
-    # the raw value. A `Prev` click from there must land on page 1 — if
-    # it instead computed "stored 3 minus 1 = 2", the operator (looking
-    # at displayed page 2) would see no change at all.
-    test "clicking Prev right after applying a trailing page's only row still moves back a page",
+    # `grow_section/2` still clamps against the CURRENT count rather than the
+    # raw stored page: 51 rows, load twice (25 -> 50 -> 51), apply the
+    # lone 51st — 50 remain, so the stored page 3 is out of range and the
+    # loaded set must settle at everything that is left rather than
+    # rendering a chunk past the end.
+    test "loading past the end settles on what remains after a row is applied",
          %{conn: conn} do
       products =
         for i <- 1..51 do
@@ -1323,9 +1415,9 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
             Shop.create_product(%{
               "title" => %{"en" => "Product #{i}"},
               "slug" => %{"en" => "product-#{i}"},
-              "vendor" => "Old Co",
-              "status" => "draft",
-              "price" => "10.00"
+              "price" => Decimal.new("10.00"),
+              "status" => "active",
+              "vendor" => "Old Co"
             })
 
           product
@@ -1342,25 +1434,26 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           }
         end
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{"products" => shopify_products})
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{"products" => shopify_products})
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
 
       view |> element("#toggle-section-vendor") |> render_click()
-      view |> element("#page-next-vendor") |> render_click()
-      view |> element("#page-next-vendor") |> render_click()
+      view |> element("#load-more-vendor button") |> render_click()
+      view |> element("#load-more-vendor button") |> render_click()
 
       last = List.last(products)
       view |> element("#apply-row-vendor-#{last.uuid}") |> render_click()
       html = confirm!(view)
 
-      assert html =~ "Showing 26 to 50 of 50 results"
-
-      html = view |> element("#page-prev-vendor") |> render_click()
-      assert html =~ "Showing 1 to 25 of 50 results"
+      assert html =~ "Showing 50 of 50 changes"
+      refute html =~ "Load more"
     end
 
     # `apply_row`'s `Map.has_key?(&1.changes, field)` guard: without it, a
@@ -1382,18 +1475,21 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "widget",
-              "title" => "New Title",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "widget",
+                "title" => "New Title",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -1419,6 +1515,72 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       )
     end
 
+    # `Sync.apply_change/3`'s currency guard (per-domain-currency design
+    # §7.5) surfaces as an opaque `{:error, {:currency_mismatch, _, _}}`
+    # unless this page translates it — see `apply_error_flash/3`. The
+    # shop.json request the guard makes lands on the SAME `@stub` as the
+    # products.json request `Sync.check/2` makes (this describe block's
+    # own `Req.default_options/1` mechanism, see the moduledoc), routed
+    # here by request path.
+    test "a price row refused by the currency guard shows a flash naming both currencies, and leaves the price untouched",
+         %{conn: conn} do
+      PhoenixKit.Cache.clear(:billing_currencies)
+      Repo.delete_all(PhoenixKitBilling.Currency)
+
+      {:ok, _} =
+        PhoenixKitBilling.create_currency(%{
+          code: "USD",
+          name: "Dollar",
+          symbol: "$",
+          is_default: true,
+          exchange_rate: "1.0"
+        })
+
+      {:ok, product} =
+        Shop.create_product(%{
+          "title" => %{"en" => "Widget"},
+          "slug" => %{"en" => "widget"},
+          "status" => "draft",
+          "price" => "10.00"
+        })
+
+      # NOT wrapped with `with_shop_lookup/1`: this test needs `/shop.json`
+      # answered deliberately with a MISMATCHED currency, not the shared
+      # 404 default every other stub in this describe uses.
+      Req.Test.stub(@stub, fn conn ->
+        cond do
+          shop_json_request?(conn) ->
+            json_response(conn, 200, %{"shop" => %{"currency" => "EUR"}})
+
+          admin_request?(conn) ->
+            json_response(conn, 200, %{
+              "products" => [
+                %{
+                  "handle" => "widget",
+                  "title" => "Widget",
+                  "status" => "draft",
+                  "variants" => [%{"price" => "12.00"}]
+                }
+              ]
+            })
+
+          true ->
+            json_response(conn, 200, %{"products" => []})
+        end
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      check_and_await(view)
+
+      view |> element("#toggle-section-price") |> render_click()
+      view |> element("#apply-row-price-#{product.uuid}") |> render_click()
+      html = confirm!(view)
+
+      assert Decimal.eq?(Shop.get_product!(product.uuid).price, Decimal.new("10.00"))
+      assert html =~ "the store is now in EUR"
+      assert html =~ "base currency is USD"
+    end
+
     # The "large change" badge is the only signal, other than the
     # extreme-price bulk exclusion pinned elsewhere in this file, that an
     # operator sees before applying a price swing this large.
@@ -1431,18 +1593,21 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "widget",
-              "title" => "Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "50.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "widget",
+                "title" => "Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "50.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -1475,24 +1640,27 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "extreme-widget",
-              "title" => "Extreme Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "50.00"}]
-            },
-            %{
-              "handle" => "normal-widget",
-              "title" => "Normal Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "extreme-widget",
+                "title" => "Extreme Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "50.00"}]
+              },
+              %{
+                "handle" => "normal-widget",
+                "title" => "Normal Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -1546,24 +1714,27 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "extreme-widget",
-              "title" => "New Extreme Title",
-              "status" => "draft",
-              "variants" => [%{"price" => "50.00"}]
-            },
-            %{
-              "handle" => "normal-widget",
-              "title" => "Normal Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "extreme-widget",
+                "title" => "New Extreme Title",
+                "status" => "draft",
+                "variants" => [%{"price" => "50.00"}]
+              },
+              %{
+                "handle" => "normal-widget",
+                "title" => "Normal Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -1591,21 +1762,24 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        if admin_request?(conn) do
-          json_response(conn, 401, %{"errors" => "Invalid API key"})
-        else
-          case storefront_page(conn) do
-            "1" ->
-              json_response(conn, 200, %{
-                "products" => [%{"handle" => "widget", "variants" => [%{"price" => "15.00"}]}]
-              })
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          if admin_request?(conn) do
+            json_response(conn, 401, %{"errors" => "Invalid API key"})
+          else
+            case storefront_page(conn) do
+              "1" ->
+                json_response(conn, 200, %{
+                  "products" => [%{"handle" => "widget", "variants" => [%{"price" => "15.00"}]}]
+                })
 
-            _ ->
-              json_response(conn, 200, %{"products" => []})
+              _ ->
+                json_response(conn, 200, %{"products" => []})
+            end
           end
-        end
-      end)
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view, 3000)
@@ -1637,25 +1811,28 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "20.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "p1",
-              "title" => "P1 New",
-              "status" => "draft",
-              "variants" => [%{"price" => "10.00"}]
-            },
-            %{
-              "handle" => "p2",
-              "title" => "P2",
-              "vendor" => "New Co",
-              "status" => "draft",
-              "variants" => [%{"price" => "20.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "p1",
+                "title" => "P1 New",
+                "status" => "draft",
+                "variants" => [%{"price" => "10.00"}]
+              },
+              %{
+                "handle" => "p2",
+                "title" => "P2",
+                "vendor" => "New Co",
+                "status" => "draft",
+                "variants" => [%{"price" => "20.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -1703,25 +1880,28 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "selected-widget",
-              "title" => "Selected Widget",
-              "vendor" => "New Co",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            },
-            %{
-              "handle" => "unselected-widget",
-              "title" => "Unselected Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "20.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "selected-widget",
+                "title" => "Selected Widget",
+                "vendor" => "New Co",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              },
+              %{
+                "handle" => "unselected-widget",
+                "title" => "Unselected Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "20.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -1790,24 +1970,27 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "extreme-widget",
-              "title" => "Extreme Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "50.00"}]
-            },
-            %{
-              "handle" => "normal-widget",
-              "title" => "Normal Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "15.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "extreme-widget",
+                "title" => "Extreme Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "50.00"}]
+              },
+              %{
+                "handle" => "normal-widget",
+                "title" => "Normal Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "15.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)
@@ -1841,18 +2024,21 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
           "price" => "10.00"
         })
 
-      Req.Test.stub(@stub, fn conn ->
-        json_response(conn, 200, %{
-          "products" => [
-            %{
-              "handle" => "extreme-widget",
-              "title" => "Extreme Widget",
-              "status" => "draft",
-              "variants" => [%{"price" => "50.00"}]
-            }
-          ]
-        })
-      end)
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn ->
+          json_response(conn, 200, %{
+            "products" => [
+              %{
+                "handle" => "extreme-widget",
+                "title" => "Extreme Widget",
+                "status" => "draft",
+                "variants" => [%{"price" => "50.00"}]
+              }
+            ]
+          })
+        end)
+      )
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
       check_and_await(view)

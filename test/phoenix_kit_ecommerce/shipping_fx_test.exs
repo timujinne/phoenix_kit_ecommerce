@@ -142,6 +142,26 @@ defmodule PhoenixKitEcommerce.ShippingFxTest do
     refute cart.shipping_method_uuid == method.uuid
   end
 
+  test "conversion refuses a method the display subtotal would have allowed but base does not" do
+    cart = eur_cart_with_product!()
+
+    {:ok, method} =
+      Shop.create_shipping_method(method_attrs(%{"max_order_amount" => Decimal.new("130.00")}))
+
+    # Bypass listing (which already excludes this method) so conversion
+    # is the path under test: a leftover selection must be judged on
+    # the same base subtotal as `get_available_shipping_methods/1`.
+    {:ok, cart} =
+      cart
+      |> Cart.changeset(%{shipping_method_uuid: method.uuid})
+      |> Repo.update()
+
+    cart = Repo.preload(cart, [:items, :shipping_method], force: true)
+
+    assert {:error, :shipping_method_unavailable} =
+             Shop.convert_cart_to_order(cart, billing_data: complete_billing("US"))
+  end
+
   test "§12.3: all four addends non-zero on a EUR cart agree with the total identity" do
     cart = eur_cart_with_product!()
 

@@ -28,7 +28,11 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerce do
     field :tags, {:array, :string}, default: []
     field :compare_at_price, :decimal
     field :cost_per_item, :decimal
-    field :currency, :string, default: "USD"
+    # No `"USD"` default — that literal was removed from Product/Cart in
+    # PR #31. Nil here lets the storefront fall back to the shop's base
+    # currency (`View.product_view/2`); a schema default would stamp USD
+    # onto every extension-saved item and make that fallback dead.
+    field :currency, :string
     field :taxable, :boolean, default: true
     field :weight_grams, :integer, default: 0
     field :requires_shipping, :boolean, default: true
@@ -96,7 +100,12 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerce do
     |> changeset(merged)
     |> case do
       %Ecto.Changeset{valid?: true} = changeset ->
-        {:ok, changeset |> apply_changes() |> to_storage_map()}
+        # Merge the validated schema-shaped map over `current` so a key
+        # written under `data["ecommerce"]` by a newer version, a data
+        # migration, or catalogue itself survives a form save. `cast/3`
+        # drops unknown keys; without this merge they would be wiped.
+        storage = changeset |> apply_changes() |> to_storage_map()
+        {:ok, Map.merge(current || %{}, storage)}
 
       %Ecto.Changeset{valid?: false} = changeset ->
         {:error, error_list(changeset)}

@@ -107,6 +107,25 @@ defmodule PhoenixKitEcommerce.CartCatalogueTest do
       assert {:error, {:product_not_available, _uuid}} =
                Shop.add_to_cart(new_cart(), product, 1)
     end
+
+    # A crafted/stale `add_to_cart` request must not slip a
+    # catalogue-retired item into a cart even when the client is still
+    # holding a `%Product{}` struct built before the item was retired
+    # (the "stale open tab" scenario `catalog_product.ex`'s mount gate
+    # comment warns about). `add_to_cart/4` re-fetches the product through
+    # `lock_or_reload_product/2` → `ProductSource.current().get_product/2`
+    # → `View.product_status/2` before validating — the same derivation
+    # `catalogue_view_test.exs` pins — so this exercises that re-check,
+    # not the LiveView mount gate.
+    test "refuses a catalogue item retired at the catalogue level even with shop_status left active",
+         %{item: item} do
+      stale_product = CatalogueSource.get_product(item.uuid, [])
+
+      {:ok, _retired} = Catalogue.update_item(item, %{status: "inactive"})
+
+      assert {:error, {:product_not_available, _uuid}} =
+               Shop.add_to_cart(new_cart(), stale_product, 1)
+    end
   end
 
   describe "add_to_cart/4 with a priced option on a translated (non-primary-language) page" do

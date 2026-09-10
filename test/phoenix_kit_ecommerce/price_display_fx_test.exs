@@ -196,6 +196,16 @@ defmodule PhoenixKitEcommerce.PriceDisplayFxTest do
 
       assert PriceDisplay.compare_at(not_a_discount, "EUR", :catalog, []) == nil
     end
+
+    test "a nil asking price is not a 100% discount" do
+      product = %PhoenixKitEcommerce.Product{
+        price: nil,
+        compare_at_price: Decimal.new("40.00"),
+        metadata: %{}
+      }
+
+      assert PriceDisplay.compare_at(product, "EUR", :catalog, []) == nil
+    end
   end
 
   describe "struct compatibility" do

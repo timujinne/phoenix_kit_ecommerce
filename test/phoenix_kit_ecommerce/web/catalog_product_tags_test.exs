@@ -22,7 +22,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductTagsTest do
     setup do
       Settings.update_json_setting("languages_config", %{
         "languages" => [
-          %{"code" => "en-US", "name" => "English", "is_default" => true, "is_enabled" => true},
+          %{"code" => "en", "name" => "English", "is_default" => true, "is_enabled" => true},
           %{"code" => "fr", "name" => "French", "is_default" => false, "is_enabled" => true},
           %{"code" => "de", "name" => "German", "is_default" => false, "is_enabled" => true}
         ]
@@ -31,8 +31,9 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductTagsTest do
       :ok
     end
 
-    test "the default language may show them" do
+    test "a page dialect matches a base-code default" do
       assert Helpers.tags_visible?("en-US")
+      assert Helpers.tags_visible?("en")
     end
 
     test "every other language may not" do
@@ -40,6 +41,26 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductTagsTest do
       refute Helpers.tags_visible?("de")
       refute Helpers.tags_visible?(nil)
     end
+  end
+
+  test "tags stay visible when the configured default is a non-canonical dialect" do
+    Settings.update_json_setting("languages_config", %{
+      "languages" => [
+        %{
+          "code" => "en-GB",
+          "name" => "English (UK)",
+          "is_default" => true,
+          "is_enabled" => true
+        },
+        %{"code" => "fr", "name" => "French", "is_default" => false, "is_enabled" => true}
+      ]
+    })
+
+    # The storefront resolves `"en"` to the canonical dialect `"en-US"`;
+    # comparing dialects would hide tags on the shop's own default page.
+    assert Helpers.tags_visible?("en-US")
+    assert Helpers.tags_visible?("en-GB")
+    refute Helpers.tags_visible?("fr")
   end
 
   test "the default-language product page renders the badges", %{conn: conn} do

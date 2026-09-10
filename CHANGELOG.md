@@ -6,18 +6,127 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## 0.5.1 - 2026-09-09
+
 ### Added
 
-- **Storefront pages show an admin "Edit" link, gated on admin-area
-  access.** The shop index, category and product pages call core's
-  `PhoenixKitWeb.AdminEditHelper.assign_admin_edit/3` (via a guarded
-  `Web.Helpers.maybe_assign_admin_edit/3`, so an older host core without
-  the helper degrades to no link rather than crashing) and render it next
-  to the page heading — "Manage Shop" on `/shop`, "Edit Category" on a
-  category page, "Edit Product" on a product page. Replaces the
-  `:admin_edit_url`/`:admin_edit_label` assigns `CatalogProduct` and
-  `CatalogCategory` already carried, which were unconditional (every
-  visitor got them, admin or not) and never rendered anywhere.
+- **Shopify currency guard (per-domain-currency design §7.5).** The
+  Shopify sync now looks up the connected store's own currency once per
+  batch and refuses to write `:price`/`:compare_at_price` — or refuses a
+  whole create, or a whole variant/option-modifier sync — when it
+  disagrees with the shop's base currency; a non-price field on the same
+  change still applies. A failed lookup fails open and logs at `error`
+  (never silently disables the guard); a real mismatch logs at
+  `warning`. Newly-created catalogue items are labelled with the base
+  currency. (#47)
+- **Shopify image sync reuses files shop-wide, not per product.** A live
+  run against 665 products re-downloaded 582 already-stored images
+  because the "already downloaded?" check only looked at files linked to
+  the one product being synced; Shopify shops commonly reuse the exact
+  same image across an entire product line. The lookup now matches any
+  active Storage file in the shop by its download source URL, built once
+  per sync run rather than once per product. (#47)
+
+### Fixed
+
+- **Shopify `body_html` is converted to Markdown on the create path
+  too**, matching the update path — a freshly created catalogue item no
+  longer prints literal `**` from unconverted HTML. (#47)
+
+## 0.5.0 - 2026-09-08
+
+PRs #32–#46 plus the post-merge review in
+`dev_docs/pull_requests/2026/0.5.0-release-sweep/GROK_REVIEW.md`.
+
+### Added
+
+- **Opt-in catalogue product source.** `ProductSource` with Legacy (the
+  existing shop tables) and Catalogue adapters, switched by
+  `shop_product_source` in `phoenix_kit_shop_config`. Default remains
+  Legacy and fails closed when `phoenix_kit_catalogue` is not loaded.
+  Catalogue items are projected into `%Product{}`/`%Category{}`
+  view-structs so the storefront, cart and options never need to know
+  which adapter is active. (#34)
+- **Catalogue extension slot.** Duck-typed `catalogue_extensions/0`
+  discovery, `ItemCommerce`/`CategoryCommerce` embedded schemas owning
+  `data["ecommerce"]`, and Shop section components for catalogue item
+  and category forms. No hard `PhoenixKitCatalogue` dependency. (#32)
+- **Storefront filters and variant picker on catalogue attribute sets.**
+  Facet filtering over `attribute_set` (with `metadata_option` as an
+  alias), per-category `storefront_filters` overrides, per-language
+  set/value labels, and the shopper's language threaded into add-to-cart
+  so translated price modifiers apply. (#35)
+- **Per-domain currency.** Carts freeze display currency, base currency
+  and FX rate at creation; line prices snapshot through billing's
+  `present/3` at that frozen rate; shipping thresholds compare in base;
+  orders copy the same triple. Storefront LiveViews re-render on a rate
+  change; checkout flags a stale frozen rate; `compare_at` converts the
+  same way as the asking price. `reprice_for_base_change/3` rewrites
+  catalog amounts when the shop's base currency changes (legacy source
+  only; catalogue shops fail closed). (#33, #38, #39)
+- **Shopify media, variants and collections.** Images land in Storage;
+  product options/variants become catalogue attribute sets; collections
+  become categories with position. Runs as Oban jobs on `shop_imports`.
+  (#36)
+- **Shopify `body_html` is converted to Markdown at sync time**, so the
+  storefront Markdown renderer does not treat `<p>` blocks as opaque
+  HTML. (#42)
+- **Gated admin "Edit" links on storefront pages.** Shop index, category
+  and product pages call core's `AdminEditHelper.assign_admin_edit/3`
+  (via a guarded `maybe_assign_admin_edit/3`, so an older host core
+  without the helper degrades to no link) with `permission: "shop"`.
+  (#41, #46)
+- **Product page layout.** Two-column grid (gallery | buy box);
+  description, `body_html` and specifications sit under the gallery;
+  category navigation is a collapsed panel gated by
+  `shop_sidebar_show_categories`. (#44, #46)
+
+### Fixed
+
+- **Catalogue items no longer stamp `"USD"` by default.** `ItemCommerce`
+  and the Shop section prefill follow the shop's base currency (blank if
+  unset), matching the currency-hygiene contract from 0.4.3. (#32)
+- **Catalogue listing order, counts and facets agree.** Hidden-category
+  filtering no longer uses `DISTINCT ON (uuid)` (which ordered the
+  catalog by uuid); `active_visibility/1` uses the same `COALESCE` as
+  the listing; vendor counts and the price slider honour
+  `exclude_hidden_categories`. (#34, #35)
+- **Category option_schema price modifiers apply at add-to-cart** under
+  the catalogue source (reload now preloads `:category`). (#34, #35)
+- **Tags stay visible on a non-canonical default dialect** (`en-GB` vs
+  the page's `en-US`). Comparison is on language base, not dialect.
+  (#40)
+- **Guest-cart merge no longer copies display amounts across currencies.**
+  A leftover USD user cart plus a guest EUR cart restamps through base
+  at the user cart's frozen rate. (#33)
+- **Checkout shipping eligibility uses the same base subtotal as listing**,
+  so a method excluded from the offer list cannot sneak through
+  conversion on a non-base cart. (#33)
+- **Open storefront tabs reload products after a base-currency reprice**,
+  so the page cannot show the old amount while add-to-cart charges the
+  new one. (#38, #39)
+- **Emptying a cart after the currency table is cleared no longer
+  crashes** on `nil.code`. (#33)
+- **A product with no asking price no longer renders "100% OFF".** (#33)
+- **Product-page admin Edit survives `shop_show_cart_bar: false`.** The
+  cross-language mount assigns `:cart_count`; add-to-cart updates the
+  badge; on-request products no longer show `× 0.00 = 0.00`. (#41, #44,
+  #46)
+- **`create_from_shopify/2` converts `body_html` to Markdown** (the
+  update path already did) and no longer raises on a junk variant
+  price. (#36, #42)
+- **Image-URL HEAD checks re-validate every redirect hop**, matching GET.
+  Invalid HTML numeric entities no longer crash Shopify check. A crash
+  mid media-sync stamps `finished_at` so the button does not stay
+  disabled. (#36, #42)
+
+### Changed
+
+- Settings toggle and option rows sit on a plain flex layout instead of
+  daisyUI `label`/`fieldset-legend` (which styled nothing under v5).
+  (#37)
+- AGENTS.md follows the shared module skeleton; the lockfile is
+  buildable against Hex again. (#43, #45)
 
 ## 0.4.3 - 2026-09-05
 

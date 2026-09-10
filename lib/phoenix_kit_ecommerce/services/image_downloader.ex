@@ -299,7 +299,7 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   defp valid_image_url?(url, timeout) when is_binary(url) do
     case validate_url(url) do
       {:ok, url} ->
-        case Req.head(url, receive_timeout: timeout) do
+        case head_request(url, timeout) do
           {:ok, %{status: status, headers: headers}} when status in 200..299 ->
             content_type = get_header_value(headers, "content-type")
             validate_content_type(content_type) == :ok
@@ -438,7 +438,35 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   defp do_http_request(_url, _timeout, 0), do: {:error, :too_many_redirects}
 
   defp do_http_request(url, timeout, hops_left) do
-    opts = [
+    opts = request_opts(timeout)
+
+    case Req.get(url, opts) do
+      {:ok, %{status: status} = response} when status in [301, 302, 303, 307, 308] ->
+        follow_redirect(response, url, timeout, hops_left, &do_http_request/3)
+
+      other ->
+        handle_http_response(other)
+    end
+  end
+
+  # HEAD preflight used to call `Req.head/2` with default redirect
+  # following, so only the first URL was private-range checked. Same hop
+  # loop as GET: `redirect: false`, re-validate every Location.
+  defp head_request(url, timeout), do: head_request(url, timeout, @max_redirects)
+  defp head_request(_url, _timeout, 0), do: {:error, :too_many_redirects}
+
+  defp head_request(url, timeout, hops_left) do
+    case Req.head(url, request_opts(timeout)) do
+      {:ok, %{status: status} = response} when status in [301, 302, 303, 307, 308] ->
+        follow_redirect(response, url, timeout, hops_left, &head_request/3)
+
+      other ->
+        other
+    end
+  end
+
+  defp request_opts(timeout) do
+    [
       receive_timeout: timeout,
       redirect: false,
       headers: [
@@ -446,17 +474,9 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
         {"accept", "image/*"}
       ]
     ]
-
-    case Req.get(url, opts) do
-      {:ok, %{status: status} = response} when status in [301, 302, 303, 307, 308] ->
-        follow_redirect(response, url, timeout, hops_left)
-
-      other ->
-        handle_http_response(other)
-    end
   end
 
-  defp follow_redirect(response, from_url, timeout, hops_left) do
+  defp follow_redirect(response, from_url, timeout, hops_left, continue) do
     location =
       response.headers
       |> Map.new(fn {k, v} -> {String.downcase(k), v} end)
@@ -475,7 +495,7 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
         target = from_url |> URI.merge(location) |> URI.to_string()
 
         case validate_url(target) do
-          {:ok, safe_url} -> do_http_request(safe_url, timeout, hops_left - 1)
+          {:ok, safe_url} -> continue.(safe_url, timeout, hops_left - 1)
           {:error, _} = error -> error
         end
     end

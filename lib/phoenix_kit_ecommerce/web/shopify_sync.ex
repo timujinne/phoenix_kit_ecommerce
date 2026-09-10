@@ -17,7 +17,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   product's change can appear in more than one section if more than one
   of its fields differs. Sections are collapsed by default and show a
   count; expanding one reveals its rows, 25 at a time (see the module
-  attribute doc on `@per_page` for why pagination here is a correctness
+  attribute doc on `@per_page` for why chunking here is a correctness
   requirement, not polish). An operator can apply a single field on a
   single product, a whole section, or every pending change at once —
   always through `PhoenixKitEcommerce.Shopify.Sync`'s existing
@@ -102,15 +102,17 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   # `row_change_summary/1` already renders for `:vendor`/`:tags`/etc.
   @text_fields [:description, :body_html]
 
-  # Rows rendered per page within an expanded section. Not a display
+  # Rows added per load within an expanded section. Not a display
   # preference: `TextDiff`'s own moduledoc measures a wholly-rewritten
   # 1.7 KB body_html at 12 ms per row, and the live catalog's ~500
   # products commonly differ in title, description, AND body_html at
   # once — rendering a full section in one pass can spend several
   # seconds computing summaries inside the LiveView process, on top of
-  # producing a DOM no operator can usefully scroll. Bounding to 25 rows
-  # bounds both costs at once; summaries are computed only for the rows
-  # on the current page (`build_section/2` below).
+  # producing a DOM no operator can usefully scroll. Opening a section
+  # therefore costs one chunk, and each further chunk is the operator's
+  # own click; summaries are computed only for rows actually loaded
+  # (`build_section/2` below). Loaded rows stay on screen rather than
+  # being replaced, which is what lets a bulk selection survive a load.
   @per_page 25
 
   @impl true
@@ -216,12 +218,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     end
   end
 
-  def handle_event("page_prev", %{"field" => field_str}, socket) do
-    {:noreply, bump_page(socket, field_str, -1)}
-  end
-
-  def handle_event("page_next", %{"field" => field_str}, socket) do
-    {:noreply, bump_page(socket, field_str, 1)}
+  # One event per section rather than one event carrying the section:
+  # core's `load_more/1` renders its own button and forwards nothing, so
+  # `phx-value-field` cannot reach the DOM on a released core. (Fixed
+  # upstream in phoenix_kit#798; collapse these back into one event with
+  # a value once this package's floor carries it.)
+  def handle_event("load_more_rows:" <> field_str, _params, socket) do
+    {:noreply, grow_section(socket, field_str)}
   end
 
   # --- Request phase: validate the click, stash what it would do in
@@ -477,17 +480,33 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
            )
          )}
 
-      {:error, _changeset} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           gettext("Could not update %{title}'s %{field}.",
-             title: change.title,
-             field: field_label(field)
-           )
-         )}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, apply_error_flash(reason, change.title, field))}
     end
+  end
+
+  # `{:currency_mismatch, shop, base}` (`Sync.apply_change/3`'s own
+  # error, per-domain-currency design §7.5) is the one failure reason
+  # worth naming specifically: "sync failed" tells an operator nothing
+  # actionable, while naming the two currencies that disagree tells them
+  # exactly what changed and where to look. Anything else (a changeset
+  # error, in practice) keeps the pre-existing generic wording — this
+  # page has never surfaced changeset field errors here, and that stays
+  # unchanged; only the reason this module can name in one sentence
+  # gets a sentence.
+  defp apply_error_flash({:currency_mismatch, shop_currency, base_currency}, title, field) do
+    gettext(
+      "Could not update %{title}'s %{field}: the store is now in %{shop_currency} " <>
+        "while this shop's base currency is %{base_currency}.",
+      title: title,
+      field: field_label(field),
+      shop_currency: shop_currency,
+      base_currency: base_currency
+    )
+  end
+
+  defp apply_error_flash(_reason, title, field) do
+    gettext("Could not update %{title}'s %{field}.", title: title, field: field_label(field))
   end
 
   defp apply_section_changes(socket, field) do
@@ -689,22 +708,22 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     if MapSet.member?(set, item), do: MapSet.delete(set, item), else: MapSet.put(set, item)
   end
 
-  defp bump_page(socket, field_str, delta) do
+  defp grow_section(socket, field_str) do
     case to_field(field_str) do
       nil ->
         socket
 
       field ->
-        # The CLAMPED current page, not the raw stored one: applying a
-        # section's last row shrinks its count, which can snap the
-        # DISPLAYED page back (`current_page/3`'s own clamp) while the
-        # STORED value stays at the now-out-of-range page it was on.
-        # Reading raw here would then compute the next page relative to
-        # a page the operator was never actually looking at, and a Prev
-        # click right after such an apply would silently move the
-        # stored value without moving the display — a no-op the operator
-        # has no way to explain. See the regression test for the exact
-        # 51-row repro.
+        # Grow from the CLAMPED page, not the raw stored one. Applying a
+        # section's last row shrinks its count, and `build_section/2`
+        # clamps what it renders, so the stored value can sit past the
+        # end of a section the operator is no longer looking at. Growing
+        # from the clamp keeps the stored page within one chunk of what
+        # actually exists instead of letting it drift further out with
+        # every click. Rendering clamps either way, so this is a bound on
+        # the state rather than a fix for something visible: with rows
+        # taken as `page * @per_page`, an overshoot saturates at the list
+        # length and shows the same thing.
         count = field_change_count(socket, field)
         current = current_page(socket.assigns.page, field, count)
 
@@ -714,7 +733,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         # across pages. Paging away must not leave a modal open that could
         # still confirm into a write for rows no longer on screen.
         socket
-        |> assign(:page, Map.put(socket.assigns.page, field, current + delta))
+        |> assign(:page, Map.put(socket.assigns.page, field, current + 1))
         |> assign(:pending, nil)
     end
   end
@@ -875,8 +894,11 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
     rows =
       if expanded? do
+        # `take`, not a window: rows already on screen stay there when the
+        # operator loads more, which is what keeps a bulk selection alive
+        # across a load (selection lives in the DOM).
         field_changes
-        |> Enum.slice((page - 1) * @per_page, @per_page)
+        |> Enum.take(page * @per_page)
         |> Enum.map(&build_row(&1, field, assigns))
       else
         []
@@ -889,9 +911,6 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       bulk_eligible_count: length(eligible),
       bulk_excluded_count: length(excluded),
       expanded?: expanded?,
-      page: page,
-      per_page: @per_page,
-      total_pages: total_pages(count),
       rows: rows
     }
   end
@@ -1631,7 +1650,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                     <%= for row <- section.rows do %>
                       <.table_default_row id={"change-row-#{section.field}-#{row.product_uuid}"}>
                         <.bulk_select_cell value={row.product_uuid} />
-                        <.table_default_cell class="font-medium max-w-xs truncate">
+                        <%!-- Wraps rather than truncating: a product's title
+                              is what the operator identifies the row by, and
+                              this shop's titles are long enough that a cut
+                              one left several rows reading identically. The
+                              incoming value in the next column already
+                              wraps. --%>
+                        <.table_default_cell class="font-medium max-w-xs break-words whitespace-normal">
                           {row.title}
                         </.table_default_cell>
                         <.table_default_cell>
@@ -1662,37 +1687,19 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                 </.table_default>
               </.bulk_select_scope>
 
-              <div
-                :if={section.total_pages > 1}
-                class="flex items-center justify-between p-2 bg-base-200/50"
-              >
-                <button
-                  type="button"
-                  id={"page-prev-#{section.field}"}
-                  phx-click="page_prev"
-                  phx-value-field={section.field}
-                  class="btn btn-xs"
-                  disabled={section.page == 1}
-                >
-                  « {gettext("Prev")}
-                </button>
-                <div id={"page-info-#{section.field}"}>
-                  <.pagination_info
-                    page={section.page}
-                    per_page={section.per_page}
-                    total_count={section.count}
-                  />
-                </div>
-                <button
-                  type="button"
-                  id={"page-next-#{section.field}"}
-                  phx-click="page_next"
-                  phx-value-field={section.field}
-                  class="btn btn-xs"
-                  disabled={section.page == section.total_pages}
-                >
-                  {gettext("Next")} »
-                </button>
+              <%!-- Core's load-more footer, the same one the catalogue's
+                    own lists use: this page pages by LiveView event (each
+                    section pages on its own, and there is no URL to patch),
+                    and its rows carry a client-side bulk selection that only
+                    survives if loaded rows stay in the DOM. --%>
+              <div :if={section.count > 0} class="p-2 bg-base-200/50">
+                <.load_more
+                  id={"load-more-#{section.field}"}
+                  loaded={length(section.rows)}
+                  total={section.count}
+                  on_load_more={"load_more_rows:#{section.field}"}
+                  noun_plural={gettext("changes")}
+                />
               </div>
             </div>
           </div>

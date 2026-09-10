@@ -17,8 +17,12 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
   use Gettext, backend: PhoenixKitEcommerce.Gettext
 
   import PhoenixKitWeb.Components.Core.Checkbox
+  import PhoenixKitWeb.Components.Core.Icon, only: [icon: 1]
   import PhoenixKitWeb.Components.Core.Input
   import PhoenixKitWeb.Components.Core.Select
+
+  alias PhoenixKit.Modules.Storage.URLSigner
+  alias PhoenixKitEcommerce.ProductSource.Catalogue.Query
 
   attr :form, :any, default: nil
   attr :item, :any, default: nil
@@ -140,7 +144,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
           <div class="fieldset w-full">
             <.input
               name="item[ecommerce][currency]"
-              value={Map.get(@ecommerce, "currency", "USD")}
+              value={currency_input_value(@ecommerce)}
               type="text"
               maxlength="3"
               label={gettext("Currency")}
@@ -260,7 +264,10 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
     """
   end
 
+  attr :form, :any, default: nil
   attr :category, :any, default: nil
+  attr :data, :map, default: %{}
+  attr :current_language, :string, default: nil
 
   @doc """
   Shop section for the category form. `assigns` carries `:form`,
@@ -270,11 +277,19 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
     ecommerce = Map.get(assigns[:data] || %{}, "ecommerce", %{})
     form = assigns[:form]
 
+    # Cached per category for the life of the LiveView process: this is a
+    # function component inside a form whose `phx-change="validate"` fires
+    # on every keystroke, so querying here meant a database round trip per
+    # character typed into any field on the page. The candidate list only
+    # changes when the category's items do, which a form edit never does.
+    item_options = cached_item_options(assigns[:category])
+
     assigns =
       assigns
       |> assign(:ecommerce, ecommerce)
+      |> assign(:item_options, item_options)
+      |> assign(:selected_option, selected_option(item_options, ecommerce))
       |> assign(:shop_status_errors, field_errors(form, :shop_status))
-      |> assign(:image_uuid_errors, field_errors(form, :image_uuid))
       |> assign(:featured_item_uuid_errors, field_errors(form, :featured_item_uuid))
 
     ~H"""
@@ -297,29 +312,130 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
-            <.input
-              name="category[ecommerce][image_uuid]"
-              value={Map.get(@ecommerce, "image_uuid")}
-              type="text"
-              label={gettext("Category image (Storage uuid)")}
-              errors={@image_uuid_errors}
-            />
-          </div>
 
-          <div class="fieldset w-full">
-            <.input
-              name="category[ecommerce][featured_item_uuid]"
-              value={Map.get(@ecommerce, "featured_item_uuid")}
-              type="text"
-              label={gettext("Featured item (image fallback)")}
-              errors={@featured_item_uuid_errors}
-            />
+          <div class="fieldset w-full md:col-span-2">
+            <%= if @item_options != [] do %>
+              <label class="label">
+                <span class="fieldset-legend font-medium">
+                  {gettext("Featured item (image fallback)")}
+                </span>
+              </label>
+
+              <%!-- A dropdown, not a grid: the list can be long, and it is
+                    one field among many on this form. Each row leads with
+                    the picture the item would give the category, because
+                    that is what the choice is about — a name says nothing
+                    about the photo. Native `<option>` cannot hold an
+                    image, so this is a details-dropdown over radios: no
+                    JavaScript, and the radio carries the value. --%>
+              <details class="dropdown w-full">
+                <summary class="btn btn-outline w-full justify-start gap-2 font-normal">
+                  <%= if @selected_option do %>
+                    <img
+                      src={URLSigner.signed_url(@selected_option.image_uuid, "small")}
+                      alt=""
+                      class="h-8 w-8 rounded object-cover"
+                    />
+                    <span class="truncate">{@selected_option.name}</span>
+                  <% else %>
+                    <.icon name="hero-sparkles" class="w-4 h-4" />
+                    <span class="truncate">
+                      {gettext("Auto-detect (first item with an image)")}
+                    </span>
+                  <% end %>
+                  <.icon name="hero-chevron-down" class="w-4 h-4 ml-auto" />
+                </summary>
+
+                <ul class="dropdown-content menu z-10 mt-1 max-h-72 w-full flex-nowrap overflow-y-auto rounded-box bg-base-100 p-1 shadow">
+                  <li>
+                    <label class="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="category[ecommerce][featured_item_uuid]"
+                        value=""
+                        checked={@selected_option == nil}
+                        class="radio radio-xs"
+                      />
+                      <.icon name="hero-sparkles" class="w-4 h-4" />
+                      <span class="truncate">
+                        {gettext("Auto-detect (first item with an image)")}
+                      </span>
+                    </label>
+                  </li>
+
+                  <li :for={option <- @item_options}>
+                    <label class="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="category[ecommerce][featured_item_uuid]"
+                        value={option.uuid}
+                        checked={@selected_option && @selected_option.uuid == option.uuid}
+                        class="radio radio-xs"
+                      />
+                      <img
+                        src={URLSigner.signed_url(option.image_uuid, "small")}
+                        alt=""
+                        class="h-8 w-8 rounded object-cover"
+                      />
+                      <span class="truncate">{option.name}</span>
+                    </label>
+                  </li>
+                </ul>
+              </details>
+
+              <p :if={@featured_item_uuid_errors != []} class="text-error text-xs mt-1">
+                {Enum.join(@featured_item_uuid_errors, ", ")}
+              </p>
+            <% else %>
+              <label class="label">
+                <span class="fieldset-legend font-medium">{gettext("Featured item (image fallback)")}</span>
+              </label>
+              <div class="text-sm text-base-content/50 py-2">
+                <.icon name="hero-information-circle" class="w-4 h-4 inline mr-1" />
+                {gettext(
+                  "No items with images in this category. Add item images to enable this option."
+                )}
+              </div>
+            <% end %>
           </div>
         </div>
       </div>
     </div>
     """
+  end
+
+  # A `:new` category (not yet saved) is a bare struct with `uuid: nil` —
+  # no items can be attached to it yet, so the picker has nothing to
+  # list.
+  defp category_uuid(%{uuid: uuid}) when is_binary(uuid), do: uuid
+  defp category_uuid(_), do: nil
+
+  defp selected_option(item_options, ecommerce) do
+    case Map.get(ecommerce, "featured_item_uuid") do
+      uuid when is_binary(uuid) and uuid != "" ->
+        Enum.find(item_options, &(&1.uuid == uuid))
+
+      _ ->
+        nil
+    end
+  end
+
+  # Keyed by category uuid in the process dictionary: a function component
+  # has no assigns of its own to memoise into, and this runs inside the
+  # LiveView process, which is per-connection and dies with the page.
+  defp cached_item_options(category) do
+    uuid = category_uuid(category)
+    key = {__MODULE__, :item_options, uuid}
+
+    case Process.get(key) do
+      nil ->
+        options = Query.category_item_image_options(uuid)
+        Process.put(key, options)
+        options
+
+      cached ->
+        cached
+    end
   end
 
   # Reads errors `Ecto.Changeset.add_error/4`-tagged with
@@ -336,4 +452,25 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
   end
 
   defp field_errors(_form, _field), do: []
+
+  # Prefill from the stored value, else the shop's base currency, else
+  # blank. Never `"USD"`: an unconfigured shop must not silently stamp
+  # dollars onto a new item (PR #31).
+  defp currency_input_value(ecommerce) do
+    case Map.get(ecommerce || %{}, "currency") do
+      code when is_binary(code) and code != "" -> code
+      _ -> default_currency_code()
+    end
+  end
+
+  defp default_currency_code do
+    case PhoenixKitEcommerce.get_base_currency() do
+      %{code: code} when is_binary(code) -> code
+      _ -> ""
+    end
+  rescue
+    _ -> ""
+  catch
+    :exit, _ -> ""
+  end
 end

@@ -1035,7 +1035,7 @@ defmodule PhoenixKitEcommerce.Options do
       when is_binary(selected_value) and is_map(metadata) do
     case get_override_info(metadata, key, selected_value) do
       {:ok, type, value} ->
-        {type || default_type, Decimal.new(value)}
+        {type || default_type, parse_decimal(value)}
 
       :not_found ->
         default_value = get_price_modifier(opt, selected_value)
@@ -1112,7 +1112,7 @@ defmodule PhoenixKitEcommerce.Options do
         case Map.get(modifiers, option_value) do
           nil -> Decimal.new("0")
           "" -> Decimal.new("0")
-          modifier when is_binary(modifier) -> Decimal.new(modifier)
+          modifier when is_binary(modifier) -> parse_decimal(modifier)
           _ -> Decimal.new("0")
         end
 

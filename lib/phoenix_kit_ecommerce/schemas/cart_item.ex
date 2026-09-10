@@ -278,6 +278,14 @@ defmodule PhoenixKitEcommerce.CartItem do
   Returns true if product data has changed since the item was added.
   Useful for showing price change warnings.
   """
+  def product_changed?(
+        %__MODULE__{product_uuid: nil, metadata: %{"catalogue_item_uuid" => uuid}} = item,
+        %Product{} = product
+      )
+      when is_binary(uuid) do
+    Decimal.compare(item.unit_price, product.price) != :eq
+  end
+
   def product_changed?(%__MODULE__{product_uuid: nil}, _product), do: true
 
   def product_changed?(%__MODULE__{} = item, %Product{} = product) do
@@ -319,8 +327,20 @@ defmodule PhoenixKitEcommerce.CartItem do
   end
 
   @doc """
-  Returns true if the product has been deleted (product_uuid is nil after SET NULL).
+  Returns true if the product has been deleted (`product_uuid` is nil
+  after ON DELETE SET NULL).
+
+  Catalogue-backed lines never store `product_uuid` — their identity is
+  `metadata["catalogue_item_uuid"]` — so a nil uuid is not a deletion
+  signal for those.
   """
+  def product_deleted?(%__MODULE__{
+        product_uuid: nil,
+        metadata: %{"catalogue_item_uuid" => uuid}
+      })
+      when is_binary(uuid),
+      do: false
+
   def product_deleted?(%__MODULE__{product_uuid: nil}), do: true
   def product_deleted?(_), do: false
 

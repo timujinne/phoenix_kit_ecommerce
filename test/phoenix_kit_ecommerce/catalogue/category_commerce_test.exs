@@ -41,7 +41,6 @@ defmodule PhoenixKitEcommerce.Catalogue.CategoryCommerceTest do
       assert map == %{
                "shop_status" => "active",
                "option_schema" => [],
-               "image_uuid" => nil,
                "featured_item_uuid" => nil,
                "storefront_filters" => %{}
              }
@@ -49,7 +48,7 @@ defmodule PhoenixKitEcommerce.Catalogue.CategoryCommerceTest do
 
     test "merges params over the existing namespace" do
       current = %{"shop_status" => "hidden"}
-      assert {:ok, map} = CategoryCommerce.cast(%{"image_uuid" => nil}, current)
+      assert {:ok, map} = CategoryCommerce.cast(%{"featured_item_uuid" => nil}, current)
       assert map["shop_status"] == "hidden"
     end
 

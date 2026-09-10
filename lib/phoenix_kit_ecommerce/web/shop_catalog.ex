@@ -116,7 +116,13 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
         PhoenixKit.Settings.get_setting_cached("shop_category_icon_mode", "none")
       )
       |> assign(:show_categories_grid, Helpers.sidebar_categories_enabled?())
-      |> Helpers.maybe_assign_admin_edit(Routes.path("/admin/shop"), gettext("Manage Shop"))
+      # `/admin/shop` is the shop DASHBOARD, gated on base `"shop"` — not
+      # a catalog editor. Gating this link on `shop.manage_catalog` would
+      # hide it from an admin (order desk, settings) who can still open
+      # the page it points to.
+      |> Helpers.maybe_assign_admin_edit(Routes.path("/admin/shop"), gettext("Manage Shop"),
+        permission: "shop"
+      )
 
     {:ok, socket}
   end
@@ -165,12 +171,42 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
   # §4.2.1 п.5: a currency-table change re-renders this tab's prices.
   @impl true
   def handle_info({:currencies_changed, _code}, socket) do
-    {:noreply, Helpers.refresh_display_currency(socket)}
+    socket = Helpers.refresh_display_currency(socket)
+
+    {:noreply,
+     if socket.assigns[:products] do
+       reload_catalog_products(socket)
+     else
+       socket
+     end}
   end
 
   # Catch-all: an unrecognised message must not take the LiveView down.
   @impl true
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp reload_catalog_products(socket) do
+    filter_opts =
+      FilterHelpers.build_query_opts(
+        socket.assigns.active_filters,
+        socket.assigns.enabled_filters
+      )
+
+    {products, total} =
+      Shop.list_products_with_count(
+        [
+          status: "active",
+          page: 1,
+          per_page: socket.assigns.page * socket.assigns.per_page,
+          exclude_hidden_categories: true,
+          language: socket.assigns.current_language
+        ] ++ filter_opts
+      )
+
+    socket
+    |> assign(:products, products)
+    |> assign(:total_products, total)
+  end
 
   @impl true
   def handle_event("filter_price", params, socket) do
@@ -184,6 +220,13 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
         params["price_max"]
       )
 
+    path = build_filter_path(socket.assigns, active_filters)
+    {:noreply, push_patch(socket, to: path)}
+  end
+
+  @impl true
+  def handle_event("clear_filter", %{"key" => key}, socket) do
+    active_filters = FilterHelpers.clear_filter(socket.assigns.active_filters, key)
     path = build_filter_path(socket.assigns, active_filters)
     {:noreply, push_patch(socket, to: path)}
   end
@@ -230,9 +273,29 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
            app layout, so each public page brings its own wrapper; without it
            this page runs edge-to-edge on a host whose <main> has no padding.
            Matches catalog_category.ex. --%>
-      <div class="p-6 max-w-7xl mx-auto">
-        
-        <ShopCards.storefront_bar language={@current_language} cart_count={@cart_count} />
+      <%!-- `pt-0`: the host layout already pads the top of every page. --%>
+      <div class="px-6 pt-0 pb-6 max-w-7xl mx-auto">
+        <%!-- One row under the site header. This page is the first crumb
+              itself, so the left side carries the shop's own name rather than
+              a link back to where the visitor already is. --%>
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div class="breadcrumbs text-sm">
+            <ul>
+              <li class="font-medium inline-flex items-center gap-1">
+                <.icon name="hero-home" class="w-4 h-4" />
+                {gettext("Shop")}
+              </li>
+            </ul>
+          </div>
+
+          <ShopCards.storefront_bar
+            language={@current_language}
+            cart_count={@cart_count}
+            admin_edit_url={assigns[:admin_edit_url]}
+            admin_edit_label={assigns[:admin_edit_label]}
+          />
+        </div>
+
         <%!-- Hero Section --%>
         <header class="w-full relative mb-6">
           <div class="text-center">
@@ -243,15 +306,6 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
               {Vocabulary.collection_blurb()}
             </p>
           </div>
-          <%!-- Admin Edit Button --%>
-          <%= if assigns[:admin_edit_url] do %>
-            <div class="flex justify-center mt-4">
-              <.link navigate={@admin_edit_url} class="btn btn-sm btn-outline gap-2">
-                <.icon name="hero-pencil-square" class="w-4 h-4" />
-                {@admin_edit_label || "Edit"}
-              </.link>
-            </div>
-          <% end %>
         </header>
 
         <%!-- Categories on mobile. The only other category list on this page is
@@ -346,7 +400,7 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
                         <%= if cat_image do %>
                           <img
                             src={cat_image}
-                            alt={Translations.get(cat, :name, @current_language)}
+                            alt={Translations.get_display(cat, :name, @current_language)}
                             class="w-full h-full object-cover"
                           />
                         <% else %>
@@ -357,7 +411,7 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
                       </figure>
                       <div class="card-body p-3 text-center">
                         <h3 class="text-sm font-semibold line-clamp-2">
-                          {Translations.get(cat, :name, @current_language)}
+                          {Translations.get_display(cat, :name, @current_language)}
                         </h3>
                       </div>
                     </.link>

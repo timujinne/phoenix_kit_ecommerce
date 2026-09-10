@@ -39,9 +39,10 @@
             <h2 class="font-semibold mb-4">{gettext("Order Items")}</h2>
             <div class="space-y-4">
               <%= for item <- @order.line_items || [] do %>
+                <% display_name = NamePrefix.strip(item["name"]) %>
                 <div class="flex justify-between items-center py-2 border-b last:border-0 border-base-200">
                   <div class="flex-1">
-                    <span class="font-medium">{item["name"]}</span>
+                    <span class="font-medium">{display_name}</span>
                     <%= if item["type"] != "shipping" do %>
                       <span class="text-base-content/60 ml-2">x {item["quantity"]}</span>
                     <% end %>

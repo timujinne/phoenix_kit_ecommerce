@@ -79,7 +79,11 @@ defmodule PhoenixKitEcommerce.Web.Categories do
   end
 
   @impl true
-  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+  def handle_params(_params, uri, socket) do
+    # Kept so the catalogue editor these pages link into can send the
+    # visitor back to the list they left, not to the catalogue's own.
+    {:noreply, assign(socket, :url_path, URI.parse(uri).path)}
+  end
 
   # ============================================
   # EVENT HANDLERS
@@ -408,7 +412,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
           <:card_actions :let={category}>
             <.table_row_menu id={"card-menu-#{category.uuid}"}>
               <.table_row_menu_link
-                navigate={Routes.path("/admin/shop/categories/#{category.uuid}/edit")}
+                navigate={Helpers.admin_edit_path(:category, category.uuid, assigns[:url_path])}
                 icon="hero-pencil"
                 label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
               />
@@ -495,7 +499,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                     <div class="flex justify-end">
                       <.table_row_menu id={"menu-#{category.uuid}"}>
                         <.table_row_menu_link
-                          navigate={Routes.path("/admin/shop/categories/#{category.uuid}/edit")}
+                          navigate={Helpers.admin_edit_path(:category, category.uuid, assigns[:url_path])}
                           icon="hero-pencil"
                           label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
                         />

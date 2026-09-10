@@ -122,6 +122,60 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.QueryTest do
       assert no_shop_status.uuid in Enum.map(results, & &1.uuid)
       refute inactive_item.uuid in Enum.map(results, & &1.uuid)
     end
+
+    test "exclude_hidden_categories: true keeps position/name ordering (no DISTINCT ON uuid)",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Shown", catalogue_uuid: catalogue.uuid})
+
+      later =
+        create_item(catalogue, %{
+          name: "Zebra",
+          position: 2,
+          category_uuid: category.uuid,
+          base_price: Decimal.new("1.00"),
+          data: %{"ecommerce" => %{"shop_status" => "active"}}
+        })
+
+      earlier =
+        create_item(catalogue, %{
+          name: "Apple",
+          position: 1,
+          category_uuid: category.uuid,
+          base_price: Decimal.new("1.00"),
+          data: %{"ecommerce" => %{"shop_status" => "active"}}
+        })
+
+      names =
+        Query.list_items(status: "active", exclude_hidden_categories: true)
+        |> Enum.map(& &1.name)
+
+      assert names == [earlier.name, later.name]
+    end
+
+    test "filters by product_type with the same physical default as View.product_view/2", %{
+      catalogue: catalogue
+    } do
+      physical =
+        create_item(catalogue, %{
+          name: "Mug",
+          base_price: Decimal.new("1.00"),
+          data: %{"ecommerce" => %{"shop_status" => "active"}}
+        })
+
+      digital =
+        create_item(catalogue, %{
+          name: "PDF",
+          base_price: Decimal.new("1.00"),
+          data: %{"ecommerce" => %{"shop_status" => "active", "product_type" => "digital"}}
+        })
+
+      names =
+        Query.list_items(status: "active", product_type: "physical") |> Enum.map(& &1.name)
+
+      assert physical.name in names
+      refute digital.name in names
+    end
   end
 
   describe "price_range/1 and vendor_counts/1" do
@@ -140,6 +194,89 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.QueryTest do
 
       assert Query.price_range() == {Decimal.new("10.00"), Decimal.new("30.00")}
       assert [%{value: "Acme", count: 2}] = Query.vendor_counts()
+    end
+
+    test "an item with no shop_status is counted, matching the listing fallback", %{
+      catalogue: catalogue
+    } do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Counted", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "No Shop Status",
+        base_price: Decimal.new("12.00"),
+        category_uuid: category.uuid
+      })
+
+      assert Query.product_counts_by_category()[category.uuid] == 1
+      assert Query.price_range() == {Decimal.new("12.00"), Decimal.new("12.00")}
+    end
+
+    # Regression: `filter_by_status(query, "active")` (backs `list_items/1`)
+    # and `active_visibility/1` (backs `product_counts_by_category/0`,
+    # `price_range/1`, `vendor_counts/1`, the facet counters) both claim to
+    # express the SAME "storefront-visible" rule and must agree on every
+    # item, including one with no `shop_status` at all — a real shape
+    # (10 of the owner's 20 catalogue categories have no `ecommerce` block
+    # either). They once diverged: `active_visibility/1` tested a literal
+    # `shop_status = 'active'` with no `COALESCE`, so an absent shop_status
+    # counted as active in the listing but NOT active in the counts/facets.
+    # Fixed upstream (`Fix post-merge review findings`, 0.5.0), pinned here
+    # so a future edit to either function that reintroduces the divergence
+    # fails a test rather than only showing up as a live count mismatch.
+    test "filter_by_status(\"active\") and active_visibility/1 agree on an item with no shop_status",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Agreement", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "No Shop Status Block",
+        base_price: Decimal.new("7.00"),
+        status: "active",
+        category_uuid: category.uuid
+      })
+
+      assert Enum.map(Query.list_items(status: "active"), & &1.name) ==
+               ["No Shop Status Block"]
+
+      assert Query.product_counts_by_category()[category.uuid] == 1
+    end
+
+    test "exclude_hidden_categories drops hidden-category items from vendor counts and price_range",
+         %{catalogue: catalogue} do
+      {:ok, hidden} =
+        Catalogue.create_category(%{
+          name: "Hidden",
+          catalogue_uuid: catalogue.uuid,
+          data: %{"ecommerce" => %{"shop_status" => "hidden"}}
+        })
+
+      {:ok, shown} =
+        Catalogue.create_category(%{
+          name: "Shown",
+          catalogue_uuid: catalogue.uuid,
+          data: %{"ecommerce" => %{"shop_status" => "active"}}
+        })
+
+      create_item(catalogue, %{
+        name: "Hidden Item",
+        base_price: Decimal.new("99.00"),
+        category_uuid: hidden.uuid,
+        data: %{"ecommerce" => %{"shop_status" => "active", "vendor" => "HiddenCo"}}
+      })
+
+      create_item(catalogue, %{
+        name: "Shown Item",
+        base_price: Decimal.new("10.00"),
+        category_uuid: shown.uuid,
+        data: %{"ecommerce" => %{"shop_status" => "active", "vendor" => "ShownCo"}}
+      })
+
+      assert Query.price_range(exclude_hidden_categories: true) ==
+               {Decimal.new("10.00"), Decimal.new("10.00")}
+
+      assert [%{value: "ShownCo", count: 1}] =
+               Query.vendor_counts(exclude_hidden_categories: true)
     end
   end
 
@@ -249,6 +386,253 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.QueryTest do
                Query.list_categories_by_uuids([category.uuid, other_category.uuid]),
                & &1.uuid
              ) == [category.uuid]
+    end
+  end
+
+  describe "resolve_category_images/1" do
+    test "an explicit featured_item_uuid resolves to that item's own featured_image_uuid",
+         %{catalogue: catalogue} do
+      item =
+        create_item(catalogue, %{
+          name: "Vase",
+          base_price: Decimal.new("1.00"),
+          data: %{"featured_image_uuid" => "img-explicit"}
+        })
+
+      {:ok, category} =
+        Catalogue.create_category(%{
+          name: "Vases",
+          catalogue_uuid: catalogue.uuid,
+          data: %{"ecommerce" => %{"featured_item_uuid" => item.uuid}}
+        })
+
+      assert Query.resolve_category_images([category]) == %{category.uuid => "img-explicit"}
+    end
+
+    test "an explicit featured_item_uuid falls back to the first media_order entry when the item has no featured_image_uuid",
+         %{catalogue: catalogue} do
+      item =
+        create_item(catalogue, %{
+          name: "Vase",
+          base_price: Decimal.new("1.00"),
+          data: %{"media_order" => ["img-from-media-order", "img-second"]}
+        })
+
+      {:ok, category} =
+        Catalogue.create_category(%{
+          name: "Vases",
+          catalogue_uuid: catalogue.uuid,
+          data: %{"ecommerce" => %{"featured_item_uuid" => item.uuid}}
+        })
+
+      assert Query.resolve_category_images([category]) == %{
+               category.uuid => "img-from-media-order"
+             }
+    end
+
+    test "an explicit featured item with no image never falls back to auto-detect",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      featured_no_image =
+        create_item(catalogue, %{
+          name: "Featured No Image",
+          base_price: Decimal.new("1.00"),
+          category_uuid: category.uuid,
+          position: 0,
+          data: %{"ecommerce" => %{"shop_status" => "active"}}
+        })
+
+      create_item(catalogue, %{
+        name: "Other With Image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 1,
+        data: %{
+          "ecommerce" => %{"shop_status" => "active"},
+          "featured_image_uuid" => "img-other"
+        }
+      })
+
+      {:ok, category} =
+        Catalogue.update_category(category, %{
+          data: %{"ecommerce" => %{"featured_item_uuid" => featured_no_image.uuid}}
+        })
+
+      assert Query.resolve_category_images([category]) == %{}
+    end
+
+    test "with no explicit featured item, auto-detects the first active item (by position) that carries an image",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "First, no image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 0,
+        data: %{"ecommerce" => %{"shop_status" => "active"}}
+      })
+
+      create_item(catalogue, %{
+        name: "Second, inactive but has image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 1,
+        status: "inactive",
+        data: %{
+          "ecommerce" => %{"shop_status" => "active"},
+          "featured_image_uuid" => "img-inactive"
+        }
+      })
+
+      create_item(catalogue, %{
+        name: "Third, active with image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 2,
+        data: %{
+          "ecommerce" => %{"shop_status" => "active"},
+          "featured_image_uuid" => "img-third"
+        }
+      })
+
+      assert Query.resolve_category_images([category]) == %{category.uuid => "img-third"}
+    end
+
+    test "a category with no items (or none carrying an image) has no entry in the result",
+         %{catalogue: catalogue} do
+      {:ok, empty_category} =
+        Catalogue.create_category(%{name: "Empty", catalogue_uuid: catalogue.uuid})
+
+      {:ok, no_image_category} =
+        Catalogue.create_category(%{name: "No Images", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "No Image Item",
+        base_price: Decimal.new("1.00"),
+        category_uuid: no_image_category.uuid,
+        data: %{"ecommerce" => %{"shop_status" => "active"}}
+      })
+
+      assert Query.resolve_category_images([empty_category, no_image_category]) == %{}
+    end
+
+    test "resolves images for many categories without one query per category (no N+1)",
+         %{catalogue: catalogue} do
+      categories =
+        for n <- 1..6 do
+          {:ok, category} =
+            Catalogue.create_category(%{name: "Cat #{n}", catalogue_uuid: catalogue.uuid})
+
+          create_item(catalogue, %{
+            name: "Item #{n}",
+            base_price: Decimal.new("1.00"),
+            category_uuid: category.uuid,
+            data: %{
+              "ecommerce" => %{"shop_status" => "active"},
+              "featured_image_uuid" => "img-#{n}"
+            }
+          })
+
+          category
+        end
+
+      handler_id = {:resolve_category_images_query_count, self()}
+      test_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:phoenix_kit_ecommerce, :test, :repo, :query],
+        fn _event, _measurements, _metadata, _config -> send(test_pid, :query_ran) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      images = Query.resolve_category_images(categories)
+
+      assert map_size(images) == 6
+      assert images == Map.new(1..6, &{Enum.at(categories, &1 - 1).uuid, "img-#{&1}"})
+
+      query_count = count_received(:query_ran)
+
+      # One query fetching each category's active items (auto-detect —
+      # none of the 6 set an explicit featured_item_uuid here), never one
+      # per category. A generous ceiling (well under 6) proves the batch
+      # shape without pinning the exact count to an implementation detail.
+      assert query_count <= 3
+    end
+
+    defp count_received(message, acc \\ 0) do
+      receive do
+        ^message -> count_received(message, acc + 1)
+      after
+        0 -> acc
+      end
+    end
+  end
+
+  describe "category_item_image_options/1" do
+    test "lists only items with an image, labeled by name, ordered by position",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "No Image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 0
+      })
+
+      second =
+        create_item(catalogue, %{
+          name: "Second",
+          base_price: Decimal.new("1.00"),
+          category_uuid: category.uuid,
+          position: 2,
+          data: %{"featured_image_uuid" => "img-second"}
+        })
+
+      first =
+        create_item(catalogue, %{
+          name: "First",
+          base_price: Decimal.new("1.00"),
+          category_uuid: category.uuid,
+          position: 1,
+          data: %{"media_order" => ["img-first"]}
+        })
+
+      # Each candidate carries the picture it would give the category, so
+      # the picker can show it rather than only the item's name.
+      assert Query.category_item_image_options(category.uuid) == [
+               %{name: first.name, uuid: first.uuid, image_uuid: "img-first"},
+               %{name: second.name, uuid: second.uuid, image_uuid: "img-second"}
+             ]
+    end
+
+    test "an item from a different category is excluded", %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      {:ok, other_category} =
+        Catalogue.create_category(%{name: "Other", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "Elsewhere",
+        base_price: Decimal.new("1.00"),
+        category_uuid: other_category.uuid,
+        data: %{"featured_image_uuid" => "img-elsewhere"}
+      })
+
+      assert Query.category_item_image_options(category.uuid) == []
+    end
+
+    test "nil category_uuid returns an empty list" do
+      assert Query.category_item_image_options(nil) == []
     end
   end
 end

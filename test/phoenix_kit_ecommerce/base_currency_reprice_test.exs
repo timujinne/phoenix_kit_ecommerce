@@ -260,6 +260,7 @@ defmodule PhoenixKitEcommerce.BaseCurrencyRepriceTest do
     assert Decimal.equal?(reloaded_method.free_above_amount, Decimal.new("118.18"))
     assert Decimal.equal?(reloaded_method.min_order_amount, Decimal.new("18.18"))
     assert Decimal.equal?(reloaded_method.max_order_amount, Decimal.new("454.55"))
+    assert reloaded_method.currency == "EUR"
 
     # Carts and orders: untouched, in EVERY money field, not spot-checked.
     assert money_snapshot_cart(cart.uuid) == cart_before

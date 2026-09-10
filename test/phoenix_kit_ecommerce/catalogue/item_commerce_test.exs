@@ -50,7 +50,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerceTest do
                "tags" => [],
                "compare_at_price" => nil,
                "cost_per_item" => nil,
-               "currency" => "USD",
+               "currency" => nil,
                "taxable" => true,
                "weight_grams" => 0,
                "requires_shipping" => true,
@@ -108,6 +108,15 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerceTest do
                )
 
       assert map["price_unit"] == %{"fr-FR" => "par heure"}
+    end
+
+    test "an unknown key already under data[\"ecommerce\"] survives a form save" do
+      current = %{"shop_status" => "active", "future_flag" => true}
+
+      assert {:ok, map} = ItemCommerce.cast(%{"vendor" => "Acme"}, current)
+      assert map["vendor"] == "Acme"
+      assert map["shop_status"] == "active"
+      assert map["future_flag"] == true
     end
   end
 end

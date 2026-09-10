@@ -79,6 +79,11 @@ defmodule PhoenixKitEcommerce.HtmlToMarkdownTest do
       assert HtmlToMarkdown.convert("<p>Caf&#233;</p>") == "Café"
       assert HtmlToMarkdown.convert("<p>Caf&#xe9;</p>") == "Café"
     end
+
+    test "an invalid numeric entity is dropped rather than crashing convert/1" do
+      assert HtmlToMarkdown.convert("<p>Bad &#xD800; entity</p>") == "Bad  entity"
+      assert HtmlToMarkdown.convert("<p>Too big &#x110000;</p>") == "Too big"
+    end
   end
 
   describe "convert/1 - <table>" do

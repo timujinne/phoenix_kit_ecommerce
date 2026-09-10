@@ -32,5 +32,8 @@
   # shape as the adapter files above.
   {"lib/phoenix_kit_ecommerce/catalogue/writer.ex", :unknown_function},
   {"lib/phoenix_kit_ecommerce/catalogue/writer.ex", :unknown_type},
-  {"lib/phoenix_kit_ecommerce/shopify/sync.ex", :unknown_function}
+  {"lib/phoenix_kit_ecommerce/catalogue/value_resolver.ex", :unknown_function},
+  {"lib/phoenix_kit_ecommerce/shopify/sync.ex", :unknown_function},
+  {"lib/phoenix_kit_ecommerce/shopify/collection_sync.ex", :unknown_function},
+  {"lib/phoenix_kit_ecommerce/workers/shopify_media_sync_worker.ex", :unknown_function}
 ]

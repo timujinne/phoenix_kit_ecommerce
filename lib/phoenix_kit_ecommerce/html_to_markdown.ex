@@ -538,5 +538,11 @@ defmodule PhoenixKitEcommerce.HtmlToMarkdown do
     )
   end
 
-  defp codepoint_to_string(codepoint), do: <<codepoint::utf8>>
+  defp codepoint_to_string(codepoint)
+       when is_integer(codepoint) and codepoint >= 0 and codepoint <= 0x10FFFF and
+              codepoint not in 0xD800..0xDFFF do
+    <<codepoint::utf8>>
+  end
+
+  defp codepoint_to_string(_codepoint), do: ""
 end

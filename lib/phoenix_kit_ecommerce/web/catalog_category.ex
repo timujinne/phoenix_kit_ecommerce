@@ -7,7 +7,6 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
   use PhoenixKitEcommerce.Web, :live_view
 
   alias PhoenixKit.Settings
-  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.SlugResolver
@@ -95,14 +94,17 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
         # Check if user is authenticated
         authenticated = not is_nil(socket.assigns[:phoenix_kit_current_user])
 
-        # Get localized category content
-        localized_name = Translations.get(category, :name, current_language)
+        # Get localized category content. `get_display/3` (not `get/3`):
+        # this is the storefront page, so the `shop_name_prefixes` setting
+        # applies to the name — description is untouched.
+        localized_name = Translations.get_display(category, :name, current_language)
         localized_description = Translations.get(category, :description, current_language)
 
-        # Get current path for language switcher
-        current_path =
-          socket.assigns[:url_path] ||
-            "/shop/category/#{Translations.get(category, :slug, current_language)}"
+        # Current path for the language switcher. Built here in `mount/3`,
+        # so core's `:url_path` (assigned from its `handle_params` hook) is
+        # not available yet — the canonical path is what this can use, the
+        # same as the product page.
+        current_path = "/shop/category/#{Translations.get(category, :slug, current_language)}"
 
         seo = SEOHelpers.category_seo(category, current_language)
 
@@ -140,7 +142,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
             Settings.get_setting_cached("shop_category_icon_mode", "none")
           )
           |> Helpers.maybe_assign_admin_edit(
-            Routes.path("/admin/shop/categories/#{category.uuid}/edit"),
+            Helpers.admin_edit_path(
+              :category,
+              category.uuid,
+              Shop.category_url(category, current_language)
+            ),
             gettext("Edit Category")
           )
 
@@ -233,12 +239,43 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
   # §4.2.1 п.5: a currency-table change re-renders this tab's prices.
   @impl true
   def handle_info({:currencies_changed, _code}, socket) do
-    {:noreply, Helpers.refresh_display_currency(socket)}
+    socket = Helpers.refresh_display_currency(socket)
+
+    {:noreply,
+     if socket.assigns[:category] && socket.assigns[:products] do
+       reload_category_products(socket)
+     else
+       socket
+     end}
   end
 
   # Catch-all: an unrecognised message must not take the LiveView down.
   @impl true
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp reload_category_products(socket) do
+    filter_opts =
+      FilterHelpers.build_query_opts(
+        socket.assigns.active_filters,
+        socket.assigns.enabled_filters
+      )
+
+    {products, total} =
+      Shop.list_products_with_count(
+        [
+          status: "active",
+          category_uuid: socket.assigns.category.uuid,
+          page: 1,
+          per_page: socket.assigns.page * socket.assigns.per_page,
+          preload: [:category],
+          language: socket.assigns.current_language
+        ] ++ filter_opts
+      )
+
+    socket
+    |> assign(:products, products)
+    |> assign(:total_products, total)
+  end
 
   @impl true
   def handle_event("filter_price", params, socket) do
@@ -252,6 +289,13 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
         params["price_max"]
       )
 
+    path = build_filter_path(socket.assigns, active_filters)
+    {:noreply, push_patch(socket, to: path)}
+  end
+
+  @impl true
+  def handle_event("clear_filter", %{"key" => key}, socket) do
+    active_filters = FilterHelpers.clear_filter(socket.assigns.active_filters, key)
     path = build_filter_path(socket.assigns, active_filters)
     {:noreply, push_patch(socket, to: path)}
   end
@@ -294,19 +338,28 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
   def render(assigns) do
     ~H"""
     <ShopLayouts.shop_layout {assigns}>
-      <div class="p-6 max-w-7xl mx-auto">
-        
-        <ShopCards.storefront_bar language={@current_language} cart_count={@cart_count} />
-        <%!-- Breadcrumbs --%>
-        <div class="breadcrumbs text-sm mb-6">
+      <%!-- `pt-0`: the host layout already pads the top of every page. --%>
+      <div class="px-6 pt-0 pb-6 max-w-7xl mx-auto">
+        <%!-- One row under the site header: breadcrumbs on the left, cart and
+              (for an admin) edit on the right. --%>
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <%!-- Breadcrumbs --%>
+          <div class="breadcrumbs text-sm">
           <ul>
             <li>
-              <.link navigate={Shop.catalog_url(@current_language) <> @filter_qs}>
+              <%!-- The house marks this crumb as the way back to the shop's
+                    front page, so it reads as a destination rather than
+                    just the first word of a trail. --%>
+              <.link
+                navigate={Shop.catalog_url(@current_language) <> @filter_qs}
+                class="inline-flex items-center gap-1"
+              >
+                <.icon name="hero-home" class="w-4 h-4" />
                 {gettext("Shop")}
               </.link>
             </li>
             <%= if @category.parent do %>
-              <% parent_name = Translations.get(@category.parent, :name, @current_language) %>
+              <% parent_name = Translations.get_display(@category.parent, :name, @current_language) %>
               <li>
                 <.link navigate={Shop.category_url(@category.parent, @current_language) <> @filter_qs}>
                   {parent_name}
@@ -314,7 +367,15 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
               </li>
             <% end %>
             <li class="font-medium">{@localized_name}</li>
-          </ul>
+            </ul>
+          </div>
+
+          <ShopCards.storefront_bar
+            language={@current_language}
+            cart_count={@cart_count}
+            admin_edit_url={assigns[:admin_edit_url]}
+            admin_edit_label={assigns[:admin_edit_label]}
+          />
         </div>
 
         <%!-- Categories on mobile — same treatment as the catalog page. The
@@ -393,17 +454,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
             <%!-- Main Content --%>
             <div class="lg:col-span-3">
               <%!-- Category Header --%>
-              <div class="mb-8">
-                <div class="flex items-start justify-between gap-4">
-                  <h1 class="text-3xl font-bold">{@localized_name}</h1>
-                  <%!-- Admin Edit Button --%>
-                  <%= if assigns[:admin_edit_url] do %>
-                    <.link navigate={@admin_edit_url} class="btn btn-sm btn-outline gap-2 shrink-0">
-                      <.icon name="hero-pencil-square" class="w-4 h-4" />
-                      {@admin_edit_label || "Edit"}
-                    </.link>
-                  <% end %>
-                </div>
+              <div class="mb-6">
+                <%!-- Heading only: the edit link rides in the row with the
+                      breadcrumbs and the cart, so an admin sees the same
+                      heading a shopper does. --%>
+                <h1 class="text-3xl font-bold">{@localized_name}</h1>
                 <%= if @localized_description do %>
                   <p class="text-base-content/70 mt-2">{@localized_description}</p>
                 <% end %>

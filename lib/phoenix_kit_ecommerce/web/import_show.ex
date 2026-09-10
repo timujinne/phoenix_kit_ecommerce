@@ -13,6 +13,7 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Translations
+  alias PhoenixKitEcommerce.Web.Helpers
   import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
   @impl true
@@ -188,7 +189,7 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
                               <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "View")}</span>
                             </.link>
                             <.link
-                              navigate={Routes.path("/admin/shop/products/#{product.uuid}/edit")}
+                              navigate={Helpers.admin_edit_path(:item, product.uuid, assigns[:url_path])}
                               class="btn btn-xs btn-outline btn-info tooltip tooltip-bottom"
                               data-tip={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
                             >

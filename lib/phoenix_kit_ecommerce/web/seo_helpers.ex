@@ -27,7 +27,7 @@ defmodule PhoenixKitEcommerce.Web.SEOHelpers do
   def product_seo(product, language) do
     title =
       Translations.get(product, :seo_title, language) |> presence() ||
-        Translations.get(product, :title, language)
+        Translations.get_display(product, :title, language)
 
     description =
       Translations.get(product, :seo_description, language) |> presence() ||
@@ -67,7 +67,7 @@ defmodule PhoenixKitEcommerce.Web.SEOHelpers do
         end),
       og: %{
         type: "website",
-        title: Translations.get(category, :name, language),
+        title: Translations.get_display(category, :name, language),
         url: canonical,
         locale: language
       }

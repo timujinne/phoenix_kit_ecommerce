@@ -208,6 +208,24 @@ defmodule PhoenixKitEcommerce do
   end
 
   @doc """
+  Whether adding a product whose currency is a known, foreign code (not
+  the shop's base) is refused rather than logged-and-continued.
+
+  Defaults to `false` — refusing by default would brick every catalog
+  that still carries a stale default from before currency hygiene. A
+  settings-layer error degrades to `false` so a cache miss cannot abort
+  the add-to-cart transaction.
+  """
+  @spec enforce_product_currency?() :: boolean()
+  def enforce_product_currency? do
+    Settings.get_boolean_setting("shop_enforce_product_currency", false)
+  rescue
+    _ -> false
+  catch
+    :exit, _ -> false
+  end
+
+  @doc """
   Returns dashboard statistics for the shop.
   """
   def get_dashboard_stats do
@@ -2358,7 +2376,7 @@ defmodule PhoenixKitEcommerce do
       is_nil(base_code) or not known? or product_currency == base_code ->
         :ok
 
-      Settings.get_boolean_setting("shop_enforce_product_currency", false) ->
+      enforce_product_currency?() ->
         {:error, :currency_mismatch}
 
       true ->
@@ -2412,7 +2430,15 @@ defmodule PhoenixKitEcommerce do
          %Product{__meta__: %Ecto.Schema.Metadata{state: :built}} = product,
          language
        ) do
-    case ProductSource.current().get_product(product.uuid, language: language) do
+    # `:category` is required so `Options.get_option_schema_for_product/1`
+    # sees a `%Category{}` view-struct (with `option_schema` from
+    # `CategoryCommerce`) rather than falling through to the uuid clause,
+    # which queries the legacy `phoenix_kit_shop_categories` table and
+    # silently drops category-level price modifiers at add-to-cart.
+    case ProductSource.current().get_product(product.uuid,
+           language: language,
+           preload: [:category]
+         ) do
       %Product{} = fresh -> fresh
       nil -> %{product | status: "archived"}
     end
@@ -3135,7 +3161,7 @@ defmodule PhoenixKitEcommerce do
     repo().transaction(fn ->
       # Move items from guest to user cart
       Enum.each(guest.items, fn item ->
-        merge_cart_item(user, item)
+        merge_cart_item(user, item, guest)
       end)
 
       # Mark guest cart as merged
@@ -3149,11 +3175,11 @@ defmodule PhoenixKitEcommerce do
       recalculate_cart_totals!(user)
 
       repo().get_by!(Cart, uuid: user.uuid)
-      |> repo().preload([:items, :shipping_method, :payment_option])
+      |> repo().preload([:items, :shipping_method])
     end)
   end
 
-  defp merge_cart_item(user_cart, item) do
+  defp merge_cart_item(user_cart, item, guest_cart) do
     existing =
       find_cart_item_by_specs(
         user_cart.uuid,
@@ -3165,8 +3191,18 @@ defmodule PhoenixKitEcommerce do
       nil ->
         attrs =
           Map.from_struct(item)
-          |> Map.drop([:__meta__, :id, :uuid, :cart, :product, :inserted_at, :updated_at])
+          |> Map.drop([
+            :__meta__,
+            :id,
+            :uuid,
+            :cart,
+            :product,
+            :inserted_at,
+            :updated_at,
+            :line_total
+          ])
           |> Map.put(:cart_uuid, user_cart.uuid)
+          |> restamp_line_into_cart(item, guest_cart, user_cart)
 
         %CartItem{}
         |> CartItem.changeset(attrs)
@@ -3176,6 +3212,34 @@ defmodule PhoenixKitEcommerce do
         new_qty = existing_item.quantity + item.quantity
         existing_item |> CartItem.changeset(%{quantity: new_qty}) |> repo().update!()
     end
+  end
+
+  # Guest and user carts freeze independently (often on different domains).
+  # Copying display `unit_price` across those frames mixed currencies in
+  # the surviving cart. Convert through the guest line's base amount and
+  # re-snapshot at the user cart's frozen rate. Same-SKU matches keep the
+  # user line's already-frozen price and only bump quantity.
+  defp restamp_line_into_cart(attrs, item, _guest_cart, user_cart)
+       when item.currency == user_cart.currency,
+       do: attrs
+
+  defp restamp_line_into_cart(attrs, item, guest_cart, user_cart) do
+    base_unit = item.base_unit_price || to_base(guest_cart, item.unit_price)
+
+    attrs
+    |> Map.put(:currency, user_cart.currency)
+    |> Map.put(:unit_price, snapshot_unit_price(user_cart, base_unit))
+    |> Map.put(:base_unit_price, base_unit)
+    |> Map.put(
+      :compare_at_price,
+      restamp_compare_at(guest_cart, user_cart, item.compare_at_price)
+    )
+  end
+
+  defp restamp_compare_at(_guest_cart, _user_cart, nil), do: nil
+
+  defp restamp_compare_at(guest_cart, user_cart, compare) do
+    snapshot_unit_price(user_cart, to_base(guest_cart, compare))
   end
 
   @doc """
@@ -3744,7 +3808,11 @@ defmodule PhoenixKitEcommerce do
           # because a 50kg digital line pushed it over the cap.
           ShippingMethod.available_for?(method, %{
             weight_grams: shippable_weight_grams(items),
-            subtotal: cart.subtotal || Decimal.new("0"),
+            # Same base-currency subtotal `get_available_shipping_methods/1`
+            # already uses. Comparing the display snapshot here offered a
+            # method at listing time and then refused it at conversion
+            # (or the reverse) on a non-base cart.
+            subtotal: to_base(cart, cart.subtotal || Decimal.new("0")),
             country: cart.shipping_country
           })
       end
@@ -4282,7 +4350,11 @@ defmodule PhoenixKitEcommerce do
          {:ok, category_modifiers} <-
            reprice_category_options_for_base_change(multiplier, decimal_places),
          {:ok, shipping_methods} <-
-           reprice_shipping_methods_for_base_change(multiplier, decimal_places) do
+           reprice_shipping_methods_for_base_change(
+             new_base_code,
+             multiplier,
+             decimal_places
+           ) do
       {:ok,
        %{
          products: product_count,
@@ -4618,7 +4690,7 @@ defmodule PhoenixKitEcommerce do
 
   # ---- Shipping methods ----
 
-  defp reprice_shipping_methods_for_base_change(multiplier, decimal_places) do
+  defp reprice_shipping_methods_for_base_change(new_base_code, multiplier, decimal_places) do
     ShippingMethod
     |> repo().all()
     |> Enum.reduce_while({:ok, 0}, fn method, {:ok, count} ->
@@ -4643,6 +4715,7 @@ defmodule PhoenixKitEcommerce do
           multiplier,
           decimal_places
         )
+        |> Map.put("currency", new_base_code)
 
       case update_shipping_method(method, attrs) do
         {:ok, _updated} ->
@@ -4935,11 +5008,19 @@ defmodule PhoenixKitEcommerce do
     base = Billing.get_base_currency()
     display = Billing.resolve_display_currency(Currency.get_request_currency() || cart.currency)
 
-    %{
-      currency: display.code,
-      base_currency: base.code,
-      exchange_rate: Currency.effective_rate(display, base)
-    }
+    # `resolve_display_currency/1` returns nil when the currency table
+    # has no base row. Leave the frozen triple untouched rather than
+    # crashing the empty-cart path on `nil.code` — `create_cart/1` already
+    # fails closed in the same situation.
+    if display && base do
+      %{
+        currency: display.code,
+        base_currency: base.code,
+        exchange_rate: Currency.effective_rate(display, base)
+      }
+    else
+      %{}
+    end
   end
 
   # The portion of the cart tax actually applies to.

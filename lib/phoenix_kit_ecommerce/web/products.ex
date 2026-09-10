@@ -91,7 +91,11 @@ defmodule PhoenixKitEcommerce.Web.Products do
   end
 
   @impl true
-  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+  def handle_params(_params, uri, socket) do
+    # Kept so the catalogue editor these pages link into can send the
+    # visitor back to the list they left, not to the catalogue's own.
+    {:noreply, assign(socket, :url_path, URI.parse(uri).path)}
+  end
 
   # `replace: true` — debounced box, so a typed-out query would otherwise leave
   # one history entry per pause and Back would walk the search string backwards.
@@ -470,7 +474,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
                   label={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
                 />
                 <.table_row_menu_link
-                  navigate={Routes.path("/admin/shop/products/#{product.uuid}/edit")}
+                  navigate={Helpers.admin_edit_path(:item, product.uuid, assigns[:url_path])}
                   icon="hero-pencil"
                   label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
                 />
@@ -597,7 +601,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
                             label={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
                           />
                           <.table_row_menu_link
-                            navigate={Routes.path("/admin/shop/products/#{product.uuid}/edit")}
+                            navigate={Helpers.admin_edit_path(:item, product.uuid, assigns[:url_path])}
                             icon="hero-pencil"
                             label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
                           />

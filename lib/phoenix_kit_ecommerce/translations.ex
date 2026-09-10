@@ -137,6 +137,47 @@ defmodule PhoenixKitEcommerce.Translations do
   end
 
   @doc """
+  Storefront-only wrapper around `get/3`: runs the resolved value through
+  `PhoenixKitEcommerce.NamePrefix.strip/1`, which hides a shop-configured
+  vocabulary prefix ("3D Printed Costume Masks" -> "Costume Masks") when
+  the `shop_name_prefixes` setting names one — a no-op by default.
+
+  Call this ONLY for a display field on a genuine public storefront
+  page (`:title` on a product, `:name` on a category), reading a real
+  `%Product{}`/`%Category{}` struct. Never call it for `:slug` — slugs
+  are URLs and must never be rewritten — and never from an admin surface
+  or the Shopify sync path: an operator editing a category must see what
+  is actually stored, and the sync must compare and write the raw
+  Shopify-sourced value.
+
+  A cart line, order line item, or invoice's stored `product_title`/
+  `"name"` is a DIFFERENT kind of value — a snapshot taken at add-to-cart
+  time, not a live read of the product — and is never touched by this
+  function at all (it isn't a `%Product{}`/`%Category{}` field access in
+  the first place). The snapshot itself stays exactly as stored, same as
+  a snapshotted price; but DISPLAYING it on a storefront page (the cart,
+  checkout, and order-confirmation pages, and the customer's own order
+  history) still applies the prefix, by calling
+  `PhoenixKitEcommerce.NamePrefix.strip/1` directly on the snapshot
+  string — the shopper is not shopping from a stored record, so there is
+  no earlier "what they actually saw" to preserve; they are looking at
+  the same storefront naming as every other page. Only a persisted
+  WRITE, and any value compared against or sent to Shopify, must stay
+  raw.
+
+  ## Examples
+
+      iex> Translations.get_display(category, :name, "en")
+      "Costume Masks"
+  """
+  @spec get_display(struct(), atom(), String.t()) :: any()
+  def get_display(entity, field, language) do
+    entity
+    |> get(field, language)
+    |> PhoenixKitEcommerce.NamePrefix.strip()
+  end
+
+  @doc """
   Gets the localized slug with fallback.
 
   Convenience function for URL slug retrieval.

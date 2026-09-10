@@ -13,6 +13,7 @@ defmodule PhoenixKitEcommerce.Catalogue.Extension do
   alias PhoenixKitEcommerce.Catalogue.CategoryCommerce
   alias PhoenixKitEcommerce.Catalogue.ItemCommerce
   alias PhoenixKitEcommerce.Catalogue.ShopSections
+  alias PhoenixKitEcommerce.Catalogue.ShopStatusColumn
 
   @doc "Namespace under `data` this extension owns."
   @spec key() :: String.t()
@@ -37,4 +38,16 @@ defmodule PhoenixKitEcommerce.Catalogue.Extension do
   @doc "Validates and shapes `category[\"ecommerce\"]` — see `CategoryCommerce.cast/2`."
   @spec cast_category(map(), map()) :: {:ok, map()} | {:error, [{atom(), String.t()}]}
   def cast_category(params, current), do: CategoryCommerce.cast(params, current)
+
+  @doc """
+  Extra column for the catalogue item table's Columns modal — surfaces
+  the shop's own `shop_status` next to the catalogue's `status` so the
+  two stop contradicting each other invisibly. See `ShopStatusColumn`.
+  """
+  @spec item_columns() :: [map()]
+  def item_columns, do: ShopStatusColumn.item_columns()
+
+  @doc "Same as `item_columns/0`, for the catalogue category table — categories carry their own `shop_status` too (`CategoryCommerce`)."
+  @spec category_columns() :: [map()]
+  def category_columns, do: ShopStatusColumn.category_columns()
 end

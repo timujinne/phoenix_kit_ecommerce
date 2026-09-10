@@ -277,4 +277,104 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
                )
     end
   end
+
+  describe "fetch_shop/2 credential resolution" do
+    test "returns an error for an integration uuid that doesn't exist" do
+      assert {:error, _reason} = AdminClient.fetch_shop(Ecto.UUID.generate(), req_options())
+    end
+
+    test "returns an error when the connection has never been configured" do
+      {:ok, %{uuid: uuid}} = Integrations.add_connection("shopify", "Unconfigured Shop")
+
+      assert {:error, _reason} = AdminClient.fetch_shop(uuid, req_options())
+    end
+  end
+
+  describe "fetch_shop/2 requests" do
+    test "sends the access token via X-Shopify-Access-Token, hits shop.json, and returns the shop map" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        assert Plug.Conn.get_req_header(conn, "x-shopify-access-token") == ["shpat_test_token"]
+        assert conn.request_path == "/admin/api/2025-01/shop.json"
+
+        json_response(conn, 200, %{
+          "shop" => %{
+            "name" => "Test Shop",
+            "myshopify_domain" => "test-shop.myshopify.com",
+            "currency" => "USD"
+          }
+        })
+      end)
+
+      assert {:ok, %{"currency" => "USD"}} = AdminClient.fetch_shop(uuid, req_options())
+    end
+
+    test "returns :unauthorized on a 401 response" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 401, %{"errors" => "Invalid API key"})
+      end)
+
+      assert {:error, :unauthorized} = AdminClient.fetch_shop(uuid, req_options())
+    end
+
+    test "returns :forbidden on a 403 response" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 403, %{"errors" => "This action requires merchant approval"})
+      end)
+
+      assert {:error, :forbidden} = AdminClient.fetch_shop(uuid, req_options())
+    end
+
+    test "returns :shop_not_found on a 404 response" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn -> json_response(conn, 404, %{"errors" => "Not Found"}) end)
+
+      assert {:error, :shop_not_found} = AdminClient.fetch_shop(uuid, req_options())
+    end
+
+    test "returns an error on a network failure" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn -> Req.Test.transport_error(conn, :closed) end)
+
+      assert {:error, %Req.TransportError{}} = AdminClient.fetch_shop(uuid, req_options())
+    end
+  end
+
+  describe "parse_shop_response/1" do
+    # Exercises the response-shape handling directly, with no HTTP call
+    # at all — same reason `AdminClient.check_shop_currency/1`'s sibling
+    # in the app's own mix task is public.
+    test "extracts the shop map from a 200" do
+      response = {:ok, %Req.Response{status: 200, body: %{"shop" => %{"currency" => "EUR"}}}}
+
+      assert {:ok, %{"currency" => "EUR"}} = AdminClient.parse_shop_response(response)
+    end
+
+    test "maps 401/403/404 to the same atoms fetch_products/2 uses" do
+      assert {:error, :unauthorized} =
+               AdminClient.parse_shop_response({:ok, %Req.Response{status: 401, body: %{}}})
+
+      assert {:error, :forbidden} =
+               AdminClient.parse_shop_response({:ok, %Req.Response{status: 403, body: %{}}})
+
+      assert {:error, :shop_not_found} =
+               AdminClient.parse_shop_response({:ok, %Req.Response{status: 404, body: %{}}})
+    end
+
+    test "maps any other status to :unexpected_status" do
+      assert {:error, {:unexpected_status, 500}} =
+               AdminClient.parse_shop_response({:ok, %Req.Response{status: 500, body: %{}}})
+    end
+
+    test "passes a transport error straight through" do
+      assert {:error, :closed} = AdminClient.parse_shop_response({:error, :closed})
+    end
+  end
 end

@@ -311,9 +311,13 @@ defmodule PhoenixKitEcommerce.PriceDisplay do
     base_amount =
       if ctx == :selected,
         do: Keyword.fetch!(opts, :amount),
-        else: product.price || Decimal.new("0")
+        else: product.price
 
-    if on_request?(product) or Decimal.compare(compare, base_amount) != :gt do
+    # A nil asking price is not "0" — substituting zero produced a
+    # "100% OFF" badge for a product that has no price at all. A genuine
+    # free product (`price` is zero) still computes the percent.
+    if is_nil(base_amount) or on_request?(product) or
+         Decimal.compare(compare, base_amount) != :gt do
       nil
     else
       percent =

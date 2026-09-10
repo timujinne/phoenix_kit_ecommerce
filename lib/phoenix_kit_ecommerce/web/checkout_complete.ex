@@ -7,6 +7,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
 
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.Policy
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.Web.Components.ShopLayouts
@@ -283,9 +284,10 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
               <h3 class="font-medium text-sm text-base-content/70 mb-2">{gettext("Items")}</h3>
               <div class="space-y-3">
                 <%= for item <- @order.line_items || [] do %>
+                  <% display_name = NamePrefix.strip(item["name"]) %>
                   <div class="flex justify-between items-center text-sm">
                     <div>
-                      <span class="font-medium">{item["name"]}</span>
+                      <span class="font-medium">{display_name}</span>
                       <%= if item["type"] != "shipping" do %>
                         <span class="text-base-content/60 ml-2">× {item["quantity"]}</span>
                       <% end %>

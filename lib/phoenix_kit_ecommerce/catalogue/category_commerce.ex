@@ -19,13 +19,12 @@ defmodule PhoenixKitEcommerce.Catalogue.CategoryCommerce do
     # active | unlisted | hidden
     field :shop_status, :string, default: "active"
     field :option_schema, {:array, :map}, default: []
-    field :image_uuid, Ecto.UUID
     field :featured_item_uuid, Ecto.UUID
     # per-category override read by the storefront filters (Block 4)
     field :storefront_filters, :map, default: %{}
   end
 
-  @fields ~w(shop_status option_schema image_uuid featured_item_uuid storefront_filters)a
+  @fields ~w(shop_status option_schema featured_item_uuid storefront_filters)a
 
   @doc "Changeset — `option_schema` reuses `PhoenixKitEcommerce.OptionTypes.validate_options/1`."
   @spec changeset(t(), map()) :: Ecto.Changeset.t()
@@ -59,7 +58,8 @@ defmodule PhoenixKitEcommerce.Catalogue.CategoryCommerce do
     |> changeset(merged)
     |> case do
       %Ecto.Changeset{valid?: true} = changeset ->
-        {:ok, changeset |> apply_changes() |> to_storage_map()}
+        storage = changeset |> apply_changes() |> to_storage_map()
+        {:ok, Map.merge(current || %{}, storage)}
 
       %Ecto.Changeset{valid?: false} = changeset ->
         {:error, error_list(changeset)}

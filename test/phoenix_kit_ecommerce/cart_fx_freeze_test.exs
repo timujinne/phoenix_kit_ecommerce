@@ -154,6 +154,29 @@ defmodule PhoenixKitEcommerce.CartFxFreezeTest do
     assert Decimal.equal?(new_item.unit_price, Decimal.new("95.00"))
   end
 
+  test "emptying the cart after the currency table is cleared does not crash" do
+    Currency.put_request_currency("EUR")
+    {:ok, cart} = Shop.create_cart(session_id: "s-#{System.unique_integer([:positive])}")
+    {:ok, p} = Shop.create_product(product_attrs(%{"price" => Decimal.new("138.00")}))
+    {:ok, cart} = Shop.add_to_cart(cart, p, 1)
+
+    frozen = %{
+      currency: cart.currency,
+      base_currency: cart.base_currency,
+      exchange_rate: cart.exchange_rate
+    }
+
+    Repo.delete_all(PhoenixKitBilling.Currency)
+    PhoenixKit.Cache.clear(:billing_currencies)
+
+    [item] = cart.items
+    assert {:ok, emptied} = Shop.remove_from_cart(item)
+    assert emptied.items_count == 0
+    assert emptied.currency == frozen.currency
+    assert emptied.base_currency == frozen.base_currency
+    assert Decimal.equal?(emptied.exchange_rate, frozen.exchange_rate)
+  end
+
   test "a new line still converts at the frozen rate after the cart's currency is disabled (§12.2)" do
     # Regression, traced by review through Currency.present/3: calling
     # present(amount, cart.currency, rate: cart.exchange_rate) did NOT

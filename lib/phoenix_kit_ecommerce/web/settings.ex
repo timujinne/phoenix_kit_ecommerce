@@ -13,6 +13,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
+  alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.Notifications, as: ShopNotifications
   alias PhoenixKitEcommerce.Policy
   alias PhoenixKitEcommerce.Vocabulary
@@ -38,6 +39,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign(:billing_enabled, billing_enabled?())
       |> assign(:category_name_display, get_category_name_display())
       |> assign(:catalog_vocabulary, Vocabulary.current())
+      |> assign(:name_prefixes, Enum.join(NamePrefix.prefixes(), ", "))
       |> assign(:hide_zero_decimals, Helpers.hide_zero_decimals?())
       |> assign(:category_icon_mode, get_category_icon_mode())
       |> assign(:sidebar_show_categories, get_sidebar_show_categories())
@@ -149,6 +151,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   def handle_event("save_default_tax_country", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("save_default_tax_country", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("save_name_prefixes", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("save_name_prefixes", params, socket)
     end)
   end
 
@@ -859,6 +868,31 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
             <div class="divider"></div>
 
+            <div id="shop-name-prefixes-card" class="mb-6">
+              <h3 class="font-medium mb-1">{gettext("Hide name prefixes on the storefront")}</h3>
+              <p class="text-sm text-base-content/70 mb-3">
+                {gettext(
+                  "Comma-separated prefixes to strip from product and category names on public pages only — e.g. \"3D Printed\" turns \"3D Printed Costume Masks\" into \"Costume Masks\". Stored names, admin pages and Shopify sync are never affected. Leave blank to keep every name exactly as stored (default)."
+                )}
+              </p>
+              <form
+                id="shop-name-prefixes-form"
+                phx-submit="save_name_prefixes"
+                class="flex gap-2 items-center"
+              >
+                <input
+                  type="text"
+                  name="prefixes"
+                  value={@name_prefixes}
+                  placeholder={gettext("e.g. 3D Printed")}
+                  class="input input-bordered flex-1 max-w-md"
+                />
+                <button type="submit" class="btn btn-primary btn-sm">{gettext("Save")}</button>
+              </form>
+            </div>
+
+            <div class="divider"></div>
+
             <div>
               <h3 class="font-medium mb-1">{gettext("Price format")}</h3>
               <p class="text-sm text-base-content/60 mb-3">
@@ -1035,6 +1069,36 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     else
       {:noreply,
        put_flash(socket, :error, gettext("Enter a two-letter country code, or leave it blank."))}
+    end
+  end
+
+  defp gated_event("save_name_prefixes", %{"prefixes" => raw}, socket) do
+    # Normalize (trim, drop blanks, re-join) before saving, so the stored
+    # value and what's displayed back to the admin agree rather than
+    # echoing stray commas/whitespace the admin typed.
+    normalized =
+      raw
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join(", ")
+
+    case Settings.update_setting(NamePrefix.setting_key(), normalized) do
+      {:ok, _} ->
+        Activity.log("shop.name_prefixes_updated",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "setting",
+          metadata: %{"setting" => NamePrefix.setting_key(), "value" => normalized}
+        )
+
+        {:noreply,
+         socket
+         |> assign(:name_prefixes, normalized)
+         |> put_flash(:info, gettext("Storefront name prefixes updated"))}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, gettext("Failed to update setting"))}
     end
   end
 
