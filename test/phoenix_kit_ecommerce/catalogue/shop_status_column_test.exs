@@ -258,26 +258,26 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopStatusColumnTest do
       assert shop_status_attr(html) == "default"
     end
 
-    test "discontinued/active — WARNS: excluded from listings, reachable by direct link" do
+    test "discontinued/active — disagreement shown, but NO warning: #53 closed this leak" do
       html =
         render_item_cell(%{
           status: "discontinued",
           data: %{"ecommerce" => %{"shop_status" => "active"}}
         })
 
-      assert html =~ "hero-exclamation-triangle"
-      assert contradiction_attr(html) == "true"
+      refute html =~ "hero-exclamation-triangle"
+      assert contradiction_attr(html) == "false"
     end
 
-    test "inactive/active — WARNS (the other catalogue-non-active value)" do
+    test "inactive/active — disagreement shown, but NO warning: #53 closed this leak" do
       html =
         render_item_cell(%{
           status: "inactive",
           data: %{"ecommerce" => %{"shop_status" => "active"}}
         })
 
-      assert html =~ "hero-exclamation-triangle"
-      assert contradiction_attr(html) == "true"
+      refute html =~ "hero-exclamation-triangle"
+      assert contradiction_attr(html) == "false"
     end
   end
 
@@ -285,20 +285,19 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopStatusColumnTest do
     # 4 catalogue statuses × 4 shop-status values (nil = absent) = 16
     # rows — every value either domain can actually hold
     # (`ItemCommerce.@statuses`, `Schemas.Item.@statuses`), not a
-    # hand-picked subset. Catches the exact class of gap the category
-    # side had: a rule modelled on the wrong page's gate silently
-    # missing one row.
-    test "contradiction fires exactly on shop==active with catalogue!=active, never otherwise" do
+    # hand-picked subset. Since PR #53 closed the item-side reachability
+    # leak at the source (`View.product_status/2` defers to `item.status`
+    # first), no combination warns any more — the column shows the raw
+    # disagreement but never flags it as a hazard.
+    test "contradiction never fires on the item side, any catalogue/shop combination" do
       for catalogue_status <- ~w(active inactive discontinued deleted),
           shop_raw <- [nil, "draft", "active", "archived"] do
         data = if shop_raw, do: %{"ecommerce" => %{"shop_status" => shop_raw}}, else: %{}
         html = render_item_cell(%{status: catalogue_status, data: data})
 
-        expected = shop_raw == "active" and catalogue_status != "active"
-
-        assert contradiction_attr(html) == to_string(expected),
+        assert contradiction_attr(html) == "false",
                "catalogue=#{inspect(catalogue_status)} shop=#{inspect(shop_raw)}: " <>
-                 "expected contradiction=#{expected}, got #{contradiction_attr(html)}"
+                 "expected contradiction=false, got #{contradiction_attr(html)}"
       end
     end
   end
@@ -480,10 +479,13 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopStatusColumnTest do
 
   describe "the contradiction hint" do
     test "resolves through PhoenixKitEcommerce.Gettext" do
-      record = %{status: "discontinued", data: %{"ecommerce" => %{"shop_status" => "active"}}}
+      # Item-side contradiction never fires any more (PR #53 closed that
+      # leak at the source — see `render_item/1`), so only a category
+      # record can still exercise the warning hint.
+      record = %{status: "deleted", data: %{"ecommerce" => %{"shop_status" => "active"}}}
 
       Gettext.put_locale(PhoenixKitEcommerce.Gettext, "de")
-      html = render_item_cell(record)
+      html = render_category_cell(record)
       assert html =~ ~s(title="Der Shop meldet diesen Eintrag als aktiv)
     after
       Gettext.put_locale(PhoenixKitEcommerce.Gettext, "en")

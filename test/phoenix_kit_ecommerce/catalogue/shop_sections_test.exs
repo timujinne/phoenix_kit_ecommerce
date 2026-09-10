@@ -115,7 +115,15 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSectionsTest do
       html =
         render_component(&ShopSections.category/1,
           form: nil,
-          category: %PhoenixKitCatalogue.Schemas.Category{uuid: nil},
+          # `struct!/2`, not a `%Module{...}` literal: the literal form
+          # needs the struct's fields at COMPILE time (a hard
+          # `CompileError`, not a warning, when `phoenix_kit_catalogue`
+          # isn't declared), which broke plain `mix test` on a checkout
+          # without the optional dependency — `struct!/2` is a plain
+          # function call the compiler doesn't need to resolve until it
+          # actually runs. See the same note in
+          # `shop_status_column_catalogue_integration_test.exs`.
+          category: struct!(PhoenixKitCatalogue.Schemas.Category, uuid: nil),
           data: %{},
           current_language: "en-US"
         )

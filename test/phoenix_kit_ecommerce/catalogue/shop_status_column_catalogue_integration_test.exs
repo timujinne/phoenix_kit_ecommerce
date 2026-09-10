@@ -65,13 +65,15 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopStatusColumnCatalogueIntegrationTest
     assert label.() == "Shop status"
   end
 
-  test "render/1 against a real PhoenixKitCatalogue.Schemas.Item renders the contradiction cell" do
+  test "render/1 against a real PhoenixKitCatalogue.Schemas.Item shows the disagreement, no warning" do
     %{render: render} = PhoenixKitCatalogue.Extensions.columns(:detail_items) |> find_column()
 
-    # The corrected hazard case (see ShopStatusColumn moduledoc /
-    # ShopStatusColumnTest): the shop reports "active" while the
-    # catalogue's own status says otherwise — reachable by direct link
-    # despite being excluded from every listing.
+    # Since PR #53, `View.product_status/2` defers to `item.status`
+    # first and forces "archived" on any non-active catalogue status
+    # regardless of `shop_status` — so this combination is shown as a
+    # disagreement (both raw values render) but is no longer a
+    # reachability hazard, and never warns (see ShopStatusColumn
+    # moduledoc / ShopStatusColumnTest).
     item =
       struct!(PhoenixKitCatalogue.Schemas.Item,
         status: "discontinued",
@@ -82,8 +84,8 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopStatusColumnCatalogueIntegrationTest
 
     assert html =~ ~s(data-catalogue-status="discontinued")
     assert html =~ ~s(data-shop-status="active")
-    assert html =~ ~s(data-contradiction="true")
-    assert html =~ "hero-exclamation-triangle"
+    assert html =~ ~s(data-contradiction="false")
+    refute html =~ "hero-exclamation-triangle"
     refute html =~ ~s( id=")
   end
 

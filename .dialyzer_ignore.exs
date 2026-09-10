@@ -35,5 +35,11 @@
   {"lib/phoenix_kit_ecommerce/catalogue/value_resolver.ex", :unknown_function},
   {"lib/phoenix_kit_ecommerce/shopify/sync.ex", :unknown_function},
   {"lib/phoenix_kit_ecommerce/shopify/collection_sync.ex", :unknown_function},
-  {"lib/phoenix_kit_ecommerce/workers/shopify_media_sync_worker.ex", :unknown_function}
+  {"lib/phoenix_kit_ecommerce/workers/shopify_media_sync_worker.ex", :unknown_function},
+  # Same reasoning: `Helpers.admin_edit_path/3`'s storefront/admin edit
+  # links only reach `PhoenixKitCatalogue.Paths.item_edit/1`/
+  # `category_edit/1` once its own `Code.ensure_loaded?/1` guard has
+  # already passed (PR #49) — live code once a host declares the
+  # dependency, unknown to dialyzer's PLT otherwise.
+  {"lib/phoenix_kit_ecommerce/web/helpers.ex", :unknown_function}
 ]

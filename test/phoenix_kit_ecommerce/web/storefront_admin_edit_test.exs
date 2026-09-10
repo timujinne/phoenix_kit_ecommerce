@@ -137,6 +137,13 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
       assert URI.decode(href) =~ "/shop/category/"
     end
 
+    # Requires `PhoenixKitCatalogue.Paths` to be loaded:
+    # `Helpers.admin_edit_path/3` falls back to the legacy path whenever
+    # `Code.ensure_loaded?(PhoenixKitCatalogue.Paths)` is false, which it
+    # always is on a checkout without the optional `phoenix_kit_catalogue`
+    # dependency declared — same exclusion every other `:catalogue` test
+    # in this fork relies on.
+    @tag :catalogue
     test "with the catalogue source on, the link opens the catalogue category editor", %{
       category: category
     } do
@@ -195,6 +202,8 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
       refute html =~ "Edit Product"
     end
 
+    # See the tag note on the matching category-page test above.
+    @tag :catalogue
     test "with the catalogue source on, the link opens the catalogue item editor", %{
       product: product
     } do
@@ -237,6 +246,8 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
   end
 
   describe "admin list and detail pages" do
+    # See the tag note on "with the catalogue source on..." above.
+    @tag :catalogue
     test "the products list edits in the catalogue and returns to the list", %{conn: conn} do
       # Created first: with the catalogue source on, the legacy writer
       # refuses, and this fixture only needs a uuid to build a path from.
@@ -260,6 +271,7 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
       assert href =~ "return_to=%2Fen%2Fadmin%2Fshop%2Fproducts%3Fpage%3D2"
     end
 
+    @tag :catalogue
     test "the categories list edits the catalogue category", %{conn: _conn} do
       {:ok, category} = Shop.create_category(%{"name" => %{"en" => "Admin Cat"}})
 

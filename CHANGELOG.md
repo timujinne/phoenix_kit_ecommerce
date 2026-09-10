@@ -6,6 +6,79 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## 0.5.2 - 2026-09-10
+
+PRs #48–#53 plus the post-merge review sweep in
+`dev_docs/pull_requests/2026/{49..53}-*/CLAUDE_REVIEW.md`.
+
+### Added
+
+- **Storefront layout: shared breadcrumb/actions row, wider product
+  gallery.** The catalog, category and product pages share one row
+  (breadcrumbs left, cart and admin edit link right) instead of a bar
+  plus a separate breadcrumb row; the product gallery widens to 65% and
+  carries the description under it on wide screens while keeping the
+  buy box ahead of the description on a phone. (#48)
+- **Shopify sync admin page paginates with `load_more`, not a
+  hand-rolled pager**, so a section's client-side bulk selection
+  survives loading more rows instead of being replaced page by page.
+  (#48)
+- **Storefront and admin "Edit" links open the catalogue editor** (via
+  `Helpers.admin_edit_path/3`, `shop.manage_catalog`-gated, carrying
+  `return_to` so save-and-exit returns to the page/list the visitor came
+  from) once the catalogue product source is on, across the storefront
+  pages and the admin products/categories/import screens. (#48, #49)
+- **Per-filter clear button** on the storefront sidebar, and a house
+  icon on the Shop breadcrumb. (#49)
+- **Configurable storefront name prefix stripping** (`shop_name_prefixes`,
+  empty by default). A prefix like "3D Printed" is stripped from
+  product/category names at display time only (storefront, cart,
+  checkout, confirmation, order history) — the stored name a Shopify
+  re-sync owns is never rewritten. Longest-applicable prefix wins on
+  overlapping configuration. (#51)
+- **Catalogue admin: a "Shop status" column** on the item/category
+  lists, showing `data["ecommerce"]["shop_status"]` next to the
+  catalogue's own status, with a warning badge on the one combination
+  that is an actual reachability hazard (category only, as of this
+  release — see Fixed). (#52)
+
+### Fixed
+
+- **Category featured-item images** stopped resolving after the move to
+  `phoenix_kit_catalogue`: `category_view/2` never populated the
+  `:featured_product` association the image fallback chain reads. Now
+  resolved for a batch of categories in at most two queries. (#49)
+- **A Shopify sync at an item's primary language** wrote the new
+  title/body_html to the column but left a pre-existing primary-language
+  override bucket entry stale, so the sync appeared to do nothing. Now
+  writes through to both. (#50)
+- **A catalogue item retired via its own status** (`inactive` /
+  `discontinued` / `deleted`) stayed reachable and purchasable at its
+  storefront URL whenever a left-over `shop_status` said `active`.
+  Status derivation now checks the catalogue's own status first; a
+  `shop_status` can only restrict visibility further, never resurrect a
+  retired item. (#53)
+- **The same stale-status reachability bug on the category side**
+  (`category_view/2` never deferred to the catalogue's own category
+  status at all) — found in post-merge review of #53, fixed alongside
+  it: a catalogue-deleted category with a left-over non-hidden
+  `shop_status` stayed reachable at its category page URL.
+- **The catalogue admin's item-side "Shop status" warning badge**
+  (added in #52) became dead/incorrect the moment the #53 fix above
+  closed the reachability leak it existed to catch — it would have kept
+  firing on ordinary retired items. Removed; the category-side warning
+  (the leak that remains real) is unaffected.
+- **`mix compile --warnings-as-errors` (and `mix precommit`)** failed on
+  any checkout without the optional `phoenix_kit_catalogue` dependency
+  declared, from a missing duck-type compile guard on
+  `Web.Helpers.admin_edit_path/3` (introduced in #48).
+- **`mix test` failed to compile at all**, for the whole suite, on the
+  same kind of checkout, from a test file's `%PhoenixKitCatalogue.Schemas.Category{}`
+  struct literal (needs the struct resolvable at compile time) instead
+  of `struct!/2` (#49); and 4 tests asserting catalogue-only editor
+  behavior were missing a `:catalogue` tag, so they failed
+  deterministically without the optional dependency (#48, #49).
+
 ## 0.5.1 - 2026-09-09
 
 ### Added

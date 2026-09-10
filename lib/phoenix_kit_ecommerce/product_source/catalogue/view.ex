@@ -159,7 +159,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
       name: localized_map(category, langs, &Catalogue.translated_name/2),
       description: localized_map(category, langs, &Catalogue.translated_description/2),
       slug: category.slug || %{},
-      status: Map.get(ecommerce, "shop_status") || "active",
+      status: category_status(category, ecommerce),
       position: category.position,
       parent_uuid: category.parent_uuid,
       parent: Keyword.get(opts, :parent),
@@ -252,6 +252,30 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
     else
       case Map.get(ecommerce, "shop_status") do
         status when status in ["draft", "active", "archived"] -> status
+        _ -> "active"
+      end
+    end
+  end
+
+  # Same precedence fix as `product_status/2`, for the category's own
+  # `c.status` domain (`"active" | "deleted"` — a catalogue category is
+  # soft-deleted, never retired through a richer status like an item).
+  # `Query.filter_by_category_status/2`'s listing query already keeps a
+  # deleted catalogue category out of every listing unconditionally
+  # (`c.status != "deleted"`, alongside the shop_status filter) — this
+  # mirrors that guard on the single-category read path
+  # (`get_category/1`, `get_category_by_slug_localized/3`) that
+  # `CatalogCategory.do_mount/3` uses, which had none: a category
+  # soft-deleted at the catalogue level with a left-over
+  # `shop_status: "active"`/`"unlisted"` resolved to that shop_status
+  # and stayed reachable by direct link, since `do_mount/3` redirects
+  # only on the literal `"hidden"` status.
+  defp category_status(category, ecommerce) do
+    if Map.get(category, :status) == "deleted" do
+      "hidden"
+    else
+      case Map.get(ecommerce, "shop_status") do
+        status when status in ["active", "unlisted", "hidden"] -> status
         _ -> "active"
       end
     end

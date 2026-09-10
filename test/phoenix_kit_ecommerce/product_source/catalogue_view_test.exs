@@ -428,6 +428,38 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert category_view(category).status == "active"
     end
 
+    # Regression for the category-side twin of the product `status` bug
+    # fixed for #53 (`View.product_status/2`, above): `category_view/2`
+    # used to read ONLY `shop_status`, never `category.status`, so a
+    # catalogue-deleted category with a left-over
+    # `shop_status: "active"`/`"unlisted"` resolved to that value and
+    # stayed reachable — `CatalogCategory.do_mount/3` redirects only on
+    # the literal `"hidden"` status. A soft-deleted catalogue category
+    # (`status: "deleted"`, the only non-active value the catalogue
+    # category domain has) must resolve to `"hidden"` no matter what
+    # `shop_status` says.
+    test "status never derives reachable when the catalogue category itself is deleted, no matter what shop_status says" do
+      for shop_status <- ["active", "unlisted", "hidden", nil] do
+        category =
+          build_category(%{"ecommerce" => %{"shop_status" => shop_status}})
+          |> Map.put(:status, "deleted")
+
+        assert category_view(category).status == "hidden",
+               "shop_status #{inspect(shop_status)} on a deleted category resolved to " <>
+                 "#{category_view(category).status}, expected \"hidden\""
+      end
+    end
+
+    test "status still follows shop_status when the catalogue category itself is active" do
+      for shop_status <- ["active", "unlisted", "hidden"] do
+        category =
+          build_category(%{"ecommerce" => %{"shop_status" => shop_status}})
+          |> Map.put(:status, "active")
+
+        assert category_view(category).status == shop_status
+      end
+    end
+
     test "storefront_filters is read from data.ecommerce.storefront_filters" do
       overrides = %{
         "ecommerce" => %{

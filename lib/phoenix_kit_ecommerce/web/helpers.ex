@@ -6,6 +6,14 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   catalog_category, catalog_product, cart_page, checkout_page, and checkout_complete.
   """
 
+  # `catalogue_edit_path/2` below is only ever reached once
+  # `admin_edit_path/3`'s own `Code.ensure_loaded?(PhoenixKitCatalogue.Paths)`
+  # guard has already passed, same duck-typed pattern as
+  # `ProductSource.Catalogue.View`'s `@compile` tag on `Catalogue` — the
+  # tag only quietens the compiler's static xref check for hosts that
+  # don't declare the optional dependency.
+  @compile {:no_warn_undefined, PhoenixKitCatalogue.Paths}
+
   alias PhoenixKit.Modules.Languages
   alias PhoenixKit.Modules.Languages.DialectMapper
   alias PhoenixKit.Modules.Storage

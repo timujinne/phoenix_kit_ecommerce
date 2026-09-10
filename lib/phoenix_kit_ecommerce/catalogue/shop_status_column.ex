@@ -37,59 +37,49 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopStatusColumn do
       `Map.get(ecommerce, "shop_status") || "active"` — no fallback to
       `c.status` at all).
 
-  ## The one case that warrants a warning — and why items and
-  ## categories check it DIFFERENTLY
+  ## The one case that warrants a warning — categories only
 
   `ProductSource.Catalogue.Query.active_visibility/1` (the LISTING
   query) unconditionally requires the catalogue's own status to be
   right (`item.status == "active"` / `c.status != "deleted"`) — no
-  `shop_status` value overrides that. But the DIRECT product/category
-  page does NOT re-check the catalogue status the same way, and the
-  two pages gate oppositely:
+  `shop_status` value overrides that.
 
-    * `CatalogProduct.do_mount/3` is an ALLOW-list of one value: it
-      redirects on any resolved status `!= "active"`
-      (`View.product_status/2` lets an EXPLICIT `shop_status ==
-      "active"` win outright regardless of `item.status`). So the
-      reachable-despite-a-bad-catalogue-status case is exactly
-      `shop_status == "active"`.
-    * `CatalogCategory.do_mount/3` is a BLOCK-list of one value: it
-      redirects ONLY when the resolved status
-      (`View.category_view/2`'s `shop_status || "active"`, again no
-      deference to `c.status`) is literally `"hidden"` — `"active"` AND
-      `"unlisted"` both fall through to rendering the page. So the
-      reachable-despite-a-bad-catalogue-status case here is
-      `shop_status != "hidden"`, a strictly LARGER set than "active"
-      alone: a soft-deleted (`c.status == "deleted"`) category whose
-      `shop_status` is merely `"unlisted"` (not explicitly `"active"`)
-      is STILL reachable by direct link, because `"unlisted" !=
-      "hidden"` is all `do_mount/3` checks.
+  On the CATEGORY side, the direct page does NOT defer to the
+  catalogue status the same way: `CatalogCategory.do_mount/3` is a
+  BLOCK-list of one value — it redirects ONLY when the resolved status
+  (`View.category_view/2`) is literally `"hidden"` — `"active"` AND
+  `"unlisted"` both fall through to rendering the page. So a
+  soft-deleted (`c.status == "deleted"`) category whose `shop_status`
+  is merely `"unlisted"` (not explicitly `"active"`) can still be
+  reachable by direct link whenever `View.category_view/2` doesn't
+  force it to `"hidden"` for that deleted status — `"unlisted" !=
+  "hidden"` is all `do_mount/3` checks. `render_category/1` compares
+  `shop_key != "hidden"` against the catalogue side to catch exactly
+  this.
 
-  Either way: whatever the catalogue side excludes it, is excluded from
-  every listing/count/facet, while still reachable — and purchasable —
-  through its direct URL. That is a real leak, not a cosmetic mismatch,
-  and is the ONLY thing this column warns on: `render_item/1` compares
-  `shop_key == "active"` against the catalogue side; `render_category/1`
-  compares `shop_key != "hidden"` — deliberately NOT the same predicate
-  shape, because the pages themselves are not the same shape.
+  On the ITEM side this class of leak is now closed at the source:
+  `View.product_status/2` checks `item.status` FIRST and forces
+  `"archived"` on any non-active catalogue status, regardless of what
+  `shop_status` says (`phoenix_kit_ecommerce` PR #53) — so
+  `CatalogProduct.do_mount/3`, which redirects on any resolved status
+  `!= "active"`, can no longer be fooled by an explicit `shop_status:
+  "active"` left over on a retired item. An item can still show a
+  catalogue/shop DISAGREEMENT (e.g. `discontinued` catalogue status
+  with a stale `shop_status: "active"`), but that disagreement is no
+  longer a reachability hazard, so `render_item/1` never warns on it —
+  see the comment there. Only the raw values are shown, for the
+  admin's own information.
 
-  Every other disagreement — catalogue active while the shop says
-  `draft`/`archived` (items) or `hidden` (categories) — is simply how
-  the owner deliberately keeps something out of the shop while it
-  stays a live catalogue entry, and renders with no warning. An absent
+  Every disagreement that isn't the category leak above — catalogue
+  active while the shop says `draft`/`archived` (items) or `hidden`
+  (categories), or any item-side catalogue/shop mismatch now that #53
+  closed the item leak — is simply how the owner deliberately keeps
+  something out of the shop while it stays a live catalogue entry (or
+  is display-only information), and renders with no warning. An absent
   `shop_status` is shown as the value it effectively resolves to (per
   the fallbacks above), marked "(default)" rather than as an alarming
   "Unknown" — it is not a misconfiguration, just a namespace the Shop
   section has never written.
-
-  One consequence worth naming explicitly: because the category gate
-  is a block-list, a category the catalogue has soft-deleted stays
-  reachable unless its `shop_status` happens to be `"hidden"` —
-  `"unlisted"` (or simply never having been touched — the
-  unconditional-active default) is not enough to hide it. That is the
-  same CLASS of leak `phoenix_kit_ecommerce` PR #53 fixes on the item
-  side (tightening `item.status` deference); this column does not fix
-  it for categories — it only makes it visible.
 
   Reached only through `PhoenixKitEcommerce.Catalogue.Extension`'s
   `item_columns/0`/`category_columns/0` — see that module's moduledoc
@@ -147,13 +137,17 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopStatusColumn do
         value -> {value, false}
       end
 
-    # The one hazard this column exists to catch — see moduledoc "The
-    # one case that warrants a warning". An absent `shop_status`
-    # resolving to "active" only ever happens when `catalogue_active?`
-    # is already true (the fallback mirrors `View.product_status/2`),
-    # so it can never itself trigger this — only an EXPLICIT "active"
-    # shop status against a non-active catalogue status can.
-    contradiction = raw_shop == "active" and not catalogue_active?
+    # Never warns: since PR #53, `View.product_status/2` checks
+    # `item.status` FIRST and forces "archived" on any non-active
+    # catalogue status no matter what `shop_status` says, so
+    # `CatalogProduct.do_mount/3` (which redirects on any resolved
+    # status != "active") can no longer be fooled by a stale explicit
+    # `shop_status: "active"` — the reachability leak this predicate
+    # used to catch is closed at the source. A catalogue/shop
+    # disagreement can still be shown here (raw_shop vs
+    # catalogue_status), it just isn't a hazard worth a warning icon
+    # any more — see moduledoc.
+    contradiction = false
 
     cell(%{
       catalogue: catalogue_badge(catalogue_status),
