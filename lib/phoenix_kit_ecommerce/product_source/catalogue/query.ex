@@ -667,7 +667,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
       query,
       [i],
       i.status == "active" and
-        fragment("(?->'ecommerce'->>'shop_status') = 'active'", i.data)
+        fragment("COALESCE(?->'ecommerce'->>'shop_status', 'active') = 'active'", i.data)
     )
   end
 

@@ -167,6 +167,35 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert product_view(inactive, sets: []).status == "archived"
     end
 
+    # The catalogue item is the product master: retiring it there (any
+    # status other than "active" — see `PhoenixKitCatalogue.Schemas.Item`'s
+    # `@statuses`) must never be overridden back to "active" by a stale or
+    # merchant-set `shop_status`. Regression for the live defect where
+    # "Wall Mounted Fairy Face Planter Shelf" (catalogue status
+    # "inactive", `shop_status` left "active" from before it was retired)
+    # stayed reachable and purchasable at its product page URL.
+    test "status never derives active when the catalogue item itself is not active, no matter what shop_status says" do
+      for catalogue_status <- ~w(inactive discontinued deleted),
+          shop_status <- ["active", "draft", "archived", nil] do
+        item =
+          build_item(%{"ecommerce" => %{"shop_status" => shop_status}}, %{
+            status: catalogue_status
+          })
+
+        assert product_view(item, sets: []).status == "archived",
+               "catalogue status #{catalogue_status} + shop_status #{inspect(shop_status)} " <>
+                 "must derive \"archived\", never resurrect a retired item as \"active\""
+      end
+    end
+
+    test "status still follows shop_status when the catalogue item itself is active" do
+      for shop_status <- ["draft", "active", "archived"] do
+        item = build_item(%{"ecommerce" => %{"shop_status" => shop_status}}, %{status: "active"})
+
+        assert product_view(item, sets: []).status == shop_status
+      end
+    end
+
     test "description falls back to the first 300 chars of stripped body_html when _summary is absent" do
       item =
         build_item(%{
