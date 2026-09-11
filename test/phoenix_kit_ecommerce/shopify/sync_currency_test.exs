@@ -241,6 +241,94 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCurrencyTest do
     end
   end
 
+  describe "currency guard — precomputed verdict passed by the caller" do
+    # A per-product panel applying several fields as separate
+    # `apply_change/3` calls within one operator action can call
+    # `Sync.currency_verdict/1` ONCE up front and hand the result to
+    # every `apply_change/3` via `opts[:currency_verdict]` — this proves
+    # no Shopify request happens per call when it's given, by making the
+    # stub itself fail the test if it's ever hit.
+    defp explode_stub do
+      Req.Test.stub(@stub, fn _conn -> flunk("apply_change/3 must not call the shop") end)
+    end
+
+    test ":match precomputed — a price field is applied, no shop lookup happens" do
+      set_base_currency("USD")
+      connect_shopify()
+      explode_stub()
+
+      product = create_product(%{"price" => "10.00"})
+
+      change =
+        build_change(product, %{
+          price: %{current: Decimal.new("10.00"), incoming: Decimal.new("12.00")}
+        })
+
+      assert {:ok, updated} =
+               Sync.apply_change(change, [:price], currency_verdict: :match)
+
+      assert Decimal.eq?(updated.price, Decimal.new("12.00"))
+    end
+
+    test "a precomputed mismatch refuses the price field exactly like a freshly-looked-up one, no shop lookup happens" do
+      set_base_currency("USD")
+      connect_shopify()
+      explode_stub()
+
+      product = create_product(%{"price" => "10.00"})
+
+      change =
+        build_change(product, %{
+          price: %{current: Decimal.new("10.00"), incoming: Decimal.new("12.00")},
+          title: %{current: "Old Title", incoming: "New Title"}
+        })
+
+      assert {:ok, updated} =
+               Sync.apply_change(change, :all, currency_verdict: {:mismatch, "EUR", "USD"})
+
+      assert updated.title["en"] == "New Title"
+      assert Decimal.eq?(updated.price, Decimal.new("10.00"))
+    end
+
+    test "apply_changes/3 accepts the same precomputed verdict, still applied once across the whole batch" do
+      set_base_currency("USD")
+      connect_shopify()
+      explode_stub()
+
+      p1 = create_product(%{"title" => %{"en" => "First"}, "price" => "10.00"})
+      p2 = create_product(%{"title" => %{"en" => "Second"}, "price" => "10.00"})
+
+      c1 =
+        build_change(p1, %{
+          price: %{current: Decimal.new("10.00"), incoming: Decimal.new("11.00")}
+        })
+
+      c2 =
+        build_change(p2, %{
+          price: %{current: Decimal.new("10.00"), incoming: Decimal.new("12.00")}
+        })
+
+      assert %{succeeded: [], failed: [_c1, _c2]} =
+               Sync.apply_changes([c1, c2], [:price], currency_verdict: {:mismatch, "EUR", "USD"})
+    end
+
+    test "omitting :currency_verdict still falls back to a fresh lookup (default unchanged)" do
+      set_base_currency("USD")
+      connect_shopify()
+      stub_shop_currency("EUR")
+
+      product = create_product(%{"price" => "10.00"})
+
+      change =
+        build_change(product, %{
+          price: %{current: Decimal.new("10.00"), incoming: Decimal.new("12.00")}
+        })
+
+      assert {:error, {:currency_mismatch, "EUR", "USD"}} =
+               Sync.apply_change(change, [:price], admin_options())
+    end
+  end
+
   describe "currency guard — create path" do
     @describetag :catalogue
 

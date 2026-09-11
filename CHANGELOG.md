@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## 0.5.3 - 2026-09-10
+
+PRs #54–#55.
+
+### Added
+
+- **Single-product Shopify check, domain layer.**
+  `AdminClient.fetch_product/3` does an unpaginated point fetch of one
+  Shopify product by id, and `Sync.check_one/3` resolves a local
+  product's Shopify link, fetches it, and diffs it with the same
+  `ProductDiff.diff/4` the full `check/2` sync uses — for a future
+  per-product admin panel that shouldn't have to pull the whole catalog
+  to check one item. (#55)
+- **`apply_change/3`/`apply_changes/3` accept `opts[:currency_verdict]`**,
+  a precomputed `currency_verdict/1` result, so a caller applying
+  several fields of one product in a single operator action pays for
+  the live Shopify currency lookup once instead of once per field.
+  Default behavior (no option given) is unchanged. (#55)
+
+### Fixed
+
+- **A `catalogue_view_test.exs` fixture was silently testing the wrong
+  code path** after `phoenix_kit_catalogue`'s `translated_description/2`
+  started reading the description column before the `_description`
+  data-bucket override at a record's own primary language. The fixture
+  now blanks the column so the body_html-derived fallback the test
+  names is what actually runs; no assertion changed. (#54)
+- **Stale gettext source references on "Shop status"** corrected across
+  all three catalogues. (#54)
+
 ## 0.5.2 - 2026-09-10
 
 PRs #48–#53 plus the post-merge review sweep in

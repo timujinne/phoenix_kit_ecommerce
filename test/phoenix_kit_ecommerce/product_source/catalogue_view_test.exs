@@ -82,7 +82,19 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
         %{
           uuid: @item_uuid,
           name: "Geometric Planter",
-          description: "A lovely planter",
+          # Matches the "en-US" (primary) bucket's own "_description"
+          # above on purpose: at the primary language,
+          # `Catalogue.translated_description/2` reads this column
+          # FIRST (see the "description falls back..." test below), so
+          # a column that disagreed with the primary bucket would be a
+          # silent trap for any assertion on `body_html["en-US"]` — it
+          # would read this column's text, not the bucket's, and
+          # nothing here would reveal that until such an assertion was
+          # added. No existing test asserts `body_html["en-US"]` (only
+          # `["fr-FR"]`, further down), so keeping them in sync costs
+          # nothing today and removes the trap for whoever adds that
+          # assertion next.
+          description: "<p>A <strong>lovely</strong> planter</p>",
           base_price: Decimal.new("23.76"),
           status: "active",
           category_uuid: nil,
@@ -197,10 +209,21 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
     end
 
     test "description falls back to the first 300 chars of stripped body_html when _summary is absent" do
+      # `description: nil` is deliberate: at the item's own primary
+      # language, `Catalogue.translated_description/2` reads the
+      # `description` COLUMN first and only falls back to the `data`
+      # bucket's `_description` when that column is blank (see
+      # phoenix_kit_catalogue's Translations module). `build_item/2`'s
+      # default column (kept in sync with the primary bucket — see its
+      # own comment) would otherwise win over the bucket override below
+      # and mask the fallback this test exists to exercise — blanking
+      # the column is what makes body_html genuinely the only source,
+      # per this test's own name.
       item =
-        build_item(%{
-          "en-US" => %{"_summary" => nil, "_description" => "<p>Only body, no summary</p>"}
-        })
+        build_item(
+          %{"en-US" => %{"_summary" => nil, "_description" => "<p>Only body, no summary</p>"}},
+          %{description: nil}
+        )
 
       assert product_view(item, sets: []).description["en-US"] == "Only body, no summary"
     end

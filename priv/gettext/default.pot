@@ -4756,10 +4756,9 @@ msgstr ""
 msgid "Requires shipping"
 msgstr ""
 
-#: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:73
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:77
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:305
-#: lib/phoenix_kit_ecommerce/catalogue/shop_status_column.ex:131
+#: lib/phoenix_kit_ecommerce/catalogue/shop_status_column.ex:121
 #, elixir-autogen, elixir-format
 msgid "Shop status"
 msgstr ""

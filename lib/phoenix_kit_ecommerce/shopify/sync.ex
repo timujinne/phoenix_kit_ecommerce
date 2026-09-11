@@ -52,6 +52,44 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   `Logger.warning/1` and proceeds exactly as if the guard were absent —
   see `currency_verdict/1`'s own doc for why this fails in the
   OTHER direction from the mismatch case above.
+
+  ## Single-product check (`check_one/3`)
+
+  `check_one/3` is the single-product counterpart to `check/2`, meant
+  for a future per-product admin panel that shouldn't have to pull the
+  whole catalog through `check/2` just to look at one item. It looks up
+  the ONE local product, reads its Shopify link
+  (`metadata["_shopify"]["product_id"]`), fetches that ONE Shopify
+  product by id (`AdminClient.fetch_product/3` — no pagination, no
+  bulk fetch), and diffs the pair with the exact same
+  `ProductDiff.diff/4` `check/2` uses. There is deliberately no
+  storefront fallback here (unlike `check/2`'s `Source.fetch/2`): that
+  fallback exists so a broken Admin token still surfaces SOME diff for
+  a full catalog sync; for exactly one product a caller is better served
+  by the real failure (`{:error, reason}`, straight from
+  `AdminClient.fetch_product/3`) than a silently narrower price-only
+  result.
+
+  ## Precomputed currency verdict, for a caller applying several fields per action
+
+  `apply_change/3`/`apply_changes/3` accept `opts[:currency_verdict]` —
+  a `currency_verdict/1` result the caller already computed. When given,
+  it is used AS-IS and `opts[:admin_options]`/the shop lookup are never
+  consulted for that call; when absent (every call site before this
+  option existed), behavior is unchanged: `currency_verdict/1` is still
+  computed fresh. This exists for a caller that applies several fields
+  of the SAME product as separate `apply_change/3` calls within one
+  operator action (e.g. a per-product review panel with a checkbox per
+  field, "apply" clicked once) — without it, each call pays for its own
+  live `AdminClient.fetch_shop/2` request, `apply_changes/3`'s own
+  batch of N already avoids the same cost across N *products*, but the
+  price of one product's worth of separate field-clicks was still N
+  Shopify hits. A keyword option (over, say, a table of a `-1`/wider
+  `apply_change/4`) was chosen because it composes with the EXISTING
+  `opts` `apply_change/3`/`apply_changes/3` already take, needs no new
+  arity, and reads at the call site as exactly what it is — an
+  already-known answer to the same question `currency_verdict/1` itself
+  answers.
   """
 
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue}
@@ -175,6 +213,92 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   defp new_product_changes(_local_products, _products, _base_locale, :storefront), do: []
 
   @doc """
+  Checks ONE local product against its matched Shopify product — see
+  this module's moduledoc ("Single-product check") for why this exists
+  alongside `check/2` and how the two differ.
+
+  `item_uuid` is looked up via `Shop.get_product/2` (whichever adapter
+  `ProductSource.current/0` picks, same as everywhere else in this
+  facade) — no local product at that uuid is `{:error, :not_found}`.
+  Its Shopify link is read from `product.metadata["_shopify"]
+  ["product_id"]`, the same sub-map `ProductDiff`'s own handle-matching
+  reads `["handle"]` from (see that module's moduledoc); a product with
+  no such link is `{:error, :not_linked}`. There is no slug/handle
+  fallback the way `check/2`'s bulk diff has — a single product with no
+  known Shopify id has nothing to fetch by id in the first place.
+
+  The linked id is then fetched with `AdminClient.fetch_product/3`; a
+  404 there (`:not_found` — the id no longer exists in Shopify) is
+  translated to `{:error, :not_found_in_shopify}` so it isn't confused
+  with the LOCAL lookup's own `:not_found` above. Any other
+  `AdminClient.fetch_product/3` error (`:unauthorized`, `:rate_limited`,
+  a transport error, …) is returned as-is.
+
+  The single local/remote pair is then diffed with the same
+  `ProductDiff.diff/4` `check/2` uses, over every comparable field
+  (`ProductDiff.comparable_fields/0` — the Admin API, the only source
+  here, always carries all of them). `diff/4` still matches by handle
+  (`product.metadata["_shopify"]["handle"]` vs.
+  `shopify_product["handle"]`) — a product renamed on Shopify's side is
+  fetched correctly (by id) but won't match its own now-stale local
+  handle, and reports no changes rather than the rename itself; this is
+  inherited from reusing `diff/4` unchanged, not special-cased here.
+
+  Returns `{:ok, %{changes: [Change.t()], source: :admin}}` —
+  `:changes` is `[]`, never omitted, when nothing differs. `:source` is
+  always `:admin` (this function has no storefront fallback — see the
+  moduledoc) and exists only so the result shares `check/2`'s own
+  `:source` key, letting a future panel reuse rendering code without
+  branching on which check produced it; deliberately NOT carrying
+  `check/2`'s other keys (`:new_products`, `:fallback_reason`,
+  `:total_shopify_products`, `:matched_local_products`) since none of
+  them mean anything for a single product. Every `Change` in `:changes`
+  is a regular (non-`create?`) `Change`, so it can be handed straight to
+  `apply_change/3`/`apply_changes/3` exactly like one from `check/2`.
+
+  `opts[:base_locale]` and `opts[:admin_options]` are the same options
+  `check/2` takes, forwarded the same way.
+  """
+  @spec check_one(String.t(), String.t(), keyword()) ::
+          {:ok, %{changes: [Change.t()], source: :admin}}
+          | {:error, :not_found | :not_linked | :not_found_in_shopify | term()}
+  def check_one(integration_uuid, item_uuid, opts \\ []) do
+    base_locale = Keyword.get_lazy(opts, :base_locale, &Translations.default_language/0)
+    admin_options = Keyword.get(opts, :admin_options, [])
+
+    with {:ok, product} <- fetch_local_product(item_uuid),
+         {:ok, product_id} <- linked_shopify_product_id(product),
+         {:ok, shopify_product} <-
+           fetch_one_shopify_product(integration_uuid, product_id, admin_options) do
+      changes = ProductDiff.diff([product], [shopify_product], base_locale)
+      {:ok, %{changes: changes, source: :admin}}
+    end
+  end
+
+  defp fetch_local_product(item_uuid) do
+    case Shop.get_product(item_uuid) do
+      nil -> {:error, :not_found}
+      product -> {:ok, product}
+    end
+  end
+
+  defp linked_shopify_product_id(product) do
+    case get_in(product.metadata || %{}, ["_shopify", "product_id"]) do
+      id when is_binary(id) and id != "" -> {:ok, id}
+      id when is_integer(id) -> {:ok, id}
+      _ -> {:error, :not_linked}
+    end
+  end
+
+  defp fetch_one_shopify_product(integration_uuid, product_id, admin_options) do
+    case AdminClient.fetch_product(integration_uuid, product_id, admin_options) do
+      {:ok, shopify_product} -> {:ok, shopify_product}
+      {:error, :not_found} -> {:error, :not_found_in_shopify}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
   Applies fields from `change` to its product.
 
   `fields` is `:all` (every field in `change.changes`) or an explicit list
@@ -216,18 +340,34 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   `opts[:admin_options]` forwards to `AdminClient.fetch_shop/2` for the
   currency-guard lookup (e.g. `req_options:` to stub the transport in
   tests) — the same option name `check/2` already uses for its own Admin
-  API call.
+  API call. `opts[:currency_verdict]` — a `currency_verdict/1` result the
+  caller already computed — skips that lookup entirely and uses it
+  as-is instead; see this module's moduledoc ("Precomputed currency
+  verdict") for why and when a caller would pass it.
   """
   @spec apply_change(Change.t(), :all | [atom()], keyword()) ::
           {:ok, PhoenixKitEcommerce.Product.t()} | {:error, Ecto.Changeset.t() | term()}
   def apply_change(change, fields \\ :all, opts \\ [])
 
   def apply_change(%Change{create?: true} = change, _fields, opts) do
-    create_change(change, currency_verdict(opts))
+    create_change(change, resolve_verdict(opts))
   end
 
   def apply_change(%Change{} = change, fields, opts) do
-    do_apply_change(change, fields, currency_verdict(opts))
+    do_apply_change(change, fields, resolve_verdict(opts))
+  end
+
+  # `opts[:currency_verdict]`, when given, IS the answer
+  # `currency_verdict/1` would otherwise compute — used as-is, with no
+  # further lookup. `Keyword.fetch/2`, not `Keyword.get/3`, so an
+  # explicit `currency_verdict: nil` (never a real return value of
+  # `currency_verdict/1`) is not mistaken for "not given" and silently
+  # replaced by a fresh lookup.
+  defp resolve_verdict(opts) do
+    case Keyword.fetch(opts, :currency_verdict) do
+      {:ok, verdict} -> verdict
+      :error -> currency_verdict(opts)
+    end
   end
 
   # A create writes a price UNCONDITIONALLY (`Writer.create_from_shopify/2`
@@ -321,14 +461,17 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   The currency guard's shop lookup (this module's moduledoc, §7.5) runs
   ONCE for the whole batch, not once per change in `changes` — see
   `currency_verdict/1`. `opts[:admin_options]` is the same option
-  `apply_change/3` takes for that lookup.
+  `apply_change/3` takes for that lookup, and `opts[:currency_verdict]`
+  the same escape hatch — when given, this skips the lookup entirely
+  (still once, not per-change either way) and uses it as-is, same as
+  `apply_change/3`.
   """
   @spec apply_changes([Change.t()], :all | [atom()], keyword()) :: %{
           succeeded: [Change.t()],
           failed: [Change.t()]
         }
   def apply_changes(changes, fields \\ :all, opts \\ []) do
-    verdict = currency_verdict(opts)
+    verdict = resolve_verdict(opts)
 
     %{succeeded: succeeded, failed: failed} =
       Enum.reduce(changes, %{succeeded: [], failed: []}, fn change, acc ->

@@ -43,6 +43,40 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClient do
   end
 
   @doc """
+  Fetches a single product from the Shopify store connected via
+  `integration_uuid`, given its Shopify `product_id` — a single,
+  unpaginated `GET /admin/api/<version>/products/{id}.json` request. This
+  is the point lookup a per-product panel needs instead of pulling the
+  whole catalog through `fetch_products/2` to check one item.
+
+  Reuses `resolve_client/2` (credential resolution/auth), the same
+  `@product_fields` field set, and the same 429/401/403 handling as
+  `fetch_products/2` — but is NOT built on top of `fetch_all/5`: that
+  helper is shaped around a paginated LIST response (`Link: rel="next"`,
+  an accumulator), while this endpoint returns exactly one `"product"`
+  map and never paginates. The two diverge on the 404 case too — see
+  below — so a shared status-handling core was not worth the added
+  indirection for what is otherwise a short, linear match.
+
+  A 404 here means the given `product_id` doesn't exist in this store
+  and maps to `:not_found` — deliberately NOT `:shop_not_found`
+  (`fetch_products/2`'s 404, meaning the *shop* domain itself doesn't
+  resolve): the shop answered fine, it just has no such product.
+
+  ## Options
+
+    * `:req_options` — as `fetch_products/2`.
+  """
+  @spec fetch_product(String.t(), String.t() | integer(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def fetch_product(integration_uuid, product_id, opts \\ []) do
+    with {:ok, {shop_domain, req}} <-
+           resolve_client(integration_uuid, Keyword.get(opts, :req_options, [])) do
+      fetch_one(req, product_url(shop_domain, product_id), @max_retries)
+    end
+  end
+
+  @doc """
   Fetches the connected store's own `shop.json` — its name, domain, and
   crucially its `currency`. Per the per-domain-currency design (§7.5), a
   Shopify sync must be able to check the store's own currency against
@@ -188,6 +222,12 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClient do
     "https://#{shop_domain}/admin/api/#{@api_version}/products.json?" <> query
   end
 
+  defp product_url(shop_domain, product_id) do
+    query = URI.encode_query(%{"fields" => Enum.join(@product_fields, ",")})
+
+    "https://#{shop_domain}/admin/api/#{@api_version}/products/#{product_id}.json?" <> query
+  end
+
   defp collections_url(shop_domain, resource) do
     query =
       URI.encode_query(%{"limit" => @page_limit, "fields" => Enum.join(@collection_fields, ",")})
@@ -237,6 +277,41 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClient do
 
       {:ok, %{status: 404}} ->
         {:error, :shop_not_found}
+
+      {:ok, %{status: status}} ->
+        {:error, {:unexpected_status, status}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # `fetch_product/3`'s own request loop — not built on `fetch_all/5`
+  # (see that function's doc for why: no accumulator, no pagination, a
+  # singular `"product"` map instead of a list, and a 404 that means
+  # something different here). Shares `retry_after_seconds/1` and the
+  # 429/401/403/unexpected-status handling verbatim.
+  defp fetch_one(req, url, retries_left) do
+    case Req.get(req, url: url) do
+      {:ok, %{status: 200, body: %{"product" => product}}} ->
+        {:ok, product}
+
+      {:ok, %{status: 429} = response} when retries_left > 0 ->
+        retry_after = retry_after_seconds(response)
+        Process.sleep(:timer.seconds(retry_after))
+        fetch_one(req, url, retries_left - 1)
+
+      {:ok, %{status: 429}} ->
+        {:error, :rate_limited}
+
+      {:ok, %{status: 401}} ->
+        {:error, :unauthorized}
+
+      {:ok, %{status: 403}} ->
+        {:error, :forbidden}
+
+      {:ok, %{status: 404}} ->
+        {:error, :not_found}
 
       {:ok, %{status: status}} ->
         {:error, {:unexpected_status, status}}

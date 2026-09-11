@@ -171,6 +171,138 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
     end
   end
 
+  describe "fetch_product/3 credential resolution" do
+    test "returns an error for an integration uuid that doesn't exist" do
+      assert {:error, _reason} =
+               AdminClient.fetch_product(Ecto.UUID.generate(), 123, req_options())
+    end
+
+    test "returns an error when the connection has never been configured" do
+      {:ok, %{uuid: uuid}} = Integrations.add_connection("shopify", "Unconfigured Shop")
+
+      assert {:error, _reason} = AdminClient.fetch_product(uuid, 123, req_options())
+    end
+  end
+
+  describe "fetch_product/3 requests" do
+    test "sends the access token via X-Shopify-Access-Token, hits products/{id}.json, and returns the product map" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        assert Plug.Conn.get_req_header(conn, "x-shopify-access-token") == ["shpat_test_token"]
+        assert conn.request_path == "/admin/api/2025-01/products/555.json"
+
+        json_response(conn, 200, %{
+          "product" => %{"id" => 555, "handle" => "ceramic-vase", "title" => "Ceramic Vase"}
+        })
+      end)
+
+      assert {:ok, %{"id" => 555, "handle" => "ceramic-vase"}} =
+               AdminClient.fetch_product(uuid, 555, req_options())
+    end
+
+    test "requests the same field set fetch_products/2 does" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        conn = Plug.Conn.fetch_query_params(conn)
+
+        assert conn.query_params["fields"] ==
+                 "id,handle,title,body_html,vendor,product_type,tags,status,images,variants,options"
+
+        json_response(conn, 200, %{"product" => %{"id" => 555, "handle" => "ceramic-vase"}})
+      end)
+
+      assert {:ok, _product} = AdminClient.fetch_product(uuid, 555, req_options())
+    end
+
+    test "accepts a string product id, unchanged in the request path" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        assert conn.request_path == "/admin/api/2025-01/products/555.json"
+        json_response(conn, 200, %{"product" => %{"id" => 555}})
+      end)
+
+      assert {:ok, %{"id" => 555}} = AdminClient.fetch_product(uuid, "555", req_options())
+    end
+
+    test "returns :unauthorized on a 401 response" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 401, %{"errors" => "Invalid API key"})
+      end)
+
+      assert {:error, :unauthorized} = AdminClient.fetch_product(uuid, 555, req_options())
+    end
+
+    test "returns :forbidden on a 403 response" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 403, %{"errors" => "This action requires merchant approval"})
+      end)
+
+      assert {:error, :forbidden} = AdminClient.fetch_product(uuid, 555, req_options())
+    end
+
+    # Deliberately distinct from `fetch_products/2`'s bulk 404
+    # (`:shop_not_found` — the SHOP wasn't found): here the shop answered
+    # fine, it just doesn't have this product id.
+    test "returns :not_found on a 404 response, not :shop_not_found" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn -> json_response(conn, 404, %{"errors" => "Not Found"}) end)
+
+      assert {:error, :not_found} = AdminClient.fetch_product(uuid, 555, req_options())
+    end
+
+    test "returns an error on a network failure" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn -> Req.Test.transport_error(conn, :closed) end)
+
+      assert {:error, %Req.TransportError{}} = AdminClient.fetch_product(uuid, 555, req_options())
+    end
+  end
+
+  describe "fetch_product/3 rate limiting" do
+    test "retries a 429 response, respecting Retry-After" do
+      {:ok, counter} = Agent.start_link(fn -> 0 end)
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        count = Agent.get_and_update(counter, fn c -> {c, c + 1} end)
+
+        if count == 0 do
+          conn
+          |> Plug.Conn.put_resp_header("retry-after", "0")
+          |> Plug.Conn.send_resp(429, "")
+        else
+          json_response(conn, 200, %{"product" => %{"id" => 555, "handle" => "ceramic-vase"}})
+        end
+      end)
+
+      assert {:ok, %{"handle" => "ceramic-vase"}} =
+               AdminClient.fetch_product(uuid, 555, req_options())
+
+      assert Agent.get(counter, & &1) == 2
+    end
+
+    test "gives up and returns :rate_limited after exhausting retries" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("retry-after", "0")
+        |> Plug.Conn.send_resp(429, "")
+      end)
+
+      assert {:error, :rate_limited} = AdminClient.fetch_product(uuid, 555, req_options())
+    end
+  end
+
   describe "fetch_collections/1" do
     test "returns an error when :integration_uuid is missing from opts" do
       assert {:error, :missing_integration_uuid} =
