@@ -125,6 +125,9 @@ defmodule PhoenixKitEcommerce.Web.Routes do
       live "/admin/shop/shopify-sync", PhoenixKitEcommerce.Web.ShopifySync, :index,
         as: :shop_shopify_sync
 
+      live "/admin/shop/translations", PhoenixKitEcommerce.Web.Translations, :index,
+        as: :shop_translations
+
       live "/admin/shop/test", PhoenixKitEcommerce.Web.TestShop, :index, as: :shop_test
     end
   end

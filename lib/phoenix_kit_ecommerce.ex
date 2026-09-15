@@ -69,7 +69,9 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.Shopify.Provider, as: ShopifyProvider
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
+  alias PhoenixKitEcommerce.TranslationSweepSettings
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Workers.TranslationSweepWorker
 
   # ============================================
   # SYSTEM ENABLE/DISABLE
@@ -89,10 +91,39 @@ defmodule PhoenixKitEcommerce do
   def required_modules, do: ["billing"]
 
   @impl PhoenixKit.Module
-  def required_integrations, do: ["shopify"]
+  # Design §4.7: with the toggle off, this callback returning `[]` is safe
+  # — verified against core, this list is purely informational
+  # (`integrations/providers.ex:1393-1414`'s "which modules use this
+  # integration" map), nothing forces the integration on because of it.
+  def required_integrations, do: if(shopify_enabled?(), do: ["shopify"], else: [])
 
   @impl PhoenixKit.Module
-  def integration_providers, do: [ShopifyProvider.definition()]
+  def integration_providers do
+    if shopify_enabled?(), do: [ShopifyProvider.definition()], else: []
+  end
+
+  @doc """
+  Whether the Shopify sync integration exists at all (design §4.7): the
+  sidebar entry, the sync page, and the Shopify option offered on the
+  integrations page.
+
+  Defaults to `true` — Shopify sync predates this toggle, so a stand that
+  never touches `shop_shopify_enabled` keeps behaving exactly as it did
+  before this setting existed.
+
+  Turning it off does **not** touch the stored integration record or its
+  access token; re-enabling restores everything (design §4.7). Read via
+  `get_setting_cached/2` deliberately — `admin_tabs/0`'s `visible:`
+  closure for the sync tab calls this on every sidebar render.
+  """
+  @spec shopify_enabled?() :: boolean()
+  def shopify_enabled? do
+    Settings.get_setting_cached("shop_shopify_enabled", "true") == "true"
+  rescue
+    _ -> true
+  catch
+    :exit, _ -> true
+  end
 
   @impl PhoenixKit.Module
   @doc """
@@ -101,7 +132,36 @@ defmodule PhoenixKitEcommerce do
   def enable_system do
     result = Settings.update_boolean_setting_with_module("shop_enabled", true, "shop")
     refresh_dashboard_tabs()
+    recover_translation_sweep()
     result
+  end
+
+  # Design §4.3: recovers the sweep's self-rescheduling Oban chain if it
+  # was ever broken (a restart, Oban pruning) — cheap (deduplicated by the
+  # worker's own uniqueness) and safe to call even when translations were
+  # never turned on. It is a side concern of enabling the shop, though: an
+  # Oban instance that isn't running yet, or an insert it refuses, must not
+  # turn "enable the shop" into a crash after the setting already flipped.
+  # The translations page and a sweep-settings save retry the same recovery.
+  defp recover_translation_sweep do
+    case TranslationSweepWorker.ensure_scheduled() do
+      {:ok, _job} -> :ok
+      {:error, reason} -> log_sweep_recovery_failure(reason)
+    end
+  rescue
+    error -> log_sweep_recovery_failure(error)
+  catch
+    :exit, reason -> log_sweep_recovery_failure(reason)
+  end
+
+  defp log_sweep_recovery_failure(reason) do
+    require Logger
+
+    Logger.warning(
+      "[PhoenixKitEcommerce] could not schedule the translation sweep: #{inspect(reason)}"
+    )
+
+    :ok
   end
 
   @impl PhoenixKit.Module
@@ -623,6 +683,29 @@ defmodule PhoenixKitEcommerce do
         level: :admin,
         permission: "shop.run_imports",
         parent: :admin_shop,
+        # Design §4.7: `shop_shopify_enabled` gates the entry's mere
+        # existence, the same shape as `admin_shop_translations` below —
+        # `visible:` is evaluated live on every sidebar render (per
+        # `Tab.visible?/2`'s own doc), so `shopify_enabled?/0`'s
+        # `get_setting_cached/2` read matters here — this is a hot path.
+        visible: fn _scope -> shopify_enabled?() end,
+        gettext_backend: PhoenixKitEcommerce.Gettext
+      ),
+      Tab.new!(
+        id: :admin_shop_translations,
+        label: "Translations",
+        icon: "hero-language",
+        path: "shop/translations",
+        priority: 538,
+        level: :admin,
+        permission: "shop.manage_catalog",
+        parent: :admin_shop,
+        # Design §4.6: `shop_translations_enabled` gates the page's mere
+        # existence, not just its content — a hidden menu entry rather
+        # than a reachable-but-immediately-redirecting one. Evaluated
+        # live on every sidebar render (per `Tab.visible?/2`'s own doc),
+        # so `get_setting_cached/2` is required here — this is a hot path.
+        visible: fn _scope -> TranslationSweepSettings.translations_enabled?() end,
         gettext_backend: PhoenixKitEcommerce.Gettext
       )
     ]
@@ -692,12 +775,29 @@ defmodule PhoenixKitEcommerce do
   advertising a translatable resource nothing reads through it anymore.
   """
   def ai_translatables do
-    if ProductSource.current() == ProductSource.Catalogue do
-      []
+    if translations_supported?() do
+      [
+        {PhoenixKitEcommerce.AITranslatable.resource_type(), PhoenixKitEcommerce.AITranslatable},
+        {PhoenixKitEcommerce.CategoryAITranslatable.resource_type(),
+         PhoenixKitEcommerce.CategoryAITranslatable}
+      ]
     else
-      [{PhoenixKitEcommerce.AITranslatable.resource_type(), PhoenixKitEcommerce.AITranslatable}]
+      []
     end
   end
+
+  @doc """
+  Whether shop AI translation can operate against the current product
+  source. Both adapters read and write the shop's own product/category
+  tables, and `ai_translatables/0` stops registering them once
+  `shop_product_source` is `"catalogue"` — so under that source every
+  `TranslateWorker` job for a `shop_*` resource is discarded as an unknown
+  resource type, and the translations page would act on catalogue items the
+  adapters cannot find. The translations page, the sweep tick and the
+  settings toggle all refuse on `false`.
+  """
+  @spec translations_supported?() :: boolean()
+  def translations_supported?, do: ProductSource.current() != ProductSource.Catalogue
 
   @doc """
   Catalogue item/category form "extension slot" modules this package

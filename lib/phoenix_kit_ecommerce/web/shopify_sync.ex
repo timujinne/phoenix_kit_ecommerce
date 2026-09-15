@@ -67,6 +67,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   alias PhoenixKit.Integrations
   alias PhoenixKit.PubSub.Manager
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
@@ -117,28 +118,44 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Manager.subscribe(ShopifyMediaSyncWorker.topic())
+    # Design §4.7: `shop_shopify_enabled` gates this page's mere reachability
+    # — a direct link to a turned-off sync must not open it, mirroring
+    # `Web.Translations`' own guard for `shop_translations_enabled`.
+    if Shop.shopify_enabled?() do
+      if connected?(socket), do: Manager.subscribe(ShopifyMediaSyncWorker.topic())
 
-    {:ok,
-     socket
-     |> assign(:page_title, gettext("Shopify Sync"))
-     |> assign(:connection, shopify_connection())
-     |> assign(:catalogue_source_active?, catalogue_source_active?())
-     |> assign(:media_sync_progress, ShopifyMediaSyncWorker.get_progress())
-     |> assign(:collections_filter, PhoenixKitEcommerce.get_config("shopify_collections_filter"))
-     |> assign(:checking, false)
-     |> assign(:changes, nil)
-     |> assign(:error, nil)
-     |> assign(:source, nil)
-     |> assign(:fallback_reason, nil)
-     |> assign(:total_shopify_products, nil)
-     |> assign(:matched_local_products, nil)
-     |> assign(:expanded_sections, MapSet.new())
-     |> assign(:expanded_rows, MapSet.new())
-     |> assign(:page, %{})
-     |> assign(:diffs, %{})
-     |> assign(:applied_any?, false)
-     |> assign(:pending, nil)}
+      {:ok,
+       socket
+       |> assign(:page_title, gettext("Shopify Sync"))
+       |> assign(:connection, shopify_connection())
+       |> assign(:catalogue_source_active?, catalogue_source_active?())
+       |> assign(:media_sync_progress, ShopifyMediaSyncWorker.get_progress())
+       |> assign(
+         :collections_filter,
+         PhoenixKitEcommerce.get_config("shopify_collections_filter")
+       )
+       |> assign(:checking, false)
+       |> assign(:changes, nil)
+       |> assign(:error, nil)
+       |> assign(:source, nil)
+       |> assign(:fallback_reason, nil)
+       |> assign(:total_shopify_products, nil)
+       |> assign(:matched_local_products, nil)
+       |> assign(:expanded_sections, MapSet.new())
+       |> assign(:expanded_rows, MapSet.new())
+       |> assign(:page, %{})
+       |> assign(:diffs, %{})
+       |> assign(:applied_any?, false)
+       |> assign(:pending, nil)}
+    else
+      {:ok,
+       socket
+       |> put_flash(
+         :error,
+         gettext("Shopify sync is turned off. Turn it on in E-Commerce settings first.")
+       )
+       |> push_navigate(to: Routes.path("/admin/shop"))}
+    end
   end
 
   # `@diffs` — `%{{field, product_uuid} => %{summary: ..., words: ...}}`

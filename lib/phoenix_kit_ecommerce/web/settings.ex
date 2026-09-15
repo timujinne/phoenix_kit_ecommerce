@@ -7,6 +7,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Integrations.Providers, as: IntegrationProviders
   alias PhoenixKit.Settings
   alias PhoenixKit.Users.Auth
   alias PhoenixKit.Utils.Routes
@@ -16,9 +17,14 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.Notifications, as: ShopNotifications
   alias PhoenixKitEcommerce.Policy
+  alias PhoenixKitEcommerce.TranslationSweepSettings
   alias PhoenixKitEcommerce.Vocabulary
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
+
+  # phoenix_kit_ai is an OPTIONAL dependency (see mix.exs) — this page must
+  # compile and render fine without it. See `ai_translations_available?/0`.
+  @compile {:no_warn_undefined, PhoenixKitAI.Translations}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -62,9 +68,24 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign(:recipient_candidates, load_recipient_candidates())
       |> assign(:shipping_skip_mode, to_string(Shop.shipping_skip_mode()))
       |> assign(:shipping_selection_position, to_string(Shop.shipping_selection_position()))
+      |> assign(:shop_translations_enabled, TranslationSweepSettings.translations_enabled?())
+      |> assign(:ai_translations_available, ai_translations_available?())
+      |> assign(:translations_supported, Shop.translations_supported?())
+      |> assign(:shop_shopify_enabled, Shop.shopify_enabled?())
       |> assign_policy()
 
     {:ok, socket}
+  end
+
+  # Guarded the same way `Web.Translations` and `TranslationSweepWorker`
+  # guard it — `phoenix_kit_ai` is an OPTIONAL dependency (mix.exs), so a
+  # host without it installed must see this toggle rendered disabled with
+  # an explanation, never crash the settings page.
+  defp ai_translations_available? do
+    Code.ensure_loaded?(PhoenixKitAI.Translations) and
+      function_exported?(PhoenixKitAI.Translations, :available?, 0) and
+      PhoenixKitAI.Translations.available?() and
+      not is_nil(PhoenixKitAI.Translations.default_endpoint_uuid())
   end
 
   # Stored as `%{"uuids" => [...]}` — core's `value_json` column casts
@@ -235,6 +256,20 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   def handle_event("toggle_cart_bar", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("toggle_cart_bar", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("toggle_shop_translations_enabled", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("toggle_shop_translations_enabled", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("toggle_shop_shopify_enabled", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("toggle_shop_shopify_enabled", params, socket)
     end)
   end
 
@@ -564,6 +599,113 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           </div>
         </div>
 
+        <%!-- AI Translations existence toggle (design §4.6). The operational
+             knobs (sweep on/off, interval, batch, ceiling, languages,
+             statuses) live on the translations page itself, not here — the
+             operator changes the sweep's pace where they see its effect
+             (design §4.5). This card owns only whether the feature EXISTS
+             at all: the page, the sidebar entry, the manual actions. --%>
+        <div class="card bg-base-100 shadow-xl mb-6" id="shop-translations-card">
+          <div class="card-body">
+            <h2 class="card-title text-xl mb-2">
+              <.icon name="hero-language" class="w-6 h-6" />
+              {gettext("AI Translations")}
+            </h2>
+            <p class="text-sm text-base-content/70 mb-4">
+              {gettext(
+                "Turns on AI-powered translation of products and categories: the management page, its sidebar entry, and manual translate/stamp/reset actions. Requires a configured AI endpoint."
+              )}
+            </p>
+
+            <div class="fieldset">
+              <label class="label cursor-pointer justify-between">
+                <span class="fieldset-legend text-lg">
+                  <span class="font-semibold">{gettext("Enable shop translations")}</span>
+                  <div :if={not @translations_supported} class="text-sm text-warning mt-1">
+                    {gettext(
+                      "Not available while the shop reads products from the catalogue — the translation adapters only cover the shop's own product and category tables."
+                    )}
+                  </div>
+                  <div
+                    :if={@translations_supported and not @ai_translations_available}
+                    class="text-sm text-warning mt-1"
+                  >
+                    {gettext(
+                      "Configure an enabled AI endpoint in the AI section first — this stays off until one exists."
+                    )}
+                  </div>
+                </span>
+                <input
+                  id="toggle-shop-translations-enabled"
+                  type="checkbox"
+                  class="toggle toggle-secondary"
+                  checked={@shop_translations_enabled}
+                  disabled={
+                    not (@translations_supported and @ai_translations_available) and
+                      not @shop_translations_enabled
+                  }
+                  phx-click="toggle_shop_translations_enabled"
+                />
+              </label>
+            </div>
+
+            <.link
+              :if={@shop_translations_enabled}
+              navigate={Routes.path("/admin/shop/translations")}
+              class="link link-primary text-sm"
+            >
+              {gettext("Open the translations page →")}
+            </.link>
+          </div>
+        </div>
+
+        <%!-- Shopify sync existence toggle (design §4.7). Single key —
+             unlike translations above, the sync has no background actor to
+             pair an "autonomy" setting against (design §12.4): it only ever
+             runs from an operator on the sync page. Defaults to `true`, so
+             a stand that never touches this setting keeps behaving exactly
+             as it did before the toggle existed. Turning it off does NOT
+             touch a saved Shopify connection or its access token — it only
+             hides the sidebar entry, redirects the sync page, and drops
+             Shopify from the integrations list; re-enabling restores all
+             three immediately. --%>
+        <div class="card bg-base-100 shadow-xl mb-6" id="shop-shopify-card">
+          <div class="card-body">
+            <h2 class="card-title text-xl mb-2">
+              <.icon name="hero-arrow-path" class="w-6 h-6" />
+              {gettext("Shopify Sync")}
+            </h2>
+            <p class="text-sm text-base-content/70 mb-4">
+              {gettext(
+                "Turns off the Shopify sync page, its sidebar entry, and the Shopify option on the integrations page. A saved connection and its access token are kept — turning this back on restores them exactly as they were."
+              )}
+            </p>
+
+            <div class="fieldset">
+              <label class="label cursor-pointer justify-between">
+                <span class="fieldset-legend text-lg">
+                  <span class="font-semibold">{gettext("Enable Shopify sync")}</span>
+                </span>
+                <input
+                  id="toggle-shop-shopify-enabled"
+                  type="checkbox"
+                  class="toggle toggle-secondary"
+                  checked={@shop_shopify_enabled}
+                  phx-click="toggle_shop_shopify_enabled"
+                />
+              </label>
+            </div>
+
+            <.link
+              :if={@shop_shopify_enabled}
+              navigate={Routes.path("/admin/shop/shopify-sync")}
+              class="link link-primary text-sm"
+            >
+              {gettext("Open the Shopify sync page →")}
+            </.link>
+          </div>
+        </div>
+
         <%!-- Tax fallback --%>
         <div class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">
@@ -648,8 +790,12 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           </div>
         </div>
 
-        <%!-- Shopify Sync --%>
-        <div class="card bg-base-100 shadow-xl mb-6">
+        <%!-- Shopify Sync connection status. Design §4.7: hidden along with
+             the existence card above once `shop_shopify_enabled` is off —
+             "Connect" and "Open Sync" would otherwise dangle: Shopify has
+             already dropped out of the integrations list, and the sync
+             page itself redirects straight back here. --%>
+        <div :if={@shop_shopify_enabled} class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">
             <h2 class="card-title text-xl mb-6">
               <.icon name="hero-arrow-path" class="w-6 h-6" /> {gettext("Shopify Sync")}
@@ -1261,6 +1407,52 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     end
   end
 
+  # Design §4.6: `shop_translations_enabled` gates the feature's mere
+  # EXISTENCE (page, sidebar entry, manual actions) — a toggle that only
+  # ever turns ON when AI is actually usable (never lifted server-side just
+  # because a stale client sent the click; the `disabled` attribute in the
+  # template is a UX hint, not the enforcement). Turning it OFF also turns
+  # `shop_translation_sweep_enabled` off (design §12.4's one-directional
+  # link: the sweep can never run without the section, the section can
+  # exist with the sweep off) — a background actor must never keep working
+  # after the operator switched the whole feature off. Both writes land in
+  # `Activity.log`, same as the existence flag itself.
+  defp gated_event("toggle_shop_translations_enabled", _params, socket) do
+    new_value = !socket.assigns.shop_translations_enabled
+
+    cond do
+      new_value and not Shop.translations_supported?() ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           gettext(
+             "Not available while the shop reads products from the catalogue — the translation adapters only cover the shop's own product and category tables."
+           )
+         )}
+
+      new_value and not ai_translations_available?() ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           gettext("Configure an enabled AI endpoint in the AI section before enabling this.")
+         )}
+
+      true ->
+        do_toggle_shop_translations_enabled(new_value, socket)
+    end
+  end
+
+  # Design §4.7/§12.4: `shop_shopify_enabled` is a single key, unlike the
+  # translations pair above — the sync has no background actor to gate
+  # (no worker in `workers/` runs it; it only ever starts from an operator
+  # clicking the page), so there is no paired "autonomy" setting to also
+  # flip off here.
+  defp gated_event("toggle_shop_shopify_enabled", _params, socket) do
+    do_toggle_shop_shopify_enabled(!socket.assigns.shop_shopify_enabled, socket)
+  end
+
   defp gated_event("update_catalog_vocabulary", %{"vocabulary" => vocabulary}, socket) do
     if vocabulary in Vocabulary.options() do
       case Settings.update_setting(Vocabulary.setting_key(), vocabulary) do
@@ -1506,6 +1698,87 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, gettext("Failed to reset filters"))}
+    end
+  end
+
+  defp do_toggle_shop_translations_enabled(new_value, socket) do
+    case Settings.update_boolean_setting_with_module(
+           "shop_translations_enabled",
+           new_value,
+           "shop"
+         ) do
+      {:ok, _} ->
+        Activity.log("shop.translations_enabled_changed",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "setting",
+          metadata: %{"enabled" => new_value}
+        )
+
+        socket = maybe_disable_sweep(new_value, socket)
+
+        {:noreply,
+         socket
+         |> assign(:shop_translations_enabled, new_value)
+         |> put_flash(
+           :info,
+           if(new_value,
+             do: gettext("Shop translations enabled"),
+             else: gettext("Shop translations disabled")
+           )
+         )}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, gettext("Failed to update shop translations"))}
+    end
+  end
+
+  defp maybe_disable_sweep(true, socket), do: socket
+
+  defp maybe_disable_sweep(false, socket) do
+    if TranslationSweepSettings.sweep_enabled?() do
+      Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", false, "shop")
+
+      Activity.log("shop.translation_sweep_settings_changed",
+        actor_uuid: Activity.actor_uuid(socket),
+        actor_role: Activity.actor_role(socket),
+        resource_type: "setting",
+        metadata: %{"sweep_enabled" => false, "reason" => "shop_translations_disabled"}
+      )
+    end
+
+    socket
+  end
+
+  defp do_toggle_shop_shopify_enabled(new_value, socket) do
+    case Settings.update_boolean_setting_with_module("shop_shopify_enabled", new_value, "shop") do
+      {:ok, _} ->
+        Activity.log("shop.shopify_enabled_changed",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "setting",
+          metadata: %{"enabled" => new_value}
+        )
+
+        # Design §4.7: the provider list is cached in `:persistent_term` —
+        # without clearing it here, the integrations page and
+        # `integration_providers/0`/`required_integrations/0` would keep
+        # serving the pre-toggle answer until the node restarts.
+        IntegrationProviders.clear_cache()
+
+        {:noreply,
+         socket
+         |> assign(:shop_shopify_enabled, new_value)
+         |> put_flash(
+           :info,
+           if(new_value,
+             do: gettext("Shopify sync enabled"),
+             else: gettext("Shopify sync disabled")
+           )
+         )}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, gettext("Failed to update Shopify sync"))}
     end
   end
 

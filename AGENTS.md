@@ -13,9 +13,12 @@ ships admin LiveViews for the whole workflow plus the public storefront
 pages.
 
 - **Depends on:** `phoenix_kit` `~> 2.16` (Hex), `phoenix_kit_billing`
-  `~> 0.13` (hard), `phoenix_kit_ai` `~> 0.18` (optional — only the
-  AI-translate UI and adapter use it and both compile out when it is
-  absent). Also `phoenix`, `phoenix_live_view ~> 1.1`, `ecto_sql ~> 3.12`,
+  `~> 0.13` (hard), `phoenix_kit_ai` `~> 0.20` (optional — the
+  AI-translate UI, both translation adapters, the sweep worker and the
+  translations page use it, and all of them compile out when it is absent;
+  0.20 is the first engine that binds `{{SourceFields}}` and forwards
+  `opts[:source_fields]`, `test/ai_pin_conformance_test.exs` guards it).
+  Also `phoenix`, `phoenix_live_view ~> 1.1`, `ecto_sql ~> 3.12`,
   `oban ~> 2.20`, `uuidv7`, `nimble_csv`, `req`, `jason`, `mdex`,
   `gettext ~> 1.0`. There is deliberately **no** dep on
   `phoenix_kit_catalogue`: the extension slot is discovered duck-typed, and
@@ -30,7 +33,9 @@ pages.
   transitional shims in `lib/phoenix_kit_ecommerce/compat/`, and
   `phoenix_kit_catalogue` discovers `catalogue_extensions/0` by duck typing.
 - **Admin surface:** tab `E-Commerce` at `/admin/shop`, subtabs Dashboard,
-  Products, Categories, Shipping, Carts, CSV Import and Shopify Sync; a
+  Products, Categories, Shipping, Carts, CSV Import, Shopify Sync (hidden
+  while `shop_shopify_enabled` is off) and Translations
+  (`/admin/shop/translations`, hidden until `shop_translations_enabled`); a
   settings subtab at `/admin/shop/settings`; user-dashboard tabs Shop
   (`/shop`) and My Cart (`/cart`). Public storefront routes: `/shop`,
   `/shop/category/:slug`, `/shop/product/:slug`, `/cart`, `/checkout`,
@@ -143,9 +148,10 @@ Repo-local aliases:
   `PhoenixKitEcommerce.Policy` (security policy),
   `PhoenixKitEcommerce.Vocabulary` (catalog vocabulary),
   `PhoenixKitEcommerce.NamePrefix` (storefront name-prefix stripping),
-  `PhoenixKitEcommerce` itself (`shipping_skip_mode/0`,
+  `PhoenixKitEcommerce.TranslationSweepSettings` (AI translations and the
+  sweep), `PhoenixKitEcommerce` itself (`shipping_skip_mode/0`,
   `shipping_selection_position/0`, `notify_event?/1`,
-  `enforce_product_currency?/0`). The wrapper is the
+  `enforce_product_currency?/0`, `shopify_enabled?/0`). The wrapper is the
   single source of truth for the default, so the admin UI and the enforcement
   point cannot disagree; every policy reader fails *closed* on a
   settings-layer error and tolerates a malformed stored value by falling back
@@ -159,7 +165,10 @@ Repo-local aliases:
   media/variants/collections sync run as workers, all on the single
   `shop_imports` queue — a host that configures no such queue leaves
   every job `available` forever while the UI reports "queued"; never
-  spawn a bare `Task`.
+  spawn a bare `Task`. The one exception is `TranslationSweepWorker`, on
+  `default` beside the `PhoenixKitAI.TranslateWorker` jobs it enqueues:
+  its batch and in-flight ceiling are sized against that queue, and a long
+  CSV import must not hold up a tick.
 - **Schemas:** UUIDv7 primary keys (`@primary_key {:uuid, UUIDv7,
   autogenerate: true}`, `uuid_generate_v7()` in DDL — never
   `gen_random_uuid()`), and every table-backed schema declares
@@ -229,6 +238,26 @@ Repo-local aliases:
   executes `up_statements/1` directly (no `Ecto.Migration` runner), so a
   non-idempotent statement breaks every integration run against a re-used test
   database.
+- **A translation fingerprint is computed in two places and they must agree.**
+  `TranslationFingerprint.hash/1` trims with `String.trim/1` (Unicode
+  whitespace); the candidate SQL and the backfill task hash in Postgres, whose
+  one-argument `btrim` strips only ASCII space. Every SQL hash and blankness
+  test passes `sql_trim_chars/0` as `btrim`'s second argument. A divergence
+  makes a row `:stale` to the sweep and `:fresh` to write-narrowing, so every
+  tick pays for a model call that writes nothing — forever.
+- **Shop translation only works under the Legacy product source.** Both
+  adapters read the shop's own tables, and `ai_translatables/0` registers
+  neither under `shop_product_source: "catalogue"`, so a `shop_*`
+  `TranslateWorker` job is discarded as an unknown resource type. Anything
+  new that enqueues or lists translations checks
+  `PhoenixKitEcommerce.translations_supported?/0` first, as the page, the
+  sweep tick and the settings toggle do.
+- **`ProductForm` merges `metadata` rather than replacing it.** `cast/3` on a
+  `:map` field replaces the whole map; a form that rebuilds `metadata` from
+  its own inputs erases every key it renders no field for
+  (`_translation_fingerprints`, `_option_slots`, `_discovered`). A new
+  form-rendered top-level key belongs in `@form_owned_metadata_keys`, or it
+  can never be cleared.
 
 ## Architecture
 
@@ -262,8 +291,9 @@ lib/phoenix_kit_ecommerce/
 ├── compat/           # transitional PhoenixKit.Modules.Shop.* delegate shims
 ├── services/         # image download + batch image migration
 ├── workers/          # Oban: CSVImportWorker, ImageMigrationWorker,
-│                     # ShopifyMediaSyncWorker
-├── mix_tasks/        # install, deduplicate_products
+│                     # ShopifyMediaSyncWorker, TranslationSweepWorker
+├── mix_tasks/        # install, deduplicate_products,
+│                     # backfill_translation_fingerprints (one-shot)
 ├── web/              # LiveViews, components, plugs, routes, helpers, authz
 ├── activity.ex       # activity-log wrapper (module + actor metadata, never raises)
 ├── policy.ex         # secure-by-default admin policy settings
@@ -278,7 +308,11 @@ lib/phoenix_kit_ecommerce/
 ├── html_text.ex      # description sanitizing
 ├── html_to_markdown.ex # Shopify body_html -> Markdown on sync
 ├── name_prefix.ex    # display-time storefront name-prefix stripping
-├── ai_translatable.ex# duck-typed phoenix_kit_ai translation adapter
+├── ai_translatable.ex# duck-typed phoenix_kit_ai translation adapter (products)
+├── category_ai_translatable.ex # the same for categories
+├── translation_fingerprint.ex  # staleness: hash, four states, write-narrowing, candidate SQL
+├── translation_sweep_settings.ex # settings reader for translations + the sweep
+├── prompt_rollout.ex # content-sha rollout of the code-managed AI prompts
 ├── gettext.ex        # PhoenixKitEcommerce.Gettext backend
 └── migrations.ex     # module-owned migration chain
 ```
@@ -339,7 +373,7 @@ Broadcast through `PhoenixKit.PubSub.Manager` (the HOST's PubSub), from
 - **Admin LiveViews:** Dashboard, Products, ProductForm, ProductDetail,
   Categories, CategoryForm, ShippingMethods, ShippingMethodForm, Carts,
   Settings, OptionsSettings, Imports, ImportShow, ImportConfigs, ShopifySync,
-  TestShop.
+  Translations, TestShop.
 - **Components:** ShopLayouts, ShopCards, CatalogSidebar, FilterHelpers,
   TranslationTabs.
 - **Plug:** `Plugs.ShopSession` mints and reads the signed `shop_session_id`
@@ -355,9 +389,9 @@ capabilities (core enforces sub-implies-base):
 
 | Key | Covers |
 |-----|--------|
-| `shop.manage_catalog` | products + categories (list, form and detail pages) |
+| `shop.manage_catalog` | products + categories (list, form and detail pages); viewing the translations page |
 | `shop.manage_carts` | the carts admin — **read included**, the rows carry customer contact details |
-| `shop.manage_settings` | settings, security policy, product options, shipping methods |
+| `shop.manage_settings` | settings, security policy, product options, shipping methods; every translations-page action (translate, stamp, reset, stop, run sweep, sweep settings) |
 | `shop.run_imports` | CSV imports, import configurations, Shopify sync |
 
 ⚠️ Core auto-grants a newly discovered sub-permission to the Admin system
@@ -494,6 +528,31 @@ settings-layer error.
   migrating"; this is the one key here where leaving the default forever is
   wrong, because nothing prunes carts so the window never self-closes.
 
+**Shopify — read through `PhoenixKitEcommerce.shopify_enabled?/0`**
+
+- `shop_shopify_enabled` — default `true`. Off hides the Shopify Sync tab,
+  redirects the sync page, empties `integration_providers/0` and
+  `required_integrations/0` (the provider cache is cleared on toggle). The
+  stored connection and its token are never touched.
+
+**AI translations — read through `PhoenixKitEcommerce.TranslationSweepSettings`**
+
+- `shop_translations_enabled` — default `false`. The feature exists at all:
+  page, tab, manual actions. Turning it off also turns the sweep off; turning
+  it on is refused without a usable AI endpoint or under the catalogue
+  product source.
+- `shop_translation_sweep_enabled` — default `false`. Automatic ticks only;
+  the page's "Run sweep" ignores it.
+- `shop_translation_interval_minutes` (`60`), `shop_translation_batch` (`3`,
+  resources per tick), `shop_translation_max_in_flight` (`6`, incomplete
+  shop `TranslateWorker` JOBS). The page refuses a batch below 1 or a ceiling
+  below the target-language count.
+- `shop_translation_languages` — `%{"codes" => [...]}`, default every enabled
+  language but the primary; intersected with enabled languages on every read.
+- `shop_translation_statuses` — `%{"statuses" => [...]}`, default
+  `["active"]`; products only, categories are never status-filtered.
+- `shop_translation_sweep_last_run` — written by the tick, read by the page.
+
 **Consumed from billing** (owned by `phoenix_kit_billing`, read here)
 
 - `billing_tax_enabled`, `billing_default_tax_rate`
@@ -594,6 +653,7 @@ and `schema_prefix_conformance_test.exs` (every table-backed schema uses
 | Feature | Constraint that must hold | Where |
 |---|---|---|
 | Price display and storefront i18n | "Price on request" is snapshotted onto the cart line and the order line, never read live; every public LiveView calls `put_content_locale/1` in `mount/3`; `push_event` names, paths, route segments and setting keys are never wrapped in `gettext` | `dev_docs/guides/storefront.md` |
+| AI translation control | Fingerprints are hashed identically in Elixir and SQL (`sql_trim_chars/0`); the sweep never auto-queues `unknown`; a write whose field fingerprint still matches is narrowed away; nothing enqueues under the catalogue product source | `TranslationFingerprint`, `Workers.TranslationSweepWorker`, `Web.Translations` moduledocs |
 | Agentic Commerce / ACP | Assessed and deliberately not built: a bridge plugin, not code in this module, is the shape if it is ever built | `dev_docs/agentic_commerce_acp_research.md` |
 
 ## Versioning & releases

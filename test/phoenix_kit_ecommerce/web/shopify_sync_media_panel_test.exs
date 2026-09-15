@@ -13,16 +13,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncMediaPanelTest do
   tagged `:catalogue` and excluded via `test_helper.exs`, same as the
   rest of Block 7's suite.
 
-  Starts its OWN local `Oban` instance, NAMED `Oban` (matching the
-  bare `Oban.insert/1` the LiveView's `handle_event("run_media_sync", ...)`
-  calls — there is no application-wide Oban config in this fork's own
-  test env; Oban is the HOST app's concern, see `config/test.exs`'s own
-  comment). `testing: :manual` — jobs land in `oban_jobs` (already
-  present in the shared test database; the host app owns that
-  migration) but are never auto-processed. `start_supervised!` ties its
-  lifetime to each test, so no state or registered name leaks between
-  tests. `async: false`: flips the process-wide `shop_product_source`
-  key and registers a process under a fixed, VM-global name (`Oban`).
+  Uses the suite-wide `Oban` instance `test_helper.exs` starts (named
+  `Oban`, matching the bare `Oban.insert/1` the LiveView's
+  `handle_event("run_media_sync", ...)` calls). `testing: :manual` — jobs
+  land in `oban_jobs` through the test's sandboxed connection, so they roll
+  back with it, but are never auto-processed. Starting a second instance
+  here under the same VM-global name fails every test in this module.
+  `async: false`: flips the process-wide `shop_product_source` key.
   """
 
   use PhoenixKitEcommerce.LiveCase, async: false
@@ -40,8 +37,6 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncMediaPanelTest do
   setup %{conn: conn} do
     on_exit(fn -> set_product_source("legacy") end)
     set_product_source("catalogue")
-
-    start_supervised!({Oban, name: Oban, repo: Repo, testing: :manual, queues: [shop_imports: 1]})
 
     connect_shopify()
 

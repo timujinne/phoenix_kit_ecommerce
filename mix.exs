@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.MixProject do
   use Mix.Project
 
-  @version "0.5.4"
+  @version "0.5.5"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_ecommerce"
 
   def project do
@@ -141,7 +141,27 @@ defmodule PhoenixKitEcommerce.MixProject do
       # Optional: only the AI-translate UI/adapter use it, and both compile out
       # when it's absent (see ProductForm's @ai_translate? flag). Version tracks
       # the actual API used (Translatable behaviour, AITranslate components).
-      pk_dep(:phoenix_kit_ai, "~> 0.18", optional: true),
+      #
+      # FLOOR RAISED for the translation-control design: the translation
+      # prompts this package rolls out (`AITranslatable`,
+      # `CategoryAITranslatable`) carry their entire source section as
+      # `{{SourceFields}}` — a variable bound only by phoenix_kit_ai
+      # 0.20.0, the release carrying the design's §9.1 change. An older
+      # engine renders `{{SourceFields}}` literally, so every translation
+      # call would go out with an empty SOURCE section: it costs money,
+      # fails to parse, and nothing but a log warning says why.
+      #
+      # 0.20.0 also carries §9.3 (`put_translation/4` receiving the
+      # source fields the worker actually read via `opts[:source_fields]`).
+      # Without it the staleness model of design §4.1 is inert rather than
+      # merely degraded: every write arrives with no source to hash, so
+      # nothing is ever fingerprinted, write-narrowing never engages, and
+      # each write erases the field's reference instead (see
+      # `TranslationFingerprint.apply_writes/3` — that erase is what keeps
+      # the sweep convergent against an engine lacking §9.3, at the cost
+      # of every touched pair falling back to `:unknown` for the operator
+      # to resolve by hand). `~> 0.20` admits only engines carrying both.
+      pk_dep(:phoenix_kit_ai, "~> 0.20", optional: true),
       # No declared dependency on `phoenix_kit_catalogue`, though this app
       # DOES call into `PhoenixKitCatalogue` directly (the ProductSource
       # catalogue adapter, `Catalogue.Writer`, and the Shopify-sync 6a
