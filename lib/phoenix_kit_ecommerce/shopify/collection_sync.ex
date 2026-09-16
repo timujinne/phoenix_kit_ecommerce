@@ -53,7 +53,21 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
   rather than the narrowest match — is the bug this task fixes. A
   product id with no matching item is collected into
   `:unmatched_products` instead (deduplicated — the same missing id is
-  never reported twice even if more than one collection lists it).
+  never reported twice even if more than one collection lists it). An
+  item whose target category the catalogue refuses at assignment time
+  (trashed, or moved to another catalogue, since this run resolved it)
+  stays where it is, with a logged warning, instead of failing the whole
+  run.
+
+  A collection with no live category but a TRASHED one matching it (by
+  the same slug-then-name rule) is skipped the way a filtered-out one is
+  — logged, counted in `:collections_skipped_trashed`, its products
+  never fetched, and the survivors re-indexed 0.. again. Re-creating its
+  category would revive what an operator removed, and cannot work
+  anyway: the trashed category still holds the handle in the global
+  slug projection, so the create would collide and halt every run until
+  the trash is emptied. Restoring the category brings the collection
+  back on the next run.
 
   A no-op — `{:error, :catalogue_source_inactive}` — when
   `ProductSource.current/0` isn't `Catalogue` (Global Constraints: every
@@ -70,6 +84,8 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
   """
 
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue}
+
+  require Logger
 
   alias PhoenixKitCatalogue.Catalogue
   alias PhoenixKitEcommerce.ProductSource
@@ -95,6 +111,7 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
              categories_created: non_neg_integer(),
              categories_matched: non_neg_integer(),
              collections_skipped_by_filter: non_neg_integer(),
+             collections_skipped_trashed: non_neg_integer(),
              items_assigned: non_neg_integer(),
              items_repositioned: non_neg_integer(),
              unmatched_products: [term()]
@@ -115,7 +132,8 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
     with {:ok, catalogue_uuid} <- resolve_catalogue_uuid(Keyword.get(opts, :catalogue_uuid)),
          {:ok, collections} <- client.fetch_collections(opts),
          {allowed, skipped_by_filter} <- apply_collections_filter(collections, filter),
-         {:ok, resolved, created, matched} <- resolve_categories(allowed, catalogue_uuid),
+         {:ok, resolved, created, matched, skipped_trashed} <-
+           resolve_categories(allowed, catalogue_uuid),
          {:ok, per_collection} <- fetch_collection_products(resolved, client, opts),
          {:ok, assigned, repositioned, unmatched} <-
            assign_products(per_collection, items_by_product_id(catalogue_uuid)) do
@@ -124,6 +142,7 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
          categories_created: created,
          categories_matched: matched,
          collections_skipped_by_filter: skipped_by_filter,
+         collections_skipped_trashed: skipped_trashed,
          items_assigned: assigned,
          items_repositioned: repositioned,
          unmatched_products: unmatched
@@ -158,13 +177,13 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
   defp apply_collections_filter(collections, filter) do
     filter = filter || %{}
     {allowed, skipped} = Enum.split_with(collections, &collection_allowed?(&1, filter))
+    {reindex_positions(allowed), length(skipped)}
+  end
 
-    reindexed =
-      allowed
-      |> Enum.with_index()
-      |> Enum.map(fn {collection, position} -> Map.put(collection, "position", position) end)
-
-    {reindexed, length(skipped)}
+  defp reindex_positions(collections) do
+    collections
+    |> Enum.with_index()
+    |> Enum.map(fn {collection, position} -> Map.put(collection, "position", position) end)
   end
 
   defp collection_allowed?(collection, filter) do
@@ -184,9 +203,19 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
 
   defp resolve_categories(collections, catalogue_uuid) do
     primary = Translations.default_language()
-    existing = Catalogue.list_categories_metadata_for_catalogue(catalogue_uuid)
 
-    collections
+    {existing, trashed} =
+      catalogue_uuid
+      |> Catalogue.list_categories_metadata_for_catalogue(mode: :deleted)
+      |> Enum.split_with(&(&1.status != "deleted"))
+
+    {trashed_collections, live_collections} =
+      Enum.split_with(collections, &trashed_collection?(&1, existing, trashed, primary))
+
+    Enum.each(trashed_collections, &log_trashed_collection/1)
+
+    live_collections
+    |> reindex_positions()
     |> Enum.reduce_while({:ok, [], existing, 0, 0}, fn collection,
                                                        {:ok, resolved, categories, created,
                                                         matched} ->
@@ -207,11 +236,27 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
     end)
     |> case do
       {:ok, resolved, _categories, created, matched} ->
-        {:ok, Enum.reverse(resolved), created, matched}
+        {:ok, Enum.reverse(resolved), created, matched, length(trashed_collections)}
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # No live category matches the collection, a trashed one does: an
+  # operator removed it (the moduledoc says why it is never re-created).
+  defp trashed_collection?(collection, live, trashed, primary) do
+    handle = collection["handle"]
+    title = collection["title"] || handle
+
+    find_category(live, handle, title, primary) == :not_found and
+      find_category(trashed, handle, title, primary) != :not_found
+  end
+
+  defp log_trashed_collection(collection) do
+    Logger.warning(
+      "Shopify collection sync skipped collection #{collection["handle"]}: its category is in the trash"
+    )
   end
 
   defp resolve_one_category(collection, categories, catalogue_uuid, primary) do
@@ -429,7 +474,28 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
         {:cont, {:ok, index, assigned + 1, repositioned, unmatched}}
 
       {:error, reason} ->
-        {:halt, {:error, reason}}
+        if category_refused?(reason),
+          do:
+            skip_refused_assignment(item, category_uuid, index, assigned, repositioned, unmatched),
+          else: {:halt, {:error, reason}}
     end
+  end
+
+  # Only a changeset whose EVERY error is on `:category_uuid`: anything
+  # else wrong with the write still halts the run.
+  defp category_refused?(%Ecto.Changeset{errors: [_ | _] = errors}),
+    do: Enum.all?(errors, &match?({:category_uuid, _}, &1))
+
+  defp category_refused?(_reason), do: false
+
+  # The catalogue refused the category (trashed, moved to another
+  # catalogue, or deleted outright, since `resolve_categories/2` read it):
+  # leave the item where it is.
+  defp skip_refused_assignment(item, category_uuid, index, assigned, repositioned, unmatched) do
+    Logger.warning(
+      "Shopify collection sync left item #{item.uuid} in place: category #{category_uuid} was refused"
+    )
+
+    {:cont, {:ok, index, assigned, repositioned, unmatched}}
   end
 end

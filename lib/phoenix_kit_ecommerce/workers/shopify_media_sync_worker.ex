@@ -30,7 +30,8 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   loop moves on to the next product — one bad product must not stop the
   other ~664. This is `CSVImportWorker`'s own per-row philosophy, not
   `CollectionSync`'s (which halts on a write failure because collection
-  membership assignment is one connected pass, not independent rows).
+  membership assignment is one connected pass, not independent rows —
+  save a catalogue refusing an item's category, which it logs and skips).
 
   ## `"variants"` and the currency guard (per-domain-currency design §7.5)
 

@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.5.6 - 2026-09-15
+
+### Fixed
+
+- **Shopify collection sync no longer halts on a category trashed
+  mid-run** (#57). An item whose target category the catalogue refuses at
+  assignment time (trashed, moved to another catalogue, or deleted since
+  the run resolved it) stays where it is with a logged warning, and the
+  run carries on. Any other write error still halts the run.
+- **Shopify collection sync no longer fails every run once a matching
+  category is in the trash.** Such a collection is skipped — logged,
+  counted in the new `collections_skipped_trashed` result key, its
+  products never fetched — instead of having its category re-created,
+  which collided with the trashed category's slug and halted the sync
+  until the trash was emptied. Restoring the category brings the
+  collection back on the next run.
+
 ## 0.5.5 - 2026-09-15
 
 ### Added

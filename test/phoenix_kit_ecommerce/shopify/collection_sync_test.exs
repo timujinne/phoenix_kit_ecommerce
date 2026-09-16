@@ -29,6 +29,8 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
   alias PhoenixKitEcommerce.Shopify.CollectionSync
   alias PhoenixKitEcommerce.Test.Repo
 
+  import ExUnit.CaptureLog
+
   setup do
     on_exit(fn -> set_product_source("legacy") end)
 
@@ -182,6 +184,54 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
     def fetch_collection_product_ids(1, _opts), do: {:ok, [111]}
     def fetch_collection_product_ids(4, _opts), do: {:ok, [222]}
   end
+
+  # "frames" (id 1, product 222) then "gifts" (id 2, product 333).
+  # Fetching frames' products trashes the category put under
+  # `:collection_sync_trash_on_fetch`, once — after `resolve_categories/2`
+  # read it, before 222 is assigned to it.
+  defmodule TrashingStub do
+    @moduledoc false
+
+    def fetch_collections(_opts) do
+      {:ok,
+       [
+         %{
+           "id" => 1,
+           "handle" => "frames",
+           "title" => "Frames",
+           "kind" => "custom",
+           "position" => 0
+         },
+         %{
+           "id" => 2,
+           "handle" => "gifts",
+           "title" => "Gifts",
+           "kind" => "custom",
+           "position" => 1
+         }
+       ]}
+    end
+
+    def fetch_collection_product_ids(1, _opts) do
+      case Process.delete(:collection_sync_trash_on_fetch) do
+        nil -> :ok
+        category -> {:ok, _} = PhoenixKitCatalogue.Catalogue.trash_category(category)
+      end
+
+      {:ok, [222]}
+    end
+
+    def fetch_collection_product_ids(2, _opts), do: {:ok, [333]}
+  end
+
+  # Only a catalogue that refuses trashed categories on `update_item/3` can
+  # produce the refusal (it shipped with `permanent_delete_scope/1`).
+  @catalogue_refuses_trashed_categories Code.ensure_loaded?(Catalogue) and
+                                          function_exported?(
+                                            Catalogue,
+                                            :permanent_delete_scope,
+                                            1
+                                          )
 
   describe "run/1 — legacy source" do
     test "is a no-op returning :catalogue_source_inactive" do
@@ -390,6 +440,79 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
 
       assert {:error, %Ecto.Changeset{}} =
                CollectionSync.run(client: CollisionStub, catalogue_uuid: catalogue.uuid)
+    end
+
+    unless @catalogue_refuses_trashed_categories do
+      @tag skip: "needs a phoenix_kit_catalogue that refuses trashed categories"
+    end
+
+    test "a category trashed mid-run leaves its items in place and the run carries on", %{
+      catalogue: catalogue
+    } do
+      {:ok, frames} =
+        Catalogue.create_category(%{
+          name: "Frames",
+          catalogue_uuid: catalogue.uuid,
+          slug: %{"en" => "frames"},
+          position: 0
+        })
+
+      refused = create_item(catalogue.uuid, "Frame A", 222)
+      carried_on = create_item(catalogue.uuid, "Gift A", 333)
+      Process.put(:collection_sync_trash_on_fetch, frames)
+
+      log =
+        capture_log(fn ->
+          assert {:ok, result} =
+                   CollectionSync.run(client: TrashingStub, catalogue_uuid: catalogue.uuid)
+
+          # 222 (refused) is walked before 333: the run went on past it.
+          assert result.items_assigned == 1
+        end)
+
+      assert log =~ "left item #{refused.uuid} in place"
+      assert Catalogue.get_item!(refused.uuid).category_uuid == nil
+
+      [gifts] = Catalogue.list_categories_metadata_for_catalogue(catalogue.uuid)
+      assert gifts.name == "Gifts"
+      assert Catalogue.get_item!(carried_on.uuid).category_uuid == gifts.uuid
+    end
+
+    test "a collection whose category is in the trash is skipped, not re-created", %{
+      catalogue: catalogue
+    } do
+      {:ok, frames} =
+        Catalogue.create_category(%{
+          name: "Frames",
+          catalogue_uuid: catalogue.uuid,
+          slug: %{"en" => "frames"},
+          position: 0
+        })
+
+      {:ok, _} = Catalogue.trash_category(frames)
+      item = create_item(catalogue.uuid, "Frame A", 222)
+      create_item(catalogue.uuid, "Gift A", 333)
+
+      # Before: the trashed category still holds "frames" in the slug
+      # projection, so re-creating it collided and halted every run.
+      log =
+        capture_log(fn ->
+          assert {:ok, result} =
+                   CollectionSync.run(client: TrashingStub, catalogue_uuid: catalogue.uuid)
+
+          assert result.collections_skipped_trashed == 1
+          assert result.categories_created == 1
+          assert result.items_assigned == 1
+        end)
+
+      assert log =~ "skipped collection frames"
+
+      [gifts] = Catalogue.list_categories_metadata_for_catalogue(catalogue.uuid)
+      assert gifts.name == "Gifts"
+      # Re-indexed past the skipped collection, as a filtered-out one is.
+      assert gifts.position == 0
+      assert Catalogue.get_item!(item.uuid).category_uuid == nil
+      assert Catalogue.get_category!(frames.uuid).status == "deleted"
     end
 
     test "a category with no matching collection is left untouched", %{catalogue: catalogue} do
