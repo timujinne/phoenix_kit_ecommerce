@@ -46,7 +46,8 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerce do
     field :price_on_request, :boolean, default: false
     # option_key -> value_slug -> decimal string
     field :price_modifiers, :map, default: %{}
-    # handle, product_id, variant_ids
+    # handle, product_id (both match the item in the collection and
+    # media syncs), image_ids, set_slugs
     field :shopify, :map, default: %{}
     field :legacy_product_uuid, Ecto.UUID
     field :translation_fingerprints, :map, default: %{}

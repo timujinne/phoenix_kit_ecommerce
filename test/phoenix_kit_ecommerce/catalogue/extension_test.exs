@@ -31,6 +31,40 @@ defmodule PhoenixKitEcommerce.Catalogue.ExtensionTest do
     assert map["shop_status"] == "hidden"
   end
 
+  describe "duplicate_data/2" do
+    test "an item copy leaves out the Shopify link and the legacy product" do
+      data = %{
+        "shop_status" => "active",
+        "vendor" => "Acme",
+        "price_modifiers" => %{"color" => %{"red" => "2.00"}},
+        "shopify" => %{
+          "product_id" => "123",
+          "handle" => "oak-door",
+          "image_ids" => %{"456" => "01a0ae3b-0000-7000-8000-000000000002"},
+          "set_slugs" => ["color"]
+        },
+        "legacy_product_uuid" => "01a0ae3b-0000-7000-8000-000000000001"
+      }
+
+      assert Extension.duplicate_data(:item, data) == %{
+               "shop_status" => "active",
+               "vendor" => "Acme",
+               "price_modifiers" => %{"color" => %{"red" => "2.00"}}
+             }
+    end
+
+    test "a category copy keeps its shop fields but not the Shopify collection" do
+      data = %{"shop_status" => "hidden", "featured_item_uuid" => "x", "option_schema" => []}
+
+      assert Extension.duplicate_data(:category, data) == data
+
+      assert Extension.duplicate_data(
+               :category,
+               Map.put(data, "shopify", %{"collection_id" => "gid://shopify/Collection/1"})
+             ) == data
+    end
+  end
+
   describe "item_section/1" do
     test "renders inputs named item[ecommerce][*]" do
       html =

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.5.7 - 2026-09-17
+
+### Fixed
+
+- **Catalogue copies no longer carry the Shopify link** (#58). The
+  catalogue's Duplicate (an item, a category, or a whole catalogue) now
+  asks the shop extension what a copy keeps through `duplicate_data/2`.
+  An item copy drops `data["ecommerce"]["shopify"]` (product id, handle,
+  and the media and variant sync's `image_ids` / `set_slugs`) and
+  `legacy_product_uuid`, so the collection and media syncs can't match
+  two rows to one Shopify product. A category copy drops the Shopify
+  `collection_id`. Every other shop field is kept.
+
 ## 0.5.6 - 2026-09-15
 
 ### Fixed
