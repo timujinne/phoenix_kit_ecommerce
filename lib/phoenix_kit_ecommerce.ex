@@ -4509,7 +4509,16 @@ defmodule PhoenixKitEcommerce do
     Billing.create_order(user_uuid, order_attrs)
   end
 
-  # Send confirmation email to guest users
+  # Send confirmation email to guest users.
+  #
+  # Runs after the checkout transaction commits, so a failure here must stay
+  # here: the caller's next steps are the order's activity record and the
+  # operator's "new order" notification, and above all its own caller is the
+  # checkout LiveView. An exception escaping this function killed that view
+  # mid-checkout — the shopper was bounced to a freshly created empty cart and
+  # told it was empty, with the order sitting in the database and nobody
+  # notified. The mail path is a whole stack of other people's code (template
+  # lookup, rendering, SMTP); it is not the place to trust that nothing raises.
   defp maybe_send_guest_confirmation(nil), do: :ok
 
   defp maybe_send_guest_confirmation(user_uuid) do
@@ -4527,6 +4536,30 @@ defmodule PhoenixKitEcommerce do
         # Already confirmed user - no action needed
         :ok
     end
+
+    # `Logger.error`, where the rest of this module logs swallowed failures at
+    # `warning`: a customer completed a checkout and the account they were
+    # given has no way to confirm itself. That needs an operator, not a line
+    # someone reads later. The message says "guest confirmation" rather than
+    # "the email", because the rescue also covers the user lookup above it —
+    # which must not be narrowed out, since a database fault there would kill
+    # the checkout LiveView just as surely as a mail failure did.
+  rescue
+    error ->
+      Logger.error(
+        "[Shop] guest confirmation failed for user #{inspect(user_uuid)}: " <>
+          Exception.format(:error, error, __STACKTRACE__)
+      )
+
+      :ok
+  catch
+    kind, value ->
+      Logger.error(
+        "[Shop] guest confirmation failed for user #{inspect(user_uuid)}: " <>
+          "#{inspect(kind)} #{inspect(value)}"
+      )
+
+      :ok
   end
 
   # Atomically transition cart from "active" to "converting" status.
