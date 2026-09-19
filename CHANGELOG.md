@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.5.8 - 2026-09-18
+
+### Fixed
+
+- **A failed guest confirmation email no longer takes the checkout with
+  it** (#59). The three steps that run after the checkout transaction
+  commits — the guest confirmation email, the order's activity record,
+  the operator's "new order" notification — had one unguarded member, and
+  it was the one made almost entirely of other people's code (template
+  lookup, rendering, SMTP). A raise there skipped the other two, so an
+  order reached the database with no audit row and nobody told, and it
+  killed the checkout LiveView: the shopper's browser reconnected, the
+  view remounted, found the cart already converted and sent them to a
+  fresh empty cart, whose "your cart is empty" was all they ever saw
+  about the order they had just placed. `maybe_send_guest_confirmation/1`
+  now rescues and catches, logs at `error` with the full formatted
+  stacktrace for both kinds, and returns `:ok`. Seen in production, where
+  an active database email template made core's `Content.resolve/5` raise
+  `KeyError` on every send.
+- **`Activity.log/2` no longer lets a thrown value through.** The shop's
+  activity wrapper promises in its own docs that a logging failure can
+  never crash the caller, and caught `:exit` but not `:throw` — in the
+  checkout's post-commit block that caller is the shopper's LiveView. It
+  now catches every kind, matching `Notifications.safely/1`.
+
 ## 0.5.7 - 2026-09-17
 
 ### Fixed

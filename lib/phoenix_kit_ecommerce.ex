@@ -4554,9 +4554,12 @@ defmodule PhoenixKitEcommerce do
       :ok
   catch
     kind, value ->
+      # Same `Exception.format/3` as the `rescue` above: a bare
+      # `:throw :mailer_gone` names the value and nothing else, and the
+      # operator this line exists for needs to know WHERE it came from.
       Logger.error(
         "[Shop] guest confirmation failed for user #{inspect(user_uuid)}: " <>
-          "#{inspect(kind)} #{inspect(value)}"
+          Exception.format(kind, value, __STACKTRACE__)
       )
 
       :ok

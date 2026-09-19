@@ -15,6 +15,7 @@ defmodule PhoenixKitEcommerce.CheckoutSurvivesEmailFailureTest do
   use PhoenixKitEcommerce.DataCase, async: false
 
   import Ecto.Query, only: [select: 3]
+  import ExUnit.CaptureLog
 
   alias PhoenixKitEcommerce.Test.Repo, as: TestRepo
 
@@ -97,8 +98,18 @@ defmodule PhoenixKitEcommerce.CheckoutSurvivesEmailFailureTest do
   test "a guest checkout still returns its order when the confirmation email raises" do
     cart = guest_cart()
 
-    assert {:ok, order} = Shop.convert_cart_to_order(cart, billing_data: guest_billing())
-    assert order.order_number
+    log =
+      capture_log(fn ->
+        assert {:ok, order} = Shop.convert_cart_to_order(cart, billing_data: guest_billing())
+        assert order.order_number
+      end)
+
+    # Swallowing the failure is only half the fix: the shopper now has an
+    # account that cannot confirm itself, and the one thing standing between
+    # that and nobody ever finding out is this line. Pinned at `error` — a
+    # later downgrade to `warning` would otherwise pass every test here.
+    assert log =~ "[error]"
+    assert log =~ "[Shop] guest confirmation failed"
   end
 
   test "the steps after the email still run" do
@@ -132,8 +143,16 @@ defmodule PhoenixKitEcommerce.CheckoutSurvivesEmailFailureTest do
     Application.put_env(:phoenix_kit, :email_provider, ThrowingProvider)
     cart = guest_cart()
 
-    assert {:ok, order} = Shop.convert_cart_to_order(cart, billing_data: guest_billing())
-    assert_activity_logged("shop.order_converted", resource_uuid: order.uuid)
+    log =
+      capture_log(fn ->
+        assert {:ok, order} = Shop.convert_cart_to_order(cart, billing_data: guest_billing())
+        assert_activity_logged("shop.order_converted", resource_uuid: order.uuid)
+      end)
+
+    # The thrown value AND where it came from: `inspect/1` on the value alone
+    # gives an operator `:mailer_gone` and no way to find the sender.
+    assert log =~ "(throw) :mailer_gone"
+    assert log =~ "PhoenixKit.Email.Content.resolve/5"
   end
 
   # A user holding "shop.manage_carts" through the "Admin" system role — the

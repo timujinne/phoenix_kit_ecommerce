@@ -82,7 +82,18 @@ defmodule PhoenixKitEcommerce.Activity do
       Logger.warning("[Shop] Activity logging error: #{Exception.message(e)}")
       {:error, e}
   catch
-    :exit, _reason -> :ok
+    # A dead pool / checkout timeout exits rather than raises, and is not
+    # worth a line of its own - the caller is already having a bad day.
+    :exit, _reason ->
+      :ok
+
+    # Everything else that unwinds past `rescue`. `Notifications.safely/1`
+    # has always caught this kind and the moduledoc above promises it, but
+    # a thrown value used to sail straight through and take the caller with
+    # it - which on the checkout path is the shopper's LiveView.
+    kind, value ->
+      Logger.warning("[Shop] Activity logging error: #{inspect(kind)} #{inspect(value)}")
+      :ok
   end
 
   @doc """
