@@ -80,6 +80,13 @@ defmodule PhoenixKitEcommerce.Catalogue.ExtensionTest do
       assert html =~ ~s(name="item[ecommerce][product_type]")
       assert html =~ ~s(name="item[ecommerce][vendor]")
       assert html =~ ~s(name="item[ecommerce][compare_at_price]")
+      # Catalogue form convention: sentence case, core labels (no daisyUI
+      # `.fieldset`, which shrinks them to 12px), 16px heading with icon.
+      assert html =~ "Product type"
+      assert html =~ "Compare at price"
+      assert html =~ "Cost per item"
+      assert html =~ "text-base font-semibold text-base-content/80"
+      refute html =~ "fieldset"
     end
 
     test "renders the current values from data[\"ecommerce\"]" do
@@ -128,6 +135,11 @@ defmodule PhoenixKitEcommerce.Catalogue.ExtensionTest do
 
       assert html =~ ~s(id="ext-ecommerce-section")
       assert html =~ ~s(name="category[ecommerce][shop_status]")
+      # #61 lowercased the msgid; the fuzzy msgstr still said "products".
+      assert html =~ "Active — category and items visible"
+      refute html =~ "products visible"
+      assert html =~ "text-base font-semibold text-base-content/80"
+      refute html =~ "fieldset"
     end
   end
 

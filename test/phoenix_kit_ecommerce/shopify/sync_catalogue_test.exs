@@ -274,6 +274,7 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCatalogueTest do
       {:ok, view, html} = live(conn, "/en/admin/shop/imports")
 
       assert html =~ "CSV import is disabled"
+      assert html =~ "now live in the Catalogues module"
       assert has_element?(view, "#imports-catalogue-notice")
       refute has_element?(view, "#csv-upload-form")
     end

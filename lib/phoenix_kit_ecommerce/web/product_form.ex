@@ -67,7 +67,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
   defp redirect_to_catalogue(socket) do
     socket
-    |> put_flash(:info, gettext("Products are managed in the catalogue module now."))
+    |> put_flash(:info, gettext("Products are managed in the Catalogues module now."))
     |> push_navigate(to: Routes.path("/admin/catalogue"))
   end
 
@@ -930,7 +930,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                 <div class="fieldset w-full">
                   <.select
                     field={@form[:product_type]}
-                    label={gettext("Product Type")}
+                    label={gettext("Product type")}
                     options={[{gettext("Physical"), "physical"}, {gettext("Digital"), "digital"}]}
                   />
                 </div>
@@ -939,7 +939,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <.select
                     field={@form[:category_uuid]}
                     label={gettext("Category")}
-                    prompt={gettext("No category")}
+                    prompt={gettext("— Category not set —")}
                     options={@categories}
                   />
                 </div>
@@ -986,7 +986,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <.input
                     field={@form[:compare_at_price]}
                     type="number"
-                    label={gettext("Compare at Price")}
+                    label={gettext("Compare at price")}
                     step="0.01"
                     min="0"
                     placeholder={gettext("Original price")}
@@ -998,7 +998,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <.input
                     field={@form[:cost_per_item]}
                     type="number"
-                    label={gettext("Cost per Item")}
+                    label={gettext("Cost per item")}
                     step="0.01"
                     min="0"
                     placeholder={gettext("Your cost for profit calculation")}

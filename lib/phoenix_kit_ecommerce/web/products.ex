@@ -368,7 +368,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
               >
                 <.icon name="hero-plus" class="w-4 h-4 mr-2" />
                 {if @catalogue_source_active?,
-                  do: gettext("Manage in Catalogue"),
+                  do: gettext("Manage in Catalogues"),
                   else: gettext("Add Product")}
               </.link>
             </div>

@@ -53,7 +53,8 @@ defmodule PhoenixKitEcommerce.Web.SettingsTranslationsTest do
 
     {:ok, view, html} = live(conn, "/en/admin/shop/settings")
 
-    assert html =~ "Not available while the shop reads products from the catalogue"
+    assert html =~ "Not available while the shop reads products from the Catalogues module"
+    refute html =~ "reads products from the catalogue"
     assert has_element?(view, "#toggle-shop-translations-enabled[disabled]")
 
     render_click(view, "toggle_shop_translations_enabled", %{})

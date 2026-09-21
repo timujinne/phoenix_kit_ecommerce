@@ -623,7 +623,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                   <span class="font-semibold">{gettext("Enable shop translations")}</span>
                   <div :if={not @translations_supported} class="text-sm text-warning mt-1">
                     {gettext(
-                      "Not available while the shop reads products from the catalogue — the translation adapters only cover the shop's own product and category tables."
+                      "Not available while the shop reads products from the Catalogues module — the translation adapters only cover the shop's own product and category tables."
                     )}
                   </div>
                   <div
@@ -1427,7 +1427,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
            socket,
            :error,
            gettext(
-             "Not available while the shop reads products from the catalogue — the translation adapters only cover the shop's own product and category tables."
+             "Not available while the shop reads products from the Catalogues module — the translation adapters only cover the shop's own product and category tables."
            )
          )}
 

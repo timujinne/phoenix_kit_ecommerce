@@ -65,12 +65,15 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
       |> assign(:download_expiry_days_errors, field_errors(form, :download_expiry_days))
 
     ~H"""
-    <div id="ext-ecommerce-section" class="card bg-base-100 shadow-xl">
+    <div id="ext-ecommerce-section" class="card bg-base-100 shadow-lg">
       <div class="card-body">
-        <h2 class="card-title text-xl mb-4">{gettext("Shop")}</h2>
+        <h2 class="text-base font-semibold text-base-content/80 flex items-center gap-2 mb-4">
+          <.icon name="hero-shopping-bag" class="w-4 h-4" />
+          {gettext("Shop")}
+        </h2>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-4">
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.select
               name="item[ecommerce][shop_status]"
               value={Map.get(@ecommerce, "shop_status", "draft")}
@@ -84,17 +87,17 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.select
               name="item[ecommerce][product_type]"
               value={Map.get(@ecommerce, "product_type", "physical")}
-              label={gettext("Product Type")}
+              label={gettext("Product type")}
               errors={@product_type_errors}
               options={[{gettext("Physical"), "physical"}, {gettext("Digital"), "digital"}]}
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.input
               name="item[ecommerce][vendor]"
               value={Map.get(@ecommerce, "vendor")}
@@ -105,7 +108,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.input
               name="item[ecommerce][tags]"
               value={Enum.join(Map.get(@ecommerce, "tags", []), ", ")}
@@ -116,32 +119,32 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.input
               name="item[ecommerce][compare_at_price]"
               value={Map.get(@ecommerce, "compare_at_price")}
               type="number"
               step="0.01"
               min="0"
-              label={gettext("Compare at Price")}
+              label={gettext("Compare at price")}
               placeholder={gettext("Original price")}
               errors={@compare_at_price_errors}
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.input
               name="item[ecommerce][cost_per_item]"
               value={Map.get(@ecommerce, "cost_per_item")}
               type="number"
               step="0.01"
               min="0"
-              label={gettext("Cost per Item")}
+              label={gettext("Cost per item")}
               errors={@cost_per_item_errors}
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.input
               name="item[ecommerce][currency]"
               value={currency_input_value(@ecommerce)}
@@ -152,7 +155,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.input
               name="item[ecommerce][weight_grams]"
               value={Map.get(@ecommerce, "weight_grams", 0)}
@@ -163,7 +166,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.checkbox
               name="item[ecommerce][taxable]"
               checked={Map.get(@ecommerce, "taxable", true)}
@@ -172,7 +175,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.checkbox
               name="item[ecommerce][requires_shipping]"
               checked={Map.get(@ecommerce, "requires_shipping", true)}
@@ -181,7 +184,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.checkbox
               name="item[ecommerce][made_to_order]"
               checked={Map.get(@ecommerce, "made_to_order", false)}
@@ -190,7 +193,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.checkbox
               name="item[ecommerce][price_from]"
               checked={Map.get(@ecommerce, "price_from", false)}
@@ -199,7 +202,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.checkbox
               name="item[ecommerce][price_on_request]"
               checked={Map.get(@ecommerce, "price_on_request", false)}
@@ -208,7 +211,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.input
               name={"item[ecommerce][price_unit][#{@current_language}]"}
               value={Map.get(@price_unit, @current_language, "")}
@@ -227,7 +230,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.input
               name="item[ecommerce][file_uuid]"
               value={Map.get(@ecommerce, "file_uuid")}
@@ -237,7 +240,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.input
               name="item[ecommerce][download_limit]"
               value={Map.get(@ecommerce, "download_limit")}
@@ -248,7 +251,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
             />
           </div>
 
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.input
               name="item[ecommerce][download_expiry_days]"
               value={Map.get(@ecommerce, "download_expiry_days")}
@@ -293,30 +296,32 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
       |> assign(:featured_item_uuid_errors, field_errors(form, :featured_item_uuid))
 
     ~H"""
-    <div id="ext-ecommerce-section" class="card bg-base-100 shadow-xl">
+    <div id="ext-ecommerce-section" class="card bg-base-100 shadow-lg">
       <div class="card-body">
-        <h2 class="card-title text-xl mb-4">{gettext("Shop")}</h2>
+        <h2 class="text-base font-semibold text-base-content/80 flex items-center gap-2 mb-4">
+          <.icon name="hero-shopping-bag" class="w-4 h-4" />
+          {gettext("Shop")}
+        </h2>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-4">
-          <div class="fieldset w-full">
+          <div class="w-full">
             <.select
               name="category[ecommerce][shop_status]"
               value={Map.get(@ecommerce, "shop_status", "active")}
               label={gettext("Shop status")}
               errors={@shop_status_errors}
               options={[
-                {gettext("Active — Category and items visible"), "active"},
-                {gettext("Unlisted — Category hidden, items still visible"), "unlisted"},
-                {gettext("Hidden — Category and items hidden"), "hidden"}
+                {gettext("Active — category and items visible"), "active"},
+                {gettext("Unlisted — category hidden, items still visible"), "unlisted"},
+                {gettext("Hidden — category and items hidden"), "hidden"}
               ]}
             />
           </div>
 
-
-          <div class="fieldset w-full md:col-span-2">
+          <div class="w-full md:col-span-2">
             <%= if @item_options != [] do %>
-              <label class="label">
-                <span class="fieldset-legend font-medium">
+              <label class="label mb-2">
+                <span class="font-semibold">
                   {gettext("Featured item (image fallback)")}
                 </span>
               </label>
@@ -387,8 +392,8 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
                 {Enum.join(@featured_item_uuid_errors, ", ")}
               </p>
             <% else %>
-              <label class="label">
-                <span class="fieldset-legend font-medium">{gettext("Featured item (image fallback)")}</span>
+              <label class="label mb-2">
+                <span class="font-semibold">{gettext("Featured item (image fallback)")}</span>
               </label>
               <div class="text-sm text-base-content/50 py-2">
                 <.icon name="hero-information-circle" class="w-4 h-4 inline mr-1" />

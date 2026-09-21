@@ -90,7 +90,10 @@ defmodule PhoenixKitEcommerce.Web.FormLvsTest do
       {:ok, _view, html} = live(conn, "/en/admin/shop/products/new")
 
       assert html =~ ~s(name="product[category_uuid]")
-      assert html =~ "No category"
+      # Catalogue convention is "— X not set —" (boss, 2026-09-19: "No
+      # category" read as if there were none).
+      assert html =~ "— Category not set —"
+      refute html =~ "No category"
       assert html =~ "Gadgets"
     end
   end

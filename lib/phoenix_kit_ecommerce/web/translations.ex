@@ -185,7 +185,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
         unavailable(
           socket,
           gettext(
-            "Shop translations aren't available while the shop reads products from the catalogue — the translation adapters only cover the shop's own product and category tables."
+            "Shop translations aren't available while the shop reads products from the Catalogues module — the translation adapters only cover the shop's own product and category tables."
           )
         )
 
@@ -1367,7 +1367,7 @@ defmodule PhoenixKitEcommerce.Web.Translations do
   defp sweep_result_message(:product_source_unsupported, _info),
     do:
       gettext(
-        "Sweep did not run — translations aren't available while the shop reads products from the catalogue."
+        "Sweep did not run — translations aren't available while the shop reads products from the Catalogues module."
       )
 
   defp sweep_result_message(:sweep_disabled, _info),

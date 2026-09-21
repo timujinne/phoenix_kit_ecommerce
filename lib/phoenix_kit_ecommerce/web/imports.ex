@@ -799,7 +799,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
             <.icon name="hero-information-circle" class="w-5 h-5" />
             <span>
               {gettext(
-                "Products and categories now live in the catalogue. CSV import is disabled — use the catalogue's item form (linked from the shop admin) to add or edit products, or the Shopify sync to bring in Shopify's own data."
+                "Products and categories now live in the Catalogues module. CSV import is disabled — use the Catalogues item form (linked from the shop admin) to add or edit products, or the Shopify sync to bring in Shopify's own data."
               )}
             </span>
           </div>

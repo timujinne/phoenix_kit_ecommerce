@@ -61,6 +61,35 @@ defmodule PhoenixKitEcommerce.I18nTest do
       Gettext.put_locale(EcommerceGettext, "et")
       assert Gettext.gettext(EcommerceGettext, "My Cart") == "Minu ostukorv"
     end
+
+    # The product form's category default (boss, 2026-09-19: "No category"
+    # read as if there were none). Catalogue convention is "— X not set —".
+    test "the category default resolves in every shipped locale" do
+      for {locale, text} <- [
+            {"et", "— Kategooria määramata —"},
+            {"ru", "— Категория не указана —"},
+            {"de", "— Kategorie nicht festgelegt —"},
+            {"fr", "— Catégorie non définie —"}
+          ] do
+        Gettext.put_locale(EcommerceGettext, locale)
+        assert Gettext.gettext(EcommerceGettext, "— Category not set —") == text
+      end
+    end
+
+    # Fuzzy entries are live at runtime (Elixir Gettext compiles them). A
+    # merge that guessed the shop category-form's "products" wording for
+    # the catalogue shop-section's "items" msgids therefore still rendered
+    # "Active — Category and products visible" after #61 lowercased the
+    # msgid. Empty en msgstrs fall through to the msgid.
+    test "the shop-section visibility options are not the fuzzy product-form guesses" do
+      Gettext.put_locale(EcommerceGettext, "en")
+
+      assert Gettext.gettext(EcommerceGettext, "Active — category and items visible") ==
+               "Active — category and items visible"
+
+      refute Gettext.gettext(EcommerceGettext, "Active — category and items visible") ==
+               "Active — Category and products visible"
+    end
   end
 
   describe "Tab.localized_label/1 against the module's catalogue" do
@@ -148,6 +177,19 @@ defmodule PhoenixKitEcommerce.I18nTest do
       end
     end
 
+    # Fuzzy entries ship. The completeness check above only looks at empty
+    # msgstrs, so a `--no-fuzzy`-skipped merge that still left guesses
+    # flagged `fuzzy` (the shop-section strings after #61) passed it.
+    test "no shipped catalogue carries a fuzzy translation" do
+      for locale <- ["en" | @translated_locales] do
+        fuzzies = locale |> catalogue_path() |> fuzzy_msgids()
+
+        assert fuzzies == [],
+               "#{locale} still has fuzzy entries: #{inspect(Enum.take(fuzzies, 10))}. " <>
+                 "Unfuzzy and correct the msgstr, or re-merge with --no-fuzzy."
+      end
+    end
+
     # The two label sets the Shopify Sync page renders — plural section
     # headers and the singular nouns it interpolates into confirm/flash
     # sentences as `%{field}`. Both used to live in module attributes,
@@ -198,6 +240,22 @@ defmodule PhoenixKitEcommerce.I18nTest do
   defp untranslated_msgid(block) do
     with [_, msgid] when msgid != "" <- Regex.run(~r/^msgid "(.*)"$/m, block),
          true <- Regex.match?(~r/^msgstr(\[\d+\])? ""$/m, block) do
+      [msgid]
+    else
+      _ -> []
+    end
+  end
+
+  defp fuzzy_msgids(path) do
+    path
+    |> File.read!()
+    |> String.split("\n\n")
+    |> Enum.flat_map(&fuzzy_msgid/1)
+  end
+
+  defp fuzzy_msgid(block) do
+    with true <- block =~ ~r/^#,.*\bfuzzy\b/m,
+         [_, msgid] when msgid != "" <- Regex.run(~r/^msgid "(.*)"$/m, block) do
       [msgid]
     else
       _ -> []
