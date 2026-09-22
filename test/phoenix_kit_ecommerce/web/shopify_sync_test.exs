@@ -143,6 +143,54 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     end
   end
 
+  describe "tabs" do
+    setup %{conn: conn} do
+      connect_shopify()
+      {:ok, conn: put_test_scope(conn, fake_scope())}
+    end
+
+    test "defaults to the \"Changes\" tab", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync")
+
+      assert html =~ ~s(id="tab-panel-changes")
+      refute html =~ ~s(id="tab-panel-new")
+      refute html =~ ~s(id="tab-panel-media")
+      refute html =~ ~s(id="tab-panel-settings")
+    end
+
+    test "?tab=settings renders the scope form and not the media panel", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync?tab=settings")
+
+      assert html =~ ~s(id="tab-panel-settings")
+      refute html =~ ~s(id="tab-panel-media")
+      refute html =~ ~s(id="media-sync-panel")
+    end
+
+    test "an unknown ?tab= falls back to \"Changes\"", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync?tab=bogus")
+
+      assert html =~ ~s(id="tab-panel-changes")
+      refute html =~ ~s(id="tab-panel-new")
+    end
+
+    test "the tab strip itself is present and links deep to each tab", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync")
+
+      assert html =~ ~s(id="shopify-sync-tabs")
+      assert html =~ "tab=new"
+      assert html =~ "tab=media"
+      assert html =~ "tab=settings"
+    end
+
+    test "\"New in Shopify\" before any check has run shows a prompt, not a crash", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync?tab=new")
+
+      assert html =~ ~s(id="tab-panel-new")
+      refute html =~ ~s(id="new-products-panel")
+      assert html =~ "Check for changes"
+    end
+  end
+
   describe "permission gating" do
     setup %{conn: conn} do
       connect_shopify()

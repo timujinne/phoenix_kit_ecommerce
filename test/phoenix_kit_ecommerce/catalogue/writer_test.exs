@@ -89,6 +89,53 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterTest do
     end
   end
 
+  describe "update_from_shopify/3 — shop_status is written only when synced" do
+    # Reproduces the live defect: `ecommerce_params/2` computed
+    # `shopify_shop_status(Map.get(change_fields, :status))` unconditionally,
+    # and that function maps anything unrecognised — including the `nil` of an
+    # absent key — to "draft". `maybe_put_param/3` only skips `nil`, so a
+    # "draft" produced from an absent key was always stored. Applying ANY
+    # other field therefore silently reset the merchant status.
+    #
+    # Measured on the decor3dprint stand (2026-09-22): the operator applied
+    # `status` to 400 + 36 products, then applied `body_html`, `tags` and
+    # `description` per field — each of those applies reset the statuses that
+    # had just been synced, so the next check reported ~109 status diffs again
+    # and the loop never converged.
+    test "an apply that does not carry :status leaves the stored shop_status alone", %{item: item} do
+      assert item.data["ecommerce"]["shop_status"] == "active"
+
+      assert {:ok, updated} = Writer.update_from_shopify(item, %{tags: ["a", "b"]}, "en")
+
+      assert updated.data["ecommerce"]["shop_status"] == "active"
+      assert updated.data["ecommerce"]["tags"] == ["a", "b"]
+    end
+
+    test "an apply that does not carry :status leaves a non-default shop_status alone",
+         %{item: item} do
+      {:ok, item} = Writer.update_from_shopify(item, %{status: "archived"}, "en")
+      assert item.data["ecommerce"]["shop_status"] == "archived"
+
+      assert {:ok, updated} = Writer.update_from_shopify(item, %{title: "Renamed"}, "en")
+
+      assert updated.data["ecommerce"]["shop_status"] == "archived"
+    end
+
+    test "an apply that carries :status writes it", %{item: item} do
+      assert {:ok, updated} = Writer.update_from_shopify(item, %{status: "draft"}, "en")
+
+      assert updated.data["ecommerce"]["shop_status"] == "draft"
+    end
+
+    # The fallback itself is deliberate and stays: an incoming status Shopify
+    # does not define must not be trusted into visibility.
+    test "an unrecognised incoming status still falls back to draft", %{item: item} do
+      assert {:ok, updated} = Writer.update_from_shopify(item, %{status: "weird"}, "en")
+
+      assert updated.data["ecommerce"]["shop_status"] == "draft"
+    end
+  end
+
   describe "update_from_shopify/3 — primary-language column/bucket agreement" do
     # Reproduces the live bug: an item whose primary-language ("en")
     # override bucket already carries a value (written by the ordinary

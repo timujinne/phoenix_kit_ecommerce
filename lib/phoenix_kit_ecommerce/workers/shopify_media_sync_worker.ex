@@ -21,9 +21,30 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   backfilled onto an item the first time a regular field sync applies a
   change to it (`Writer.update_from_shopify/3`; see Task 1), so plenty
   of items carry only `handle` until that has happened — by `data
-  ["ecommerce"]["shopify"]["handle"]`. A product matching neither is
-  recorded as an error (`"no_matching_item"`) rather than skipped
-  silently.
+  ["ecommerce"]["shopify"]["handle"]`.
+
+  A product already in the catalogue (matched either way) always syncs,
+  no matter what — the sync scope below never gates an item the
+  catalogue already has. Only an UNMATCHED product consults the scope:
+  in scope, it's recorded as an error (`"no_matching_item"`, as before —
+  the operator should add it via "New in Shopify" on the sync page);
+  out of scope, its absence is by design and is counted in the
+  progress record's `"skipped"` field instead, with no error entry at
+  all. Without this, a store that deliberately syncs a 665-product
+  subset of a 2750-product catalog saw ~2215 "errors" on every run,
+  drowning the handful of matched products that actually failed.
+
+  ## Sync scope (`PhoenixKitEcommerce.Shopify.SyncScope`)
+
+  Loaded ONCE per run (`SyncScope.get/0`, `opts[:scope]` overrides it —
+  tests inject a fixed scope rather than round-tripping through
+  `phoenix_kit_shop_config`), not once per product — same batch
+  philosophy `currency_verdict_for/2` already uses for the currency
+  guard below. `"collections"` never consults it: `CollectionSync`'s
+  own `"shopify_collections_filter"` is a completely separate allowlist
+  (which Shopify COLLECTIONS become categories at all), not this one
+  (which unmatched Shopify PRODUCTS count as missing versus intentionally
+  excluded).
 
   Each product is independent: a `Writer.sync_images/3` or `sync_variants/2`
   failure on one product is recorded in the run's `errors` list and the
@@ -63,24 +84,49 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
 
   ## Progress record
 
-  One `phoenix_kit_shop_config` row, key `"shopify_media_sync"`
-  (deliberately singular — Task 7 runs the three kinds one at a time,
-  never concurrently, so a single record naming its own `"kind"` is
-  enough to know what it describes and whether that specific button
-  should show as in-flight):
+  One `phoenix_kit_shop_config` row PER KIND, key `"shopify_media_sync:"
+  <> kind` — three independent rows, not the single `"shopify_media_sync"`
+  row this worker used before per-kind storage existed. Running
+  `"variants"` no longer erases `"images"`'s last result: an operator
+  who ran images, then variants, could not previously tell whether
+  images had run at all, let alone whether it succeeded or found
+  nothing to do.
 
       %{"kind" => "images" | "variants" | "collections",
         "total" => non_neg_integer(), "done" => non_neg_integer(),
+        "skipped" => non_neg_integer(), "matched" => non_neg_integer(),
+        "stats" => map(),
         "errors" => [%{"product" => String.t(), "reason" => String.t()}],
         "started_at" => iso8601, "finished_at" => iso8601 | nil,
         "result" => map() | nil}
 
+  `"skipped"` — unmatched Shopify products the sync scope excluded (see
+  above); `"matched"` — products that found a catalogue item, whether or
+  not that product's own sync had an error. `"stats"` aggregates each
+  kind's own writer counts across the whole run: for `"images"`,
+  `%{"downloaded" => n, "reused" => n, "attached" => n}` summed from
+  every `Writer.sync_images/3` result; for `"variants"`,
+  `%{"values_created" => n}` summed from every `Writer.sync_variants/2`
+  result (`%{}` for `"collections"`, which carries its own summary under
+  `"result"` instead — see below). `"total"`/`"done"` still count every
+  Shopify product this run looked at (matched + skipped + unmatched
+  in-scope errors), same as before.
+
   A job in flight has `"finished_at" => nil`; a caller reading this to
   decide whether to disable a button matches `progress["kind"]` against
-  the button's own kind first. Every write also broadcasts on `topic/0`
-  (`Manager.broadcast/2`) so the sync page's LiveView can update live
-  instead of polling — mirrors `CSVImportWorker`'s own `shop:import:*`
-  broadcasts.
+  the button's own kind first — `get_progress/1` already does this by
+  construction (one row per kind). Every write also broadcasts on
+  `topic/0` (`Manager.broadcast/2`) so the sync page's LiveView can
+  update live instead of polling — mirrors `CSVImportWorker`'s own
+  `shop:import:*` broadcasts; the broadcast payload is still one kind's
+  progress map, unchanged, so `handle_info/2` on the receiving end only
+  needs to learn to file it under its own `"kind"`.
+
+  `get_progress/0`/`get_progress/1` fall back to the legacy single
+  `"shopify_media_sync"` row for the one kind it names, so a stand that
+  ran a sync before this change doesn't lose that last result the first
+  time it reads progress under the new keys — nothing is ever written
+  back to the legacy key again, only read from it as a fallback.
 
   A no-op — `{:error, :catalogue_source_inactive}` — when
   `ProductSource.current/0` isn't `Catalogue` (checked here too, even
@@ -107,6 +153,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
     ]
 
   require Logger
+  import Ecto.Query
 
   alias PhoenixKit.Integrations
   alias PhoenixKit.PubSub.Manager
@@ -119,10 +166,11 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   alias PhoenixKitEcommerce.Shopify.AdminClient
   alias PhoenixKitEcommerce.Shopify.CollectionSync
   alias PhoenixKitEcommerce.Shopify.Sync
+  alias PhoenixKitEcommerce.Shopify.SyncScope
 
   @compile {:no_warn_undefined, PhoenixKitCatalogue.Catalogue}
 
-  @progress_key "shopify_media_sync"
+  @legacy_progress_key "shopify_media_sync"
   @topic "shop:media_sync"
   @progress_interval 20
   @kinds ~w(images variants collections)
@@ -131,14 +179,46 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   @spec topic() :: String.t()
   def topic, do: @topic
 
-  @doc "Reads the current (or last) progress record, `nil` if none exists yet."
-  @spec get_progress() :: map() | nil
+  @doc """
+  Reads every kind's current (or last) progress record — `%{"images" =>
+  progress | nil, "variants" => ..., "collections" => ...}`. See this
+  module's moduledoc ("Progress record") for the legacy-key fallback.
+
+  One query for all four rows (the three per-kind keys plus the legacy
+  single key) rather than `get_progress/1` called three times — each of
+  which would itself issue up to two queries (the per-kind key, then the
+  legacy fallback) — which would mean up to 6 round-trips for a page
+  that reads this once per mount/render.
+  """
+  @spec get_progress() :: %{String.t() => map() | nil}
   def get_progress do
-    case repo().get(ShopConfig, @progress_key) do
-      %ShopConfig{value: value} -> value
-      nil -> nil
+    keys = Enum.map(@kinds, &progress_key/1) ++ [@legacy_progress_key]
+
+    rows =
+      ShopConfig
+      |> where([c], c.key in ^keys)
+      |> repo().all()
+      |> Map.new(&{&1.key, &1.value})
+
+    Map.new(@kinds, fn kind ->
+      {kind, Map.get(rows, progress_key(kind)) || legacy_progress(rows, kind)}
+    end)
+  end
+
+  @doc "Reads one `kind`'s current (or last) progress record, `nil` if none exists yet."
+  @spec get_progress(String.t()) :: map() | nil
+  def get_progress(kind) when kind in @kinds do
+    Map.fetch!(get_progress(), kind)
+  end
+
+  defp legacy_progress(rows, kind) do
+    case Map.get(rows, @legacy_progress_key) do
+      %{"kind" => ^kind} = value -> value
+      _ -> nil
     end
   end
+
+  defp progress_key(kind), do: @legacy_progress_key <> ":" <> kind
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"kind" => kind} = args}) when kind in @kinds do
@@ -156,6 +236,10 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
       `opts[:downloader]`.
     * `:integration_uuid` — skips resolving the shop's Shopify connection
       (tests inject this; production always resolves it).
+    * `:scope` — a `PhoenixKitEcommerce.Shopify.SyncScope.t()` overriding
+      the default `SyncScope.get/0` lookup (tests inject a fixed scope);
+      only consulted for `"images"`/`"variants"`, never `"collections"`
+      (see this module's moduledoc, "Sync scope").
 
   Exists as a public function, separate from `perform/1`, so tests can
   exercise the real logic without going through Oban/HTTP.
@@ -187,6 +271,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   defp run_products(kind, actor_uuid, opts) do
     client = Keyword.get(opts, :client, AdminClient)
     integration_uuid = Keyword.fetch!(opts, :integration_uuid)
+    scope = Keyword.get_lazy(opts, :scope, &SyncScope.get/0)
 
     with {:ok, catalogue_uuid} <- fetch_catalogue_uuid(),
          {:ok, products} <- client.fetch_products(integration_uuid, opts) do
@@ -205,26 +290,31 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
           do: Writer.build_reuse_index(),
           else: %{url_index: %{}, active_uuids: MapSet.new()}
 
+      acc0 = %{
+        errors: [],
+        reuse_index: reuse_index,
+        skipped: 0,
+        matched: 0,
+        stats: %{}
+      }
+
       try do
-        # `raw_errors` stays newest-first (plain prepend) for the whole
+        # `errors` stays newest-first (plain prepend) for the whole
         # loop — reversing it into display order happens exactly once,
         # in `maybe_save_progress/5`/at the end, never on a value that
         # was already reversed on a previous iteration (that would
         # scramble the order past the second error).
-        {done, raw_errors, _reuse_index} =
+        {done, acc} =
           products
           |> Enum.with_index(1)
-          |> Enum.reduce({0, [], reuse_index}, fn {product, position},
-                                                  {_done, raw_errors, reuse_index} ->
-            {raw_errors, reuse_index} =
-              process_product(kind, product, index, actor_uuid, opts, raw_errors, reuse_index)
-
-            maybe_save_progress(kind, total, position, raw_errors, started_at)
-            {position, raw_errors, reuse_index}
+          |> Enum.reduce({0, acc0}, fn {product, position}, {_done, acc} ->
+            acc = process_product(kind, product, index, scope, actor_uuid, opts, acc)
+            maybe_save_progress(kind, total, position, acc, started_at)
+            {position, acc}
           end)
 
-        errors = Enum.reverse(raw_errors)
-        finish_progress(kind, total, done, errors, started_at, nil)
+        errors = Enum.reverse(acc.errors)
+        finish_progress(kind, total, done, acc, errors, started_at, nil)
         {:ok, %{total: total, done: done, errors: errors}}
       rescue
         exception ->
@@ -246,34 +336,72 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   # marked the whole run failed, and Oban retried from product 1 — the
   # opposite of what the moduledoc promises ("one bad product must not
   # stop the other ~664").
-  defp process_product(kind, product, index, actor_uuid, opts, errors, reuse_index) do
+  #
+  # A product already matched to a catalogue item ALWAYS syncs — the
+  # scope only decides what an UNMATCHED product means (moduledoc,
+  # "Products -> items"): in scope, it's the pre-existing
+  # `"no_matching_item"` error; out of scope, it's counted in `:skipped`
+  # with no error at all.
+  defp process_product(kind, product, index, scope, actor_uuid, opts, acc) do
     case find_item(index, product) do
       {:ok, item} ->
-        apply_writer_isolated(kind, item, product, actor_uuid, opts, errors, reuse_index)
+        acc = %{acc | matched: acc.matched + 1}
+        apply_writer_isolated(kind, item, product, actor_uuid, opts, acc)
 
       :error ->
-        {[product_error(product, "no_matching_item") | errors], reuse_index}
+        if SyncScope.in_scope?(product, scope) do
+          %{acc | errors: [product_error(product, "no_matching_item") | acc.errors]}
+        else
+          %{acc | skipped: acc.skipped + 1}
+        end
     end
   end
 
-  defp apply_writer_isolated(kind, item, product, actor_uuid, opts, errors, reuse_index) do
-    case apply_writer(kind, item, product, actor_uuid, opts, reuse_index) do
+  defp apply_writer_isolated(kind, item, product, actor_uuid, opts, acc) do
+    case apply_writer(kind, item, product, actor_uuid, opts, acc.reuse_index) do
       {:ok, result} ->
-        {merge_writer_errors(errors, product, result), next_reuse_index(reuse_index, result)}
+        %{
+          acc
+          | errors: merge_writer_errors(acc.errors, product, result),
+            reuse_index: next_reuse_index(acc.reuse_index, result),
+            stats: merge_stats(acc.stats, kind, result)
+        }
 
       {:error, reason} ->
-        {[product_error(product, reason) | errors], reuse_index}
+        %{acc | errors: [product_error(product, reason) | acc.errors]}
     end
   rescue
     exception ->
       log_product_crash(kind, product, Exception.message(exception), __STACKTRACE__)
-      {[product_error(product, Exception.message(exception)) | errors], reuse_index}
+      %{acc | errors: [product_error(product, Exception.message(exception)) | acc.errors]}
   catch
     :exit, reason ->
       message = "exit: " <> inspect(reason)
       log_product_crash(kind, product, message, __STACKTRACE__)
-      {[product_error(product, message) | errors], reuse_index}
+      %{acc | errors: [product_error(product, message) | acc.errors]}
   end
+
+  # Sums each kind's own writer counts across the run — see the
+  # moduledoc's "Progress record" for what each key means and why
+  # `"collections"` never reaches here (it never calls `apply_writer/6`
+  # at all; see `run_collections/1`).
+  defp merge_stats(stats, "images", result) do
+    Enum.reduce([downloaded: "downloaded", reused: "reused", attached: "attached"], stats, fn
+      {rkey, key}, acc ->
+        Map.update(acc, key, Map.get(result, rkey, 0), &(&1 + Map.get(result, rkey, 0)))
+    end)
+  end
+
+  defp merge_stats(stats, "variants", result) do
+    Map.update(
+      stats,
+      "values_created",
+      Map.get(result, :values_created, 0),
+      &(&1 + Map.get(result, :values_created, 0))
+    )
+  end
+
+  defp merge_stats(stats, _kind, _result), do: stats
 
   defp log_product_crash(kind, product, message, stacktrace) do
     key = product["handle"] || product_id_string(product) || "unknown"
@@ -398,7 +526,16 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
         try do
           case CollectionSync.run(run_opts) do
             {:ok, result} ->
-              finish_progress("collections", 1, 1, [], started_at, result)
+              finish_progress(
+                "collections",
+                1,
+                1,
+                collections_counts(result),
+                [],
+                started_at,
+                result
+              )
+
               {:ok, result}
 
             {:error, reason} = error ->
@@ -415,6 +552,38 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
         fail_progress("collections", reason)
         error
     end
+  end
+
+  # `"matched"`/`"skipped"` for a `"collections"` run are over COLLECTIONS,
+  # not products (the `"images"`/`"variants"` meaning of those two fields)
+  # — a collection that resolved to a category, created or matched, is
+  # "matched"; one dropped by the filter or because its only live match
+  # is trashed is "skipped". `"stats"` carries `CollectionSync.run/1`'s
+  # own counts (string-keyed, matching every other kind's `"stats"`
+  # shape) so the sync page never has to reach into `"result"` for a
+  # number it can show right next to `"matched"`/`"skipped"`.
+  defp collections_counts(%{
+         categories_created: created,
+         categories_matched: matched,
+         collections_skipped_by_filter: skipped_by_filter,
+         collections_skipped_trashed: skipped_trashed,
+         items_assigned: assigned,
+         items_repositioned: repositioned,
+         unmatched_products: unmatched_products
+       }) do
+    %{
+      matched: created + matched,
+      skipped: skipped_by_filter + skipped_trashed,
+      stats: %{
+        "categories_created" => created,
+        "categories_matched" => matched,
+        "collections_skipped_by_filter" => skipped_by_filter,
+        "collections_skipped_trashed" => skipped_trashed,
+        "items_assigned" => assigned,
+        "items_repositioned" => repositioned,
+        "unmatched_products" => length(unmatched_products)
+      }
+    }
   end
 
   # ============================================================
@@ -482,14 +651,24 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   end
 
   # ============================================================
-  # Progress: read/write `phoenix_kit_shop_config["shopify_media_sync"]`
+  # Progress: read/write `phoenix_kit_shop_config["shopify_media_sync:" <> kind]`
   # ============================================================
 
-  defp build_progress(kind, total, done, errors, started_at, finished_at, result) do
+  @empty_counts %{skipped: 0, matched: 0, stats: %{}}
+
+  # `counts` bundles the three fields the sync-scope work added
+  # (`:skipped`, `:matched`, `:stats`) into one argument — keeps this
+  # under credo's max-arity check, and reads at every call site as
+  # exactly what it is: the run's own tallies, as one unit, alongside
+  # `total`/`done`/`errors`.
+  defp build_progress(kind, total, done, counts, errors, started_at, finished_at, result) do
     %{
       "kind" => kind,
       "total" => total,
       "done" => done,
+      "skipped" => counts.skipped,
+      "matched" => counts.matched,
+      "stats" => counts.stats,
       "errors" => errors,
       "started_at" => started_at,
       "finished_at" => finished_at,
@@ -499,7 +678,12 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
 
   defp start_progress(kind, total) do
     started_at = iso_now()
-    save_and_broadcast(build_progress(kind, total, 0, [], started_at, nil, nil))
+
+    save_and_broadcast(
+      kind,
+      build_progress(kind, total, 0, @empty_counts, [], started_at, nil, nil)
+    )
+
     started_at
   end
 
@@ -507,38 +691,44 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   # broadcasting) every `@progress_interval`th one, plus the last, keeps
   # the sync page live without hammering the DB on every row — same
   # trade-off `CSVImportWorker`'s own `@progress_interval` documents.
-  # `raw_errors` is reversed here ONLY for the value that gets saved —
+  # `acc.errors` is reversed here ONLY for the value that gets saved —
   # the loop's own accumulator (see `run_products/3`) stays untouched.
-  defp maybe_save_progress(kind, total, done, raw_errors, started_at)
+  defp maybe_save_progress(kind, total, done, acc, started_at)
        when rem(done, @progress_interval) == 0 or done == total do
     save_and_broadcast(
-      build_progress(kind, total, done, Enum.reverse(raw_errors), started_at, nil, nil)
+      kind,
+      build_progress(kind, total, done, acc, Enum.reverse(acc.errors), started_at, nil, nil)
     )
   end
 
-  defp maybe_save_progress(_kind, _total, _done, _raw_errors, _started_at), do: :ok
+  defp maybe_save_progress(_kind, _total, _done, _acc, _started_at), do: :ok
 
-  defp finish_progress(kind, total, done, errors, started_at, result) do
-    save_and_broadcast(build_progress(kind, total, done, errors, started_at, iso_now(), result))
+  defp finish_progress(kind, total, done, counts, errors, started_at, result) do
+    save_and_broadcast(
+      kind,
+      build_progress(kind, total, done, counts, errors, started_at, iso_now(), result)
+    )
   end
 
   defp fail_progress(kind, reason) do
     now = iso_now()
     error = %{"product" => "_run", "reason" => error_reason_string(reason)}
-    save_and_broadcast(build_progress(kind, 0, 0, [error], now, now, nil))
+    save_and_broadcast(kind, build_progress(kind, 0, 0, @empty_counts, [error], now, now, nil))
   end
 
-  defp save_and_broadcast(progress) do
-    put_progress(progress)
+  defp save_and_broadcast(kind, progress) do
+    put_progress(kind, progress)
     Manager.broadcast(@topic, {:media_sync_progress, progress})
     progress
   end
 
-  defp put_progress(value) do
-    case repo().get(ShopConfig, @progress_key) do
+  defp put_progress(kind, value) do
+    key = progress_key(kind)
+
+    case repo().get(ShopConfig, key) do
       nil ->
         %ShopConfig{}
-        |> ShopConfig.changeset(%{key: @progress_key, value: value})
+        |> ShopConfig.changeset(%{key: key, value: value})
         |> repo().insert()
 
       config ->

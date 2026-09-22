@@ -106,6 +106,7 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   alias PhoenixKitEcommerce.Shopify.ProductDiff
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
   alias PhoenixKitEcommerce.Shopify.Source
+  alias PhoenixKitEcommerce.Shopify.SyncScope
   alias PhoenixKitEcommerce.Translations
 
   @localized_fields [:title, :body_html, :description]
@@ -161,12 +162,25 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   (e.g. in tests), same reason `ProductDiff.diff/4` takes it. The rest
   of `opts` (`:admin_options`, `:storefront_options`) is forwarded to
   `Source.fetch/2`.
+
+  `:new_products` is additionally filtered through
+  `PhoenixKitEcommerce.Shopify.SyncScope` (`opts[:scope]`, default
+  `SyncScope.get/0` — loaded once per call, not once per unmatched
+  product): only products the scope considers in-scope are offered as
+  create-`Change`s; the rest are dropped and counted in
+  `:new_products_out_of_scope` instead, so a store that deliberately
+  syncs a subset of its Shopify catalog never has the remainder offered
+  for import. The field diff of a MATCHED product (`:changes`) is never
+  scoped — see `Workers.ShopifyMediaSyncWorker`'s own moduledoc for why
+  this same rule applies there: the scope only ever decides what an
+  UNMATCHED product means.
   """
   @spec check(String.t(), keyword()) ::
           {:ok,
            %{
              changes: [Change.t()],
              new_products: [Change.t()],
+             new_products_out_of_scope: non_neg_integer(),
              source: :admin | :storefront,
              fallback_reason: term() | nil,
              total_shopify_products: non_neg_integer(),
@@ -174,20 +188,25 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
            }}
           | {:error, term()}
   def check(integration_uuid, opts \\ []) do
-    {base_locale, source_opts} =
+    {base_locale, opts} =
       Keyword.pop_lazy(opts, :base_locale, &Translations.default_language/0)
+
+    {scope, source_opts} = Keyword.pop_lazy(opts, :scope, &SyncScope.get/0)
 
     with {:ok, %{source: source, products: products, only: only, fallback_reason: reason}} <-
            Source.fetch(integration_uuid, source_opts) do
       local_products = Shop.list_products()
       changes = ProductDiff.diff(local_products, products, base_locale, only: only)
       matched = ProductDiff.matched_count(local_products, products, base_locale)
-      new_products = new_product_changes(local_products, products, base_locale, source)
+
+      {new_products, out_of_scope} =
+        new_product_changes(local_products, products, base_locale, source, scope)
 
       {:ok,
        %{
          changes: changes,
          new_products: new_products,
+         new_products_out_of_scope: out_of_scope,
          source: source,
          fallback_reason: reason,
          total_shopify_products: length(products),
@@ -202,15 +221,18 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   # ALREADY matched by handle (see `check/2`'s own moduledoc), so treating
   # its unmatched remainder as "new in Shopify" would be wrong for a
   # completely different reason than the legacy source's.
-  defp new_product_changes(local_products, products, base_locale, :admin) do
+  defp new_product_changes(local_products, products, base_locale, :admin, scope) do
     if ProductSource.current() == ProductSource.Catalogue do
-      ProductDiff.new_product_changes(local_products, products, base_locale)
+      all_changes = ProductDiff.new_product_changes(local_products, products, base_locale)
+      {in_scope, out_of_scope} = SyncScope.partition(all_changes, scope, & &1.shopify_product)
+      {in_scope, length(out_of_scope)}
     else
-      []
+      {[], 0}
     end
   end
 
-  defp new_product_changes(_local_products, _products, _base_locale, :storefront), do: []
+  defp new_product_changes(_local_products, _products, _base_locale, :storefront, _scope),
+    do: {[], 0}
 
   @doc """
   Checks ONE local product against its matched Shopify product — see

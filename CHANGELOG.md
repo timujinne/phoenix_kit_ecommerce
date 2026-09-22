@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.5.11 - 2026-09-22
+
+### Added
+
+- **Shopify sync scope** (#62). An allowlist by tags and/or product types
+  (`phoenix_kit_shop_config["shopify_sync_scope"]`, default: the whole
+  store) that decides what an *unmatched* Shopify product means. When
+  out of scope, the media sync counts it as skipped instead of raising a
+  `no_matching_item` error, and "Check for changes" does not offer it for
+  import. Products the catalogue already has always sync. Scope saves are
+  logged as `shop.shopify_sync_scope_saved`.
+- **"New in Shopify" panel** on the sync page (catalogue source). It lists
+  in-scope Shopify products with no local match, each with an Add button,
+  plus an Add all button. Both go through the page's usual confirm step
+  and currency guard.
+- **Per-kind media-sync progress.** Images, variants and collections each
+  keep their own last result (`shopify_media_sync:<kind>`), with
+  matched/skipped counts, per-kind stats and a collapsible error list.
+  Running one kind no longer erases another kind's result. The old single
+  record is still read as a fallback.
+
+### Fixed
+
+- **Applying any Shopify field other than status no longer resets the
+  product's shop status to draft** (#63). An absent `:status` now leaves
+  the stored `shop_status` untouched. An unrecognised status still falls
+  back to draft.
+- **A malformed sync-scope row can no longer crash the sync page, the
+  check or the media sync.** Non-string tag and product-type entries are
+  dropped.
+- **An images run where the scope skipped every product no longer reports
+  "Nothing new — all images already present".**
+
 ## 0.5.10 - 2026-09-20
 
 ### Changed

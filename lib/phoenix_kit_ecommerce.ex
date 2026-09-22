@@ -225,6 +225,12 @@ defmodule PhoenixKitEcommerce do
   # passes", so an operator who never set a filter gets the unfiltered
   # behaviour rather than a `nil` the caller must special-case.
   defp default_config_value("shopify_collections_filter"), do: %{}
+
+  # `"shopify_sync_scope"` (`PhoenixKitEcommerce.Shopify.SyncScope.get/0`'s
+  # own default) — an operator who never configured this gets the
+  # "everything" scope, same fail-open posture as the collections
+  # filter above; `SyncScope.get/0` normalizes this shape itself.
+  defp default_config_value("shopify_sync_scope"), do: %{"mode" => "all"}
   defp default_config_value(_key), do: nil
 
   @doc """

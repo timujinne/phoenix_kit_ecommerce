@@ -161,6 +161,24 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
     end
   end
 
+  # Three products, no images on any of them (keeps the writer side
+  # trivial — this stub is only ever used to test scope filtering, not
+  # image download itself): one already matched (product_id 111, always
+  # syncs regardless of scope), one unmatched but carrying the scope's
+  # own tag, one unmatched with a different tag entirely.
+  defmodule ScopeImagesStub do
+    @moduledoc false
+
+    def fetch_products(_integration_uuid, _opts) do
+      {:ok,
+       [
+         %{"id" => 111, "handle" => "matched", "tags" => "catalog-3d", "images" => []},
+         %{"id" => 222, "handle" => "unmatched-in-scope", "tags" => "catalog-3d", "images" => []},
+         %{"id" => 333, "handle" => "unmatched-out-of-scope", "tags" => "other", "images" => []}
+       ]}
+    end
+  end
+
   # A real `Storage.File` row per call (so `Attachments.attach_files/3`'s
   # own existence check passes), except for the one URL deliberately
   # made to fail — a stand-in for a real download error, not a mock of
@@ -273,6 +291,24 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
     def fetch_collection_product_ids(1, _opts), do: {:ok, [444]}
   end
 
+  # A second collection ("wall-art") that the "3d-" prefix filter drops
+  # entirely — for the `"skipped"`/`collections_skipped_by_filter`
+  # assertion below; `CollectionsStub` above has no filtered-out
+  # collection to count.
+  defmodule FilterAwareCollectionsStub do
+    @moduledoc false
+
+    def fetch_collections(_opts) do
+      {:ok,
+       [
+         %{"id" => 1, "handle" => "3d-gifts", "title" => "Gifts", "position" => 0},
+         %{"id" => 2, "handle" => "wall-art", "title" => "Wall Art", "position" => 1}
+       ]}
+    end
+
+    def fetch_collection_product_ids(1, _opts), do: {:ok, [444]}
+  end
+
   describe "run/3 — legacy source" do
     test "every kind is a no-op returning :catalogue_source_inactive" do
       assert Worker.run("images", nil, integration_uuid: "irrelevant") ==
@@ -295,7 +331,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
     test "fails and records a run-level error when no Shopify connection is configured" do
       assert Worker.run("images", nil) == {:error, :missing_shopify_connection}
 
-      progress = Worker.get_progress()
+      progress = Worker.get_progress("images")
       assert progress["kind"] == "images"
       assert progress["finished_at"] != nil
 
@@ -340,12 +376,46 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
       assert_receive {:media_sync_progress, %{"finished_at" => finished_at, "done" => 3}}
                      when not is_nil(finished_at)
 
-      progress = Worker.get_progress()
+      progress = Worker.get_progress("images")
       assert progress["kind"] == "images"
       assert progress["total"] == 3
       assert progress["done"] == 3
       assert length(progress["errors"]) == 2
       assert progress["result"] == nil
+
+      # Default scope (`SyncScope.all/0`) — every unmatched product is IN
+      # scope, so "unknown-product" is the `no_matching_item` error above,
+      # never `:skipped`; both matched products count towards `:matched`.
+      assert progress["skipped"] == 0
+      assert progress["matched"] == 2
+
+      # `Writer.sync_images/3`'s own counts, summed across the whole run:
+      # two products each downloaded one image (`501`, `601`); the third
+      # image (`502`) failed and is not counted as downloaded.
+      assert progress["stats"] == %{"downloaded" => 2, "reused" => 0, "attached" => 2}
+    end
+
+    test "images: an out-of-scope unmatched product is skipped with no error, an in-scope one is still an error",
+         %{catalogue: catalogue} do
+      user = fixture_user()
+      create_item(catalogue.uuid, "Matched", %{"product_id" => "111"})
+
+      scope = %{mode: :filtered, tags: ["catalog-3d"], product_types: []}
+
+      assert {:ok, %{total: 3, done: 3, errors: errors}} =
+               Worker.run("images", user.uuid,
+                 client: ScopeImagesStub,
+                 downloader: stub_downloader(user.uuid),
+                 integration_uuid: "test-integration",
+                 scope: scope
+               )
+
+      assert [%{"product" => "unmatched-in-scope", "reason" => "no_matching_item"}] = errors
+
+      progress = Worker.get_progress("images")
+      assert progress["matched"] == 1
+      assert progress["skipped"] == 1
+      assert length(progress["errors"]) == 1
     end
 
     # The moduledoc's promise — one bad product must not stop the rest —
@@ -380,7 +450,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
       assert [_uuid] = reload(after_crash).data["media_order"]
       assert reload(crashes).data["media_order"] in [nil, []]
 
-      progress = Worker.get_progress()
+      progress = Worker.get_progress("images")
       assert progress["done"] == 3
       assert progress["finished_at"] != nil
       assert [%{"product" => "crashes"}] = progress["errors"]
@@ -412,10 +482,15 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
 
       assert length(AttributeSets.list_attachments(item.uuid)) == 1
 
-      progress = Worker.get_progress()
+      progress = Worker.get_progress("variants")
       assert progress["kind"] == "variants"
       assert progress["finished_at"] != nil
       assert progress["errors"] == []
+      assert progress["matched"] == 1
+      assert progress["skipped"] == 0
+      # `Writer.sync_variants/2`'s own `values_created` (two brand-new
+      # values, "Small" and "Large") summed across the run.
+      assert progress["stats"] == %{"values_created" => 2}
     end
 
     # The set/value creator comes from the job's `actor_uuid`; a `nil` one
@@ -446,7 +521,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
                )
 
       assert AttributeSets.list_attachments(item.uuid) == []
-      assert Worker.get_progress()["finished_at"] != nil
+      assert Worker.get_progress("variants")["finished_at"] != nil
     end
 
     test "variants: a shop-currency mismatch skips every product, writes no price_modifiers, and reports the refusal",
@@ -487,7 +562,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
       reloaded = reload(item)
       assert get_in(reloaded.data, ["ecommerce", "price_modifiers"]) in [nil, %{}]
 
-      progress = Worker.get_progress()
+      progress = Worker.get_progress("variants")
       assert progress["kind"] == "variants"
       assert progress["finished_at"] != nil
       assert length(progress["errors"]) == 1
@@ -506,12 +581,132 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
       assert result.categories_created == 1
       assert result.items_assigned == 1
 
-      progress = Worker.get_progress()
+      progress = Worker.get_progress("collections")
       assert progress["kind"] == "collections"
       assert progress["total"] == 1
       assert progress["done"] == 1
       assert progress["finished_at"] != nil
       assert progress["result"]["categories_created"] == 1
+
+      # `"matched"`/`"skipped"` for a collections run are over
+      # COLLECTIONS, not products: one collection ("gifts") was created
+      # (never filtered/trashed), so matched == 1, skipped == 0 — real
+      # `CollectionSync.run/1` counts, not the old hardcoded 1/0.
+      assert progress["matched"] == 1
+      assert progress["skipped"] == 0
+
+      assert progress["stats"] == %{
+               "categories_created" => 1,
+               "categories_matched" => 0,
+               "collections_skipped_by_filter" => 0,
+               "collections_skipped_trashed" => 0,
+               "items_assigned" => 1,
+               "items_repositioned" => 0,
+               "unmatched_products" => 0
+             }
+    end
+
+    test "collections: skipped-by-filter and trashed collections are counted, not just created/matched ones",
+         %{catalogue: catalogue} do
+      %ShopConfig{}
+      |> ShopConfig.changeset(%{
+        key: "shopify_collections_filter",
+        value: %{"value" => %{"prefix" => "3d-", "exclude" => []}}
+      })
+      |> Repo.insert!()
+
+      create_item(catalogue.uuid, "Gift A", %{"product_id" => "444"})
+
+      assert {:ok, _result} =
+               Worker.run("collections", nil,
+                 client: FilterAwareCollectionsStub,
+                 integration_uuid: "test-integration"
+               )
+
+      progress = Worker.get_progress("collections")
+      assert progress["matched"] == 1
+      assert progress["skipped"] == 1
+      assert progress["stats"]["collections_skipped_by_filter"] == 1
+    end
+
+    test "images and variants each keep their own progress row — running one doesn't erase the other's last result",
+         %{catalogue: catalogue} do
+      AttributeSets.register_deletion_guard()
+      PhoenixKit.Settings.update_setting("entities_enabled", "true")
+      on_exit(fn -> PhoenixKit.Settings.update_setting("entities_enabled", "false") end)
+
+      user = fixture_user()
+      create_item(catalogue.uuid, "By id", %{"product_id" => "111"})
+
+      create_item(catalogue.uuid, "Two-Option Mug", %{"handle" => "two-option-mug"}, %{
+        data: %{
+          "_primary_language" => "en",
+          "ecommerce" => %{
+            "shop_status" => "active",
+            "shopify" => %{"handle" => "two-option-mug"}
+          }
+        }
+      })
+
+      assert {:ok, _} =
+               Worker.run("images", user.uuid,
+                 client: ImagesStub,
+                 downloader: stub_downloader(user.uuid),
+                 integration_uuid: "test-integration"
+               )
+
+      assert {:ok, _} =
+               Worker.run("variants", user.uuid,
+                 client: VariantsStub,
+                 integration_uuid: "test-integration"
+               )
+
+      all_progress = Worker.get_progress()
+      assert all_progress["images"]["kind"] == "images"
+      assert all_progress["images"]["finished_at"] != nil
+      assert all_progress["variants"]["kind"] == "variants"
+      assert all_progress["variants"]["finished_at"] != nil
+      assert all_progress["collections"] == nil
+
+      # Reading "images" again directly still returns its own result,
+      # unaffected by the later "variants" run — the old single-key
+      # storage this replaces would have overwritten it.
+      assert Worker.get_progress("images")["kind"] == "images"
+    end
+
+    test "get_progress/0 and get_progress/1 fall back to the legacy single key for the kind it names",
+         %{catalogue: catalogue} do
+      legacy_value = %{
+        "kind" => "collections",
+        "total" => 1,
+        "done" => 1,
+        "errors" => [],
+        "started_at" => "2026-01-01T00:00:00Z",
+        "finished_at" => "2026-01-01T00:05:00Z",
+        "result" => %{"categories_created" => 3}
+      }
+
+      %ShopConfig{}
+      |> ShopConfig.changeset(%{key: "shopify_media_sync", value: legacy_value})
+      |> Repo.insert!()
+
+      assert Worker.get_progress("collections") == legacy_value
+      assert Worker.get_progress("images") == nil
+      assert Worker.get_progress()["collections"] == legacy_value
+
+      # A fresh run under the new per-kind key is read back over the
+      # legacy fallback, and never writes to the legacy key again.
+      create_item(catalogue.uuid, "Gift A", %{"product_id" => "444"})
+
+      assert {:ok, _} =
+               Worker.run("collections", nil,
+                 client: CollectionsStub,
+                 integration_uuid: "test-integration"
+               )
+
+      refreshed = Worker.get_progress("collections")
+      assert refreshed["result"]["categories_created"] == 1
+      assert Repo.get(ShopConfig, "shopify_media_sync").value == legacy_value
     end
   end
 end

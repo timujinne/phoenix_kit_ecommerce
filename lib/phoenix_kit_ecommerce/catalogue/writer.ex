@@ -731,7 +731,7 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     %{}
     |> maybe_put_param("vendor", Map.get(change_fields, :vendor))
     |> maybe_put_param("tags", Map.get(change_fields, :tags))
-    |> maybe_put_param("shop_status", shopify_shop_status(Map.get(change_fields, :status)))
+    |> maybe_put_shop_status(change_fields)
     |> maybe_put_param(
       "compare_at_price",
       decimal_param(Map.get(change_fields, :compare_at_price))
@@ -810,6 +810,28 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   defp decimal_param(nil), do: nil
   defp decimal_param(%Decimal{} = decimal), do: Decimal.to_string(decimal)
   defp decimal_param(value), do: to_string(value)
+
+  # `Map.fetch/2`, not `Map.get/2` — same reasoning as `maybe_put_base_price/2`.
+  # `shopify_shop_status/1` maps everything it does not recognise to "draft",
+  # and an ABSENT `:status` is not an unrecognised status: it is a sync that
+  # was never asked to touch the merchant status at all. Reading it with
+  # `Map.get/2` turned that absence into a literal "draft", which
+  # `maybe_put_param/3` then stored because it only skips `nil` — so applying
+  # any other field silently retired the product.
+  #
+  # Measured on a live shop (2026-09-22): `status` was applied to 400 + 36
+  # products, then `body_html`, `tags` and `description` were applied per
+  # field; each of those applies reset the statuses just synced, the next
+  # check reported ~109 status differences again, and no number of "apply
+  # all" passes converged — `Sync.resolve_fields(:all, changes)` is only the
+  # fields that DIFFER, so a product whose status already matched never
+  # carried `:status` and lost it again on every pass.
+  defp maybe_put_shop_status(params, change_fields) do
+    case Map.fetch(change_fields, :status) do
+      {:ok, status} -> Map.put(params, "shop_status", shopify_shop_status(status))
+      :error -> params
+    end
+  end
 
   defp maybe_put_param(map, _key, nil), do: map
   defp maybe_put_param(map, key, value), do: Map.put(map, key, value)

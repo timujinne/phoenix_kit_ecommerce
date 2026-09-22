@@ -360,14 +360,29 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiff do
     end
   end
 
-  defp parse_tags(nil), do: []
+  @doc false
+  # Public (not documented as API) so `Shopify.SyncScope.in_scope?/2` can
+  # reuse the exact same comma-split/trim/reject-blank rule this module
+  # already uses to parse Shopify's `"tags"` field, instead of a second,
+  # independent implementation of the same parsing drifting out of sync
+  # with this one.
+  @spec parse_tags(String.t() | [String.t()] | nil) :: [String.t()]
+  def parse_tags(nil), do: []
 
-  defp parse_tags(tags) when is_binary(tags) do
+  def parse_tags(tags) when is_list(tags), do: tags
+
+  def parse_tags(tags) when is_binary(tags) do
     tags
     |> String.split(",")
     |> Enum.map(&String.trim/1)
     |> Enum.reject(&(&1 == ""))
   end
+
+  # Anything else (an unexpected payload shape — Shopify sending a
+  # number, a map, ...) reads as "no tags" rather than raising, same
+  # fail-open posture this module takes for other malformed Shopify
+  # fields.
+  def parse_tags(_other), do: []
 
   defp maybe_put_price(changes, current_price, variants, only) do
     if :price in only do
