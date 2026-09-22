@@ -104,7 +104,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
   describe "sync scope panel" do
     test "shows the default \"whole store\" summary when never configured", %{conn: conn} do
       connect_shopify()
-      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync?tab=settings")
 
       assert html =~ ~s(id="sync-scope-panel")
       assert html =~ ~s(id="sync-scope-summary")
@@ -114,7 +114,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
     test "saving a filtered scope re-renders the summary and round-trips through SyncScope",
          %{conn: conn} do
       connect_shopify()
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=settings")
 
       html =
         view
@@ -141,7 +141,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
     test "denied without shop.run_imports — the scope is left untouched", %{conn: conn} do
       connect_shopify()
       conn = put_test_scope(conn, fake_scope(permissions: ["shop"]))
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=settings")
 
       html =
         view
@@ -183,7 +183,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
       connect_shopify()
       seed_progress("images", %{"total" => 10, "done" => 10, "matched" => 7, "skipped" => 3})
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
 
       status = view |> element("#media-sync-status-images") |> render()
       assert status =~ "3 skipped"
@@ -197,7 +197,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
         "stats" => %{"downloaded" => 0, "reused" => 4, "attached" => 4}
       })
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
 
       status = view |> element("#media-sync-status-images") |> render()
       assert status =~ "Nothing new"
@@ -211,7 +211,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
         "stats" => %{"downloaded" => 12, "reused" => 2, "attached" => 14}
       })
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
 
       status = view |> element("#media-sync-status-images") |> render()
       refute status =~ "Nothing new"
@@ -219,19 +219,37 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
       assert status =~ "reused 2"
     end
 
-    test "errors render inside a <details>, capped at 50 lines with a remainder count",
-         %{conn: conn} do
+    test "errors render inside a <details>, 25 at a time via load-more", %{conn: conn} do
       connect_shopify()
 
       errors = for n <- 1..55, do: %{"product" => "p#{n}", "reason" => "no_matching_item"}
       seed_progress("variants", %{"errors" => errors})
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
 
       assert has_element?(view, "#media-sync-errors-variants")
       details = view |> element("#media-sync-errors-variants") |> render()
       assert details =~ "p1 — no_matching_item"
-      assert details =~ "… and 5 more"
+      refute details =~ "p26 — no_matching_item"
+      assert details =~ "Showing 25 of 55 errors"
+
+      details =
+        view
+        |> element("#media-sync-errors-load-more-variants button", "Load more")
+        |> render_click()
+
+      assert details =~ "p26 — no_matching_item"
+      refute details =~ "p51 — no_matching_item"
+      assert details =~ "Showing 50 of 55 errors"
+
+      details =
+        view
+        |> element("#media-sync-errors-load-more-variants button", "Load more")
+        |> render_click()
+
+      assert details =~ "p51 — no_matching_item"
+      assert details =~ "Showing 55 of 55 errors"
+      refute has_element?(view, "#media-sync-errors-load-more-variants button", "Load more")
     end
 
     # A record written before this PR (or `get_progress/0`'s own
@@ -257,7 +275,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
       |> ShopConfig.changeset(%{key: "shopify_media_sync:collections", value: legacy_value})
       |> Repo.insert!()
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
 
       status = view |> element("#media-sync-status-collections") |> render()
       refute status =~ "0 synced, 0 skipped"
@@ -307,7 +325,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
         end)
       )
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=new")
       html = check_and_await(view)
 
       assert html =~ ~s(id="new-products-panel")
@@ -327,7 +345,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
         end)
       )
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=new")
       check_and_await(view)
 
       assert has_element?(view, "#add-new-product-brand-new-mug")
@@ -376,7 +394,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
         end
       end)
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=new")
       check_and_await(view)
 
       render_click(view, "request_apply_new_row", %{"handle" => "brand-new-mug"})
@@ -397,11 +415,35 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
         with_shop_lookup(fn conn -> json_response(conn, 200, %{"products" => []}) end)
       )
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=new")
       html = check_and_await(view)
 
       assert html =~ ~s(id="new-products-panel")
       assert html =~ "No new products in scope."
+    end
+
+    test "load-more reveals more of a long new-products list", %{conn: conn} do
+      products = for n <- 1..60, do: shopify_product(%{"handle" => "mug-#{n}"})
+
+      Req.Test.stub(
+        @stub,
+        with_shop_lookup(fn conn -> json_response(conn, 200, %{"products" => products}) end)
+      )
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=new")
+      html = check_and_await(view)
+
+      assert html =~ ~s(id="add-new-product-mug-1")
+      refute html =~ ~s(id="add-new-product-mug-60")
+      assert html =~ "Showing 50 of 60"
+
+      html =
+        view
+        |> element("#new-products-load-more button", "Load more")
+        |> render_click()
+
+      assert html =~ ~s(id="add-new-product-mug-60")
+      refute has_element?(view, "#new-products-load-more button", "Load more")
     end
   end
 end
