@@ -101,6 +101,142 @@ defmodule PhoenixKitEcommerce.Catalogue.ExtensionTest do
       assert html =~ "Acme Co"
     end
 
+    test "renders the price-fit rule select on a Shopify-linked item, never_cheaper when unset" do
+      html =
+        render_component(&Extension.item_section/1,
+          form: nil,
+          item: nil,
+          data: %{"ecommerce" => %{"shopify" => %{"handle" => "mug"}}},
+          current_language: "en"
+        )
+
+      assert html =~ ~s(name="item[ecommerce][price_fit_rule]")
+
+      assert html =~
+               ~r/<option[^>]*selected[^>]*value="never_cheaper"|<option[^>]*value="never_cheaper"[^>]*selected/
+    end
+
+    test "shows the approximation note from shopify.price_fit" do
+      data = %{
+        "ecommerce" => %{
+          "price_fit_rule" => "cheapest",
+          "shopify" => %{
+            "handle" => "sculpture",
+            "price_fit" => %{
+              "rule" => "cheapest",
+              "variants" => 256,
+              "over" => 0,
+              "under" => 21,
+              "max_over" => "0.00",
+              "max_under" => "32.00"
+            }
+          }
+        }
+      }
+
+      html =
+        render_component(&Extension.item_section/1,
+          form: nil,
+          item: nil,
+          data: data,
+          current_language: "en"
+        )
+
+      assert html =~ ~s(id="ext-ecommerce-price-fit")
+      # Nothing is priced above Shopify under this fit, so the note says
+      # only what is below — never "0 of 256 above, up to +0.00".
+      assert html =~ "21 of 256 variants below Shopify, up to -32.00"
+      refute html =~ "above Shopify"
+    end
+
+    test "an over-only fit shows the amount without a below-Shopify sentence" do
+      data = %{
+        "ecommerce" => %{
+          "shopify" => %{
+            "product_id" => "9906019696978",
+            "price_fit" => %{
+              "rule" => "never_cheaper",
+              "variants" => 14,
+              "over" => 5,
+              "under" => 0,
+              "max_over" => "5.40",
+              "max_under" => "0.00"
+            }
+          }
+        }
+      }
+
+      html =
+        render_component(&Extension.item_section/1,
+          form: nil,
+          item: nil,
+          data: data,
+          current_language: "en"
+        )
+
+      assert html =~ ~s(id="ext-ecommerce-price-fit")
+      assert html =~ "5.40"
+      refute html =~ "below Shopify"
+    end
+
+    test "no note for an exact product" do
+      html =
+        render_component(&Extension.item_section/1,
+          form: nil,
+          item: nil,
+          data: %{"ecommerce" => %{"shopify" => %{"handle" => "mug"}}},
+          current_language: "en"
+        )
+
+      refute html =~ ~s(id="ext-ecommerce-price-fit")
+    end
+
+    test "no price-fit control on an item the Shopify sync does not write" do
+      html =
+        render_component(&Extension.item_section/1,
+          form: nil,
+          item: nil,
+          data: %{"ecommerce" => %{"shopify" => %{}}},
+          current_language: "en"
+        )
+
+      refute html =~ ~s(name="item[ecommerce][price_fit_rule]")
+    end
+
+    test "a fit both above and below Shopify says both" do
+      html = render_fit(%{"over" => 2, "under" => 3, "max_over" => "5.40", "max_under" => "3.60"})
+
+      assert html =~ "2 of 14 variants above Shopify, up to +5.40."
+      assert html =~ "3 below Shopify, up to -3.60."
+    end
+
+    test "a base price off Shopify's cheapest variant is named with its fix" do
+      html = render_fit(%{"under" => 14, "max_under" => "19.28", "base_offset" => "-19.28"})
+
+      assert html =~
+               "At the last variants sync the base price was -19.28 off Shopify&#39;s cheapest variant"
+
+      assert html =~ "Changes"
+    end
+
+    test "a base that only drifted says so, without calling the price approximated" do
+      html =
+        render_fit(%{
+          "approximated" => false,
+          "under" => 9,
+          "max_under" => "34.00",
+          "base_offset" => "-34.00"
+        })
+
+      assert html =~ "base price was -34.00 off"
+      refute html =~ "Price approximated"
+    end
+
+    test "a zero base offset adds nothing" do
+      html = render_fit(%{"over" => 5, "max_over" => "5.40", "base_offset" => "0.00"})
+      refute html =~ "base price"
+    end
+
     test "carries every other language's price_unit forward as a hidden input" do
       html =
         render_component(&Extension.item_section/1,
@@ -196,5 +332,27 @@ defmodule PhoenixKitEcommerce.Catalogue.ExtensionTest do
     |> Ecto.Changeset.cast(%{}, [])
     |> Ecto.Changeset.add_error(:data, message, extension: extension, field: field)
     |> Phoenix.Component.to_form(as: :item, action: :validate)
+  end
+
+  defp render_fit(fields) do
+    fit =
+      Map.merge(
+        %{
+          "rule" => "never_cheaper",
+          "variants" => 14,
+          "over" => 0,
+          "under" => 0,
+          "max_over" => "0.00",
+          "max_under" => "0.00"
+        },
+        fields
+      )
+
+    render_component(&Extension.item_section/1,
+      form: nil,
+      item: nil,
+      data: %{"ecommerce" => %{"shopify" => %{"handle" => "personalized", "price_fit" => fit}}},
+      current_language: "en"
+    )
   end
 end

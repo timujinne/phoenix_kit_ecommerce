@@ -26,7 +26,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   def mount(_params, _session, socket) do
     socket =
       socket
-      |> assign(:page_title, gettext("New Category"))
+      |> new_category_trail()
       |> assign(:supported_types, OptionTypes.supported_types())
       |> assign(:show_media_selector, false)
       |> assign(:image_uuid, nil)
@@ -49,6 +49,15 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
   defp catalogue_source_active?, do: ProductSource.current() == ProductSource.Catalogue
 
+  # The bar's title and the in-page heading agree on a new category; on an
+  # edit the bar says `Edit` under the category's crumb while the heading
+  # keeps naming the category.
+  defp new_category_trail(socket) do
+    socket
+    |> assign_shop_trail(gettext("New category"), [categories_crumb()])
+    |> assign(:heading, gettext("New category"))
+  end
+
   defp redirect_to_catalogue(socket) do
     socket
     |> put_flash(:info, gettext("Categories are managed in the Catalogues module now."))
@@ -62,7 +71,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     global_options = Options.get_enabled_global_options()
 
     socket
-    |> assign(:page_title, gettext("New Category"))
+    |> new_category_trail()
     |> assign(:category, category)
     |> assign_form(changeset)
     |> assign(:parent_options, parent_options)
@@ -91,13 +100,11 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
     product_options = Shop.list_category_product_options(category.uuid)
 
+    name = Translations.get(category, :name, TranslationTabs.get_default_language())
+
     socket
-    |> assign(
-      :page_title,
-      gettext("Edit %{name}",
-        name: Translations.get(category, :name, TranslationTabs.get_default_language())
-      )
-    )
+    |> assign_shop_trail(gettext("Edit"), [categories_crumb(), crumb(name)])
+    |> assign(:heading, gettext("Edit %{name}", name: name))
     |> assign(:category, category)
     |> assign_form(changeset)
     |> assign(:parent_options, parent_options)
@@ -344,7 +351,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
         <.admin_page_header back={Routes.path("/admin/shop/categories")}>
-          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{@page_title}</h1>
+          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{@heading}</h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
             {if @live_action == :new, do: gettext("Create a new category"), else: gettext("Edit category details")}
           </p>

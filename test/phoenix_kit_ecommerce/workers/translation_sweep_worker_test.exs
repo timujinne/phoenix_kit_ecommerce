@@ -1,6 +1,8 @@
 defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
   @moduledoc """
-  Coverage for the reconciliation sweep's Oban worker (design §4.3, §7):
+  Coverage for the reconciliation sweep's Oban worker (design §4.3, §7) —
+  the shop's source for `PhoenixKitAI.TranslationSweep`, driven here
+  through the worker's own functions so the wiring is what is tested:
 
     * the self-rescheduling chain — `ensure_scheduled/0`'s idempotency,
       `reschedule/0`'s cancel-and-reapply on an interval change, and that
@@ -11,9 +13,10 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
       unavailable, ceiling reached;
     * candidate selection under `shop_translation_batch` /
       `shop_translation_max_in_flight` — categories prioritized, the
-      ceiling counted in jobs (not resources), a scheduled ("snoozed")
-      job pressuring the ceiling same as an available one, and no
-      duplicate job for a pair already in flight.
+      ceiling counted in jobs (not resources) and admitting the languages
+      that fit, a scheduled ("snoozed") job pressuring the ceiling same
+      as an available one, no duplicate job for a pair already in flight,
+      and a pair whose latest job failed for good held back.
 
   Oban runs `testing: :manual` here (config/test.exs) — nothing executes
   on its own; every job assertion below is a direct query against
@@ -184,21 +187,20 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
   # -- reschedule/0 ----------------------------------------------------
 
   describe "reschedule/0" do
-    test "cancels the stale scheduled tick and applies the new interval" do
+    test "moves the waiting tick to the new interval" do
       Settings.update_setting_with_module("shop_translation_interval_minutes", "60", "shop")
       {:ok, old_job} = TranslationSweepWorker.ensure_scheduled()
 
       Settings.update_setting_with_module("shop_translation_interval_minutes", "5", "shop")
-      {:ok, new_job} = TranslationSweepWorker.reschedule()
+      {:ok, _} = TranslationSweepWorker.reschedule()
 
-      refute new_job.id == old_job.id
-
-      pending = pending_tick_jobs()
-      assert [%{id: id}] = pending
-      assert id == new_job.id
+      # Still one waiting tick — the same one, moved.
+      assert [%{id: id}] = pending_tick_jobs()
+      assert id == old_job.id
 
       # Reflects the shortened 5-minute interval, not the stale 60-minute wait.
-      assert_in_delta DateTime.diff(new_job.scheduled_at, DateTime.utc_now()), 300, 5
+      at = TranslationSweepWorker.next_tick_at()
+      assert_in_delta DateTime.diff(at, DateTime.utc_now()), 300, 5
     end
   end
 
@@ -544,24 +546,59 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
       assert job.args["resource_uuid"] == category.uuid
     end
 
-    test "the job ceiling stops selection before partially consuming a candidate's languages — and, being below the target-language count, this is Fix C's permanent stall, not an ordinary empty tick" do
+    test "a ceiling below a candidate's language count admits the languages that fit; the rest wait" do
       enable_languages!(["en", "de", "fr"])
       Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
 
-      # Needs BOTH de and fr ⇒ 2 jobs, which exceeds the ceiling of 1 — the
-      # whole candidate is skipped rather than enqueuing just one language.
-      # Pre-fix, this reported `:ok, enqueued: 0` — indistinguishable from a
-      # healthy idle sweep, even though a ceiling of 1 against 2 target
-      # languages can NEVER admit this (or any equally-untranslated)
-      # candidate, this tick or any future one.
-      create_product(%{title: %{"en" => "Wooden Vase"}})
+      # Needs both de and fr ⇒ 2 jobs against a ceiling of 1. An
+      # all-or-nothing budget could never admit it — nor anything queued
+      # behind it — this tick or any later one.
+      product = create_product(%{title: %{"en" => "Wooden Vase"}})
 
-      assert {:sweep_stalled, info} = TranslationSweepWorker.run_tick()
-      assert info.batch_size == 3
-      assert info.max_in_flight == 1
-      assert info.target_language_count == 2
-      assert TranslationSweepWorker.last_run()["reason"] == "sweep_stalled"
-      assert translate_jobs() == []
+      assert {:ok, %{enqueued: 1, candidates: 1}} = TranslationSweepWorker.run_tick()
+      assert [job] = translate_jobs()
+      assert job.args["resource_uuid"] == product.uuid
+      assert job.args["target_lang"] == "de"
+
+      # With de in flight the ceiling is full; once it has translated, fr goes.
+      assert {:ceiling_reached, _} = TranslationSweepWorker.run_tick()
+
+      from(j in "oban_jobs", where: j.worker == ^@translate_worker)
+      |> repo().update_all(set: [state: "completed"])
+
+      translated =
+        TranslationFingerprint.put_many(product.metadata, "de", %{
+          "title" => TranslationFingerprint.hash("Wooden Vase")
+        })
+
+      {:ok, _product} =
+        product
+        |> Ecto.Changeset.change(%{
+          title: Map.put(product.title, "de", "Holzvase"),
+          metadata: translated
+        })
+        |> repo().update()
+
+      assert {:ok, %{enqueued: 1}} = TranslationSweepWorker.run_tick()
+
+      assert translate_jobs() |> Enum.map(& &1.args["target_lang"]) |> Enum.sort() ==
+               ["de", "fr"]
+    end
+
+    test "a pair whose latest job failed for good is held back; the rest go" do
+      enable_languages!(["en", "de", "fr"])
+      product = create_product(%{title: %{"en" => "Wooden Vase"}})
+
+      failed = seed_translate_job(AITranslatable.resource_type(), product.uuid, "de")
+
+      from(j in "oban_jobs", where: j.id == ^failed.id)
+      |> repo().update_all(set: [state: "discarded", discarded_at: DateTime.utc_now()])
+
+      assert {:ok, %{enqueued: 1, backed_off: 1}} = TranslationSweepWorker.run_tick()
+
+      assert [queued] = Enum.filter(translate_jobs(), &(&1.state == "available"))
+      assert queued.args["target_lang"] == "fr"
+      assert TranslationSweepWorker.last_run()["backed_off"] == 1
     end
 
     test "a resource-language pair already in flight is not duplicated" do
@@ -600,30 +637,6 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
     end
   end
 
-  # -- structurally_stalled?/3 (Fix C) ---------------------------------
-
-  describe "structurally_stalled?/3" do
-    test "true when the batch is below 1" do
-      assert TranslationSweepWorker.structurally_stalled?(0, 6, ["de", "fr"])
-    end
-
-    test "true when the ceiling is below 1" do
-      assert TranslationSweepWorker.structurally_stalled?(3, 0, ["de"])
-    end
-
-    test "true when the ceiling is below the number of target languages" do
-      assert TranslationSweepWorker.structurally_stalled?(3, 1, ["de", "fr"])
-    end
-
-    test "false for the documented default relationship (batch 3 x 2 languages = ceiling 6, §4.6)" do
-      refute TranslationSweepWorker.structurally_stalled?(3, 6, ["de", "fr"])
-    end
-
-    test "false when the ceiling equals the target-language count exactly (the boundary is inclusive)" do
-      refute TranslationSweepWorker.structurally_stalled?(3, 2, ["de", "fr"])
-    end
-  end
-
   # -- run_tick/0 — Fix C: a stalled sweep must not report itself healthy
 
   describe "run_tick/0 — a stalled sweep must not report itself healthy (Fix C)" do
@@ -639,9 +652,8 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
       create_product(%{title: %{"en" => "Wooden Vase"}})
 
       assert {:sweep_stalled, info} = TranslationSweepWorker.run_tick()
-      assert info.batch_size == 0
+      assert info.batch == 0
       assert info.max_in_flight == 6
-      assert info.target_language_count == 2
       assert TranslationSweepWorker.last_run()["reason"] == "sweep_stalled"
       assert translate_jobs() == []
     end
@@ -655,24 +667,18 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
       assert translate_jobs() == []
     end
 
-    test "a batch/ceiling below the CONFIGURED target-language count stalls even with an empty catalog" do
-      # No product or category exists at all — this pins that the check is
-      # against the settings themselves, not against whether this
-      # particular tick happened to have a candidate to trip over.
-      Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
+    test "a stall is decided by the settings, even with an empty catalog" do
+      # No product or category exists at all — the check is against the
+      # settings themselves, not against whether this particular tick
+      # happened to have a candidate to trip over.
+      Settings.update_setting_with_module("shop_translation_batch", "0", "shop")
 
-      assert {:sweep_stalled, info} = TranslationSweepWorker.run_tick()
-      assert info.target_language_count == 2
+      assert {:sweep_stalled, %{batch: 0}} = TranslationSweepWorker.run_tick()
     end
 
-    test "a ceiling below the target-language count still enqueues a candidate whose own gap fits" do
-      # The stall REPORT must not cost the sweep the work it can still do.
-      # `take_within_budget/3` halts on a candidate that needs more jobs
-      # than the budget left — but this product needs only ONE (de is
-      # translated and fingerprinted, so only fr is missing), which fits a
-      # ceiling of 1 exactly. Pre-refinement the tick refused to sweep at
-      # all on the raw settings and this job was lost forever; the reason
-      # is now decided by what the tick actually selected.
+    test "a ceiling below the target-language count is no stall" do
+      # The languages that fit are admitted and the rest wait, so a ceiling
+      # of 1 against two target languages still makes progress.
       Settings.update_setting_with_module("shop_translation_max_in_flight", "1", "shop")
 
       product = create_product(%{title: %{"en" => "Wooden Vase", "de" => "Holzvase"}})
@@ -691,21 +697,21 @@ defmodule PhoenixKitEcommerce.Workers.TranslationSweepWorkerTest do
       assert TranslationSweepWorker.last_run()["reason"] == "ok"
     end
 
-    test "a transient ceiling squeeze — config is fine, just busy right now — still just says ok" do
+    test "a transient ceiling squeeze — config is fine, just busy right now — takes what fits" do
       Settings.update_setting_with_module("shop_translation_max_in_flight", "3", "shop")
 
       # Two unrelated in-flight jobs eat 2 of the 3 configured slots this
-      # tick, leaving 1 — not enough for the product below, which needs
-      # both de and fr. Unlike the ceiling-of-1 case elsewhere in this
-      # file, the CONFIGURED ceiling (3) is not below the target-language
-      # count (2), so next tick, once those jobs finish, this clears on
-      # its own — an ordinary `:ok` with nothing enqueued, not a stall.
+      # tick, leaving 1 — the product below needs both de and fr, so one
+      # language goes now and the other on a later tick.
       seed_translate_job(AITranslatable.resource_type(), Ecto.UUID.generate(), "de")
       seed_translate_job(AITranslatable.resource_type(), Ecto.UUID.generate(), "fr")
-      create_product(%{title: %{"en" => "Wooden Vase"}})
+      product = create_product(%{title: %{"en" => "Wooden Vase"}})
 
-      assert {:ok, %{enqueued: 0, candidates: 0, in_flight: 2}} =
+      assert {:ok, %{enqueued: 1, candidates: 1, in_flight: 2}} =
                TranslationSweepWorker.run_tick()
+
+      assert [job] = Enum.filter(translate_jobs(), &(&1.args["resource_uuid"] == product.uuid))
+      assert job.args["target_lang"] == "de"
     end
   end
 end

@@ -75,6 +75,16 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   and are entirely unaffected — the lookup isn't even attempted for
   them.
 
+  A per-product guard is checked before the currency verdict: a product
+  `AdminClient` could not read every variant of
+  (`AdminClient.variants_incomplete?/1` — its `"variants"` is capped at
+  100 and the backfill to read the rest failed) is refused with its own
+  `"variants incomplete: <reason>"` error entry and
+  `Writer.sync_variants/3` is never called for it; every other product
+  in the run is unaffected. A `"variants"` run asks `fetch_products/2`
+  to re-read full lists only for products that match an item; an
+  `"images"` run asks for none (it never reads variants).
+
   ## `"collections"`
 
   Delegates entirely to `PhoenixKitEcommerce.Shopify.CollectionSync.run/1`
@@ -97,6 +107,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
         "skipped" => non_neg_integer(), "matched" => non_neg_integer(),
         "stats" => map(),
         "errors" => [%{"product" => String.t(), "reason" => String.t()}],
+        "warnings" => [%{"product" => String.t(), "reason" => String.t()}],
         "started_at" => iso8601, "finished_at" => iso8601 | nil,
         "result" => map() | nil}
 
@@ -106,11 +117,22 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   kind's own writer counts across the whole run: for `"images"`,
   `%{"downloaded" => n, "reused" => n, "attached" => n}` summed from
   every `Writer.sync_images/3` result; for `"variants"`,
-  `%{"values_created" => n}` summed from every `Writer.sync_variants/2`
-  result (`%{}` for `"collections"`, which carries its own summary under
-  `"result"` instead — see below). `"total"`/`"done"` still count every
-  Shopify product this run looked at (matched + skipped + unmatched
-  in-scope errors), same as before.
+  `%{"values_created" => n, "approximated" => n}` summed from every
+  `Writer.sync_variants/2` result, where `"approximated"` counts products
+  whose modifiers only approximate Shopify (`:fit.approximated?`) — a base
+  price that merely drifted is a warning but is not counted there. It is
+  `%{}` for `"collections"`, which carries its own summary under
+  `"result"` instead (see below).
+  `"total"`/`"done"` still count every Shopify product this run looked
+  at (matched + skipped + unmatched in-scope errors), same as before.
+
+  `"warnings"` — one entry per product whose storefront price does not
+  reproduce Shopify: its modifiers only approximate a non-additive grid
+  (by the rule the item asked for), or its base price no longer equals
+  Shopify's cheapest variant (`Writer.sync_variants/3`'s own `:warnings`,
+  see `VariantMapper`'s moduledoc). The write succeeded, so it is kept
+  apart from `"errors"` rather than reported as a failure. Always `[]`
+  for `"images"`/`"collections"`.
 
   A job in flight has `"finished_at" => nil`; a caller reading this to
   decide whether to disable a button matches `progress["kind"]` against
@@ -274,8 +296,9 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
     scope = Keyword.get_lazy(opts, :scope, &SyncScope.get/0)
 
     with {:ok, catalogue_uuid} <- fetch_catalogue_uuid(),
-         {:ok, products} <- client.fetch_products(integration_uuid, opts) do
-      index = items_index(catalogue_uuid)
+         index = items_index(catalogue_uuid),
+         fetch_opts = Keyword.put(opts, :complete_variants, complete_variants_for(kind, index)),
+         {:ok, products} <- client.fetch_products(integration_uuid, fetch_opts) do
       total = length(products)
       started_at = start_progress(kind, total)
       opts = Keyword.put(opts, :currency_verdict, currency_verdict_for(kind, opts))
@@ -292,6 +315,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
 
       acc0 = %{
         errors: [],
+        warnings: [],
         reuse_index: reuse_index,
         skipped: 0,
         matched: 0,
@@ -314,8 +338,9 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
           end)
 
         errors = Enum.reverse(acc.errors)
+        warnings = Enum.reverse(acc.warnings)
         finish_progress(kind, total, done, acc, errors, started_at, nil)
-        {:ok, %{total: total, done: done, errors: errors}}
+        {:ok, %{total: total, done: done, errors: errors, warnings: warnings}}
       rescue
         exception ->
           fail_progress(kind, Exception.message(exception))
@@ -363,6 +388,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
         %{
           acc
           | errors: merge_writer_errors(acc.errors, product, result),
+            warnings: merge_writer_warnings(acc.warnings, product, result),
             reuse_index: next_reuse_index(acc.reuse_index, result),
             stats: merge_stats(acc.stats, kind, result)
         }
@@ -393,12 +419,15 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   end
 
   defp merge_stats(stats, "variants", result) do
-    Map.update(
-      stats,
+    approximated = if match?(%{fit: %{approximated?: true}}, result), do: 1, else: 0
+
+    stats
+    |> Map.update(
       "values_created",
       Map.get(result, :values_created, 0),
       &(&1 + Map.get(result, :values_created, 0))
     )
+    |> Map.update("approximated", approximated, &(&1 + approximated))
   end
 
   defp merge_stats(stats, _kind, _result), do: stats
@@ -424,23 +453,26 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   # failure (see its moduledoc: "a download failure skips that image ...
   # rather than aborting the whole product's images"). Without this, an
   # operator watching progress would never see that a specific image
-  # failed to download. `sync_variants/3` reports non-additive price
-  # matrices the same way, under `:warnings` (see `VariantMapper`'s
-  # moduledoc) — recorded here so the run never reads as clean when a
-  # variant was written under-priced.
+  # failed to download.
   defp merge_writer_errors(errors, product, result) do
     key = product["handle"] || product_id_string(product) || "unknown"
 
-    errors =
-      Enum.reduce(Map.get(result, :errors, []), errors, fn {image_id, reason}, acc ->
-        [
-          %{"product" => key, "reason" => "image #{image_id}: #{error_reason_string(reason)}"}
-          | acc
-        ]
-      end)
+    Enum.reduce(Map.get(result, :errors, []), errors, fn {image_id, reason}, acc ->
+      [
+        %{"product" => key, "reason" => "image #{image_id}: #{error_reason_string(reason)}"}
+        | acc
+      ]
+    end)
+  end
 
-    Enum.reduce(Map.get(result, :warnings, []), errors, fn warning, acc ->
-      [%{"product" => key, "reason" => "warning: #{warning}"} | acc]
+  # `Writer.sync_variants/3`'s `:warnings` — one line per product whose
+  # price is approximated (see `VariantMapper`'s moduledoc). Kept apart
+  # from `errors`: the product WAS written, by the rule the item asks for.
+  defp merge_writer_warnings(warnings, product, result) do
+    key = product["handle"] || product_id_string(product) || "unknown"
+
+    Enum.reduce(Map.get(result, :warnings, []), warnings, fn warning, acc ->
+      [%{"product" => key, "reason" => warning} | acc]
     end)
   end
 
@@ -459,13 +491,29 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   # makes `Writer.sync_variants/3` create (entities' `created_by_uuid` is
   # NOT NULL); a `nil` actor lets that constraint error surface as this
   # product's own error rather than inventing a system uuid here.
+  #
+  # A product whose variant list `AdminClient` could not read in full
+  # (`AdminClient.variants_incomplete?/1`) is refused outright: its
+  # cheapest price may be among the variants not read, so writing price
+  # modifiers now could under-price the product. `Writer.sync_variants/3`
+  # is never called — the item's existing modifiers are left untouched,
+  # and this product's own error names the reason so the run still
+  # completes for the rest of the catalog.
   defp apply_writer("variants", item, product, actor_uuid, opts, _reuse_index) do
-    case Keyword.fetch!(opts, :currency_verdict) do
-      :match ->
-        Writer.sync_variants(item, product, actor_uuid: actor_uuid)
+    if AdminClient.variants_incomplete?(product) do
+      Logger.warning(
+        "Shopify media sync (variants): #{product["handle"] || product_id_string(product) || "unknown"} — variant list incomplete, prices left as they are"
+      )
 
-      {:mismatch, shop_currency, base_currency} ->
-        {:error, {:currency_mismatch, shop_currency, base_currency}}
+      {:error, "variants incomplete: #{product["_variants_incomplete"]}"}
+    else
+      case Keyword.fetch!(opts, :currency_verdict) do
+        :match ->
+          Writer.sync_variants(item, product, actor_uuid: actor_uuid)
+
+        {:mismatch, shop_currency, base_currency} ->
+          {:error, {:currency_mismatch, shop_currency, base_currency}}
+      end
     end
   end
 
@@ -609,6 +657,15 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   defp index_by(acc, _key, nil, _item), do: acc
   defp index_by(acc, key, value, item), do: Map.update!(acc, key, &Map.put(&1, value, item))
 
+  # `AdminClient.fetch_products/2` re-reads a capped product's full variant
+  # list only when asked (`:complete_variants`). An "images" run never reads
+  # variants; a "variants" run writes prices only for products that match an
+  # item — an unmatched one is an error or a skip, never a price write.
+  defp complete_variants_for("variants", index),
+    do: &match?({:ok, _item}, find_item(index, &1))
+
+  defp complete_variants_for(_kind, _index), do: false
+
   defp find_item(index, product) do
     case product_id_string(product) do
       nil ->
@@ -670,6 +727,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
       "matched" => counts.matched,
       "stats" => counts.stats,
       "errors" => errors,
+      "warnings" => counts |> Map.get(:warnings, []) |> Enum.reverse(),
       "started_at" => started_at,
       "finished_at" => finished_at,
       "result" => result

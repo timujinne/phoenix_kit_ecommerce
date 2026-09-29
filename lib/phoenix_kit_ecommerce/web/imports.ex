@@ -65,7 +65,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
     socket =
       socket
-      |> assign(:page_title, gettext("CSV Import"))
+      |> assign_shop_trail(gettext("CSV Import"))
       |> assign(:catalogue_source_active?, catalogue_source_active?)
       |> assign(:imports, list_imports())
       |> assign(:current_import, nil)

@@ -39,7 +39,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     currencies = load_currencies()
 
     socket
-    |> assign(:page_title, gettext("New Shipping Method"))
+    |> assign_shop_trail(gettext("New shipping method"), [shipping_crumb()])
+    |> assign(:heading, gettext("New shipping method"))
     |> assign(:method, method)
     |> assign(:currencies, currencies)
     |> assign(:default_currency, default_currency)
@@ -53,7 +54,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     default_currency = Shop.get_base_currency()
 
     socket
-    |> assign(:page_title, gettext("Edit %{name}", name: method.name))
+    |> assign_shop_trail(gettext("Edit"), [shipping_crumb(), crumb(method.name)])
+    |> assign(:heading, gettext("Edit %{name}", name: method.name))
     |> assign(:method, method)
     |> assign(:currencies, currencies)
     |> assign(:default_currency, default_currency)
@@ -123,7 +125,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
         <.admin_page_header
           back={Routes.path("/admin/shop/shipping")}
-          title={@page_title}
+          title={@heading}
           subtitle={gettext("Configure shipping method details")}
         />
 

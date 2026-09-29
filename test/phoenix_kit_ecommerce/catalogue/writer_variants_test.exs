@@ -99,6 +99,24 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterVariantsTest do
     }
   end
 
+  # S/L x Red/Blue at 10/12/15/20 — not additive (see VariantMapperTest).
+  defp non_additive_product do
+    %{
+      "id" => 999,
+      "handle" => "two-option-mug",
+      "options" => [
+        %{"name" => "Size", "position" => 1, "values" => ["Small", "Large"]},
+        %{"name" => "Color", "position" => 2, "values" => ["Red", "Blue"]}
+      ],
+      "variants" => [
+        %{"option1" => "Small", "option2" => "Red", "price" => "10.00"},
+        %{"option1" => "Small", "option2" => "Blue", "price" => "12.00"},
+        %{"option1" => "Large", "option2" => "Red", "price" => "15.00"},
+        %{"option1" => "Large", "option2" => "Blue", "price" => "20.00"}
+      ]
+    }
+  end
+
   describe "sync_variants/3 — legacy source" do
     test "is a no-op returning :catalogue_source_inactive", %{item: item, actor_uuid: actor_uuid} do
       assert Writer.sync_variants(item, two_option_product(), actor_uuid: actor_uuid) ==
@@ -232,7 +250,7 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterVariantsTest do
     } do
       # An operator-authored modifier for a set Shopify has never driven
       # (not in `set_slugs`, so `sync_variants/2` never attaches or
-      # detaches it) — `finalize_variant_sync/3` must write only the
+      # detaches it) — `finalize_variant_sync/4` must write only the
       # `size`/`color` keys this run computed, not replace the whole
       # `price_modifiers` map.
       {:ok, item} =
@@ -265,6 +283,74 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterVariantsTest do
                Writer.sync_variants(item, product, actor_uuid: actor_uuid)
 
       assert AttributeSets.list_attachments(item.uuid) == []
+    end
+
+    test "an approximated product stores its fit under shopify.price_fit", %{
+      item: item,
+      actor_uuid: actor_uuid
+    } do
+      assert {:ok, %{fit: %{exact?: false, rule: :never_cheaper}, warnings: [_]}} =
+               Writer.sync_variants(item, non_additive_product(), actor_uuid: actor_uuid)
+
+      fit = get_in(Catalogue.get_item!(item.uuid).data, ["ecommerce", "shopify", "price_fit"])
+
+      assert %{"rule" => "never_cheaper", "variants" => 4, "under" => 0, "max_under" => "0.00"} =
+               fit
+
+      assert fit["over"] > 0
+      assert is_binary(fit["synced_at"])
+    end
+
+    test "the item's price_fit_rule picks the rule", %{item: item, actor_uuid: actor_uuid} do
+      {:ok, item} =
+        Catalogue.update_item(item, %{
+          data: put_in(item.data, ["ecommerce", "price_fit_rule"], "cheapest")
+        })
+
+      assert {:ok, %{fit: %{rule: :cheapest, under: 1}}} =
+               Writer.sync_variants(item, non_additive_product(), actor_uuid: actor_uuid)
+
+      assert get_in(Catalogue.get_item!(item.uuid).data, [
+               "ecommerce",
+               "shopify",
+               "price_fit",
+               "rule"
+             ]) ==
+               "cheapest"
+    end
+
+    test "an exact product drops a stale price_fit", %{item: item, actor_uuid: actor_uuid} do
+      {:ok, item} =
+        Catalogue.update_item(item, %{
+          data:
+            put_in(item.data, ["ecommerce", "shopify", "price_fit"], %{"rule" => "never_cheaper"})
+        })
+
+      assert {:ok, %{fit: %{exact?: true}, warnings: []}} =
+               Writer.sync_variants(item, two_option_product(), actor_uuid: actor_uuid)
+
+      refute Map.has_key?(
+               get_in(Catalogue.get_item!(item.uuid).data, ["ecommerce", "shopify"]),
+               "price_fit"
+             )
+    end
+
+    test "a stored base that is not Shopify's cheapest variant is recorded as base_offset",
+         %{item: item, actor_uuid: actor_uuid} do
+      {:ok, item} = Catalogue.update_item(item, %{base_price: Decimal.new("5.00")})
+
+      assert {:ok, %{fit: %{exact?: false, under: 6}, warnings: [warning]}} =
+               Writer.sync_variants(item, two_option_product(), actor_uuid: actor_uuid)
+
+      assert warning =~ "base price is -5.00 off"
+
+      assert %{
+               "base_offset" => "-5.00",
+               "under" => 6,
+               "max_under" => "5.00",
+               "approximated" => false
+             } =
+               get_in(Catalogue.get_item!(item.uuid).data, ["ecommerce", "shopify", "price_fit"])
     end
   end
 end

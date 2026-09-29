@@ -20,7 +20,7 @@ defmodule PhoenixKitEcommerce.Web.OptionsSettings do
 
     socket =
       socket
-      |> assign(:page_title, "Product Options")
+      |> assign_shop_trail(gettext("Options"), [settings_crumb()])
       |> assign(:options, options)
       |> assign(:show_modal, false)
       |> assign(:editing_option, nil)

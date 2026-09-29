@@ -63,6 +63,9 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
       |> assign(:file_uuid_errors, field_errors(form, :file_uuid))
       |> assign(:download_limit_errors, field_errors(form, :download_limit))
       |> assign(:download_expiry_days_errors, field_errors(form, :download_expiry_days))
+      |> assign(:price_fit, get_in(ecommerce, ["shopify", "price_fit"]))
+      |> assign(:shopify_linked?, shopify_linked?(ecommerce))
+      |> assign(:price_fit_rule_errors, field_errors(form, :price_fit_rule))
 
     ~H"""
     <div id="ext-ecommerce-section" class="card bg-base-100 shadow-lg">
@@ -209,6 +212,30 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
               label={gettext("Price on request (hide the amount)")}
               errors={@price_on_request_errors}
             />
+          </div>
+
+          <div :if={@shopify_linked?} class="w-full">
+            <div
+              :if={@price_fit}
+              id="ext-ecommerce-price-fit"
+              class="alert alert-warning text-sm py-2 mb-2"
+            >
+              <.icon name="hero-exclamation-triangle" class="w-4 h-4" />
+              <span>{price_fit_note(@price_fit)}</span>
+            </div>
+            <.select
+              name="item[ecommerce][price_fit_rule]"
+              value={Map.get(@ecommerce, "price_fit_rule") || "never_cheaper"}
+              options={[
+                {gettext("Never cheaper than Shopify"), "never_cheaper"},
+                {gettext("Cheapest variant"), "cheapest"}
+              ]}
+              label={gettext("Price approximation when Shopify prices are not additive")}
+              errors={@price_fit_rule_errors}
+            />
+            <p class="text-xs text-base-content/60 mt-1">
+              {gettext("Applies on the next variants sync (Shopify sync, Media & collections).")}
+            </p>
           </div>
 
           <div class="w-full">
@@ -457,6 +484,101 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
   end
 
   defp field_errors(_form, _field), do: []
+
+  # `fit` is `data["ecommerce"]["shopify"]["price_fit"]`
+  # (`Shopify.VariantMapper.build/2`'s `:fit`, JSON-stored — see `Writer.
+  # sync_variants/3`'s moduledoc): absent for an exact product, so this is
+  # only ever called from behind `:if={@price_fit}`.
+  defp price_fit_note(fit) do
+    # `"approximated" => false`: only the base drifted — the modifiers match
+    # Shopify, so there is no approximation to describe. A note written
+    # before the key existed was always an approximation.
+    directions = if fit["approximated"] == false, do: "", else: price_fit_directions(fit)
+
+    [directions, price_fit_base_offset(fit["base_offset"])]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join(" ")
+  end
+
+  defp price_fit_directions(fit) do
+    rule =
+      case fit["rule"] do
+        "cheapest" -> gettext("cheapest variant")
+        _ -> gettext("never cheaper than Shopify")
+      end
+
+    over = fit_value(fit, "over", 0)
+    under = fit_value(fit, "under", 0)
+    total = fit_value(fit, "variants", 0)
+
+    # Each direction is said only when it happened: "0 of 256 above, up to
+    # +0.00" reads as noise next to the part that matters.
+    cond do
+      over > 0 and under > 0 ->
+        price_fit_above(rule, over, total, fit) <>
+          " " <>
+          gettext("%{under} below Shopify, up to -%{max}.",
+            under: under,
+            max: fit_value(fit, "max_under", "0.00")
+          )
+
+      under > 0 ->
+        gettext(
+          "Price approximated (%{rule}): %{under} of %{total} variants below Shopify, up to -%{max}.",
+          rule: rule,
+          under: under,
+          total: total,
+          max: fit_value(fit, "max_under", "0.00")
+        )
+
+      true ->
+        price_fit_above(rule, over, total, fit)
+    end
+  end
+
+  defp price_fit_above(rule, over, total, fit) do
+    gettext(
+      "Price approximated (%{rule}): %{over} of %{total} variants above Shopify, up to +%{max}.",
+      rule: rule,
+      over: over,
+      total: total,
+      max: fit_value(fit, "max_over", "0.00")
+    )
+  end
+
+  # The variant sync never writes the base price, so a base that no longer
+  # equals Shopify's cheapest variant is said outright, with the one place
+  # that fixes it. Absent (a note written before the offset existed) or
+  # zero, there is nothing to say.
+  defp price_fit_base_offset(offset) when is_binary(offset) do
+    case Decimal.parse(offset) do
+      {decimal, ""} ->
+        if Decimal.eq?(decimal, 0),
+          do: "",
+          else:
+            gettext(
+              "At the last variants sync the base price was %{offset} off Shopify's cheapest variant; apply the price change under Shopify sync, Changes.",
+              offset: offset
+            )
+
+      _ ->
+        ""
+    end
+  end
+
+  defp price_fit_base_offset(_offset), do: ""
+
+  # A malformed/partial `price_fit` (never expected from
+  # `Writer.finalize_variant_sync/4`, but the note must not crash on one)
+  # falls back the same way every field here does.
+  defp fit_value(fit, key, default), do: fit[key] || default
+
+  # The price-fit control only means something for an item the Shopify
+  # variant sync writes — one linked by handle or product id.
+  defp shopify_linked?(ecommerce) do
+    shopify = Map.get(ecommerce, "shopify") || %{}
+    Enum.any?(["handle", "product_id"], &(shopify[&1] not in [nil, ""]))
+  end
 
   # Prefill from the stored value, else the shop's base currency, else
   # blank. Never `"USD"`: an unconfigured shop must not silently stamp

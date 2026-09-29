@@ -64,7 +64,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
 
     socket =
       socket
-      |> assign(:page_title, product_title)
+      |> assign_shop_trail(product_title, [products_crumb()])
       |> assign(:product, product)
       |> assign(:product_title, product_title)
       |> assign(:product_slug, product_slug)

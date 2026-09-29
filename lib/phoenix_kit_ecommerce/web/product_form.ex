@@ -46,7 +46,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, :page_title, gettext("New Product"))}
+    {:ok, new_product_trail(socket)}
   end
 
   @impl true
@@ -65,6 +65,15 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
   defp catalogue_source_active?, do: ProductSource.current() == ProductSource.Catalogue
 
+  # The bar's title and the in-page heading agree on a new product; on an
+  # edit the bar says `Edit` under the product's crumb while the heading
+  # keeps naming the product.
+  defp new_product_trail(socket) do
+    socket
+    |> assign_shop_trail(gettext("New product"), [products_crumb()])
+    |> assign(:heading, gettext("New product"))
+  end
+
   defp redirect_to_catalogue(socket) do
     socket
     |> put_flash(:info, gettext("Products are managed in the Catalogues module now."))
@@ -82,7 +91,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     price_affecting_options = get_price_affecting_options(option_schema)
 
     socket
-    |> assign(:page_title, gettext("New Product"))
+    |> new_product_trail()
     |> assign(:product, product)
     |> assign_form(changeset)
     |> assign(:categories, categories)
@@ -137,7 +146,11 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     product_title = Translations.get(product, :title, TranslationTabs.get_default_language())
 
     socket
-    |> assign(:page_title, gettext("Edit %{title}", title: product_title))
+    |> assign_shop_trail(gettext("Edit"), [
+      products_crumb(),
+      crumb(product_title, Routes.path("/admin/shop/products/#{product.uuid}"))
+    ])
+    |> assign(:heading, gettext("Edit %{title}", title: product_title))
     |> assign(:product, product)
     |> assign_form(changeset)
     |> assign(:categories, categories)
@@ -837,7 +850,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
         <.admin_page_header back={Routes.path("/admin/shop/products")}>
-          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{@page_title}</h1>
+          <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{@heading}</h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
             {if @live_action == :new, do: gettext("Create a new product"), else: gettext("Edit product details")}
           </p>

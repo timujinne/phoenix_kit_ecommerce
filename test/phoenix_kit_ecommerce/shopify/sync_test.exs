@@ -149,6 +149,49 @@ defmodule PhoenixKitEcommerce.Shopify.SyncTest do
 
       assert length(changes) == 1
     end
+
+    # A whole store holds far more products at the REST payload's
+    # 100-variant cap than a check compares: under the Legacy source only a
+    # matched product (its price is diffed) is worth re-reading — no
+    # newcomer is ever offered, so even an in-scope one's price is never
+    # read. The rest come back flagged, never re-read. (The catalogue
+    # source's in-scope newcomer is pinned in `SyncCatalogueTest`.)
+    test "re-reads full variant lists only for matched products under the legacy source" do
+      uuid = connect_shopify()
+      create_product(%{"slug" => %{"en" => "planter"}})
+      test_pid = self()
+
+      capped = for n <- 1..100, do: %{"option1" => "V#{n}", "price" => "10.00"}
+
+      Req.Test.stub(@stub, fn conn ->
+        case Regex.run(~r{/products/(\d+)/variants\.json}, conn.request_path) do
+          [_, id] ->
+            send(test_pid, {:backfilled, id})
+            json_response(conn, 200, %{"variants" => capped})
+
+          nil ->
+            json_response(conn, 200, %{
+              "products" => [
+                %{"id" => 1, "handle" => "planter", "tags" => "", "variants" => capped},
+                %{
+                  "id" => 2,
+                  "handle" => "newcomer",
+                  "tags" => "catalog-3d",
+                  "variants" => capped
+                },
+                %{"id" => 3, "handle" => "outsider", "tags" => "", "variants" => capped}
+              ]
+            })
+        end
+      end)
+
+      scope = %{mode: :filtered, tags: ["catalog-3d"], product_types: []}
+      assert {:ok, _result} = Sync.check(uuid, check_opts(scope: scope))
+
+      assert_received {:backfilled, "1"}
+      refute_received {:backfilled, "2"}
+      refute_received {:backfilled, "3"}
+    end
   end
 
   describe "check/2 — storefront fallback path" do

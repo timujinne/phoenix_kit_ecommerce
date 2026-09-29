@@ -51,6 +51,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
 
   @stub __MODULE__
 
+  defp integrations_permissions, do: ["integrations_system" | shop_permissions()]
+
   defp connect_shopify do
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
@@ -127,6 +129,25 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       assert html =~ "Shopify isn&#39;t connected yet"
       refute html =~ ~s(id="check-shopify-changes")
     end
+
+    # The prompt used to link `/admin/settings/integrations/website` — the
+    # `:uuid` route, handed "website", answers "Integration not found" and
+    # bounces to the list. It is the list, directly, and only for a viewer
+    # core would let in.
+    test "the connect prompt links the Integrations list for an integrations_system holder",
+         %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope(permissions: integrations_permissions()))
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync")
+
+      assert html =~ ~s(href="/en/admin/settings/integrations")
+      refute html =~ "/admin/settings/integrations/website"
+    end
+
+    test "the connect prompt carries no link without integrations_system", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync")
+
+      refute html =~ "/admin/settings/integrations"
+    end
   end
 
   describe "connected" do
@@ -146,7 +167,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
   describe "tabs" do
     setup %{conn: conn} do
       connect_shopify()
-      {:ok, conn: put_test_scope(conn, fake_scope())}
+      {:ok, conn: put_test_scope(conn, fake_scope(permissions: integrations_permissions()))}
     end
 
     test "defaults to the \"Changes\" tab", %{conn: conn} do
@@ -164,6 +185,32 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       assert html =~ ~s(id="tab-panel-settings")
       refute html =~ ~s(id="tab-panel-media")
       refute html =~ ~s(id="media-sync-panel")
+    end
+
+    # The credentials panel is gated on `@connection` ALONE, unlike the
+    # sync-scope panel beside it — the shop domain and the Admin API token
+    # are worth reaching whichever product source the shop runs on. This
+    # module runs under the legacy source, so it is the only place that can
+    # pin that: copying the neighbour's `&& @catalogue_source_active?` would
+    # otherwise pass every test in the suite.
+    test "?tab=settings still offers the integration link under the legacy source",
+         %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync?tab=settings")
+
+      assert html =~ ~s(id="shopify-credentials-panel")
+      assert html =~ ~s(id="open-shopify-integration")
+      refute html =~ ~s(id="sync-scope-panel")
+    end
+
+    # Core refuses its Integrations pages without `integrations_system`,
+    # which no `shop.*` key implies — the link would be a dead end.
+    test "?tab=settings offers no integration link without integrations_system",
+         %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync?tab=settings")
+
+      refute html =~ ~s(id="shopify-credentials-panel")
+      refute html =~ ~s(id="open-shopify-integration")
     end
 
     test "an unknown ?tab= falls back to \"Changes\"", %{conn: conn} do

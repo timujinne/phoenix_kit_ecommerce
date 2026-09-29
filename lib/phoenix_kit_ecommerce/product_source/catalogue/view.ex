@@ -105,6 +105,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
       download_limit: Map.get(ecommerce, "download_limit"),
       download_expiry_days: Map.get(ecommerce, "download_expiry_days"),
       status: product_status(item, ecommerce),
+      merchant_status: merchant_status(ecommerce),
       featured_image_uuid: Map.get(data, "featured_image_uuid"),
       image_uuids: Map.get(data, "media_order") || [],
       images: [],
@@ -242,18 +243,33 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   # grows). Checking `item.status` FIRST and forcing `"archived"` is what
   # fixes the live defect where a catalogue-retired item with a
   # left-over `shop_status: "active"` (set before it was retired) stayed
-  # reachable, and purchasable, at its storefront URL — the `case` below
-  # used to consult `shop_status` first and only fall back to `item.status`
-  # when it was absent/unrecognised, so a recognised `shop_status` passed
-  # straight through no matter what the catalogue said.
+  # reachable, and purchasable, at its storefront URL — the `shop_status`
+  # lookup this delegates to used to be consulted FIRST, falling back to
+  # `item.status` only when it was absent/unrecognised, so a recognised
+  # `shop_status` passed straight through no matter what the catalogue said.
   defp product_status(item, ecommerce) do
     if Map.get(item, :status) != "active" do
       "archived"
     else
-      case Map.get(ecommerce, "shop_status") do
-        status when status in ["draft", "active", "archived"] -> status
-        _ -> "active"
-      end
+      merchant_status(ecommerce)
+    end
+  end
+
+  # The stored merchant status, with the visibility rule above not applied.
+  # `product_status/2` answers "what should the storefront show"; this
+  # answers "what did the last Shopify sync write" — the value a sync diff
+  # must compare and an apply overwrites (`Shopify.ProductDiff`,
+  # `Catalogue.Writer.maybe_put_shop_status/2`).
+  #
+  # `product_status/2` delegates its else-branch here rather than repeating
+  # the case: the two must agree for every non-retired item, and this PR
+  # exists precisely because two values that were meant to be the same were
+  # maintained in separate places and drifted. One definition, no comment
+  # asserting an invariant nothing enforces.
+  defp merchant_status(ecommerce) do
+    case Map.get(ecommerce, "shop_status") do
+      status when status in ["draft", "active", "archived"] -> status
+      _ -> "active"
     end
   end
 

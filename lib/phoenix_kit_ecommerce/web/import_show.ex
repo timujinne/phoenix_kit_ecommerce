@@ -30,7 +30,7 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
 
         socket =
           socket
-          |> assign(:page_title, gettext("Import: %{filename}", filename: import_log.filename))
+          |> assign_shop_trail(import_log.filename, [imports_crumb()])
           |> assign(:import, import_log)
           |> assign(:products, products)
 

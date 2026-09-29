@@ -83,6 +83,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerceTest do
                "price_from" => false,
                "price_on_request" => false,
                "price_modifiers" => %{},
+               "price_fit_rule" => nil,
                "shopify" => %{},
                "legacy_product_uuid" => nil,
                "translation_fingerprints" => %{}
@@ -138,6 +139,31 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerceTest do
       assert map["vendor"] == "Acme"
       assert map["shop_status"] == "active"
       assert map["future_flag"] == true
+    end
+  end
+
+  describe "price_fit_rule" do
+    test "accepts both rules and nil" do
+      for value <- ["never_cheaper", "cheapest", nil] do
+        assert {:ok, map} = ItemCommerce.cast(%{"price_fit_rule" => value}, %{})
+        assert map["price_fit_rule"] == value
+      end
+    end
+
+    test "rejects anything else" do
+      assert {:error, errors} = ItemCommerce.cast(%{"price_fit_rule" => "weird"}, %{})
+      assert Keyword.has_key?(errors, :price_fit_rule)
+    end
+
+    test "a form save keeps the sync-written price_fit" do
+      current = %{
+        "shopify" => %{"handle" => "h", "price_fit" => %{"rule" => "never_cheaper", "over" => 5}}
+      }
+
+      assert {:ok, map} =
+               ItemCommerce.cast(%{"vendor" => "Acme", "price_fit_rule" => "cheapest"}, current)
+
+      assert map["shopify"]["price_fit"] == %{"rule" => "never_cheaper", "over" => 5}
     end
   end
 end

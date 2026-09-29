@@ -20,7 +20,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
 
     socket =
       socket
-      |> assign(:page_title, gettext("Shipping Methods"))
+      |> assign_shop_trail(gettext("Shipping"))
       |> assign(:methods, methods)
       |> assign(:currency, currency)
 

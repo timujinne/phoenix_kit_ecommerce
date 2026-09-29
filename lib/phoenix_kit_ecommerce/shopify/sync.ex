@@ -193,9 +193,17 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
 
     {scope, source_opts} = Keyword.pop_lazy(opts, :scope, &SyncScope.get/0)
 
+    # Loaded before the fetch so the Admin client re-reads a capped
+    # product's full variant list only where this check reads its price: a
+    # matched product (price diff) or an in-scope newcomer (a create writes
+    # its price — catalogue source only, the one `new_product_changes/5`
+    # builds creates for). A caller's own `admin_options[:complete_variants]`
+    # wins.
+    local_products = Shop.list_products()
+    source_opts = put_complete_variants(source_opts, local_products, base_locale, scope)
+
     with {:ok, %{source: source, products: products, only: only, fallback_reason: reason}} <-
            Source.fetch(integration_uuid, source_opts) do
-      local_products = Shop.list_products()
       changes = ProductDiff.diff(local_products, products, base_locale, only: only)
       matched = ProductDiff.matched_count(local_products, products, base_locale)
 
@@ -215,6 +223,27 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
     end
   end
 
+  defp put_complete_variants(source_opts, local_products, base_locale, scope) do
+    handles = ProductDiff.local_handles(local_products, base_locale)
+    # Under the Legacy source no newcomer is ever offered, so an in-scope
+    # unmatched product's prices are never read — re-reading every capped
+    # product in scope (the whole store under `mode: :all`) would be
+    # requests spent on nothing.
+    creates? = ProductSource.current() == ProductSource.Catalogue
+
+    wanted = fn product ->
+      MapSet.member?(handles, product["handle"]) or
+        (creates? and SyncScope.in_scope?(product, scope))
+    end
+
+    Keyword.update(
+      source_opts,
+      :admin_options,
+      [complete_variants: wanted],
+      &Keyword.put_new(&1, :complete_variants, wanted)
+    )
+  end
+
   # New-handle creation is a catalogue-source-only path (see this module's
   # moduledoc) and only meaningful against a complete Admin API listing —
   # the `:storefront` fallback only ever carries price data for products it
@@ -223,9 +252,16 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   # completely different reason than the legacy source's.
   defp new_product_changes(local_products, products, base_locale, :admin, scope) do
     if ProductSource.current() == ProductSource.Catalogue do
-      all_changes = ProductDiff.new_product_changes(local_products, products, base_locale)
-      {in_scope, out_of_scope} = SyncScope.partition(all_changes, scope, & &1.shopify_product)
-      {in_scope, length(out_of_scope)}
+      # Scope first, then build the changes: an out-of-scope product is
+      # never re-read past the 100-variant cap (`check/2` doesn't ask for
+      # it), and `new_product_changes/3` refuses a flagged product — so
+      # filtering by scope afterwards would drop such a product from the
+      # out-of-scope count instead of counting it.
+      {in_scope, out_of_scope} = SyncScope.partition(products, scope)
+      handles = ProductDiff.local_handles(local_products, base_locale)
+
+      {ProductDiff.new_product_changes(local_products, in_scope, base_locale),
+       Enum.count(out_of_scope, &unmatched?(&1, handles))}
     else
       {[], 0}
     end
@@ -233,6 +269,13 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
 
   defp new_product_changes(_local_products, _products, _base_locale, :storefront, _scope),
     do: {[], 0}
+
+  # Same "no local product answers to this handle" rule
+  # `ProductDiff.new_product_changes/3` applies.
+  defp unmatched?(%{"handle" => handle}, handles) when is_binary(handle) and handle != "",
+    do: not MapSet.member?(handles, handle)
+
+  defp unmatched?(_product, _handles), do: false
 
   @doc """
   Checks ONE local product against its matched Shopify product — see

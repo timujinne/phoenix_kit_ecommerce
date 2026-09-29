@@ -51,6 +51,7 @@ defmodule PhoenixKitEcommerce.Web do
       import PhoenixKitWeb.Components.Core.DraggableList
       import PhoenixKitWeb.Components.Core.Markdown
       import PhoenixKitEcommerce.Web.Components.SettingRows
+      import PhoenixKitEcommerce.Web.Trail
     end
   end
 

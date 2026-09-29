@@ -172,7 +172,7 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
 
   @doc """
   Turns `shopify_product`'s options/variants
-  (`PhoenixKitEcommerce.Shopify.VariantMapper.build/1`) into catalogue
+  (`PhoenixKitEcommerce.Shopify.VariantMapper.build/2`) into catalogue
   attribute-set attachments on `item`: one set per real Shopify option
   (found by blueprint name `"catalogue_set_" <> slug`, created `kind:
   "fixed"` when missing), values resolved to slugs via `ValueResolver.
@@ -203,15 +203,39 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   and that error is what this function returns — deliberately not
   papered over with an invented system uuid.
 
-  The result's `:warnings` lists any variant whose Shopify price is not
-  what the written per-option modifiers reconstruct (see
-  `VariantMapper.build/1`'s moduledoc): the modifiers are still written,
-  since they are the best additive fit, but the caller must surface the
-  mismatch rather than let an under-priced matrix pass silently.
+  The rule used to fit Shopify's prices when they are not additive
+  (`VariantMapper.build/2`) is read from `item.data["ecommerce"]
+  ["price_fit_rule"]` — `"cheapest"` selects `:cheapest`, anything else
+  (including `nil`, an item never given the choice) defaults to
+  `:never_cheaper`. The result's `:fit` is also written to
+  `data["ecommerce"]["shopify"]["price_fit"]` (rule, variant/over/under
+  counts, max gaps, `"synced_at"` — decimals as strings) whenever the fit
+  is not exact; an exact fit deletes any `"price_fit"` a previous,
+  non-exact run left behind, so a stale note never outlives the price it
+  described.
+
+  The result's `:warnings` lists the same non-exact fit as one
+  human-readable line (see `VariantMapper.build/2`'s moduledoc): the
+  modifiers are still written, since they are the best fit under the
+  chosen rule, but the caller must surface the mismatch rather than let
+  an approximated matrix pass silently.
+
+  The fit is measured against the item's own `base_price`, not only
+  Shopify's cheapest variant: this sync never writes the base price (the
+  Changes tab applies it), so when Shopify's cheapest variant moved — one
+  was removed — the modifiers re-anchor here while the base waits, and the
+  storefront drifts by the difference until that price change is applied.
+  That drift is reported as a non-exact fit with `"base_offset"`, the same
+  way an approximated matrix is.
   """
   @spec sync_variants(Item.t(), map(), keyword()) ::
           {:ok,
-           %{sets: non_neg_integer(), values_created: non_neg_integer(), warnings: [String.t()]}}
+           %{
+             sets: non_neg_integer(),
+             values_created: non_neg_integer(),
+             fit: VariantMapper.fit(),
+             warnings: [String.t()]
+           }}
           | {:error, :catalogue_source_inactive | term()}
   def sync_variants(item, shopify_product, opts \\ [])
       when is_map(item) and is_map(shopify_product) and is_list(opts) do
@@ -223,8 +247,11 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   end
 
   defp do_sync_variants(item, shopify_product, opts) do
-    %{sets: mapped_sets, modifiers: modifiers, warnings: warnings} =
-      VariantMapper.build(shopify_product)
+    %{sets: mapped_sets, modifiers: modifiers, fit: fit, warnings: warnings} =
+      VariantMapper.build(shopify_product,
+        rule: price_fit_rule(item),
+        base_price: Map.get(item, :base_price)
+      )
 
     create_opts = Keyword.take(opts, [:actor_uuid])
 
@@ -237,12 +264,20 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     end)
     |> case do
       {:ok, results, values_created} ->
-        with {:ok, summary} <- finalize_variant_sync(item, Enum.reverse(results), values_created) do
-          {:ok, Map.put(summary, :warnings, warnings)}
+        with {:ok, summary} <-
+               finalize_variant_sync(item, Enum.reverse(results), values_created, fit) do
+          {:ok, summary |> Map.put(:fit, fit) |> Map.put(:warnings, warnings)}
         end
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp price_fit_rule(item) do
+    case get_in(item.data || %{}, ["ecommerce", "price_fit_rule"]) do
+      "cheapest" -> :cheapest
+      _ -> :never_cheaper
     end
   end
 
@@ -292,7 +327,7 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     end)
   end
 
-  defp finalize_variant_sync(item, results, values_created) do
+  defp finalize_variant_sync(item, results, values_created, fit) do
     new_slugs = Enum.map(results, & &1.slug)
     new_modifiers = Map.new(results, &{&1.slug, &1.value_amounts})
 
@@ -302,7 +337,10 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
 
     detach_stale_sets(item.uuid, stale_slugs)
 
-    shopify = Map.put(ecommerce["shopify"] || %{}, "set_slugs", new_slugs)
+    shopify =
+      (ecommerce["shopify"] || %{})
+      |> Map.put("set_slugs", new_slugs)
+      |> put_price_fit(fit)
 
     # Write per set, never replace the whole map: `price_modifiers` can
     # also carry a set THIS sync never drove (a set never listed in
@@ -326,6 +364,24 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
       {:ok, _updated} -> {:ok, %{sets: length(results), values_created: values_created}}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  # Written fresh every run, dropped when the product became exact again —
+  # a stale note would outlive the price it described.
+  defp put_price_fit(shopify, %{exact?: true}), do: Map.delete(shopify, "price_fit")
+
+  defp put_price_fit(shopify, fit) do
+    Map.put(shopify, "price_fit", %{
+      "rule" => Atom.to_string(fit.rule),
+      "variants" => fit.variants,
+      "over" => fit.over,
+      "under" => fit.under,
+      "max_over" => Decimal.to_string(fit.max_over),
+      "max_under" => Decimal.to_string(fit.max_under),
+      "base_offset" => Decimal.to_string(fit.base_offset),
+      "approximated" => fit.approximated?,
+      "synced_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+    })
   end
 
   defp detach_stale_sets(item_uuid, stale_slugs) do

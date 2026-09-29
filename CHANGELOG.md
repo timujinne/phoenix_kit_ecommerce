@@ -4,6 +4,138 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.5.16 - 2026-09-25
+
+### Fixed
+
+- **Two opposite category re-parents could commit a cycle** (#70). Every
+  re-parent, single or bulk (moves to the top level included), and every
+  category delete now take one lock on the shop's category tree. Bulk
+  broadcasts go out after the commit.
+- **Two Run sweep presses at once enqueued the same translations twice**
+  (#70). The second one now answers "A sweep is already running". A
+  scheduled tick that starts during a manual one waits for it to finish
+  and does not re-enqueue its pairs.
+- **The sweep buttons took a double click** (#70). Run sweep and Save
+  sweep settings are disabled while their event runs.
+
+### Changed
+
+- **The translation sweep runs on `PhoenixKitAI.TranslationSweep`**
+  (#70). The worker's name and public functions are unchanged. When a
+  resource is missing more languages than the ceiling has room for, it
+  is admitted for the languages that fit, so a ceiling below the
+  target-language count is accepted now. A pair whose latest job was
+  discarded in the last day is held back, and the page reports how many
+  were. The last outcome is stored under the engine's key. Without the
+  engine, the sweep reports "unavailable".
+- **Activity logging and the actor go through core** (#70), via
+  `PhoenixKit.Activity.log/3` and `PhoenixKitWeb.Actor`. The Shopify
+  media sync reads its actor the same way.
+- **Every shop admin page sets the admin header trail** (#70): the
+  E-Commerce section, the list it sits under, and the page itself.
+- **Dependency floors:** `phoenix_kit >= 2.38.0 and < 3.0.0`,
+  `phoenix_kit_ai ~> 0.24` (optional).
+
+## 0.5.15 - 2026-09-24
+
+### Fixed
+
+- **A product could be carted without the options it is sold in** (#69).
+  An option that comes from the product's own metadata (catalogue
+  attribute sets, imported options) was never required, and an empty
+  selection skipped validation. A product at base 35.52, with every
+  liquid colour at +32.00, went into the cart at 35.52 with no colour.
+  Every discovered option is now required and starts on its first
+  value. `add_to_cart/4` validates an empty selection too. An admin's
+  price-neutral option that shares a key with a priced discovered
+  option is required on the picker as well.
+- **The product page's "Please select:" message is translated.** It
+  was English in every locale.
+
+### Changed
+
+- **`add_to_cart/3,4` without `:selected_specs` refuses products that
+  list option values** (#69). The error is
+  `{:error, :missing_required_option, key}`. This covers every product
+  whose metadata carries `_option_values`, Legacy CSV imports included.
+  Hosts that cart through the context must pass the options, or
+  `skip_spec_validation: true` if they really mean to cart a bare line.
+
+## 0.5.14 - 2026-09-23
+
+### Added
+
+- **Shopify variant prices are fitted by a per-item rule** (#68). A
+  Shopify price grid that per-option modifiers can't reproduce is now
+  fitted "never cheaper than Shopify" by default: one option absorbs the
+  shortfall, so no combination sells below Shopify's price. Items can
+  choose "cheapest variant" instead. The fit is stored on the item, shown
+  as a note on its form, and listed as a price warning on the sync run,
+  kept separate from errors. The note also flags a base price that no
+  longer equals Shopify's cheapest variant.
+
+### Fixed
+
+- **Products with more than 100 variants were read from their first 100
+  only** (#68). Shopify's REST payload embeds at most 100 variants, so the
+  cheapest price could be missed. A capped product whose prices are read
+  is now re-read in full, four at a time. If that re-read fails, the
+  product's prices are neither compared nor written that run, and the
+  rest of the catalog syncs normally.
+- **A Legacy-source check no longer re-reads unmatched products.** Under
+  the Legacy product source no new products are offered, so capped
+  unmatched products are no longer re-read for a price nothing uses.
+
+## 0.5.13 - 2026-09-22
+
+### Added
+
+- **Shopify sync Settings tab links the connected integration** (#67).
+  The shop domain and Admin API token live on the integration, and once a
+  connection existed nothing on the page pointed there; the Settings tab
+  now links `/admin/settings/integrations/<connection uuid>`.
+
+### Fixed
+
+- **The "Shopify isn't connected yet" link opened an error.** It pointed
+  at `/admin/settings/integrations/website`, which core's edit route
+  reads as a connection uuid, flashing "Integration not found" before
+  redirecting. It now links the Integrations list.
+- **Integration links are shown only to viewers core admits.** Core gates
+  its Integrations pages on `integrations_system`, which no `shop.*` key
+  implies; a shop-only role no longer sees links that bounce off an
+  access-denied redirect.
+
+## 0.5.12 - 2026-09-22
+
+### Added
+
+- **Shopify sync page tabs** (#65). The page splits into Changes, New in
+  Shopify, Media & collections and Settings, driven by a `?tab=` query
+  param and patch links, so switching never remounts the LiveView and
+  never drops in-flight state (media-sync progress, the check result).
+  The New in Shopify list and each media kind's error list gain
+  "load more" instead of a hard 50-row cap.
+
+### Fixed
+
+- **Shopify status differences that no apply could close** (#66). The
+  sync diff compared `product.status`, which under the catalogue source
+  is a DERIVED visibility value — forced to `archived` whenever the
+  catalogue itself retired the item — while an apply writes
+  `shop_status`. A retired product whose stored merchant status already
+  matched Shopify was reported as differing and stayed reported through
+  every apply. `%Product{}` gains a virtual `:merchant_status`, filled
+  from `shop_status` by the catalogue view, and the diff compares that;
+  the legacy source is unaffected, where `:status` already is the
+  merchant status.
+- **An incoming Shopify status the apply cannot store is no longer
+  offered.** `Catalogue.Writer` coerces anything outside
+  `draft`/`active`/`archived` to `draft`, so reporting such a difference
+  offered an apply that would silently retire the product and still
+  report a difference on the next check. The diff now skips it.
+
 ## 0.5.11 - 2026-09-22
 
 ### Added

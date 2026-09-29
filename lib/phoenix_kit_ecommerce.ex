@@ -146,6 +146,9 @@ defmodule PhoenixKitEcommerce do
   defp recover_translation_sweep do
     case TranslationSweepWorker.ensure_scheduled() do
       {:ok, _job} -> :ok
+      # No engine to schedule on: not a failure of the shop, and the
+      # translations page says so itself.
+      {:error, :ai_unavailable} -> :ok
       {:error, reason} -> log_sweep_recovery_failure(reason)
     end
   rescue
@@ -546,7 +549,7 @@ defmodule PhoenixKitEcommerce do
   customer's confirmation is never governed by an admin-facing preference.
 
   ⚠️ The actions registered here are the NOTIFY actions. The audit trail
-  uses different action strings on purpose: `Activity.log/1` auto-derives
+  uses different action strings on purpose: core's `Activity.log` auto-derives
   notifications from registered actions, so an audit row written with a
   notify action would deliver a second, duplicate notification.
   """
@@ -1688,9 +1691,11 @@ defmodule PhoenixKitEcommerce do
 
   def update_category(%Category{} = category, attrs) do
     result =
-      category
-      |> Category.changeset(attrs)
-      |> repo().update()
+      in_category_tree(reparenting?(category, attrs), fn ->
+        category
+        |> Category.changeset(attrs)
+        |> repo().update()
+      end)
 
     case result do
       {:ok, updated_category} ->
@@ -1725,7 +1730,9 @@ defmodule PhoenixKitEcommerce do
   def delete_category(%Category{} = category) do
     category_uuid = category.uuid
 
-    case repo().delete(category) do
+    # Under the tree lock: the FK's ON DELETE SET NULL re-parents the
+    # children, which must not happen under a re-parent deciding a cycle.
+    case in_category_tree(true, fn -> repo().delete(category) end) do
       {:ok, _} = result ->
         Events.broadcast_category_deleted(category_uuid)
         result
@@ -1780,6 +1787,45 @@ defmodule PhoenixKitEcommerce do
   end
 
   defp do_bulk_update_category_parent(ids, parent_uuid) do
+    # To the top level too: no cycle can come of it, but the paths that
+    # decide a subtree under the lock must not see the tree change under them.
+    {:ok, {count, moved}} =
+      in_category_tree(true, fn -> {:ok, set_category_parents(ids, parent_uuid)} end)
+
+    # After the commit: nobody hears of a move that could still roll back.
+    if count > 0, do: Events.broadcast_categories_bulk_parent_changed(moved, parent_uuid)
+    count
+  end
+
+  # A new parent is checked for a cycle against the tree as committed: under
+  # one lock on the shop's category tree, two opposite re-parents (or a
+  # bulk move beside a single one) no longer both pass the check.
+  defp in_category_tree(false, fun), do: fun.()
+
+  defp in_category_tree(true, fun) do
+    repo().transaction(fn ->
+      repo().query!(
+        "SELECT pg_advisory_xact_lock(hashtext('phoenix_kit_ecommerce:category_tree'))"
+      )
+
+      case fun.() do
+        {:ok, value} -> value
+        {:error, reason} -> repo().rollback(reason)
+      end
+    end)
+  end
+
+  # Any change of parent counts, a move to the top level included: it closes
+  # no cycle, but it must not slip past the lock the other tree writers hold.
+  defp reparenting?(%Category{parent_uuid: current}, attrs) do
+    parent = Map.get(attrs, :parent_uuid, Map.get(attrs, "parent_uuid", current))
+    normalize_parent(parent) != normalize_parent(current)
+  end
+
+  defp normalize_parent(parent) when parent in [nil, ""], do: nil
+  defp normalize_parent(parent), do: to_string(parent)
+
+  defp set_category_parents(ids, parent_uuid) do
     # Exclude the target parent and its ancestors from update set to prevent cycles
     ids_to_update =
       if parent_uuid do
@@ -1791,7 +1837,7 @@ defmodule PhoenixKitEcommerce do
       end
 
     if ids_to_update == [] do
-      0
+      {0, []}
     else
       now = UtilsDate.utc_now()
 
@@ -1808,11 +1854,7 @@ defmodule PhoenixKitEcommerce do
           |> repo().update_all(set: [parent_uuid: parent_uuid, updated_at: now])
         end
 
-      if count > 0 do
-        Events.broadcast_categories_bulk_parent_changed(ids_to_update, parent_uuid)
-      end
-
-      count
+      {count, ids_to_update}
     end
   end
 
@@ -1843,18 +1885,22 @@ defmodule PhoenixKitEcommerce do
   end
 
   defp do_bulk_delete_categories(ids) do
-    # Nullify category references on products to prevent orphans
-    orphan_query = Product |> where([p], p.category_uuid in ^ids)
+    # Under the tree lock, like a single delete: the FK re-parents children.
+    {:ok, count} =
+      in_category_tree(true, fn ->
+        # Nullify category references on products to prevent orphans
+        orphan_query = Product |> where([p], p.category_uuid in ^ids)
 
-    repo().update_all(orphan_query,
-      set: [category_uuid: nil, updated_at: UtilsDate.utc_now()]
-    )
+        repo().update_all(orphan_query,
+          set: [category_uuid: nil, updated_at: UtilsDate.utc_now()]
+        )
 
-    # Delete categories
-    category_query = Category |> where([c], c.uuid in ^ids)
+        category_query = Category |> where([c], c.uuid in ^ids)
+        {count, _} = repo().delete_all(category_query)
+        {:ok, count}
+      end)
 
-    {count, _} = repo().delete_all(category_query)
-
+    # After the commit: nobody hears of a delete that could still roll back.
     if count > 0 do
       Events.broadcast_categories_bulk_deleted(ids)
     end
@@ -2432,7 +2478,17 @@ defmodule PhoenixKitEcommerce do
   Adds item to cart.
 
   ## Options
-  - `:selected_specs` - Map of selected specifications (for dynamic pricing)
+  - `:selected_specs` - Map of selected specifications (for dynamic pricing).
+    Checked by `validate_selected_specs/2` — empty or not — so a product with
+    a required option is refused with `{:error, :missing_required_option, key}`
+    until every one is chosen.
+  - `:skip_spec_validation` - `true` skips that check (default `false`): the
+    line is carted with whatever `:selected_specs` holds, even nothing for a
+    product with required options, and priced from it. Trusted callers only.
+  - `:language` - the language the shopper's page used. The product is re-read
+    in it before pricing, so `:selected_specs` values (option labels, which
+    differ per language on the catalogue source) match its price modifiers,
+    and the line's product title is snapshotted in it.
 
   ## Examples
 
@@ -2472,6 +2528,7 @@ defmodule PhoenixKitEcommerce do
       when is_integer(quantity) do
     with :ok <- validate_shop_enabled(),
          :ok <- validate_cart_currency(cart, product),
+         :ok <- validate_selected_specs(product, %{}),
          {:ok, cart} <- rebase_cart(cart) do
       add_simple_product_to_cart(cart, product, quantity, nil)
     end
@@ -3056,8 +3113,11 @@ defmodule PhoenixKitEcommerce do
   # ============================================
 
   defp maybe_validate_specs(_product, _specs, true), do: :ok
-  defp maybe_validate_specs(_product, specs, _skip) when specs == %{}, do: :ok
 
+  # An EMPTY selection is validated too: it is exactly the one that
+  # leaves every required option unchosen, and skipping it put a
+  # 35.52 line with no colour into the cart for a product whose every
+  # combination costs 67.52.
   defp maybe_validate_specs(product, selected_specs, _skip) do
     validate_selected_specs(product, selected_specs)
   end

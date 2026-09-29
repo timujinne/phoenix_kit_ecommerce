@@ -346,6 +346,72 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCatalogueTest do
       assert change.handle == "in-scope-mug"
     end
 
+    # An out-of-scope product at the REST payload's 100-variant cap is
+    # never re-read (its prices are never used) and so comes back flagged
+    # `:not_requested` — it must still be COUNTED as out of scope, not
+    # silently dropped from the count.
+    test "an out-of-scope product at the variant cap still counts as out of scope",
+         %{item: item} do
+      uuid = connect_shopify()
+      CatalogueSource.get_product(item.uuid, [])
+      capped = for n <- 1..100, do: %{"option1" => "V#{n}", "price" => "10.00"}
+
+      [in_scope, out_of_scope] = unmatched_products()
+
+      Req.Test.stub(@stub, fn conn ->
+        refute conn.request_path =~ "/products/2/variants.json"
+
+        json_response(conn, 200, %{
+          "products" => [
+            shopify_payload(%{}),
+            in_scope,
+            Map.put(out_of_scope, "variants", capped)
+          ]
+        })
+      end)
+
+      scope = %{mode: :filtered, tags: ["catalog-3d"], product_types: []}
+
+      assert {:ok, %{new_products: [change], new_products_out_of_scope: 1}} =
+               Sync.check(uuid, check_opts(scope: scope))
+
+      assert change.handle == "in-scope-mug"
+    end
+
+    # Creating a newcomer writes its price, so an in-scope one at the cap
+    # IS re-read in full under the catalogue source — and only it.
+    test "re-reads a capped in-scope newcomer's full variant list", %{item: item} do
+      uuid = connect_shopify()
+      CatalogueSource.get_product(item.uuid, [])
+      test_pid = self()
+      capped = for n <- 1..100, do: %{"option1" => "V#{n}", "price" => "10.00"}
+
+      [in_scope, out_of_scope] =
+        Enum.map(unmatched_products(), &Map.put(&1, "variants", capped))
+
+      Req.Test.stub(@stub, fn conn ->
+        case Regex.run(~r{/products/(\d+)/variants\.json}, conn.request_path) do
+          [_, id] ->
+            send(test_pid, {:backfilled, id})
+            json_response(conn, 200, %{"variants" => capped})
+
+          nil ->
+            json_response(conn, 200, %{
+              "products" => [shopify_payload(%{}), in_scope, out_of_scope]
+            })
+        end
+      end)
+
+      scope = %{mode: :filtered, tags: ["catalog-3d"], product_types: []}
+
+      assert {:ok, %{new_products: [change], new_products_out_of_scope: 1}} =
+               Sync.check(uuid, check_opts(scope: scope))
+
+      assert change.handle == "in-scope-mug"
+      assert_received {:backfilled, "1"}
+      refute_received {:backfilled, "2"}
+    end
+
     test "defaults to SyncScope.get/0 when opts[:scope] is omitted", %{item: item} do
       assert {:ok, _} = SyncScope.put(%{"mode" => "filtered", "tags" => ["catalog-3d"]})
 

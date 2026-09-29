@@ -34,14 +34,19 @@ defmodule PhoenixKitEcommerce.AIPinConformanceTest do
 
   Raising the floor further is fine and expected — add the new floor's
   predecessors to `@must_reject` when that happens. Narrowing it to a
-  single minor (`~> 0.20.0`, three-segment) is not: it would reject every
+  single minor (`~> 0.24.0`, three-segment) is not: it would reject every
   later engine and break `mix deps.get` for hosts, which is exactly the
   trap `CorePinConformanceTest` documents.
+
+  The floor is 0.24 now: the sweep worker runs on the engine's shared
+  `PhoenixKitAI.TranslationSweep`, first shipped in 0.24.0. The worker
+  feature-detects it, so an older engine degrades to "sweep unavailable"
+  rather than crashing — the floor is what makes the sweep exist at all.
   """
 
-  # Every phoenix_kit_ai release published before 0.20.0 (hex, checked
-  # 2026-09-04), plus 1.0.0: a major this module has never been verified
-  # against must not be admitted silently either.
+  # Every phoenix_kit_ai release published before 0.24.0, plus 1.0.0: a
+  # major this module has never been verified against must not be admitted
+  # silently either.
   @must_reject [
     "0.12.2",
     "0.13.0",
@@ -54,14 +59,19 @@ defmodule PhoenixKitEcommerce.AIPinConformanceTest do
     "0.19.0",
     "0.19.1",
     "0.19.2",
+    "0.20.0",
+    "0.20.1",
+    "0.21.0",
+    "0.22.0",
+    "0.23.2",
     "1.0.0"
   ]
 
-  # 0.20.0 is the floor; everything above it in the 0.x line stays admitted
+  # 0.24.0 is the floor; everything above it in the 0.x line stays admitted
   # forever — the two-segment invariant.
-  @must_admit ["0.20.0", "0.20.1", "0.21.0", "0.29.9"]
+  @must_admit ["0.24.0", "0.24.1", "0.25.0", "0.29.9"]
 
-  test "the :phoenix_kit_ai requirement admits only engines carrying design §9.1 and §9.3" do
+  test "the :phoenix_kit_ai requirement admits only engines carrying the shared sweep" do
     requirement = ai_requirement()
 
     assert match?({:ok, _parsed}, Version.parse_requirement(requirement)),

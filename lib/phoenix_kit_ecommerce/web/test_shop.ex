@@ -21,7 +21,7 @@ defmodule PhoenixKitEcommerce.Web.TestShop do
   def mount(_params, _session, socket) do
     socket =
       socket
-      |> assign(:page_title, "Shop Test Module")
+      |> assign_shop_trail(gettext("Test shop"))
       |> assign(:test_results, [])
       |> assign(:products, [])
       |> assign(:show_products, false)

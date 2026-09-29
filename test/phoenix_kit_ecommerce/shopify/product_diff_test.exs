@@ -539,6 +539,29 @@ defmodule PhoenixKitEcommerce.Shopify.ProductDiffTest do
     end
   end
 
+  describe "a product whose variant list could not be read in full" do
+    test "every field but price and compare_at_price is still compared" do
+      local = product(%{title: %{"en" => "Old"}})
+
+      shopify =
+        shopify_product(%{
+          "title" => "New",
+          "variants" => [%{"price" => "25.00", "compare_at_price" => "30.00"}],
+          "_variants_incomplete" => ":forbidden"
+        })
+
+      assert [%Change{changes: changes}] = diff([local], [shopify])
+      assert Map.has_key?(changes, :title)
+      refute Map.has_key?(changes, :price)
+      refute Map.has_key?(changes, :compare_at_price)
+    end
+
+    test "is not offered as a new product" do
+      fresh = shopify_product(%{"handle" => "fresh", "_variants_incomplete" => ":forbidden"})
+      assert ProductDiff.new_product_changes([], [fresh], @base_locale) == []
+    end
+  end
+
   describe "matched_count/3" do
     test "counts a match with no field difference — diff/4 would report zero changes for it" do
       local = [product(slug: %{"en" => "planter"})]

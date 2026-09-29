@@ -38,7 +38,7 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
 
     socket =
       socket
-      |> assign(:page_title, "Import Configurations")
+      |> assign_shop_trail(gettext("Import configs"), [settings_crumb()])
       |> assign(:configs, configs)
       |> assign(:show_modal, false)
       |> assign(:editing_config, nil)

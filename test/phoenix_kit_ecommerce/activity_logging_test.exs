@@ -416,4 +416,45 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
       :ok = refute_activity_logged("shop.never_logged_action")
     end
   end
+
+  describe "the wrapper" do
+    test "log_failed records the attempt as pending, naming only the failing fields", %{
+      actor_uuid: actor_uuid
+    } do
+      changeset =
+        {%{}, %{email: :string}}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.add_error(:email, "jane@example.com is taken")
+
+      Activity.log_failed("shop.probe_failed", changeset,
+        actor_uuid: actor_uuid,
+        actor_role: "Owner",
+        metadata: %{"status" => "active"}
+      )
+
+      row =
+        assert_activity_logged("shop.probe_failed",
+          actor_uuid: actor_uuid,
+          metadata_has: %{
+            "db_pending" => true,
+            "failure_reason" => "email",
+            "actor_role" => "Owner",
+            "status" => "active"
+          }
+        )
+
+      refute inspect(row.metadata) =~ "jane@example.com"
+    end
+
+    test "the actor and the role are read from the scope" do
+      scope = fake_scope(roles: ["Admin", "Owner"])
+
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{__changed__: %{}, phoenix_kit_current_scope: scope}
+      }
+
+      assert Activity.actor_uuid(socket) == scope.user.uuid
+      assert Activity.actor_role(socket) == "Admin"
+    end
+  end
 end

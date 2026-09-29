@@ -27,7 +27,7 @@ defmodule PhoenixKitEcommerce.Web.Carts do
 
     socket =
       socket
-      |> assign(:page_title, gettext("Shopping Carts"))
+      |> assign_shop_trail(gettext("Carts"))
       |> assign(:carts, carts)
       |> assign(:total, total)
       |> assign(:page, 1)

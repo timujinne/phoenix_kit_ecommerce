@@ -46,6 +46,10 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerce do
     field :price_on_request, :boolean, default: false
     # option_key -> value_slug -> decimal string
     field :price_modifiers, :map, default: %{}
+    # "never_cheaper" | "cheapest" | nil (= never_cheaper). How the Shopify
+    # variant sync fits per-option modifiers when Shopify's prices are not
+    # additive (`Shopify.VariantMapper.build/2`). Read by the sync only.
+    field :price_fit_rule, :string
     # handle, product_id (both match the item in the collection and
     # media syncs), image_ids, set_slugs
     field :shopify, :map, default: %{}
@@ -57,7 +61,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerce do
     shop_status product_type vendor tags compare_at_price cost_per_item
     currency taxable weight_grams requires_shipping made_to_order file_uuid
     download_limit download_expiry_days price_unit price_from
-    price_on_request price_modifiers shopify legacy_product_uuid
+    price_on_request price_modifiers price_fit_rule shopify legacy_product_uuid
     translation_fingerprints
   )a
 
@@ -78,6 +82,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerce do
     |> validate_number(:download_expiry_days, greater_than: 0)
     |> validate_length(:currency, is: 3)
     |> validate_change(:price_modifiers, &validate_price_modifiers/2)
+    |> validate_inclusion(:price_fit_rule, ~w(never_cheaper cheapest))
   end
 
   # `price_modifiers` is `option_key -> value_slug -> amount`, where every

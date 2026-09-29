@@ -689,11 +689,13 @@ defmodule PhoenixKitEcommerce.Options do
   Use this for displaying option selectors in the product UI.
   """
   def get_selectable_specs_for_product(product) do
+    schema = get_option_schema_for_product(product)
+
     schema_specs =
-      product
-      |> get_option_schema_for_product()
+      schema
       |> get_selectable_specs()
       |> filter_by_product_option_values(product)
+      |> require_keys_priced_as_required(price_affecting_specs(schema, product))
 
     # Discover additional options from product metadata (without price requirement)
     discovered_specs = discover_selectable_options_from_metadata(product)
@@ -726,6 +728,14 @@ defmodule PhoenixKitEcommerce.Options do
   # Discovers selectable options from product metadata.
   # Creates "virtual" option specs for keys found in _option_values.
   # Unlike discover_options_from_metadata/1, this doesn't require _price_modifiers.
+  #
+  # Every discovered option is REQUIRED. No admin configured it, so no
+  # one ever said it may be skipped, and the product only exists in the
+  # combinations its options spell out: a Shopify-synced item has no
+  # variant without every one of them, so a line missing any is
+  # unfulfillable, and one missing a priced option is also sold under
+  # price (live: base 35.52, every liquid colour +32.00, carted at 35.52
+  # with no colour). A schema option's own "required" stays the admin's.
   defp discover_selectable_options_from_metadata(product) do
     metadata = product.metadata || %{}
     option_values = Map.get(metadata, "_option_values", %{})
@@ -746,6 +756,7 @@ defmodule PhoenixKitEcommerce.Options do
         "label" => option_label(metadata, key),
         "type" => "select",
         "options" => values,
+        "required" => true,
         "_discovered" => true
       }
 
@@ -774,9 +785,14 @@ defmodule PhoenixKitEcommerce.Options do
   but are not defined in the schema (e.g., imported products with custom options).
   """
   def get_price_affecting_specs_for_product(product) do
+    product
+    |> get_option_schema_for_product()
+    |> price_affecting_specs(product)
+  end
+
+  defp price_affecting_specs(schema, product) do
     schema_specs =
-      product
-      |> get_option_schema_for_product()
+      schema
       |> get_price_affecting_specs()
       |> filter_by_product_option_values(product)
 
@@ -785,6 +801,25 @@ defmodule PhoenixKitEcommerce.Options do
 
     # Merge: schema specs take priority over discovered
     merge_discovered_specs(schema_specs, discovered_specs)
+  end
+
+  # The picker must require every key the PRICE LIST requires. The two
+  # lists merge schema over discovered separately, so an admin's option
+  # that does not itself affect price (global `liquid_color`, optional)
+  # takes the picker while the price list keeps the discovered, required
+  # +32.00 spec for the same key — and that option was then neither
+  # pre-selected nor enforced, re-opening the carted-at-base-price
+  # defect. A price-affecting admin option is on both lists, so its own
+  # flag still decides.
+  defp require_keys_priced_as_required(specs, price_specs) do
+    required_keys =
+      for %{"key" => key, "required" => true} <- price_specs, into: MapSet.new(), do: key
+
+    Enum.map(specs, fn spec ->
+      if MapSet.member?(required_keys, spec["key"]),
+        do: Map.put(spec, "required", true),
+        else: spec
+    end)
   end
 
   # Filters options - keeps only those for which product has values in metadata.
@@ -870,34 +905,13 @@ defmodule PhoenixKitEcommerce.Options do
   end
 
   # Discovers options from product metadata that have price modifiers with non-zero values.
-  # Creates "virtual" option specs for keys found in _option_values that also
-  # have corresponding _price_modifiers entries with at least one non-zero modifier.
+  # The price-affecting subset of discover_selectable_options_from_metadata/1 —
+  # one builder, so a priced option cannot be required on the picker and
+  # optional here.
   defp discover_options_from_metadata(product) do
-    metadata = product.metadata || %{}
-    option_values = Map.get(metadata, "_option_values", %{})
-    price_modifiers = Map.get(metadata, "_price_modifiers", %{})
-
-    # For each key in _option_values that has _price_modifiers with non-zero values
-    option_values
-    |> Enum.filter(fn {key, values} ->
-      key_modifiers = Map.get(price_modifiers, key, %{})
-
-      is_list(values) and values != [] and
-        key_modifiers != %{} and has_nonzero_modifiers?(key_modifiers)
-    end)
-    |> Enum.map(fn {key, values} ->
-      %{
-        "key" => key,
-        "label" => option_label(metadata, key),
-        "type" => "select",
-        "options" => values,
-        "affects_price" => true,
-        "modifier_type" => "fixed",
-        "allow_override" => true,
-        "price_modifiers" => Map.get(price_modifiers, key, %{}),
-        "_discovered" => true
-      }
-    end)
+    product
+    |> discover_selectable_options_from_metadata()
+    |> Enum.filter(&(&1["affects_price"] == true))
   end
 
   # A DISCOVERED option (no admin-configured schema entry — the

@@ -12,8 +12,10 @@ and checkout hands off to `phoenix_kit_billing` for orders and payment. It
 ships admin LiveViews for the whole workflow plus the public storefront
 pages.
 
-- **Depends on:** `phoenix_kit` `~> 2.16` (Hex), `phoenix_kit_billing`
-  `~> 0.13` (hard), `phoenix_kit_ai` `~> 0.20` (optional — the
+- **Depends on:** `phoenix_kit` `>= 2.38.0 and < 3.0.0` (Hex — the release
+  that carries `PhoenixKitWeb.Actor` and `Activity.log/3`; the compound form
+  keeps the ceiling open across later 2.x minors), `phoenix_kit_billing`
+  `~> 0.13` (hard), `phoenix_kit_ai` `~> 0.24` (optional — the
   AI-translate UI, both translation adapters, the sweep worker and the
   translations page use it, and all of them compile out when it is absent;
   0.20 is the first engine that binds `{{SourceFields}}` and forwards
@@ -185,15 +187,15 @@ Repo-local aliases:
 - **Activity logging happens at the LiveView layer**, on the `{:ok, _}` branch
   of a successful mutation, through `PhoenixKitEcommerce.Activity` — never
   inside context functions, which stay pure and keep stable signatures. The
-  wrapper centralizes the `Code.ensure_loaded?/1` guard, the rescue (logging
-  failures never crash the caller) and the default metadata (`module: "shop"`,
-  `actor_role`); the actor comes from `socket.assigns[:phoenix_kit_current_scope]`.
+  wrapper adds the module key (`"shop"`) and `actor_role` to core's
+  `PhoenixKit.Activity.log/3`, which never raises; the actor and role come
+  from `PhoenixKitWeb.Actor`.
   Rows carry no PII.
-- **The core pin floor is two-segment (`~> 2.16`) on purpose.** The
-  three-segment form (`~> 2.6.4`) expands to `< 2.7.0` and breaks CONSUMERS —
-  a host on a newer core minor gets an unsolvable dependency set — while
-  nothing in this repo's own run notices, which is why a test guards it.
-  Raising the floor is fine and expected; raise it in `mix.exs` and in
+- **The core pin keeps the compound form (`>= 2.38.0 and < 3.0.0`) on
+  purpose.** A three-segment `~> 2.38.0` expands to `< 2.39.0` and breaks
+  CONSUMERS — a host on a newer core minor gets an unsolvable dependency set
+  — while nothing in this repo's own run notices, which is why a test guards
+  it. Raising the floor is fine and expected; raise it in `mix.exs` and in
   `test/core_pin_conformance_test.exs` together whenever a newly-adopted core
   or billing API needs it.
 - **Assigns available in admin LiveViews:** `@phoenix_kit_current_scope`,
@@ -545,13 +547,15 @@ settings-layer error.
   the page's "Run sweep" ignores it.
 - `shop_translation_interval_minutes` (`60`), `shop_translation_batch` (`3`,
   resources per tick), `shop_translation_max_in_flight` (`6`, incomplete
-  shop `TranslateWorker` JOBS). The page refuses a batch below 1 or a ceiling
-  below the target-language count.
+  shop `TranslateWorker` JOBS). The page refuses a batch or ceiling below 1;
+  a ceiling below the target-language count admits the languages that fit
+  and leaves the rest for a later tick.
 - `shop_translation_languages` — `%{"codes" => [...]}`, default every enabled
   language but the primary; intersected with enabled languages on every read.
 - `shop_translation_statuses` — `%{"statuses" => [...]}`, default
   `["active"]`; products only, categories are never status-filtered.
-- `shop_translation_sweep_last_run` — written by the tick, read by the page.
+- The last tick's outcome is not a `shop_` key: `phoenix_kit_ai`'s sweep
+  engine keeps it (`TranslationSweepWorker.last_run/0` reads it).
 
 **Consumed from billing** (owned by `phoenix_kit_billing`, read here)
 
@@ -653,7 +657,7 @@ and `schema_prefix_conformance_test.exs` (every table-backed schema uses
 | Feature | Constraint that must hold | Where |
 |---|---|---|
 | Price display and storefront i18n | "Price on request" is snapshotted onto the cart line and the order line, never read live; every public LiveView calls `put_content_locale/1` in `mount/3`; `push_event` names, paths, route segments and setting keys are never wrapped in `gettext` | `dev_docs/guides/storefront.md` |
-| AI translation control | Fingerprints are hashed identically in Elixir and SQL (`sql_trim_chars/0`); the sweep never auto-queues `unknown`; a write whose field fingerprint still matches is narrowed away; nothing enqueues under the catalogue product source | `TranslationFingerprint`, `Workers.TranslationSweepWorker`, `Web.Translations` moduledocs |
+| AI translation control | Fingerprints are hashed identically in Elixir and SQL (`sql_trim_chars/0`); the sweep never auto-queues `unknown`; a write whose field fingerprint still matches is narrowed away; nothing enqueues under the catalogue product source. The sweep's chain, gates and budget are `PhoenixKitAI.TranslationSweep`'s — the worker supplies only the shop's gates, settings, candidates and prompts, and answers `:ai_unavailable` when the installed `phoenix_kit_ai` has no engine | `TranslationFingerprint`, `Workers.TranslationSweepWorker`, `Web.Translations` moduledocs |
 | Agentic Commerce / ACP | Assessed and deliberately not built: a bridge plugin, not code in this module, is the shape if it is ever built | `dev_docs/agentic_commerce_acp_research.md` |
 
 ## Versioning & releases

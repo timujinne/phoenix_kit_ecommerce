@@ -40,7 +40,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
     socket =
       socket
-      |> assign(:page_title, gettext("E-Commerce Settings"))
+      |> assign_shop_trail(gettext("Settings"))
       |> assign(:enabled, config.enabled)
       |> assign(:billing_enabled, billing_enabled?())
       |> assign(:category_name_display, get_category_name_display())

@@ -958,10 +958,8 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
 
     # -- Fix C: a stalled sweep must not report itself healthy — this half
     # stops the bad config from ever reaching storage in the first place.
-    # `TranslationSweepWorker.structurally_stalled?/3` can only ever
-    # report a deadlock after the fact; these three settings guarantee one
-    # (`take_within_budget/3` HALTS, not skips, on the first candidate
-    # whose language count exceeds the remaining budget).
+    # The tick can only report a batch or ceiling below 1 after the fact
+    # (`:sweep_stalled`); either one admits nothing, ever.
 
     test "rejects a batch of zero — nothing is saved", %{conn: conn} do
       before_batch = SweepSettings.batch_size()
@@ -1005,26 +1003,9 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       assert SweepSettings.max_in_flight() == before_max_in_flight
     end
 
-    test "rejects a ceiling below the number of target languages just selected — and does not clamp either value",
-         %{
-           conn: conn
-         } do
+    test "accepts a ceiling below the number of target languages — the sweep admits what fits",
+         %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
-
-      # A known-good baseline, distinct from both the default and the
-      # rejected attempt below, so a partial/clamped save of either field
-      # would show up as a changed read afterwards.
-      view
-      |> element("#sweep-settings-form")
-      |> render_submit(%{
-        "interval_minutes" => "60",
-        "batch_size" => "3",
-        "max_in_flight" => "6",
-        "languages" => ["de"],
-        "statuses" => ["active"]
-      })
-
-      assert SweepSettings.languages() == ["de"]
 
       html =
         view
@@ -1037,13 +1018,9 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
           "statuses" => ["active"]
         })
 
-      assert html =~ "Max in-flight jobs must be at least 2"
-
-      # Neither half of the rejected save persisted — accepting the
-      # language list while rejecting the ceiling (or vice versa) would
-      # be just as capable of deadlocking the sweep as saving "1" outright.
-      assert SweepSettings.max_in_flight() == 6
-      assert SweepSettings.languages() == ["de"]
+      assert html =~ "Sweep settings updated"
+      assert SweepSettings.max_in_flight() == 1
+      assert SweepSettings.languages() == ["de", "fr"]
     end
 
     test "a rejected save does not reschedule the tick", %{conn: conn} do
@@ -1124,12 +1101,10 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       refute SweepSettings.sweep_enabled?()
       product = create_product()
 
-      # Two in-flight jobs, one per target language (`ready!/0` leaves
-      # de/fr configured) — the ceiling below matches that count exactly,
-      # so this is a genuine, self-clearing "busy right now", never Fix
-      # C's structural stall (which would fire regardless of in_flight
-      # and has its own coverage in the "operational sweep panel" and
-      # `TranslationSweepWorkerTest` describe blocks).
+      # Two in-flight jobs and a ceiling of two — a genuine, self-clearing
+      # "busy right now", never Fix C's structural stall (a batch or
+      # ceiling below 1, which has its own coverage in the "operational
+      # sweep panel" and `TranslationSweepWorkerTest` describe blocks).
       for lang <- ["de", "fr"] do
         {:ok, _job} =
           %{
@@ -1201,8 +1176,8 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       # this page and the tick still consider AI available, while
       # `enqueue_all_missing/2` refuses every language with
       # `{:invalid_uuids, [:endpoint_uuid]}`. The tick then records
-      # `enqueued: 0, errors: 1` — which, unsurfaced, reads exactly like
-      # "nothing needed doing".
+      # `enqueued: 0, errors: 2` (one per language) — which, unsurfaced,
+      # reads exactly like "nothing needed doing".
       Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", true, "shop")
       {:ok, _} = Settings.update_setting_with_module("ai_translation_endpoint_uuid", "nope", "ai")
       product = create_product()
@@ -1214,7 +1189,7 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       # distinct from the persisted "Last tick" line rendered in
       # `#sweep-last-run`, so this can't pass on that line's back.
       assert html =~ "Sweep ran"
-      assert html =~ "0 jobs queued. 1 enqueue error."
+      assert html =~ "0 jobs queued. 2 enqueue errors."
       assert jobs_for(product.uuid) == []
     end
 
@@ -1230,7 +1205,7 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       # the worker's own contract (`finish/2`), and this pins that the
       # page actually reads the `"errors"` key it writes.
       Settings.update_json_setting_with_module(
-        "shop_translation_sweep_last_run",
+        PhoenixKitAI.TranslationSweep.last_run_key(SweepWorker),
         %{
           "reason" => "ok",
           "candidates" => 2,
@@ -1239,7 +1214,7 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
           "in_flight" => 0,
           "at" => DateTime.to_iso8601(DateTime.utc_now())
         },
-        "shop_translations"
+        "ai"
       )
 
       {:ok, _view, html} = live(conn, "/en/admin/shop/translations")
@@ -1321,18 +1296,62 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       # silently become a lie.
       {:ok, _} =
         Settings.update_json_setting_with_module(
-          "shop_translation_sweep_last_run",
+          PhoenixKitAI.TranslationSweep.last_run_key(SweepWorker),
           %{
             "reason" => "quota_exhausted",
-            "at" => DateTime.to_iso8601(DateTime.utc_now())
+            "since" => DateTime.to_iso8601(DateTime.utc_now())
           },
-          "shop_translations"
+          "ai"
         )
 
       {:ok, _view, html} = live(conn, "/en/admin/shop/translations")
 
       assert html =~ "Last tick: quota_exhausted"
       refute html =~ "Sweep finished."
+    end
+
+    test "the Last tick line counts pairs held back, and says when prompts failed", %{conn: conn} do
+      key = PhoenixKitAI.TranslationSweep.last_run_key(SweepWorker)
+      since = DateTime.to_iso8601(DateTime.utc_now())
+
+      {:ok, _} =
+        Settings.update_json_setting_with_module(
+          key,
+          %{"reason" => "ok", "enqueued" => 2, "backed_off" => 3, "since" => since},
+          "ai"
+        )
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/translations")
+      assert html =~ "Last tick: ran, 2 jobs queued — 3 held back after recent failures"
+
+      {:ok, _} =
+        Settings.update_json_setting_with_module(
+          key,
+          %{"reason" => "prompts_unavailable", "since" => since},
+          "ai"
+        )
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/translations")
+
+      assert html =~
+               "Last tick: Sweep did not run — the translation prompts could not be prepared."
+    end
+
+    # A double click queued two ticks' worth of jobs, or saved twice.
+    test "Run sweep and Save sweep settings are disabled while their event runs", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+      assert has_element?(view, "#run-sweep-now[phx-disable-with]")
+      assert has_element?(view, "#save-sweep-settings[phx-disable-with]")
+
+      untranslated =
+        for locale <- ~w(de et fr ru),
+            msgid <- ["Running…", "Saving…"],
+            Gettext.with_locale(PhoenixKitEcommerce.Gettext, locale, fn ->
+              Gettext.gettext(PhoenixKitEcommerce.Gettext, msgid)
+            end) == msgid,
+            do: {locale, msgid}
+
+      assert untranslated == []
     end
   end
 

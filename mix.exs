@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.MixProject do
   use Mix.Project
 
-  @version "0.5.11"
+  @version "0.5.16"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_ecommerce"
 
   def project do
@@ -102,19 +102,17 @@ defmodule PhoenixKitEcommerce.MixProject do
 
   defp deps do
     [
-      # 2.16 is a hard floor, not a preference (raised from 2.6 for
-      # per-domain-currency Э1-E1, plan §0.3/§8.5). `Cart`/`CartItem` cast
-      # `base_currency`/`exchange_rate`/`base_unit_price` — columns core's
-      # V186 adds, and 2.16.0 is the first release that ships V186 (2.15.x
-      # tops out at V183; the plan's "V185" was the pre-release number).
-      # Below V186 those `ADD COLUMN`s do not exist and every cart/cart-item
-      # write raises `Postgrex.Error` (`undefined_column`) instead of
-      # quietly dropping the field, since these are real table columns
-      # cast/3 tries to persist, not attrs the schema merely declares. 2.6
-      # remains true too: ShippingMethod.changeset/2 calls `Slug.put_slug/3`
-      # (2.4.0), and Product/Category name V171's projection pkeys (2.6.0) —
-      # both still required, now subsumed by the higher floor.
-      pk_dep(:phoenix_kit, "~> 2.16"),
+      # The floor is 2.38.0: the actor and the activity log come from
+      # `PhoenixKitWeb.Actor` and `PhoenixKit.Activity.log/3`, first shipped
+      # there and not feature-detected, so a lower core fails to compile.
+      # Everything the earlier floors guaranteed is subsumed: V186's
+      # `base_currency`/`exchange_rate`/`base_unit_price` cart columns (2.16.0
+      # — below it every cart write raised `undefined_column`),
+      # `Slug.put_slug/3` (2.4.0) and V171's projection pkeys (2.6.0).
+      # Patch-precise floor in the compound form, so the ceiling stays open
+      # through every later 2.x minor (a three-segment `~> 2.38.0` would pin
+      # one minor; see test/core_pin_conformance_test.exs).
+      pk_dep(:phoenix_kit, ">= 2.38.0 and < 3.0.0"),
 
       # Gettext for per-module i18n of sidebar tab labels.
       {:gettext, "~> 1.0"},
@@ -160,8 +158,15 @@ defmodule PhoenixKitEcommerce.MixProject do
       # `TranslationFingerprint.apply_writes/3` — that erase is what keeps
       # the sweep convergent against an engine lacking §9.3, at the cost
       # of every touched pair falling back to `:unknown` for the operator
-      # to resolve by hand). `~> 0.20` admits only engines carrying both.
-      pk_dep(:phoenix_kit_ai, "~> 0.20", optional: true),
+      # to resolve by hand).
+      #
+      # RAISED AGAIN to 0.24: the sweep worker runs on the engine's shared
+      # `PhoenixKitAI.TranslationSweep` (its tick, gates, candidate
+      # selection and ceiling), first shipped in 0.24.0. The worker
+      # feature-detects the engine, so an older one degrades to "sweep
+      # unavailable" rather than crashing — but `~> 0.24` is what makes the
+      # sweep exist at all.
+      pk_dep(:phoenix_kit_ai, "~> 0.24", optional: true),
       # No declared dependency on `phoenix_kit_catalogue`, though this app
       # DOES call into `PhoenixKitCatalogue` directly (the ProductSource
       # catalogue adapter, `Catalogue.Writer`, and the Shopify-sync 6a

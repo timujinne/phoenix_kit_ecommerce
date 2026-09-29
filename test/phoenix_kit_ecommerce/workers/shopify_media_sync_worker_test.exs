@@ -277,6 +277,72 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
     end
   end
 
+  # A product whose variant list `AdminClient` could not read in full
+  # (see `admin_client_test.exs`) — carries the flag straight through, as
+  # a real stub-backed `fetch_products/2` would after a failed backfill.
+  defmodule IncompleteVariantsStub do
+    @moduledoc false
+
+    def fetch_products(_integration_uuid, _opts) do
+      {:ok,
+       [
+         %{
+           "id" => 777,
+           "handle" => "two-option-mug",
+           "options" => [%{"name" => "Size", "position" => 1, "values" => ["Small", "Large"]}],
+           "variants" => [
+             %{"option1" => "Small", "price" => "10.00"},
+             %{"option1" => "Large", "price" => "15.00"}
+           ],
+           "_variants_incomplete" => ":rate_limited"
+         }
+       ]}
+    end
+  end
+
+  # Hands back what the worker asked `fetch_products/2` for (the run is a
+  # direct call, so `self()` is the test process) and one matched plus one
+  # unmatched product.
+  defmodule OptsRecordingStub do
+    @moduledoc false
+
+    def fetch_products(_integration_uuid, opts) do
+      send(self(), {:complete_variants, Keyword.get(opts, :complete_variants)})
+
+      {:ok,
+       [
+         %{"id" => 777, "handle" => "two-option-mug", "variants" => []},
+         %{"id" => 888, "handle" => "stranger", "variants" => []}
+       ]}
+    end
+  end
+
+  # S/L x Red/Blue at 10/12/15/20 — not additive (see
+  # `VariantMapperTest`/`WriterVariantsTest`'s own `non_additive_product/0`).
+  defmodule NonAdditiveVariantsStub do
+    @moduledoc false
+
+    def fetch_products(_integration_uuid, _opts) do
+      {:ok,
+       [
+         %{
+           "id" => 999,
+           "handle" => "two-option-mug",
+           "options" => [
+             %{"name" => "Size", "position" => 1, "values" => ["Small", "Large"]},
+             %{"name" => "Color", "position" => 2, "values" => ["Red", "Blue"]}
+           ],
+           "variants" => [
+             %{"option1" => "Small", "option2" => "Red", "price" => "10.00"},
+             %{"option1" => "Small", "option2" => "Blue", "price" => "12.00"},
+             %{"option1" => "Large", "option2" => "Red", "price" => "15.00"},
+             %{"option1" => "Large", "option2" => "Blue", "price" => "20.00"}
+           ]
+         }
+       ]}
+    end
+  end
+
   # ============================================================
   # "collections" — same shape as `CollectionSyncTest`'s own stub
   # ============================================================
@@ -393,6 +459,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
       # two products each downloaded one image (`501`, `601`); the third
       # image (`502`) failed and is not counted as downloaded.
       assert progress["stats"] == %{"downloaded" => 2, "reused" => 0, "attached" => 2}
+      assert progress["warnings"] == []
     end
 
     test "images: an out-of-scope unmatched product is skipped with no error, an in-scope one is still an error",
@@ -489,8 +556,10 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
       assert progress["matched"] == 1
       assert progress["skipped"] == 0
       # `Writer.sync_variants/2`'s own `values_created` (two brand-new
-      # values, "Small" and "Large") summed across the run.
-      assert progress["stats"] == %{"values_created" => 2}
+      # values, "Small" and "Large") summed across the run; the product
+      # is additive so `approximated` stays 0 and there are no warnings.
+      assert progress["stats"] == %{"values_created" => 2, "approximated" => 0}
+      assert progress["warnings"] == []
     end
 
     # The set/value creator comes from the job's `actor_uuid`; a `nil` one
@@ -568,6 +637,81 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
       assert length(progress["errors"]) == 1
     end
 
+    test "variants: a product whose variant list is incomplete is refused, nothing written",
+         %{catalogue: catalogue} do
+      AttributeSets.register_deletion_guard()
+      PhoenixKit.Settings.update_setting("entities_enabled", "true")
+      on_exit(fn -> PhoenixKit.Settings.update_setting("entities_enabled", "false") end)
+
+      item =
+        create_item(catalogue.uuid, "Two-Option Mug", %{"handle" => "two-option-mug"}, %{
+          data: %{
+            "_primary_language" => "en",
+            "ecommerce" => %{
+              "shop_status" => "active",
+              "shopify" => %{"handle" => "two-option-mug"},
+              "price_modifiers" => %{"size" => %{"small" => "0.00", "large" => "7.00"}}
+            }
+          }
+        })
+
+      assert {:ok, %{errors: [%{"product" => "two-option-mug", "reason" => reason}]}} =
+               Worker.run("variants", fixture_user().uuid,
+                 client: IncompleteVariantsStub,
+                 integration_uuid: "test-integration"
+               )
+
+      assert reason =~ "variants incomplete"
+      assert reason =~ "rate_limited"
+      assert AttributeSets.list_attachments(item.uuid) == []
+      # Pre-seeded modifiers prove "untouched", not merely "never written".
+      assert get_in(reload(item).data, ["ecommerce", "price_modifiers"]) ==
+               %{"size" => %{"small" => "0.00", "large" => "7.00"}}
+    end
+
+    test "full variant lists are asked for only where a run writes prices",
+         %{catalogue: catalogue} do
+      create_item(catalogue.uuid, "Two-Option Mug", %{"handle" => "two-option-mug"})
+
+      Worker.run("images", nil, client: OptsRecordingStub, integration_uuid: "test-integration")
+      assert_received {:complete_variants, false}
+
+      Worker.run("variants", nil, client: OptsRecordingStub, integration_uuid: "test-integration")
+      assert_received {:complete_variants, wanted}
+      assert wanted.(%{"id" => 777, "handle" => "two-option-mug"})
+      refute wanted.(%{"id" => 888, "handle" => "stranger"})
+    end
+
+    test "variants: an approximated price is a warning, not an error", %{catalogue: catalogue} do
+      AttributeSets.register_deletion_guard()
+      PhoenixKit.Settings.update_setting("entities_enabled", "true")
+      on_exit(fn -> PhoenixKit.Settings.update_setting("entities_enabled", "false") end)
+
+      create_item(catalogue.uuid, "Two-Option Mug", %{"handle" => "two-option-mug"}, %{
+        data: %{
+          "_primary_language" => "en",
+          "ecommerce" => %{
+            "shop_status" => "active",
+            "shopify" => %{"handle" => "two-option-mug"}
+          }
+        }
+      })
+
+      assert {:ok,
+              %{errors: [], warnings: [%{"product" => "two-option-mug", "reason" => reason}]}} =
+               Worker.run("variants", fixture_user().uuid,
+                 client: NonAdditiveVariantsStub,
+                 integration_uuid: "test-integration"
+               )
+
+      assert reason =~ "prices approximated"
+
+      progress = Worker.get_progress("variants")
+      assert progress["errors"] == []
+      assert [%{"product" => "two-option-mug"}] = progress["warnings"]
+      assert progress["stats"]["approximated"] == 1
+    end
+
     test "collections: delegates to CollectionSync.run/1 and keeps its result on the progress record",
          %{catalogue: catalogue} do
       create_item(catalogue.uuid, "Gift A", %{"product_id" => "444"})
@@ -604,6 +748,8 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
                "items_repositioned" => 0,
                "unmatched_products" => 0
              }
+
+      assert progress["warnings"] == []
     end
 
     test "collections: skipped-by-filter and trashed collections are counted, not just created/matched ones",

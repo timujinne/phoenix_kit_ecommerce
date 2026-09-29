@@ -54,7 +54,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
 
     socket =
       socket
-      |> assign(:page_title, gettext("Products"))
+      |> assign_shop_trail(gettext("Products"))
       # :page, :search, :status_filter, :type_filter, and :category_filter are
       # assigned from the query string by UrlState before mount/3 runs —
       # re-assigning them here would overwrite a shared link's state with defaults.

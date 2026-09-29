@@ -208,6 +208,45 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       end
     end
 
+    # `:status` above is what the storefront should SHOW; `:merchant_status`
+    # is what the last Shopify sync WROTE. They differ exactly when the
+    # catalogue has retired the item, and `Shopify.ProductDiff` compares the
+    # latter because `Shopify.Sync`'s apply writes it. Without these three
+    # the wiring could be dropped or mistyped and every ProductDiff test
+    # would still pass — they build their `%Product{}` by hand.
+    test "merchant_status carries shop_status through untouched by the visibility rule" do
+      for shop_status <- ["draft", "active", "archived"] do
+        item = build_item(%{"ecommerce" => %{"shop_status" => shop_status}}, %{status: "active"})
+
+        assert product_view(item, sets: []).merchant_status == shop_status
+      end
+    end
+
+    # The live defect's exact shape: retired in the catalogue, `shop_status`
+    # left at what Shopify says. `:status` must read "archived" so the
+    # storefront hides it, while `:merchant_status` must still report the
+    # stored value — otherwise the sync diff reports a difference no apply
+    # can close.
+    test "merchant_status keeps the stored value even when the item is retired in the catalogue" do
+      for catalogue_status <- ~w(inactive discontinued deleted) do
+        item =
+          build_item(%{"ecommerce" => %{"shop_status" => "active"}}, %{status: catalogue_status})
+
+        product = product_view(item, sets: [])
+
+        assert product.status == "archived"
+        assert product.merchant_status == "active"
+      end
+    end
+
+    test "merchant_status falls back to active when shop_status is absent or unrecognised" do
+      for shop_status <- [nil, "", "weird"] do
+        item = build_item(%{"ecommerce" => %{"shop_status" => shop_status}}, %{status: "active"})
+
+        assert product_view(item, sets: []).merchant_status == "active"
+      end
+    end
+
     test "description falls back to the first 300 chars of stripped body_html when _summary is absent" do
       # `description: nil` is deliberate: at the item's own primary
       # language, `Catalogue.translated_description/2` reads the
