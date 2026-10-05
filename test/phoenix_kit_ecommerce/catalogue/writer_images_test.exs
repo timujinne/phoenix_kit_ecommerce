@@ -26,6 +26,7 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterImagesTest do
   alias PhoenixKitCatalogue.Attachments
   alias PhoenixKitCatalogue.Catalogue
   alias PhoenixKitEcommerce.Catalogue.Writer
+  alias PhoenixKitEcommerce.Services.ImageDownloader
   alias PhoenixKitEcommerce.ShopConfig
   alias PhoenixKitEcommerce.Test.Repo
 
@@ -631,6 +632,146 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterImagesTest do
 
       assert second.reused == 1
       assert second.downloaded == 0
+    end
+  end
+
+  describe "build_reuse_index/0" do
+    test "a file's own source URL outranks another file's alias for it", %{user_uuid: user_uuid} do
+      earlier = store_linked_file("https://cdn.example/a.jpg", user_uuid)
+
+      {:ok, _} =
+        Storage.update_file_metadata(
+          earlier.uuid,
+          &Map.put(&1, "source_url_aliases", ["https://cdn.example/b.jpg"])
+        )
+
+      later = store_linked_file("https://cdn.example/b.jpg?v=2", user_uuid)
+
+      %{url_index: index} = Writer.build_reuse_index()
+
+      assert index["https://cdn.example/a.jpg"] == earlier.uuid
+      assert index["https://cdn.example/b.jpg"] == later.uuid
+    end
+
+    test "an alias no file owns resolves to the file that answers to it", %{user_uuid: user_uuid} do
+      file = store_linked_file("https://cdn.example/a.jpg", user_uuid)
+
+      {:ok, _} =
+        Storage.update_file_metadata(
+          file.uuid,
+          &Map.put(&1, "source_url_aliases", ["https://cdn.example/copy.jpg"])
+        )
+
+      %{url_index: index} = Writer.build_reuse_index()
+      assert index["https://cdn.example/copy.jpg"] == file.uuid
+    end
+  end
+
+  # The seam between `ImageDownloader` (writes `source_url_aliases`) and
+  # this module (reads them into the reuse index): the same banner listed
+  # under a second Shopify src — its own file in Shopify, a few bytes
+  # different — is stored once, and a later sync that meets that second
+  # src again resolves it from the index, without a download.
+  describe "near-duplicate pictures across products" do
+    @describetag skip:
+                   if(System.find_executable("convert"),
+                     do: false,
+                     else: "ImageMagick (convert) is not installed"
+                   )
+
+    test "a re-encoded copy under a new src is stored once and then reused by alias", %{
+      item: item,
+      user_uuid: user_uuid
+    } do
+      set_product_source("catalogue")
+
+      dir = Path.join(System.tmp_dir!(), "writer_near_dup_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(dir)
+      on_exit(fn -> File.rm_rf(dir) end)
+
+      banner = Path.join(dir, "banner.png")
+
+      {_, 0} =
+        System.cmd(
+          "convert",
+          ["-size", "320x240", "-seed", "7", "plasma:fractal", banner],
+          stderr_to_stdout: true
+        )
+
+      copy = Path.join(dir, "copy.jpg")
+      {_, 0} = System.cmd("convert", [banner, "-quality", "70", copy], stderr_to_stdout: true)
+
+      bodies = %{
+        "/s/files/banner.png" => {"image/png", File.read!(banner)},
+        "/s/files/banner_copy.jpg" => {"image/jpeg", File.read!(copy)}
+      }
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        {type, body} = Map.fetch!(bodies, conn.request_path)
+        conn |> Plug.Conn.put_resp_content_type(type) |> Plug.Conn.send_resp(200, body)
+      end)
+
+      {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+      downloader = fn url, uuid, opts ->
+        Agent.update(counter, &(&1 + 1))
+
+        ImageDownloader.download_and_store(
+          url,
+          uuid,
+          opts ++ [req_options: [plug: {Req.Test, __MODULE__}]]
+        )
+      end
+
+      first_src = "https://93.184.216.34/s/files/banner.png?v=1"
+      copy_src = "https://93.184.216.34/s/files/banner_copy.jpg?v=2"
+
+      {:ok, _} =
+        Writer.sync_images(
+          item,
+          %{"images" => [%{"id" => 1, "src" => first_src, "position" => 1}]},
+          downloader: downloader,
+          user_uuid: user_uuid
+        )
+
+      banner_uuid = Catalogue.get_item!(item.uuid).data["featured_image_uuid"]
+
+      sibling = fn name ->
+        {:ok, sibling} =
+          Catalogue.create_item(%{
+            catalogue_uuid: item.catalogue_uuid,
+            name: name,
+            base_price: Decimal.new("10.00"),
+            status: "active",
+            data: %{"ecommerce" => %{"shop_status" => "active"}}
+          })
+
+        sibling
+      end
+
+      copy_product = %{"images" => [%{"id" => 2, "src" => copy_src, "position" => 1}]}
+
+      # The copy is fetched once — nothing in Storage answers to its URL
+      # yet — and resolved to the banner already stored.
+      second = sibling.("Second Mug")
+
+      {:ok, _} =
+        Writer.sync_images(second, copy_product, downloader: downloader, user_uuid: user_uuid)
+
+      assert Catalogue.get_item!(second.uuid).data["media_order"] == [banner_uuid]
+      assert Agent.get(counter, & &1) == 2
+
+      # A fresh index now knows the copy's URL: no download at all.
+      third = sibling.("Third Mug")
+
+      assert {:ok, %{downloaded: 0, reused: 1}} =
+               Writer.sync_images(third, copy_product,
+                 downloader: downloader,
+                 user_uuid: user_uuid
+               )
+
+      assert Catalogue.get_item!(third.uuid).data["media_order"] == [banner_uuid]
+      assert Agent.get(counter, & &1) == 2
     end
   end
 end

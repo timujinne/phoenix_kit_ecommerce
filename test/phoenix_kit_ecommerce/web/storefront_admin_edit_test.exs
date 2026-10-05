@@ -18,6 +18,9 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
 
   use PhoenixKitEcommerce.LiveCase, async: false
 
+  @compile {:no_warn_undefined, PhoenixKitCatalogue.Paths}
+
+  alias PhoenixKitCatalogue.Paths, as: CataloguePaths
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.ShopConfig
   alias PhoenixKitEcommerce.Test.Repo
@@ -152,7 +155,7 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
 
       href = Helpers.admin_edit_path(:category, category.uuid, "/en/shop/category/x")
 
-      assert href =~ "/admin/catalogue/categories/#{category.uuid}/edit"
+      assert URI.parse(href).path == URI.parse(CataloguePaths.category_edit(category.uuid)).path
       assert href =~ "return_to=%2Fen%2Fshop%2Fcategory%2Fx"
     end
   end
@@ -215,7 +218,7 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
 
       href = Helpers.admin_edit_path(:item, product.uuid, "/en/shop/product/x")
 
-      assert href =~ "/admin/catalogue/items/#{product.uuid}/edit"
+      assert URI.parse(href).path == URI.parse(CataloguePaths.item_edit(product.uuid)).path
       assert href =~ "return_to=%2Fen%2Fshop%2Fproduct%2Fx"
     end
 
@@ -267,7 +270,7 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
       # The admin's own list is the place to come back to, not the
       # catalogue's — an operator working through a shop list should not
       # be dropped into a different one after saving.
-      assert href =~ "/admin/catalogue/items/#{product.uuid}/edit"
+      assert URI.parse(href).path == URI.parse(CataloguePaths.item_edit(product.uuid)).path
       assert href =~ "return_to=%2Fen%2Fadmin%2Fshop%2Fproducts%3Fpage%3D2"
     end
 
@@ -280,7 +283,7 @@ defmodule PhoenixKitEcommerce.Web.StorefrontAdminEditTest do
 
       href = Helpers.admin_edit_path(:category, category.uuid, "/en/admin/shop/categories")
 
-      assert href =~ "/admin/catalogue/categories/#{category.uuid}/edit"
+      assert URI.parse(href).path == URI.parse(CataloguePaths.category_edit(category.uuid)).path
       assert href =~ "return_to=%2Fen%2Fadmin%2Fshop%2Fcategories"
     end
   end

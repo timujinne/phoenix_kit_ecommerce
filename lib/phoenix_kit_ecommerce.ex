@@ -2479,7 +2479,8 @@ defmodule PhoenixKitEcommerce do
 
   ## Options
   - `:selected_specs` - Map of selected specifications (for dynamic pricing).
-    Checked by `validate_selected_specs/2` — empty or not — so a product with
+    Checked by `validate_selected_specs/2` against the freshly read product,
+    inside the pricing transaction — empty or not — so a product with
     a required option is refused with `{:error, :missing_required_option, key}`
     until every one is chosen.
   - `:skip_spec_validation` - `true` skips that check (default `false`): the
@@ -2514,12 +2515,18 @@ defmodule PhoenixKitEcommerce do
     # cart's base is current.
     with :ok <- validate_shop_enabled(),
          :ok <- validate_cart_currency(cart, product),
-         :ok <- maybe_validate_specs(product, selected_specs, skip_validation),
          {:ok, cart} <- rebase_cart(cart) do
       if map_size(selected_specs) > 0 do
-        add_product_with_specs_to_cart(cart, product, quantity, selected_specs, language)
+        add_product_with_specs_to_cart(
+          cart,
+          product,
+          quantity,
+          selected_specs,
+          language,
+          skip_validation
+        )
       else
-        add_simple_product_to_cart(cart, product, quantity, language)
+        add_simple_product_to_cart(cart, product, quantity, language, skip_validation)
       end
     end
   end
@@ -2528,9 +2535,8 @@ defmodule PhoenixKitEcommerce do
       when is_integer(quantity) do
     with :ok <- validate_shop_enabled(),
          :ok <- validate_cart_currency(cart, product),
-         :ok <- validate_selected_specs(product, %{}),
          {:ok, cart} <- rebase_cart(cart) do
-      add_simple_product_to_cart(cart, product, quantity, nil)
+      add_simple_product_to_cart(cart, product, quantity, nil, false)
     end
   end
 
@@ -2663,7 +2669,7 @@ defmodule PhoenixKitEcommerce do
     end
   end
 
-  defp add_simple_product_to_cart(cart, product, quantity, language) do
+  defp add_simple_product_to_cart(cart, product, quantity, language, skip_validation) do
     result =
       repo().transaction(fn ->
         # Lock product row to prevent price changes during cart update
@@ -2671,6 +2677,7 @@ defmodule PhoenixKitEcommerce do
         locked_product = lock_or_reload_product(product, language)
 
         validate_locked_product_purchasable!(repo(), locked_product)
+        validate_locked_specs!(locked_product, %{}, skip_validation)
 
         # Use unified price calculation path (same as add_product_with_specs_to_cart)
         # With empty specs this returns base_price, but allows future extensibility
@@ -2715,6 +2722,9 @@ defmodule PhoenixKitEcommerce do
         PhoenixKitEcommerce.Notifications.cart_item_added(updated_cart, item, product)
         {:ok, updated_cart}
 
+      {:error, {:invalid_specs, error}} ->
+        error
+
       error ->
         error
     end
@@ -2758,13 +2768,21 @@ defmodule PhoenixKitEcommerce do
     Currency.present(amount, cart.currency, rate: cart.exchange_rate)
   end
 
-  defp add_product_with_specs_to_cart(cart, product, quantity, selected_specs, language) do
+  defp add_product_with_specs_to_cart(
+         cart,
+         product,
+         quantity,
+         selected_specs,
+         language,
+         skip_validation
+       ) do
     result =
       repo().transaction(fn ->
         # Lock product row to prevent price/metadata changes during cart update
         locked_product = lock_or_reload_product(product, language)
 
         validate_locked_product_purchasable!(repo(), locked_product)
+        validate_locked_specs!(locked_product, selected_specs, skip_validation)
 
         # Calculate price with spec modifiers using locked product state
         calculated_price = calculate_product_price(locked_product, selected_specs)
@@ -2806,6 +2824,9 @@ defmodule PhoenixKitEcommerce do
         Events.broadcast_item_added(updated_cart, item)
         PhoenixKitEcommerce.Notifications.cart_item_added(updated_cart, item, product)
         {:ok, updated_cart}
+
+      {:error, {:invalid_specs, error}} ->
+        error
 
       error ->
         error
@@ -3120,6 +3141,15 @@ defmodule PhoenixKitEcommerce do
   # combination costs 67.52.
   defp maybe_validate_specs(product, selected_specs, _skip) do
     validate_selected_specs(product, selected_specs)
+  end
+
+  # Validate the same fresh product that supplies the price snapshot: a
+  # mounted page may predate a required option or the removal of a value.
+  defp validate_locked_specs!(product, selected_specs, skip_validation) do
+    case maybe_validate_specs(product, selected_specs, skip_validation) do
+      :ok -> :ok
+      error -> repo().rollback({:invalid_specs, error})
+    end
   end
 
   @doc """

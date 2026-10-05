@@ -12,8 +12,10 @@ and checkout hands off to `phoenix_kit_billing` for orders and payment. It
 ships admin LiveViews for the whole workflow plus the public storefront
 pages.
 
-- **Depends on:** `phoenix_kit` `>= 2.38.0 and < 3.0.0` (Hex — the release
-  that carries `PhoenixKitWeb.Actor` and `Activity.log/3`; the compound form
+- **Depends on:** `phoenix_kit` `>= 2.43.0 and < 3.0.0` (Hex — the release
+  that carries `ImageProcessor.limit_args/0` and `pinned_input/2`, which
+  `ImageFingerprint` runs ImageMagick through, above 2.38.0's
+  `PhoenixKitWeb.Actor` and `Activity.log/3`; the compound form
   keeps the ceiling open across later 2.x minors), `phoenix_kit_billing`
   `~> 0.13` (hard), `phoenix_kit_ai` `~> 0.24` (optional — the
   AI-translate UI, both translation adapters, the sweep worker and the
@@ -163,6 +165,14 @@ Repo-local aliases:
   stored `unit_price` (typically `0`) and renders "0.00" where the customer
   agreed to "price on request".
 - **Money is `Decimal`.** Never floats for currency.
+- **Cart option validation uses the fresh product inside the pricing
+  transaction.** A caller's product can predate required options or removed
+  values. Both add-to-cart paths validate the same product they price;
+  `skip_spec_validation: true` is the explicit trusted-caller opt-out.
+- **Perceptual image reuse excludes multi-frame images and preserves
+  aspect ratio in the confirmation.** An identical first frame does not
+  establish identical animation; stretching both inputs to a square hides
+  changes to their proportions. Exact-byte reuse remains available.
 - **Async work is Oban.** CSV import, image migration and the Shopify
   media/variants/collections sync run as workers, all on the single
   `shop_imports` queue — a host that configures no such queue leaves
@@ -191,8 +201,8 @@ Repo-local aliases:
   `PhoenixKit.Activity.log/3`, which never raises; the actor and role come
   from `PhoenixKitWeb.Actor`.
   Rows carry no PII.
-- **The core pin keeps the compound form (`>= 2.38.0 and < 3.0.0`) on
-  purpose.** A three-segment `~> 2.38.0` expands to `< 2.39.0` and breaks
+- **The core pin keeps the compound form (`>= 2.43.0 and < 3.0.0`) on
+  purpose.** A three-segment `~> 2.43.0` expands to `< 2.44.0` and breaks
   CONSUMERS — a host on a newer core minor gets an unsolvable dependency set
   — while nothing in this repo's own run notices, which is why a test guards
   it. Raising the floor is fine and expected; raise it in `mix.exs` and in
@@ -295,7 +305,8 @@ lib/phoenix_kit_ecommerce/
 ├── workers/          # Oban: CSVImportWorker, ImageMigrationWorker,
 │                     # ShopifyMediaSyncWorker, TranslationSweepWorker
 ├── mix_tasks/        # install, deduplicate_products,
-│                     # backfill_translation_fingerprints (one-shot)
+│                     # backfill_translation_fingerprints (one-shot),
+│                     # backfill_image_fingerprints (after upgrading)
 ├── web/              # LiveViews, components, plugs, routes, helpers, authz
 ├── activity.ex       # activity-log wrapper (module + actor metadata, never raises)
 ├── policy.ex         # secure-by-default admin policy settings

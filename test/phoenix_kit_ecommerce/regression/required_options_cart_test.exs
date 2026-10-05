@@ -176,4 +176,30 @@ defmodule PhoenixKitEcommerce.Regression.RequiredOptionsCartTest do
     assert {:ok, cart} = Shop.add_to_cart(cart(), product(), 2)
     assert [%{quantity: 2}] = cart.items
   end
+
+  test "a stale product cannot skip options added since it was read" do
+    stale = product()
+    {:ok, _fresh} = Shop.update_product(stale, %{"metadata" => @sculpture_metadata})
+    cart = cart()
+
+    assert {:error, :missing_required_option, _key} = Shop.add_to_cart(cart, stale, 1)
+    assert lines(cart) == []
+    assert {:error, :missing_required_option, _key} = Shop.add_to_cart(cart, stale, 1, %{})
+    assert lines(cart) == []
+    assert {:ok, _cart} = Shop.add_to_cart(cart, stale, 1, skip_spec_validation: true)
+  end
+
+  test "a stale selection is refused when its value was removed" do
+    stale = product(%{"metadata" => @sculpture_metadata})
+    metadata = put_in(@sculpture_metadata, ["_option_values", "liquid_color"], ["Black"])
+    {:ok, _fresh} = Shop.update_product(stale, %{"metadata" => metadata})
+    cart = cart()
+
+    assert {:error, :invalid_option_value, %{key: "liquid_color", value: "Blue"}} =
+             Shop.add_to_cart(cart, stale, 1,
+               selected_specs: %{"liquid_color" => "Blue", "cup_color" => "Gold"}
+             )
+
+    assert lines(cart) == []
+  end
 end

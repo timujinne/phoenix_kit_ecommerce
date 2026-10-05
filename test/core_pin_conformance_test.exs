@@ -13,9 +13,11 @@ defmodule PhoenixKitEcommerce.CorePinConformanceTest do
   would notice, which is why the check is a test rather than a convention.
 
   What this does NOT forbid is raising the FLOOR. The floor tracks the
-  oldest core that has every API this module calls. It is `>= 2.38.0 and
-  < 3.0.0` now: the actor and the activity log come from `PhoenixKitWeb.Actor`
-  and `Activity.log/3`, first shipped in core 2.38.0, and the module does not
+  oldest core that has every API this module calls. It is `>= 2.43.0 and
+  < 3.0.0` now: `ImageFingerprint` runs ImageMagick through
+  `ImageProcessor.limit_args/0` and `pinned_input/2`, first shipped in core
+  2.43.0. Below that sits 2.38.0 — the actor and the activity log come from
+  `PhoenixKitWeb.Actor` and `Activity.log/3`, and the module does not
   compile without them. That subsumes the earlier floors — `Slug.put_slug/3`
   (2.4.0), V171's shop slug projection pkeys (2.6.0) and V186's
   `base_currency`/`exchange_rate`/`base_unit_price` cart columns (2.16.0;
@@ -28,12 +30,14 @@ defmodule PhoenixKitEcommerce.CorePinConformanceTest do
   a V135 floor and this module is verified only against that baseline.
   """
 
-  # Floor: core 2.38.0. Everything above it, forever, must stay admitted.
-  # 2.37.5 is the last release without the toolkits; the older rejects
-  # are the earlier floors' own boundaries, kept so a regression to any of
-  # them is named.
-  @must_admit ["2.38.0", "2.38.1", "2.39.0", "2.99.4"]
+  # Floor: core 2.43.0. Everything above it, forever, must stay admitted.
+  # 2.42.0 is below the ImageMagick helpers; 2.37.5 is the last release
+  # without the toolkits; the older rejects are the earlier floors' own
+  # boundaries, kept so a regression to any of them is named.
+  @must_admit ["2.43.0", "2.43.1", "2.52.1", "2.99.4"]
   @must_reject [
+    "2.38.0",
+    "2.42.0",
     "1.7.236",
     "2.0.0",
     "2.6.0",
@@ -44,7 +48,7 @@ defmodule PhoenixKitEcommerce.CorePinConformanceTest do
     "3.0.0"
   ]
 
-  test "the :phoenix_kit requirement admits every core >= 2.38.0 minor and nothing else" do
+  test "the :phoenix_kit requirement admits every core >= 2.43.0 minor and nothing else" do
     requirement = core_requirement()
 
     assert match?({:ok, _parsed}, Version.parse_requirement(requirement)),

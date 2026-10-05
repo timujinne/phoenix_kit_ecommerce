@@ -23,6 +23,7 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
 
   alias PhoenixKit.Modules.Storage
   alias PhoenixKitEcommerce.Policy
+  alias PhoenixKitEcommerce.Services.ImageFingerprint
 
   @default_timeout 30_000
   # 50 MB max
@@ -89,10 +90,40 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   Returns `{:ok, file_uuid}` where file_uuid is a UUID that can be used to reference
   the stored file.
 
+  An existing ACTIVE file is reused instead of storing a second one:
+
+    1. the same bytes under the same file name (SHA-256 and
+       `original_file_name`);
+    2. failing that, the same picture — a re-encoded, re-saved or
+       downscaled copy — among the files this module imported (they carry
+       `metadata["source_url"]`): candidates by `ImageFingerprint.match/2`
+       against their `metadata["image_fingerprint"]`, closest first, then
+       the earliest stored; the first of the best three whose original
+       also passes `ImageFingerprint.same_picture?/2` wins.
+
+  A trashed file is never picked by either step. If the bytes are new to
+  both steps but core's own per-uploader dedup in `Storage.store_file/2`
+  answers with a trashed copy of them, that copy is restored: it is the
+  only row holding the picture the import asks for.
+
+  An imported file that is reused records `url` in
+  `metadata["source_url_aliases"]` (query stripped, see `source_key/1`)
+  unless it is already its own `source_url`, so `Catalogue.Writer`'s URL
+  index reuses it for that URL next time without a download. A newly
+  stored file carries its fingerprint in `metadata["image_fingerprint"]`.
+
+  Step 2 reads the fingerprint of every imported image once per download
+  that step 1 did not answer — linear in the library (about 25 ms of CPU
+  for 3,000 images), fine for a shop's library, not meant for millions —
+  and reads a candidate's original from Storage only when its fingerprint
+  matches.
+
   ## Options
 
     * `:timeout` - HTTP request timeout in milliseconds (default: 30_000)
     * `:metadata` - Additional metadata to store with the file
+    * `:near_duplicates` - `false` skips step 2 and the fingerprint
+      (default: `true`)
 
   ## Examples
 
@@ -104,34 +135,251 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
 
   """
   @spec download_and_store(String.t(), String.t() | nil, keyword()) ::
-          {:ok, String.t()} | {:error, atom() | String.t()}
+          {:ok, String.t()} | {:error, term()}
   def download_and_store(url, user_uuid, opts \\ []) when is_binary(url) do
     metadata = Keyword.get(opts, :metadata, %{})
 
     with {:ok, temp_path, content_type, size} <- download_image(url, opts) do
-      # Check for global deduplication by file hash AND original filename
       file_checksum = calculate_file_hash(temp_path)
       filename = extract_filename_from_url(url, content_type)
 
       case find_existing_file(file_checksum, filename) do
-        %{uuid: existing_uuid} = _existing_file ->
-          # File with same content and name already exists - reuse it
+        %{uuid: existing_uuid} ->
           Logger.info(
-            "[ImageDownloader] Reusing existing file #{existing_uuid} for URL #{url} (checksum: #{file_checksum}, filename: #{filename})"
+            "[ImageDownloader] Reusing #{existing_uuid} for #{url}: same bytes and name (checksum: #{file_checksum})"
           )
 
-          cleanup_temp_file(temp_path)
-          {:ok, existing_uuid}
+          reuse(existing_uuid, url, temp_path)
 
         nil ->
-          # No existing file matches - store new file
-          Logger.info(
-            "[ImageDownloader] Storing new file from URL #{url}, temp_path=#{temp_path}, size=#{size}"
-          )
+          download = %{
+            url: url,
+            temp_path: temp_path,
+            filename: filename,
+            content_type: content_type,
+            size: size
+          }
 
-          store_new_file(temp_path, filename, content_type, size, user_uuid, url, metadata)
+          reuse_same_picture_or_store(download, user_uuid, metadata, opts)
       end
     end
+  end
+
+  defp reuse_same_picture_or_store(download, user_uuid, metadata, opts) do
+    %{url: url, temp_path: temp_path, size: size} = download
+    fingerprint = fingerprint(temp_path, opts)
+
+    case find_near_duplicate(fingerprint, temp_path) do
+      {existing_uuid, distances} ->
+        Logger.info(
+          "[ImageDownloader] Reusing #{existing_uuid} for #{url}: same picture (#{inspect(distances)})"
+        )
+
+        reuse(existing_uuid, url, temp_path)
+
+      nil ->
+        Logger.info(
+          "[ImageDownloader] Storing new file from URL #{url}, temp_path=#{temp_path}, size=#{size}"
+        )
+
+        store_new_file(
+          temp_path,
+          download.filename,
+          download.content_type,
+          size,
+          user_uuid,
+          url,
+          put_fingerprint(metadata, fingerprint)
+        )
+    end
+  end
+
+  defp reuse(file_uuid, url, temp_path) do
+    remember_source_url(file_uuid, url)
+    cleanup_temp_file(temp_path)
+    {:ok, file_uuid}
+  end
+
+  @doc """
+  The form a download URL is matched in: the URL with its query string
+  (Shopify's `?v=<timestamp>`) removed. `nil` for anything that is not a
+  string.
+  """
+  @spec source_key(term()) :: String.t() | nil
+  def source_key(url) when is_binary(url) do
+    url |> URI.parse() |> Map.put(:query, nil) |> URI.to_string()
+  end
+
+  def source_key(_url), do: nil
+
+  @doc """
+  Stamps `metadata["image_fingerprint"]` on imported images stored before
+  fingerprints existed, or under an older fingerprint version — active
+  image files carrying `metadata["source_url"]` — so step 2 of
+  `download_and_store/3` can match against them. Reads each original from
+  Storage once; walks every such file in one call.
+
+  Returns `%{fingerprinted: n, failed: n}`. A file that cannot be read or
+  fingerprinted is left as it is, logged and counted; running it again
+  retries only what is still missing.
+  """
+  @spec backfill_fingerprints() :: %{fingerprinted: non_neg_integer(), failed: non_neg_integer()}
+  def backfill_fingerprints do
+    import Ecto.Query
+
+    current = ImageFingerprint.version() <> ":%"
+
+    from(f in PhoenixKit.Modules.Storage.File,
+      where:
+        f.status == "active" and f.file_type == "image" and
+          fragment("(?->>'source_url') IS NOT NULL", f.metadata) and
+          fragment("coalesce(?->>'image_fingerprint', '') NOT LIKE ?", f.metadata, ^current),
+      order_by: [asc: f.inserted_at, asc: f.uuid],
+      select: f.uuid
+    )
+    |> PhoenixKit.Config.get_repo().all()
+    |> Enum.reduce(%{fingerprinted: 0, failed: 0}, fn uuid, acc ->
+      case fingerprint_stored(uuid) do
+        :ok ->
+          Map.update!(acc, :fingerprinted, &(&1 + 1))
+
+        {:error, reason} ->
+          Logger.warning("[ImageDownloader] Could not fingerprint #{uuid}: #{inspect(reason)}")
+          Map.update!(acc, :failed, &(&1 + 1))
+      end
+    end)
+  end
+
+  defp fingerprint_stored(uuid) do
+    with {:ok, path, _file} <- Storage.retrieve_file(uuid) do
+      result = ImageFingerprint.compute(path)
+      cleanup_temp_file(path)
+
+      with {:ok, fingerprint} <- result,
+           {:ok, _file} <-
+             Storage.update_file_metadata(uuid, &Map.put(&1, "image_fingerprint", fingerprint)) do
+        :ok
+      end
+    end
+  end
+
+  defp fingerprint(temp_path, opts) do
+    if Keyword.get(opts, :near_duplicates, true) do
+      case ImageFingerprint.compute(temp_path) do
+        {:ok, fingerprint} ->
+          fingerprint
+
+        {:error, :multiple_frames} ->
+          nil
+
+        {:error, reason} ->
+          # Loud on purpose: without a fingerprint the near-duplicate check
+          # is off for this download (ImageMagick missing, an unreadable
+          # format), and copies get stored again.
+          Logger.warning(
+            "[ImageDownloader] No fingerprint for #{temp_path}, near-duplicate check skipped: #{inspect(reason)}"
+          )
+
+          nil
+      end
+    end
+  end
+
+  defp put_fingerprint(metadata, nil), do: metadata
+
+  defp put_fingerprint(metadata, fingerprint),
+    do: Map.put(metadata, "image_fingerprint", fingerprint)
+
+  # The closest confirmed match among active imported images —
+  # `{uuid, distances}`. Candidates are the fingerprint matches, closest
+  # first, ties to the earliest stored, then the lowest uuid; the first of
+  # them (at most `@confirm_attempts`) whose original passes
+  # `ImageFingerprint.same_picture?/2` against the download wins.
+  @confirm_attempts 3
+
+  defp find_near_duplicate(nil, _temp_path), do: nil
+
+  defp find_near_duplicate(fingerprint, temp_path) do
+    import Ecto.Query
+
+    from(f in PhoenixKit.Modules.Storage.File,
+      where:
+        f.status == "active" and
+          fragment("(?->>'source_url') IS NOT NULL", f.metadata) and
+          fragment(
+            "(?->>'image_fingerprint') LIKE ?",
+            f.metadata,
+            ^(ImageFingerprint.version() <> ":%")
+          ),
+      select: {f.uuid, f.inserted_at, fragment("?->>'image_fingerprint'", f.metadata)}
+    )
+    |> PhoenixKit.Config.get_repo().all()
+    |> Enum.flat_map(fn {uuid, inserted_at, candidate} ->
+      case ImageFingerprint.match(fingerprint, candidate) do
+        {:ok, %{bits: bits, mean_color: mean} = distances} ->
+          [{{bits, mean, DateTime.to_unix(inserted_at, :microsecond), uuid}, {uuid, distances}}]
+
+        :nomatch ->
+          []
+      end
+    end)
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Enum.take(@confirm_attempts)
+    |> Enum.find_value(fn {_rank, {uuid, _distances} = found} ->
+      if same_picture_as_stored?(temp_path, uuid), do: found
+    end)
+  end
+
+  # Step 2 against the stored original. A candidate that cannot be read is
+  # not reused — storing one more copy is the safe side.
+  defp same_picture_as_stored?(temp_path, file_uuid) do
+    case Storage.retrieve_file(file_uuid) do
+      {:ok, stored_path, _file} ->
+        same? = ImageFingerprint.same_picture?(temp_path, stored_path)
+        cleanup_temp_file(stored_path)
+
+        unless same?,
+          do:
+            Logger.info("[ImageDownloader] #{file_uuid} matches by fingerprint only, not reused")
+
+        same?
+
+      {:error, reason} ->
+        Logger.warning(
+          "[ImageDownloader] Could not read #{file_uuid} to confirm: #{inspect(reason)}"
+        )
+
+        false
+    end
+  end
+
+  # Records `url` on the imported file it was resolved to, unless that file
+  # already answers to it. A file without a download source is left alone:
+  # nothing reads aliases off it. Best effort — a failure here costs one
+  # download later, never the reuse itself.
+  defp remember_source_url(file_uuid, url) do
+    key = source_key(url)
+
+    result =
+      Storage.update_file_metadata(file_uuid, fn metadata ->
+        aliases = metadata["source_url_aliases"] || []
+        own = source_key(metadata["source_url"])
+
+        if is_nil(own) or key == own or key in aliases do
+          :unchanged
+        else
+          Map.put(metadata, "source_url_aliases", aliases ++ [key])
+        end
+      end)
+
+    with {:error, reason} <- result do
+      Logger.warning(
+        "[ImageDownloader] Could not record #{url} on #{file_uuid}: #{inspect(reason)}"
+      )
+    end
+  rescue
+    e ->
+      Logger.warning("[ImageDownloader] Could not record #{url} on #{file_uuid}: #{inspect(e)}")
   end
 
   # Store a new file after verifying it exists
@@ -155,6 +403,30 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
     end
   end
 
+  # Core's per-uploader dedup answers with an existing row of the same
+  # bytes whatever its status; a trashed one is brought back (see
+  # `download_and_store/3`).
+  defp handle_storage_result({:ok, %{status: "trashed"} = file}) do
+    # Into no folder — core's rule for trashed bytes uploaded again: they
+    # are wanted where they are being used now, not back where they were
+    # removed from. `:not_trashed` means another upload restored it first.
+    case Storage.restore_file_into(file, nil) do
+      {:ok, restored} ->
+        Logger.info("[ImageDownloader] Restored trashed file #{restored.uuid} for the same bytes")
+        {:ok, restored.uuid}
+
+      {:error, :not_trashed} ->
+        case Storage.get_file(file.uuid) do
+          %{status: "active"} ->
+            {:ok, file.uuid}
+
+          _gone ->
+            Logger.error("[ImageDownloader] Trashed duplicate #{file.uuid} vanished mid-restore")
+            {:error, {:trashed_duplicate, file.uuid}}
+        end
+    end
+  end
+
   defp handle_storage_result({:ok, file}) do
     Logger.info("[ImageDownloader] Successfully stored file with ID: #{file.uuid}")
     {:ok, file.uuid}
@@ -165,7 +437,9 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
     {:error, reason}
   end
 
-  # Find existing file by checksum AND original filename
+  # Find an active file with the same checksum AND original filename. A
+  # trashed copy is not a file to reuse: attaching it would show a picture
+  # that is on its way out of Storage.
   defp find_existing_file(file_checksum, filename) do
     import Ecto.Query
 
@@ -173,7 +447,9 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
 
     query =
       from(f in PhoenixKit.Modules.Storage.File,
-        where: f.file_checksum == ^file_checksum and f.original_file_name == ^filename,
+        where:
+          f.file_checksum == ^file_checksum and f.original_file_name == ^filename and
+            f.status == "active",
         limit: 1
       )
 

@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.MixProject do
   use Mix.Project
 
-  @version "0.5.16"
+  @version "0.5.18"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_ecommerce"
 
   def project do
@@ -102,17 +102,20 @@ defmodule PhoenixKitEcommerce.MixProject do
 
   defp deps do
     [
-      # The floor is 2.38.0: the actor and the activity log come from
-      # `PhoenixKitWeb.Actor` and `PhoenixKit.Activity.log/3`, first shipped
-      # there and not feature-detected, so a lower core fails to compile.
+      # The floor is 2.43.0: `ImageFingerprint` runs ImageMagick through
+      # core's `ImageProcessor.limit_args/0` and `pinned_input/2` (resource
+      # limits, decoder pinned to the sniffed format), first shipped there.
+      # That subsumes 2.38.0 — the actor and the activity log
+      # (`PhoenixKitWeb.Actor`, `PhoenixKit.Activity.log/3`), not
+      # feature-detected, so a lower core fails to compile.
       # Everything the earlier floors guaranteed is subsumed: V186's
       # `base_currency`/`exchange_rate`/`base_unit_price` cart columns (2.16.0
       # — below it every cart write raised `undefined_column`),
       # `Slug.put_slug/3` (2.4.0) and V171's projection pkeys (2.6.0).
       # Patch-precise floor in the compound form, so the ceiling stays open
-      # through every later 2.x minor (a three-segment `~> 2.38.0` would pin
+      # through every later 2.x minor (a three-segment `~> 2.43.0` would pin
       # one minor; see test/core_pin_conformance_test.exs).
-      pk_dep(:phoenix_kit, ">= 2.38.0 and < 3.0.0"),
+      pk_dep(:phoenix_kit, ">= 2.43.0 and < 3.0.0"),
 
       # Gettext for per-module i18n of sidebar tab labels.
       {:gettext, "~> 1.0"},
@@ -273,7 +276,10 @@ defmodule PhoenixKitEcommerce.MixProject do
     [
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib priv .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
+      # `priv/gettext`, not `priv`: Hex ignores .gitignore, and the test
+      # Storage writes real files into `priv/media`, which pushed a release
+      # tarball past Hex's 16 MB limit.
+      files: ~w(lib priv/gettext .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 

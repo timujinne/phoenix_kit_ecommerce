@@ -407,11 +407,14 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   ["ecommerce"]["shopify"]["image_ids"]` (`%{"<shopify image id>" =>
   file_uuid}`) reuses its file uuid; (b) failing that, ANY active Storage
   file in the whole shop — not only ones already linked to `item` —
-  whose `metadata["source_url"]` matches the Shopify image's `src` once
+  whose `metadata["source_url"]`, or one of its
+  `metadata["source_url_aliases"]`, matches the Shopify image's `src` once
   both are stripped of their `?v=`-style query string reuses that file
   instead of downloading a second copy of it; (c) otherwise downloads via
   `opts[:downloader]` (default `&ImageDownloader.download_and_store/3`,
-  `(url, user_uuid, opts) -> {:ok, file_uuid} | {:error, reason}`).
+  `(url, user_uuid, opts) -> {:ok, file_uuid} | {:error, reason}`), which
+  itself hands back an existing file for a re-encoded copy of a picture
+  Storage already holds and records `src` as that file's alias.
 
   (b) is shop-wide, not item-scoped, because a live run against 665
   products found 582 of them re-downloading images that Storage already
@@ -422,10 +425,12 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   re-downloads the identical URL because an item-scoped index can only
   ever see files already attached to THAT item. Every active file in
   Storage carries `metadata["source_url"]` already — `ImageDownloader.
-  download_and_store/3` is the only writer of that key — so this is
-  never a guess: it is the exact same provable exact-URL binding (b)
-  always was, just no longer artificially narrowed to one item's own
-  attachments.
+  download_and_store/3` is the only writer of that key and of the aliases.
+  A file's own `source_url` is the provable exact-URL binding (b) always
+  was, just no longer artificially narrowed to one item's own
+  attachments; an alias is the URL of a copy `ImageDownloader` matched
+  to that file as the same picture (`ImageFingerprint.match/2`), and
+  never outranks another file's own `source_url`.
 
   `opts[:user_uuid]` is the Storage file owner for anything downloaded;
   when omitted it falls back to `PhoenixKit.Users.Auth.
@@ -697,25 +702,41 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   # second-precision, so a `uuid` tie-break keeps the choice
   # deterministic for two rows inserted in the same second.
   defp source_url_index(files) do
-    files
-    |> Enum.filter(&is_binary(get_in(&1.metadata || %{}, ["source_url"])))
-    |> Enum.sort_by(&{&1.inserted_at, &1.uuid}, fn {ts_a, uuid_a}, {ts_b, uuid_b} ->
-      case DateTime.compare(ts_a, ts_b) do
-        :eq -> uuid_a <= uuid_b
-        :lt -> true
-        :gt -> false
-      end
-    end)
-    |> Enum.reduce(%{}, fn file, acc ->
-      Map.put_new(acc, normalize_image_url(file.metadata["source_url"]), file.uuid)
+    files =
+      files
+      |> Enum.filter(&is_binary(get_in(&1.metadata || %{}, ["source_url"])))
+      |> Enum.sort_by(&{&1.inserted_at, &1.uuid}, fn {ts_a, uuid_a}, {ts_b, uuid_b} ->
+        case DateTime.compare(ts_a, ts_b) do
+          :eq -> uuid_a <= uuid_b
+          :lt -> true
+          :gt -> false
+        end
+      end)
+
+    # Every file's own download URL first, then the URLs `ImageDownloader`
+    # resolved to it as the same picture (`source_url_aliases`, stored
+    # query-stripped) — so a URL that is some file's own source is always
+    # bound to that file, never to another file that once answered to it.
+    by_source =
+      Enum.reduce(files, %{}, fn file, acc ->
+        put_url(acc, file.metadata["source_url"], file.uuid)
+      end)
+
+    Enum.reduce(files, by_source, fn file, acc ->
+      file.metadata["source_url_aliases"]
+      |> List.wrap()
+      |> Enum.reduce(acc, &put_url(&2, &1, file.uuid))
     end)
   end
 
-  defp normalize_image_url(url) when is_binary(url) do
-    url |> URI.parse() |> Map.put(:query, nil) |> URI.to_string()
+  defp put_url(index, url, uuid) do
+    case normalize_image_url(url) do
+      nil -> index
+      key -> Map.put_new(index, key, uuid)
+    end
   end
 
-  defp normalize_image_url(_url), do: nil
+  defp normalize_image_url(url), do: ImageDownloader.source_key(url)
 
   # ============================================================
   # Update: localized fields

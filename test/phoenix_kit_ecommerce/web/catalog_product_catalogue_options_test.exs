@@ -132,4 +132,17 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductCatalogueOptionsTest do
 
     assert Shop.get_cart(cart.uuid).items == []
   end
+
+  test "a stale catalogue view cannot omit a newly attached option", %{item: item} do
+    stale = CatalogueSource.get_product(item.uuid, [])
+    attach_set(item, "Finish", "finish", [{"Matte", "matte"}, {"Gloss", "gloss"}])
+    {:ok, cart} = Shop.create_cart(session_id: "catalogue-options-stale")
+
+    assert {:error, :missing_required_option, "finish"} =
+             Shop.add_to_cart(cart, stale, 1,
+               selected_specs: %{"liquid_color" => "Black", "cup_color" => "White"}
+             )
+
+    assert Shop.get_cart(cart.uuid).items == []
+  end
 end
