@@ -68,6 +68,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign(:recipient_candidates, load_recipient_candidates())
       |> assign(:shipping_skip_mode, to_string(Shop.shipping_skip_mode()))
       |> assign(:shipping_selection_position, to_string(Shop.shipping_selection_position()))
+      |> assign_parcel_form(Shop.shipping_parcel_defaults())
       |> assign(:shop_translations_enabled, TranslationSweepSettings.translations_enabled?())
       |> assign(:ai_translations_available, ai_translations_available?())
       |> assign(:translations_supported, Shop.translations_supported?())
@@ -116,6 +117,21 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     |> assign(:cleanup_auto_created_only, Policy.import_cleanup_scope() == :auto_created)
     |> assign(:default_tax_country, Policy.default_tax_country() || "")
   end
+
+  defp assign_parcel_form(socket, defaults) do
+    {length, width, height} = parcel_box(defaults)
+
+    values =
+      Map.new(
+        [length_mm: length, width_mm: width, height_mm: height, weight_g: defaults.weight_g],
+        fn {field, value} -> {Atom.to_string(field), value && to_string(value)} end
+      )
+
+    assign(socket, :parcel_form, to_form(values, as: :parcel))
+  end
+
+  defp parcel_box(%{box_mm: [length, width, height]}), do: {length, width, height}
+  defp parcel_box(_defaults), do: {nil, nil, nil}
 
   defp get_category_name_display do
     Settings.get_setting_cached("shop_category_name_display", "truncate")
@@ -221,6 +237,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   def handle_event("update_shipping_selection_position", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("update_shipping_selection_position", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("save_shipping_parcel_defaults", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("save_shipping_parcel_defaults", params, socket)
     end)
   end
 
@@ -446,6 +469,63 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                 </label>
               </div>
             </div>
+          </div>
+        </div>
+
+        <%!-- The parcel assumed for a cart line that has no size or weight of
+             its own, after the category's defaults. --%>
+        <div class="card bg-base-100 shadow-xl mb-6" id="shop-shipping-parcel-card">
+          <div class="card-body">
+            <h2 class="card-title">{gettext("Default parcel")}</h2>
+            <p class="text-sm text-base-content/70">
+              {gettext(
+                "The size every parcel is at least as big as, and the weight assumed for a product that has none. Carriers price the parcel by them. A product's own values and its category's defaults come first. Leave empty to set nothing."
+              )}
+            </p>
+
+            <.form
+              for={@parcel_form}
+              id="shipping-parcel-defaults-form"
+              phx-submit="save_shipping_parcel_defaults"
+              class="mt-2"
+            >
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <.input
+                  field={@parcel_form[:length_mm]}
+                  id="shipping-parcel-length-mm"
+                  type="number"
+                  min="0"
+                  label={gettext("Length (mm)")}
+                />
+                <.input
+                  field={@parcel_form[:width_mm]}
+                  id="shipping-parcel-width-mm"
+                  type="number"
+                  min="0"
+                  label={gettext("Width (mm)")}
+                />
+                <.input
+                  field={@parcel_form[:height_mm]}
+                  id="shipping-parcel-height-mm"
+                  type="number"
+                  min="0"
+                  label={gettext("Height (mm)")}
+                />
+                <.input
+                  field={@parcel_form[:weight_g]}
+                  id="shipping-parcel-weight-g"
+                  type="number"
+                  min="0"
+                  label={gettext("Weight (g)")}
+                />
+              </div>
+
+              <div class="flex justify-end mt-4">
+                <button type="submit" id="shipping-parcel-defaults-save" class="btn btn-primary btn-sm">
+                  {gettext("Save")}
+                </button>
+              </div>
+            </.form>
           </div>
         </div>
 
@@ -1383,6 +1463,43 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
   defp gated_event("update_shipping_selection_position", _params, socket) do
     {:noreply, put_flash(socket, :error, gettext("Failed to update shipping selection step"))}
+  end
+
+  defp gated_event("save_shipping_parcel_defaults", %{"parcel" => %{} = params}, socket) do
+    case Shop.update_shipping_parcel_defaults(params) do
+      {:ok, defaults} ->
+        {length, width, height} = parcel_box(defaults)
+
+        Activity.log("shop.shipping_parcel_defaults_changed",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "setting",
+          metadata: %{
+            "length_mm" => length,
+            "width_mm" => width,
+            "height_mm" => height,
+            "weight_g" => defaults.weight_g
+          }
+        )
+
+        {:noreply,
+         socket
+         |> assign_parcel_form(defaults)
+         |> put_flash(:info, gettext("Default parcel updated"))}
+
+      {:error, [{field, _message} | _] = errors} when is_atom(field) ->
+        {:noreply,
+         socket
+         |> assign(:parcel_form, to_form(params, as: :parcel, errors: errors))
+         |> put_flash(:error, gettext("Check the default parcel values"))}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, gettext("Failed to update the default parcel"))}
+    end
+  end
+
+  defp gated_event("save_shipping_parcel_defaults", _params, socket) do
+    {:noreply, put_flash(socket, :error, gettext("Failed to update the default parcel"))}
   end
 
   defp gated_event("toggle_hide_zero_decimals", _params, socket) do
