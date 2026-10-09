@@ -31,6 +31,10 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuote do
   @destination_key "shipping_destination"
   @quote_key "shipping_quote"
   @statuses [:ok, :fallback, :unavailable]
+  @default_max_age :timer.minutes(30)
+  @fallback_max_age :timer.minutes(2)
+  @max_text 255
+  @max_extra_keys 20
 
   @type status :: :ok | :fallback | :unavailable
 
@@ -88,37 +92,85 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuote do
   def stored(metadata) do
     entry = Codec.get(metadata, :shipping_quote)
 
-    case entry |> Codec.get(:status) |> Codec.atom(@statuses) do
-      nil ->
-        nil
+    status = entry |> Codec.get(:status) |> Codec.atom(@statuses)
+    quote = entry |> Codec.get(:quote) |> Quote.from_map()
 
-      status ->
-        %{
-          request_hash: entry |> Codec.get(:request_hash) |> Codec.string(),
-          status: status,
-          quote: entry |> Codec.get(:quote) |> Quote.from_map(),
-          reason: entry |> Codec.get(:reason) |> Codec.string(),
-          fetched_at: entry |> Codec.get(:fetched_at) |> Codec.datetime()
-        }
+    if status && usable?(status, quote) do
+      %{
+        request_hash: entry |> Codec.get(:request_hash) |> Codec.string(),
+        status: status,
+        quote: quote,
+        reason: entry |> Codec.get(:reason) |> Codec.string(),
+        fetched_at: entry |> Codec.get(:fetched_at) |> Codec.datetime()
+      }
+    end
+  end
+
+  # An answer that prices needs a quote with an amount; "unavailable" has none.
+  defp usable?(:unavailable, _quote), do: true
+  defp usable?(_status, %Quote{amount: %Decimal{}}), do: true
+  defp usable?(_status, _quote), do: false
+
+  @doc """
+  Whether a stored entry is too old to be charged: the carrier's own
+  `expires_at` has passed, or it was fetched more than
+  `config :phoenix_kit_ecommerce, :shipping_quote_max_age` ago (default 30
+  minutes; a `"fallback"` entry only 2 minutes, so the carrier is asked again
+  soon). An entry without a readable `fetched_at` is expired.
+  """
+  @spec expired?(stored(), DateTime.t()) :: boolean()
+  def expired?(%{} = stored, now \\ UtilsDate.utc_now()) do
+    cond do
+      match?(%Quote{expires_at: %DateTime{}}, stored.quote) and
+          DateTime.compare(now, stored.quote.expires_at) == :gt ->
+        true
+
+      is_nil(stored.fetched_at) ->
+        true
+
+      true ->
+        DateTime.diff(now, stored.fetched_at, :millisecond) > max_age(stored.status)
+    end
+  end
+
+  defp max_age(:fallback), do: @fallback_max_age
+
+  defp max_age(_status) do
+    case Application.get_env(:phoenix_kit_ecommerce, :shipping_quote_max_age) do
+      ms when is_integer(ms) and ms >= 0 -> ms
+      _ -> @default_max_age
     end
   end
 
   @doc """
   The entry to store for the answer of the carrier to a request.
 
-    * `{:ok, quote}` - `"ok"` (`"fallback"` if the provider itself says so)
+    * `{:ok, quote}` - `"ok"` (`"fallback"` if the provider itself says so, or
+      if the quote is in a currency other than those in `currencies`, whose
+      first element is the request currency: the price of the method then
+      applies and the status says so)
     * a business error (see `PhoenixKitEcommerce.Shipping.business_error?/1`) -
       `"unavailable"`, no quote
     * any other error - `"fallback"`: a quote at the price of the method
   """
-  @spec entry(String.t(), {:ok, Quote.t()} | {:error, term()}, map(), String.t() | nil) :: map()
-  def entry(request_hash, {:ok, %Quote{} = quote}, _method, currency) do
+  @spec entry(String.t(), {:ok, Quote.t()} | {:error, term()}, map(), [String.t() | nil]) :: map()
+  def entry(request_hash, {:ok, %Quote{} = quote}, method, [currency | _] = currencies) do
     quote = %{quote | currency: quote.currency || currency}
-    status = if quote.source == :fallback, do: "fallback", else: "ok"
-    build_entry(request_hash, status, quote, nil)
+
+    cond do
+      quote.currency not in currencies ->
+        fallback = fallback_quote(method, currency)
+        build_entry(request_hash, "fallback", fallback, "unsupported_quote_currency")
+
+      quote.source == :fallback ->
+        build_entry(request_hash, "fallback", quote, nil)
+
+      true ->
+        build_entry(request_hash, "ok", quote, nil)
+    end
   end
 
-  def entry(request_hash, {:error, reason}, method, currency) do
+  def entry(request_hash, {:error, reason}, method, [currency | _]) do
     if Shipping.business_error?(reason) do
       build_entry(request_hash, "unavailable", nil, error_reason(reason))
     else
@@ -180,6 +232,65 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuote do
   def incomplete?(:address, %Destination{address: %Address{}}), do: false
   def incomplete?(kind, _destination) when kind in [:pickup_point, :address], do: true
   def incomplete?(_kind, _destination), do: false
+
+  @doc """
+  Checks the size of a destination before it is stored on the cart: no text
+  longer than 255 characters, an `extra` map of at most 20 keys. Scalar
+  `extra` values become strings (what they are after JSON anyway); nested
+  ones are refused.
+
+  `{:ok, destination}` (normalised) or `:error`.
+  """
+  @spec sanitize_destination(Destination.t()) :: {:ok, Destination.t()} | :error
+  def sanitize_destination(%Destination{} = destination) do
+    sanitized =
+      destination
+      |> Destination.to_map()
+      |> Map.new(fn {part, value} -> {part, sanitize_part(value)} end)
+
+    if :error in Map.values(sanitized),
+      do: :error,
+      else: {:ok, Destination.from_map(sanitized)}
+  end
+
+  defp sanitize_part(part) when is_map(part) do
+    Enum.reduce_while(part, %{}, fn {key, value}, acc ->
+      case sanitize_field(key, value) do
+        :error -> {:halt, :error}
+        value -> {:cont, Map.put(acc, key, value)}
+      end
+    end)
+  end
+
+  defp sanitize_part(other), do: other
+
+  defp sanitize_field("extra", extra) when is_map(extra) do
+    if map_size(extra) <= @max_extra_keys, do: sanitize_extra(extra), else: :error
+  end
+
+  defp sanitize_field("limits", limits), do: limits
+
+  defp sanitize_field(_key, value) when is_binary(value),
+    do: if(short?(value), do: value, else: :error)
+
+  defp sanitize_field(_key, value) when is_map(value) or is_list(value), do: :error
+  defp sanitize_field(_key, value), do: value
+
+  defp sanitize_extra(extra) do
+    Enum.reduce_while(extra, %{}, fn {key, value}, acc ->
+      text = extra_text(value)
+
+      if short?(key) and is_binary(text) and short?(text),
+        do: {:cont, Map.put(acc, key, text)},
+        else: {:halt, :error}
+    end)
+  end
+
+  defp extra_text(value) when is_binary(value), do: value
+  defp extra_text(value) when is_number(value) or is_boolean(value), do: to_string(value)
+  defp extra_text(_value), do: nil
+
+  defp short?(text), do: String.length(text) <= @max_text
 
   @doc """
   A short human description of where the parcel goes: the locality followed by

@@ -3912,6 +3912,11 @@ defmodule PhoenixKitEcommerce do
           # method - rank it with the unpriced ones.
           ShippingMethod.pay_on_delivery?(method) -> Decimal.new("999999")
           ShippingMethod.free_for?(method, subtotal) -> Decimal.new("0")
+          # A carrier-priced method's `price` is only the fallback; what the
+          # carrier asks for this cart is unknown until it is quoted, so it
+          # ranks with the unpriced ones. (Auto-selection only runs while no
+          # method is selected, so no quote can exist yet.)
+          ShippingMethod.calculated?(method) -> Decimal.new("999999")
           true -> method.price || Decimal.new("999999")
         end
       end,
@@ -3927,6 +3932,8 @@ defmodule PhoenixKitEcommerce do
   Where the cart's calculated shipping goes (`cart.metadata["shipping_destination"]`),
   or `nil` when none was set.
   """
+  @shipping_lookup_timeout 2_000
+
   @spec cart_shipping_destination(Cart.t()) :: Destination.t() | nil
   def cart_shipping_destination(%Cart{metadata: metadata}), do: CartQuote.destination(metadata)
 
@@ -3938,14 +3945,23 @@ defmodule PhoenixKitEcommerce do
   Takes a `PhoenixKitEcommerce.Shipping.Destination` or its map form. The
   carrier is not asked here; see `quote_cart_shipping/2`.
 
+  A destination with text over 255 characters, or an `extra` of more than 20
+  keys or with nested values, is refused (see
+  `PhoenixKitEcommerce.Shipping.CartQuote.sanitize_destination/1`).
+
   Returns `{:ok, cart}` (reloaded, with items), or `{:error, reason}`
-  (`:cart_not_active`, `:cart_not_found`).
+  (`:invalid_destination`, `:cart_not_active`, `:cart_not_found`).
   """
   @spec set_cart_shipping_destination(Cart.t(), Destination.t() | map() | nil) ::
           {:ok, Cart.t()} | {:error, term()}
   def set_cart_shipping_destination(%Cart{} = cart, destination) do
-    destination = cast_shipping_destination(destination)
+    case cast_shipping_destination(destination) do
+      {:ok, destination} -> store_shipping_destination(cart, destination)
+      :error -> {:error, :invalid_destination}
+    end
+  end
 
+  defp store_shipping_destination(cart, destination) do
     result =
       repo().transaction(fn ->
         locked = lock_active_cart!(cart.uuid)
@@ -3963,9 +3979,13 @@ defmodule PhoenixKitEcommerce do
     broadcast_shipping_change(result)
   end
 
-  defp cast_shipping_destination(%Destination{} = destination), do: destination
-  defp cast_shipping_destination(%{} = map), do: Destination.from_map(map)
-  defp cast_shipping_destination(nil), do: nil
+  defp cast_shipping_destination(%Destination{} = destination),
+    do: CartQuote.sanitize_destination(destination)
+
+  defp cast_shipping_destination(%{} = map),
+    do: map |> Destination.from_map() |> CartQuote.sanitize_destination()
+
+  defp cast_shipping_destination(nil), do: {:ok, nil}
 
   @doc """
   The request that prices the shipping of this cart:
@@ -3981,11 +4001,20 @@ defmodule PhoenixKitEcommerce do
   Errors: `:no_method` (no method selected), `:not_calculated` (the method has
   a fixed price), `:not_needed` (nothing in the cart ships) and
   `:needs_destination` (the service needs a pickup point or an address that is
-  missing, or the provider refuses the one given).
+  missing, or the provider refuses the one given). `{:unavailable, reason}`
+  says the kind of destination the service takes cannot be determined: the
+  provider is not configured any more or does not list the service (reason
+  `"unknown_provider"`, `"unknown_service"`), or cannot list its services
+  right now. Nothing can be priced or ordered then.
   """
   @spec build_cart_rate_request(Cart.t()) ::
           {:ok, RateRequest.t()}
-          | {:error, :no_method | :not_calculated | :not_needed | :needs_destination}
+          | {:error,
+             :no_method
+             | :not_calculated
+             | :not_needed
+             | :needs_destination
+             | {:unavailable, String.t()}}
   def build_cart_rate_request(%Cart{} = cart) do
     method = cart_selected_method(cart)
 
@@ -4013,11 +4042,12 @@ defmodule PhoenixKitEcommerce do
   `PhoenixKitEcommerce.Shipping.context/2` (`:req_options`, `:timeout`...).
 
   Errors of `build_cart_rate_request/1`, `:stale`, `:cart_not_found` and
-  `:cart_not_active`.
+  `:cart_not_active` (the carrier is not asked for a cart that is not active).
   """
   @spec quote_cart_shipping(Cart.t(), keyword()) :: {:ok, Cart.t()} | {:error, term()}
   def quote_cart_shipping(%Cart{} = cart, opts \\ []) when is_list(opts) do
     with %Cart{} = fresh <- get_cart(cart.uuid) || {:error, :cart_not_found},
+         :ok <- if(fresh.status == "active", do: :ok, else: {:error, :cart_not_active}),
          {:ok, request} <- build_cart_rate_request(fresh) do
       method = cart_selected_method(fresh)
       context = Shipping.context(method, shipping_context_options(request, opts))
@@ -4029,7 +4059,10 @@ defmodule PhoenixKitEcommerce do
 
   defp shipping_context_options(%RateRequest{currency: currency}, opts) do
     locale = if opts[:locale], do: [locale: opts[:locale]], else: []
-    Keyword.get(opts, :context_opts, []) ++ locale ++ [currency: currency]
+    context_opts = opts |> Keyword.get(:context_opts, []) |> Keyword.delete(:currency)
+
+    # The currency of the request always wins: the quote is read in it.
+    [currency: currency] ++ context_opts ++ locale
   end
 
   defp persist_cart_quote(cart_uuid, request_hash, answer) do
@@ -4042,7 +4075,8 @@ defmodule PhoenixKitEcommerce do
 
         if cart_request_hash(locked) == request_hash do
           method = cart_selected_method(locked)
-          entry = CartQuote.entry(request_hash, answer, method, cart_base_currency(locked))
+          currencies = [cart_base_currency(locked), locked.currency]
+          entry = CartQuote.entry(request_hash, answer, method, currencies)
           metadata = Map.put(locked.metadata || %{}, CartQuote.quote_key(), entry)
 
           locked |> write_cart_metadata!(metadata) |> recalculate_cart_totals!()
@@ -4121,17 +4155,28 @@ defmodule PhoenixKitEcommerce do
          :ok <- check_shipping_destination(method, request.destination) do
       stored_quote_state(CartQuote.stored(cart.metadata), request)
     else
-      {:error, :needs_destination} -> {:needs_destination, nil}
-      {:error, _not_needed} -> {:not_needed, nil}
+      {:error, :needs_destination} ->
+        {:needs_destination, nil}
+
+      {:error, {:unavailable, reason}} ->
+        {:unavailable, %{status: :unavailable, quote: nil, reason: reason}}
+
+      {:error, _not_needed} ->
+        {:not_needed, nil}
     end
   end
 
   defp stored_quote_state(nil, _request), do: {:missing, nil}
 
   defp stored_quote_state(stored, request) do
-    if stored.request_hash == Shipping.request_hash(request),
+    if stored_quote_current?(stored, request),
       do: {stored.status, stored},
       else: {:stale, nil}
+  end
+
+  # Asked for this very request, and not too long ago.
+  defp stored_quote_current?(stored, request) do
+    stored.request_hash == Shipping.request_hash(request) and not CartQuote.expired?(stored)
   end
 
   # The request for the cart as `items` say it is; no validation of the
@@ -4147,7 +4192,7 @@ defmodule PhoenixKitEcommerce do
 
   defp cart_rate_request(cart, method, items) do
     config = ShippingMethod.shipping_config(method)
-    declared_value = to_base(cart, items_subtotal(items))
+    declared_value = items_base_subtotal(cart, items)
 
     %RateRequest{
       service: config.service,
@@ -4160,9 +4205,16 @@ defmodule PhoenixKitEcommerce do
     }
   end
 
-  defp items_subtotal(items) do
-    Enum.reduce(items, Decimal.new("0"), fn item, acc ->
-      Decimal.add(acc, item.line_total || Decimal.new("0"))
+  # The exact base amount of the lines (their own `base_unit_price`), not the
+  # display subtotal taken back through the rate: that one is off by a cent
+  # now and then, and this is what the carrier insures and collects.
+  defp items_base_subtotal(cart, items) do
+    Enum.reduce(items, Decimal.new("0"), fn
+      %CartItem{base_unit_price: %Decimal{}} = item, acc ->
+        Decimal.add(acc, base_line_amount(item, cart.exchange_rate))
+
+      item, acc ->
+        Decimal.add(acc, to_base(cart, item.line_total || Decimal.new("0")))
     end)
   end
 
@@ -4196,41 +4248,68 @@ defmodule PhoenixKitEcommerce do
     do: repo().get_by(ShippingMethod, uuid: uuid)
 
   # A service that needs a pickup point or an address needs one the provider
-  # accepts. The service list is cached and asked without a network round
-  # trip in the usual case; a provider that cannot list its services
-  # constrains nothing.
+  # accepts. `services/1` and `validate_destination/3` are pure by contract
+  # (they run from render paths and under the cart lock), cached or cheap,
+  # and asked with a short timeout and no credentials - unless the provider
+  # does not list the service without them (a keyed Ukrposhta), when the
+  # lookup is repeated once with the real ones.
+  #
+  # When the kind of destination cannot be determined (the provider is gone
+  # or cannot list its services right now) the cart is `:unavailable` rather
+  # than let through: with no destination an order could not be delivered.
   defp check_shipping_destination(method, destination) do
-    context = Shipping.context(method)
+    case shipping_service(method) do
+      {:ok, nil, _context} ->
+        :ok
 
-    case shipping_service(context) do
-      %ShippingService{destination: kind} = service when kind in [:pickup_point, :address] ->
+      {:ok, %ShippingService{destination: kind} = service, context}
+      when kind in [:pickup_point, :address] ->
         if CartQuote.incomplete?(kind, destination) or
-             not destination_accepted?(context, destination, service),
+             Shipping.validate_destination(context, destination, service) != :ok,
            do: {:error, :needs_destination},
            else: :ok
 
-      _other ->
+      {:ok, _service, _context} ->
         :ok
+
+      {:error, reason} ->
+        {:error, {:unavailable, CartQuote.error_reason(reason)}}
     end
   end
 
-  defp shipping_service(context) do
+  # `{:ok, service | nil, context}` (`nil`: the provider has no services to
+  # choose from) or `{:error, reason}`.
+  defp shipping_service(method) do
+    context = Shipping.context(method, credentials: nil, timeout: @shipping_lookup_timeout)
+
+    case find_shipping_service(context) do
+      {:error, :unknown_service} = error ->
+        if function_exported?(context.provider, :integration, 0) do
+          context = Shipping.context(method, timeout: @shipping_lookup_timeout)
+          find_shipping_service(context)
+        else
+          error
+        end
+
+      result ->
+        result
+    end
+  end
+
+  defp find_shipping_service(context) do
     case Shipping.services(context) do
-      {:ok, services} -> Enum.find(services, &(&1.key == context.service))
-      {:error, _reason} -> nil
-    end
-  end
+      {:ok, []} ->
+        {:ok, nil, context}
 
-  defp destination_accepted?(%{provider: provider} = context, destination, service) do
-    if function_exported?(provider, :validate_destination, 3) do
-      provider.validate_destination(destination, service, context) == :ok
-    else
-      true
+      {:ok, services} ->
+        case Enum.find(services, &(&1.key == context.service)) do
+          nil -> {:error, :unknown_service}
+          service -> {:ok, service, context}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
-  rescue
-    error ->
-      Logger.warning("Shipping destination validation crashed: #{Exception.message(error)}")
-      true
   end
 
   # The amount a current "ok" quote makes the cart pay, in the cart's
@@ -4241,7 +4320,7 @@ defmodule PhoenixKitEcommerce do
     with true <- ShippingMethod.calculated?(method),
          %{status: :ok, quote: %Quote{} = quote} = stored <- CartQuote.stored(cart.metadata),
          {:ok, request} <- shipping_rate_request(cart, method, items),
-         true <- stored.request_hash == Shipping.request_hash(request) do
+         true <- stored_quote_current?(stored, request) do
       quote_final_amount(cart, method, quote, base_subtotal)
     else
       _ -> :none
@@ -4320,7 +4399,10 @@ defmodule PhoenixKitEcommerce do
     {config.provider, config.service}
   end
 
-  defp reset_shipping_metadata(cart, stored, next) when stored == next, do: cart
+  # The cart comes back with the metadata of the row as it is now, not the
+  # one the caller's struct was loaded with.
+  defp reset_shipping_metadata(cart, stored, next) when stored == next,
+    do: %{cart | metadata: stored}
 
   defp reset_shipping_metadata(cart, stored, next),
     do: write_cart_metadata!(%{cart | metadata: stored}, next)

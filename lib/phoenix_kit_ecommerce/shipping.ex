@@ -48,13 +48,15 @@ defmodule PhoenixKitEcommerce.Shipping do
   require Logger
 
   alias PhoenixKit.Integrations
-  alias PhoenixKitEcommerce.Shipping.{Address, Cache, Codec, Context, Locality, MethodConfig}
+  alias PhoenixKitEcommerce.Shipping.{Address, Cache, Codec, Context, Destination, Locality}
+  alias PhoenixKitEcommerce.Shipping.MethodConfig
   alias PhoenixKitEcommerce.Shipping.{Parcel, PickupPoint, Quote, RateRequest, Service}
   alias PhoenixKitEcommerce.Shipping.Providers.{Fixed, Table}
 
   @builtin_providers [Fixed, Table]
   @telemetry_event [:phoenix_kit_ecommerce, :shipping, :provider]
   @default_timeout 15_000
+  @validation_timeout 2_000
   @min_query_length 2
   @context_option_keys [:provider, :settings, :service, :locale, :currency, :credentials]
   @max_query_length 64
@@ -285,6 +287,44 @@ defmodule PhoenixKitEcommerce.Shipping do
     end)
   end
 
+  @doc """
+  Asks the provider whether it accepts a destination for a service (its
+  optional `validate_destination/3`): `:ok`, or `{:error, message}` with the
+  provider's own explanation.
+
+  The check is cheap and pure by contract, so it runs with a short timeout
+  (#{div(@validation_timeout, 1000)} s unless `ctx.opts[:timeout]` says
+  otherwise) in the isolated worker and is never cached. A provider without
+  the callback, an unknown provider, and a check that crashes, hangs or breaks
+  the contract all accept: only the provider's own refusal is a refusal (the
+  failure is logged).
+  """
+  @spec validate_destination(Context.t(), Destination.t(), Service.t()) ::
+          :ok | {:error, String.t()}
+  def validate_destination(%Context{} = ctx, %Destination{} = destination, %Service{} = service) do
+    if exports?(ctx, :validate_destination, 3) do
+      ctx = %{ctx | opts: Keyword.put_new(ctx.opts, :timeout, @validation_timeout)}
+
+      ctx
+      |> call(:validate_destination, :none, fn ->
+        validation_answer(ctx.provider.validate_destination(destination, service, ctx))
+      end)
+      |> validation_result()
+    else
+      :ok
+    end
+  end
+
+  defp validation_result({:ok, {:rejected, message}}), do: {:error, message}
+  defp validation_result(_accepted_or_failed), do: :ok
+
+  defp validation_answer(:ok), do: {:ok, :accepted}
+
+  defp validation_answer({:error, message}) when is_binary(message),
+    do: {:ok, {:rejected, message}}
+
+  defp validation_answer(other), do: bad_return(other)
+
   defp currency_supported?(provider, currency) when is_binary(currency) do
     if provider_module?(provider) and function_exported?(provider, :currencies, 0),
       do: currency in provider.currencies(),
@@ -363,6 +403,9 @@ defmodule PhoenixKitEcommerce.Shipping do
     log_error(result, key, operation)
     result
   end
+
+  # Never cached: the answer depends on nothing but the arguments.
+  defp cached(:none, _provider_key, _operation, _ctx, fun), do: fun.()
 
   defp cached({kind, parts}, provider_key, operation, ctx, fun) do
     key = {:shipping, provider_key, operation, fingerprint(ctx), parts}

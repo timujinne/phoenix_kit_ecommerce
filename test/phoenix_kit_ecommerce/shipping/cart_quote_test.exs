@@ -39,7 +39,15 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuoteTest do
     @impl true
     def label, do: "Strict"
     @impl true
-    def services(_ctx), do: [%Service{key: "branch", label: "Branch", destination: :pickup_point}]
+    def services(ctx) do
+      send(
+        List.first(Process.get(:"$callers", [])) || self(),
+        {:services_ctx, ctx.opts[:timeout], ctx.credentials}
+      )
+
+      [%Service{key: "branch", label: "Branch", destination: :pickup_point}]
+    end
+
     @impl true
     def settings_fields, do: []
     @impl true
@@ -49,6 +57,9 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuoteTest do
     def validate_destination(destination, _service, _ctx) do
       case destination.pickup_point do
         %{id: "bad"} -> {:error, "no such branch"}
+        %{id: "crash"} -> raise "validator crashed"
+        %{id: "hang"} -> Process.sleep(:infinity)
+        %{id: "weird"} -> :nonsense
         _ -> :ok
       end
     end
@@ -178,6 +189,28 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuoteTest do
         option
     end
   end
+
+  defp flush_services_contexts do
+    receive do
+      {:services_ctx, _timeout, _credentials} -> flush_services_contexts()
+    after
+      0 -> :ok
+    end
+  end
+
+  defp age_quote!(cart, changes) do
+    cart = reload(cart)
+    entry = Map.merge(cart.metadata["shipping_quote"], changes)
+    metadata = Map.put(cart.metadata, "shipping_quote", entry)
+
+    cart
+    |> Cart.changeset(%{metadata: metadata})
+    |> Repo.update!()
+    |> Repo.preload([:items, :shipping_method], force: true)
+  end
+
+  defp minutes_ago(minutes),
+    do: DateTime.utc_now() |> DateTime.add(-minutes * 60, :second) |> DateTime.to_iso8601()
 
   defp amount?(decimal, expected), do: Decimal.equal?(decimal, Decimal.new(expected))
 
@@ -536,12 +569,58 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuoteTest do
       assert Shop.shipping_quote_blocks_checkout?(cart)
     end
 
-    test "a provider that cannot list its services constrains nothing" do
+    test "a provider that cannot list its services leaves the cart unavailable, never orderable" do
       StubProvider.put(%{modes: %{services: :crash}})
       cart = cart_with!(product!(), 1)
       {:ok, cart} = Shop.set_cart_shipping(cart, method!(), "US")
 
-      assert Shop.shipping_quote_status(cart) == :missing
+      assert Shop.shipping_quote_status(cart) == :unavailable
+      assert Shop.shipping_quote_blocks_checkout?(cart)
+
+      assert %{status: :unavailable, quote: nil, reason: "provider_crashed"} =
+               Shop.cart_shipping_quote(cart)
+
+      assert {:error, {:unavailable, "provider_crashed"}} = Shop.build_cart_rate_request(cart)
+      assert {:error, {:unavailable, "provider_crashed"}} = Shop.quote_cart_shipping(cart)
+
+      assert {:error, :shipping_quote_required} =
+               Shop.convert_cart_to_order(cart, billing_data: complete_billing("US"))
+    end
+
+    test "a provider that is no longer configured makes the cart unavailable" do
+      {cart, _method} = ready_cart!()
+      {:ok, cart} = Shop.quote_cart_shipping(cart)
+      assert Shop.shipping_quote_status(cart) == :ok
+
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_providers, [StrictProvider])
+
+      assert Shop.shipping_quote_status(cart) == :unavailable
+      assert %{status: :unavailable, reason: "unknown_provider"} = Shop.cart_shipping_quote(cart)
+      assert {:error, {:unavailable, "unknown_provider"}} = Shop.quote_cart_shipping(cart)
+
+      assert {:error, :shipping_quote_required} =
+               Shop.convert_cart_to_order(cart, billing_data: complete_billing("US"))
+
+      assert reload(cart).status == "active"
+    end
+
+    test "a service the provider stopped offering makes the cart unavailable" do
+      {cart, _method} = ready_cart!()
+      StubProvider.put(%{services: [%Service{key: "other", label: "Other", destination: :none}]})
+
+      assert Shop.shipping_quote_status(cart) == :unavailable
+      assert %{reason: "unknown_service"} = Shop.cart_shipping_quote(cart)
+    end
+
+    test "the service list is asked with a short timeout and without credentials" do
+      cart = cart_with!(product!(), 1)
+      method = method!(provider: "strict")
+      flush_services_contexts()
+      {:ok, cart} = Shop.set_cart_shipping(cart, method, "US")
+
+      Shop.shipping_quote_status(cart)
+
+      assert_received {:services_ctx, 2_000, nil}
     end
   end
 
@@ -776,19 +855,52 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuoteTest do
       assert amount?(cart.shipping_amount, "55")
     end
 
-    test "a quote in a currency the cart cannot convert from costs the price of the method" do
+    test "a quote in a currency the cart cannot convert from is stored as a fallback" do
       cart = eur_cart!()
       stub_quote(fn _request, _ctx -> {:ok, %Quote{amount: Decimal.new(50), currency: "GBP"}} end)
 
       {:ok, cart} = Shop.quote_cart_shipping(cart)
 
-      assert Shop.shipping_quote_status(cart) == :ok
-      # 7 USD
+      assert Shop.shipping_quote_status(cart) == :fallback
+      # the 7 USD of the method
       assert amount?(cart.shipping_amount, "6.36")
+
+      assert %{status: :fallback, reason: "unsupported_quote_currency", quote: quote} =
+               Shop.cart_shipping_quote(cart)
+
+      assert quote.source == :fallback and quote.currency == "USD"
       presented = Shop.present_shipping_method(cart, cart.shipping_method)
+      assert %{quote_status: :fallback, estimate: nil} = presented
       assert amount?(presented.price, "6.36")
-      assert presented.estimate.currency == "GBP"
-      assert amount?(presented.estimate.amount, "50")
+    end
+
+    test "the declared value and the COD amount are the exact base amounts of the lines" do
+      cart = cart_with!(product!(%{"price" => Decimal.new("138.00")}), 1)
+      assert amount?(cart.subtotal, "125.45")
+      {:ok, cart} = Shop.set_cart_shipping(cart, method!(), "US")
+      {:ok, cart} = Shop.set_cart_shipping_destination(cart, branch())
+      {:ok, cart} = Shop.set_cart_payment_option(cart, ensure_payment_option("cod", "offline"))
+
+      assert {:ok, request} = Shop.build_cart_rate_request(cart)
+      assert amount?(request.declared_value, "138")
+      assert amount?(request.cod_amount, "138")
+    end
+
+    test "the currency of the request wins over the context options" do
+      cart = eur_cart!()
+      test_pid = self()
+
+      stub = %{
+        quote: fn request, ctx ->
+          send(test_pid, {:currencies, request.currency, ctx.currency})
+          {:ok, %Quote{amount: Decimal.new(1), currency: request.currency}}
+        end
+      }
+
+      assert {:ok, _cart} =
+               Shop.quote_cart_shipping(cart, context_opts: [stub: stub, currency: "GBP"])
+
+      assert_received {:currencies, "USD", "USD"}
     end
   end
 
@@ -882,6 +994,225 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuoteTest do
 
       refute Map.has_key?(order.metadata, "shipping_provider")
       refute Enum.any?(order.line_items, &(&1["type"] == "shipping"))
+    end
+  end
+
+  describe "Shipping.validate_destination/3" do
+    alias PhoenixKitEcommerce.Shipping
+
+    @service %Service{key: "branch", destination: :pickup_point}
+
+    defp strict_context(opts \\ []),
+      do: Shipping.context(nil, [provider: StrictProvider, credentials: nil] ++ opts)
+
+    test "the provider's answer, with its own message" do
+      assert :ok = Shipping.validate_destination(strict_context(), branch("fine"), @service)
+
+      assert {:error, "no such branch"} =
+               Shipping.validate_destination(strict_context(), branch("bad"), @service)
+    end
+
+    test "a provider without the callback, or an unknown one, accepts" do
+      assert :ok =
+               Shipping.validate_destination(
+                 Shipping.context(nil, provider: StubProvider),
+                 branch(),
+                 @service
+               )
+
+      assert :ok =
+               Shipping.validate_destination(
+                 Shipping.context(nil, provider: "gone"),
+                 branch(),
+                 @service
+               )
+    end
+
+    test "a crash, a hang and a broken answer are isolated and accepted" do
+      import ExUnit.CaptureLog
+
+      capture_log(fn ->
+        for id <- ["crash", "hang", "weird"] do
+          context = strict_context(timeout: 100)
+          assert :ok = Shipping.validate_destination(context, branch(id), @service)
+        end
+      end)
+    end
+
+    test "is not cached" do
+      context = strict_context()
+      assert {:error, _} = Shipping.validate_destination(context, branch("bad"), @service)
+      assert :ok = Shipping.validate_destination(context, branch("bad2"), @service)
+      assert {:error, _} = Shipping.validate_destination(context, branch("bad"), @service)
+    end
+  end
+
+  describe "auto-selection" do
+    test "a calculated method priced 0 does not beat a fixed one" do
+      cart = cart_with!(product!(), 1)
+      calculated = method!(price: "0")
+      fixed = legacy_method!("50.00")
+
+      assert {:ok, cart} = Shop.auto_select_shipping_method(cart, [calculated, fixed])
+      assert cart.shipping_method_uuid == fixed.uuid
+    end
+  end
+
+  describe "a cart struct that is out of date" do
+    test "re-selecting the same method returns the stored quote, not the old metadata" do
+      {stale, method} = ready_cart!()
+      {:ok, fresh} = Shop.quote_cart_shipping(stale)
+      assert Shop.shipping_quote_status(fresh) == :ok
+      refute Map.has_key?(stale.metadata, "shipping_quote")
+
+      {:ok, cart} = Shop.set_cart_shipping(stale, method, "US")
+
+      assert Map.has_key?(cart.metadata, "shipping_quote")
+      assert Shop.shipping_quote_status(cart) == :ok
+    end
+  end
+
+  describe "the age of a quote" do
+    test "an ok entry is good for 30 minutes" do
+      {cart, _method} = ready_cart!()
+      {:ok, cart} = Shop.quote_cart_shipping(cart)
+
+      assert Shop.shipping_quote_status(age_quote!(cart, %{"fetched_at" => minutes_ago(29)})) ==
+               :ok
+
+      stale = age_quote!(cart, %{"fetched_at" => minutes_ago(31)})
+      assert Shop.shipping_quote_status(stale) == :stale
+      assert Shop.cart_shipping_quote(stale) == nil
+
+      assert {:error, :shipping_quote_required} =
+               Shop.convert_cart_to_order(stale, billing_data: complete_billing("US"))
+    end
+
+    test "the limit can be configured" do
+      {cart, _method} = ready_cart!()
+      {:ok, cart} = Shop.quote_cart_shipping(cart)
+      cart = age_quote!(cart, %{"fetched_at" => minutes_ago(5)})
+
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_quote_max_age, :timer.minutes(1))
+      on_exit(fn -> Application.delete_env(:phoenix_kit_ecommerce, :shipping_quote_max_age) end)
+
+      assert Shop.shipping_quote_status(cart) == :stale
+    end
+
+    test "an old quote is no longer charged" do
+      {cart, _method} = ready_cart!(quantity: 2)
+      {:ok, cart} = Shop.quote_cart_shipping(cart)
+      assert amount?(cart.shipping_amount, "110")
+      age_quote!(cart, %{"fetched_at" => minutes_ago(31)})
+
+      {:ok, cart} = Shop.update_cart_item(hd(cart.items), 2)
+
+      assert amount?(cart.shipping_amount, "7")
+    end
+
+    test "a fallback entry is good for 2 minutes only" do
+      {cart, _method} = ready_cart!()
+      stub_quote({:error, :timeout})
+      {:ok, cart} = Shop.quote_cart_shipping(cart)
+
+      assert Shop.shipping_quote_status(age_quote!(cart, %{"fetched_at" => minutes_ago(1)})) ==
+               :fallback
+
+      assert Shop.shipping_quote_status(age_quote!(cart, %{"fetched_at" => minutes_ago(3)})) ==
+               :stale
+    end
+
+    test "the carrier's own expiry counts" do
+      {cart, _method} = ready_cart!()
+      stub_quote(quote_with("100", expires_at: DateTime.add(DateTime.utc_now(), -60, :second)))
+      {:ok, cart} = Shop.quote_cart_shipping(cart)
+
+      assert Shop.shipping_quote_status(cart) == :stale
+    end
+
+    test "an entry that says ok but holds no usable quote is missing, and recalculation copes" do
+      {cart, _method} = ready_cart!()
+      {:ok, cart} = Shop.quote_cart_shipping(cart)
+
+      for broken <- [nil, "garbage", %{"amount" => "lots"}] do
+        cart = age_quote!(cart, %{"quote" => broken})
+        assert Shop.shipping_quote_status(cart) == :missing
+        assert {:ok, again} = Shop.update_cart_item(hd(cart.items), 3)
+        assert amount?(again.shipping_amount, "7")
+      end
+    end
+  end
+
+  describe "quote_cart_shipping/2 on a cart that is not active" do
+    test "does not ask the carrier" do
+      {cart, _method} = ready_cart!()
+      Repo.update_all(from(c in Cart, where: c.uuid == ^cart.uuid), set: [status: "abandoned"])
+
+      assert {:error, :cart_not_active} = Shop.quote_cart_shipping(cart)
+      refute_received {:stub_called, :quote, _}
+    end
+  end
+
+  describe "the size of a destination" do
+    test "text over 255 characters is refused" do
+      {cart, _method} = ready_cart!()
+      long = String.duplicate("x", 256)
+
+      for destination <- [
+            %Destination{pickup_point: %PickupPoint{id: "P", name: long}},
+            %Destination{locality: %Locality{id: "L", name: long}},
+            %Destination{address: %Address{line: long}},
+            %Destination{pickup_point: %PickupPoint{id: "P", extra: %{"k" => long}}}
+          ] do
+        assert {:error, :invalid_destination} =
+                 Shop.set_cart_shipping_destination(cart, destination)
+      end
+
+      ok = %Destination{pickup_point: %PickupPoint{id: "P", name: String.duplicate("x", 255)}}
+      assert {:ok, _cart} = Shop.set_cart_shipping_destination(cart, ok)
+    end
+
+    test "an extra of more than 20 keys, or with nested values, is refused" do
+      {cart, _method} = ready_cart!()
+      many = Map.new(1..21, &{"k#{&1}", "v"})
+      twenty = Map.new(1..20, &{"k#{&1}", "v"})
+
+      assert {:error, :invalid_destination} =
+               Shop.set_cart_shipping_destination(cart, %Destination{
+                 locality: %Locality{id: "L", extra: many}
+               })
+
+      assert {:error, :invalid_destination} =
+               Shop.set_cart_shipping_destination(cart, %Destination{
+                 locality: %Locality{id: "L", extra: %{"k" => %{"nested" => "x"}}}
+               })
+
+      assert {:ok, _cart} =
+               Shop.set_cart_shipping_destination(cart, %Destination{
+                 locality: %Locality{id: "L", extra: twenty}
+               })
+    end
+
+    test "scalar extra values become strings" do
+      {cart, _method} = ready_cart!()
+
+      destination = %Destination{
+        pickup_point: %PickupPoint{id: "P", extra: %{"ref" => 42, "flag" => true}}
+      }
+
+      assert {:ok, cart} = Shop.set_cart_shipping_destination(cart, destination)
+
+      assert Shop.cart_shipping_destination(cart).pickup_point.extra == %{
+               "ref" => "42",
+               "flag" => "true"
+             }
+    end
+
+    test "the map form is checked as well" do
+      {cart, _method} = ready_cart!()
+      map = %{"address" => %{"line" => String.duplicate("x", 300)}}
+
+      assert {:error, :invalid_destination} = Shop.set_cart_shipping_destination(cart, map)
     end
   end
 

@@ -30,7 +30,9 @@ defmodule PhoenixKitEcommerce.Shipping.Provider do
     * `list_pickup_points/4` - `(locality, service_key, query, ctx)`; the
       query narrows the list (a big city can have thousands of points), `nil`
       means no narrowing
-    * `validate_destination/3` - extra checks of what the customer entered
+    * `validate_destination/3` - extra checks of what the customer entered.
+      `:ok`, or `{:error, message}` with an explanation for the customer
+      (called through `PhoenixKitEcommerce.Shipping.validate_destination/3`)
     * `integration/0` - describes the provider for PhoenixKit Integrations:
       a map with `key`, `name`, `auth_type: :api_key`, `setup_fields` and
       `capabilities: [:shipping]`. The secret field must be called `api_key`
@@ -45,6 +47,12 @@ defmodule PhoenixKitEcommerce.Shipping.Provider do
   reserved for waybills, tracking and printing. Nothing calls them yet.
 
   ## Rules for adapters
+
+    * **Pure `services/1` and `validate_destination/3`.** No network, no
+      database, no file access: only the context and the arguments. Core calls
+      them from render paths, under the cart row lock and with a 2 second
+      timeout; anything slow belongs in `quote/2` or the lookups. They get a
+      context without credentials where core does not need them.
 
     * **Settings.** `RateRequest.origin` is filled by core from `ctx.settings`
       (the provider settings of the method), which stays the single source of
