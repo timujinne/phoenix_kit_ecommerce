@@ -821,6 +821,149 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
     end
   end
 
+  describe "bounded lookups" do
+    @cache_table :phoenix_kit_ecommerce_shipping_cache
+
+    setup do
+      start_supervised!(Cache)
+
+      on_exit(fn ->
+        for key <- [
+              :shipping_cache_max_lookup_entries,
+              :shipping_cache_max_list_size,
+              :shipping_lookup_rate
+            ],
+            do: Application.delete_env(:phoenix_kit_ecommerce, key)
+      end)
+
+      :ok
+    end
+
+    defp cities(count), do: for(n <- 1..count, do: %Locality{id: "c#{n}", name: "City #{n}"})
+
+    defp query_entries,
+      do: :ets.select_count(@cache_table, [{{:_, :_, :_, :query}, [], [true]}])
+
+    defp search_calls(count \\ 0) do
+      receive do
+        {:stub_called, :search_localities, _} -> search_calls(count + 1)
+      after
+        0 -> count
+      end
+    end
+
+    test "a list longer than the limit is returned but not cached" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_cache_max_list_size, 3)
+
+      long = stub_ctx(%{localities: cities(5)})
+      assert {:ok, [_, _, _, _, _]} = Shipping.search_localities(long, "spr")
+      assert {:ok, [_, _, _, _, _]} = Shipping.search_localities(long, "spr")
+      assert search_calls() == 2
+
+      short = stub_ctx(%{localities: cities(3)})
+      assert {:ok, [_, _, _]} = Shipping.search_localities(short, "short")
+      assert {:ok, [_, _, _]} = Shipping.search_localities(short, "short")
+      assert search_calls() == 1
+    end
+
+    test "a pickup point list longer than the limit is not cached either" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_cache_max_list_size, 2)
+      points = for n <- 1..4, do: %PickupPoint{id: "p#{n}"}
+      ctx = stub_ctx(%{points: points}, service: "branch")
+
+      assert {:ok, [_, _, _, _]} = Shipping.list_pickup_points(ctx, locality(), nil)
+      assert {:ok, [_, _, _, _]} = Shipping.list_pickup_points(ctx, locality(), nil)
+
+      assert_received {:stub_called, :list_pickup_points, _}
+      assert_received {:stub_called, :list_pickup_points, _}
+    end
+
+    test "lookups with a shopper query have a bound of their own" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_cache_max_lookup_entries, 5)
+      ctx = stub_ctx(%{localities: cities(1)})
+
+      # An entry of another kind, in the shared part of the table.
+      assert {:ok, quote} = Shipping.quote(ctx, request())
+
+      for n <- 1..30, do: Shipping.search_localities(ctx, "query #{n}")
+
+      assert query_entries() <= 5
+      assert query_entries() > 0
+
+      assert {:ok, ^quote} = Shipping.quote(ctx, request())
+      assert_received {:stub_called, :quote, _}
+      refute_received {:stub_called, :quote, _}
+    end
+
+    test "the point filter of a shopper counts among the query lookups, the whole list does not" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_cache_max_lookup_entries, 3)
+      ctx = stub_ctx(%{points: [%PickupPoint{id: "p1"}]}, service: "branch")
+
+      for n <- 1..10, do: Shipping.list_pickup_points(ctx, locality(), "filter #{n}")
+      assert query_entries() <= 3
+
+      Shipping.list_pickup_points(ctx, locality(), nil)
+      assert query_entries() <= 3
+      assert :ets.info(@cache_table, :size) >= 1
+    end
+
+    test "provider lookups are limited per provider and the limit is transient" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_lookup_rate, 3)
+      ctx = stub_ctx(%{localities: cities(1)})
+
+      answers = for n <- 1..6, do: Shipping.search_localities(ctx, "limited #{n}")
+
+      assert Enum.count(answers, &match?({:ok, _}, &1)) == 3
+      assert Enum.count(answers, &(&1 == {:error, :rate_limited})) == 3
+      assert Shipping.business_error?(:rate_limited) == false
+      assert search_calls() == 3
+
+      # Not cached: once the bucket has room again the same query is asked.
+      PhoenixKitEcommerce.Shipping.RateLimit.reset()
+      assert {:ok, [_]} = Shipping.search_localities(ctx, "limited 6")
+
+      # A cached answer costs nothing.
+      PhoenixKitEcommerce.Shipping.RateLimit.reset()
+      for _ <- 1..10, do: assert({:ok, [_]} = Shipping.search_localities(ctx, "limited 6"))
+    end
+
+    test "pickup point lists share the provider's limit; quotes and services are not limited" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_lookup_rate, 2)
+      ctx = stub_ctx(%{points: [%PickupPoint{id: "p1"}]}, service: "branch")
+
+      answers = for n <- 1..4, do: Shipping.list_pickup_points(ctx, locality(), "f#{n}")
+      assert Enum.count(answers, &(&1 == {:error, :rate_limited})) == 2
+
+      assert {:ok, _} = Shipping.quote(ctx, request())
+      assert {:ok, [_ | _]} = Shipping.services(ctx)
+    end
+
+    test "the limit is not shared between providers" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_lookup_rate, 1)
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_providers, [StubProvider, UahOnly])
+
+      ctx = stub_ctx(%{localities: cities(1)})
+      assert {:ok, _} = Shipping.search_localities(ctx, "first")
+      assert {:error, :rate_limited} = Shipping.search_localities(ctx, "second")
+
+      other = Shipping.context(nil, provider: "uah_only")
+      assert Shipping.search_localities(other, "first") != {:error, :rate_limited}
+    end
+
+    test "the limited error is not logged as a warning" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_lookup_rate, 1)
+      ctx = stub_ctx(%{localities: cities(1)})
+      Shipping.search_localities(ctx, "one")
+
+      log =
+        capture_log([level: :warning], fn ->
+          assert {:error, :rate_limited} = Shipping.search_localities(ctx, "two")
+        end)
+
+      refute log =~ "rate_limited"
+    end
+  end
+
   describe "caching" do
     setup do
       start_supervised!(Cache)

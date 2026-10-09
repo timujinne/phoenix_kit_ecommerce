@@ -222,6 +222,18 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       assert has_element?(view, ps("locality-input"))
     end
 
+    test "a rate limited city search says the service is busy", %{conn: conn} do
+      stub!(%{localities: {:error, :rate_limited}})
+      {conn, _cart, _method} = cart_session(conn)
+      {:ok, view, _html} = live(conn, "/cart")
+
+      view |> form(ps("locality-form"), %{"q" => "Pol"}) |> render_change()
+      settle(view)
+
+      assert has_element?(view, "#{ps("locality-results")} p.text-error", "busy")
+      assert has_element?(view, ps("locality-input"))
+    end
+
     test "failing points are an inline message with a retry", %{conn: conn} do
       stub!(%{points: {:error, {:http, 500}}})
       {conn, _cart, _method} = cart_session(conn, destination: %Destination{locality: @poltava})

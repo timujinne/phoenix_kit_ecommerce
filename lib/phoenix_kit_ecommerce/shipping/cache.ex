@@ -20,9 +20,25 @@ defmodule PhoenixKitEcommerce.Shipping.Cache do
   The table holds at most `config :phoenix_kit_ecommerce,
   :shipping_cache_max_entries` entries (default 5000); when it is full the
   expired entries go first, then the ones closest to expiry.
+
+  What a shopper's own text asks for (a locality search, a pickup point
+  filter) is bounded apart, so that typing cannot crowd out the rest:
+
+    * `config :phoenix_kit_ecommerce, :shipping_cache_max_lookup_entries`
+      (default 500) is the most entries such lookups take together; past it
+      the same eviction rule applies among them
+    * `config :phoenix_kit_ecommerce, :shipping_cache_max_list_size`
+      (default 200) is the longest list a lookup may cache; a longer one is
+      returned but not stored
+
+  A lookup opts in with `group: :query` and `list?: true` (see `fetch/4`).
+
+  The process also owns the table of `PhoenixKitEcommerce.Shipping.RateLimit`.
   """
 
   use GenServer
+
+  alias PhoenixKitEcommerce.Shipping.RateLimit
 
   @table :phoenix_kit_ecommerce_shipping_cache
   @sweep_interval :timer.minutes(10)
@@ -32,6 +48,9 @@ defmodule PhoenixKitEcommerce.Shipping.Cache do
     negative: :timer.seconds(30)
   ]
   @default_max_entries 5_000
+  @default_max_lookup_entries 500
+  @default_max_list_size 200
+  @query_group :query
 
   @doc """
   Starts the cache process, which owns the ETS table. The process is a
@@ -52,6 +71,10 @@ defmodule PhoenixKitEcommerce.Shipping.Cache do
   for `ttl_ms` milliseconds. `{:ok, _}` results are cached; an `{:error, reason}`
   only when `:negative_ttl` is a positive number of milliseconds and
   `:cacheable_error?` (a function of the reason, default: never) accepts it.
+
+  Other options: `group: :query` counts the entry among the shopper-text
+  lookups (bounded by `:shipping_cache_max_lookup_entries`), and `list?: true`
+  skips a list longer than `:shipping_cache_max_list_size`.
   """
   @spec fetch(term(), term(), (-> result), keyword()) :: result when result: term()
   def fetch(key, ttl_ms, fun, opts \\ []) when is_function(fun, 0) do
@@ -88,6 +111,7 @@ defmodule PhoenixKitEcommerce.Shipping.Cache do
   @impl true
   def init(_opts) do
     :ets.new(@table, [:named_table, :public, :set, read_concurrency: true])
+    RateLimit.create_table()
     schedule_sweep()
     {:ok, %{}}
   end
@@ -105,53 +129,73 @@ defmodule PhoenixKitEcommerce.Shipping.Cache do
   @spec sweep() :: non_neg_integer()
   def sweep do
     now = now()
-    :ets.select_delete(@table, [{{:_, :"$1", :_}, [{:<, :"$1", now}], [true]}])
+    :ets.select_delete(@table, [{{:_, :"$1", :_, :_}, [{:<, :"$1", now}], [true]}])
   end
 
   defp schedule_sweep, do: Process.send_after(self(), :sweep, @sweep_interval)
 
   defp lookup(key) do
     case :ets.lookup(@table, key) do
-      [{^key, expires_at, value}] -> if expires_at > now(), do: {:ok, value}, else: :error
-      [] -> :error
+      [{^key, expires_at, value, _group}] ->
+        if expires_at > now(), do: {:ok, value}, else: :error
+
+      [] ->
+        :error
     end
   rescue
     ArgumentError -> :error
   end
 
-  defp store(key, ttl_ms, {:ok, _} = result, _opts) when is_integer(ttl_ms) and ttl_ms > 0,
-    do: insert(key, ttl_ms, result)
+  defp store(key, ttl_ms, {:ok, value} = result, opts) when is_integer(ttl_ms) and ttl_ms > 0 do
+    if too_long?(value, opts), do: false, else: insert(key, ttl_ms, result, opts)
+  end
 
   defp store(key, _ttl_ms, {:error, reason} = result, opts) do
     negative = Keyword.get(opts, :negative_ttl)
     cacheable? = Keyword.get(opts, :cacheable_error?, fn _reason -> false end)
 
     if is_integer(negative) and negative > 0 and cacheable?.(reason),
-      do: insert(key, negative, result),
+      do: insert(key, negative, result, opts),
       else: false
   end
 
   defp store(_key, _ttl_ms, _result, _opts), do: false
 
-  defp insert(key, ttl_ms, result) do
-    make_room(key)
-    :ets.insert(@table, {key, now() + ttl_ms, result})
+  defp too_long?(value, opts) do
+    Keyword.get(opts, :list?, false) and is_list(value) and
+      length(value) > max_list_size()
+  end
+
+  defp insert(key, ttl_ms, result, opts) do
+    group = if Keyword.get(opts, :group) == @query_group, do: @query_group
+    make_room(key, group)
+    :ets.insert(@table, {key, now() + ttl_ms, result, group})
   rescue
     ArgumentError -> false
   end
 
-  defp make_room(key) do
-    max = max_entries()
-
-    if :ets.info(@table, :size) >= max and not :ets.member(@table, key) do
-      sweep()
-      if :ets.info(@table, :size) >= max, do: evict_closest_to_expiry(max)
+  # The group's own bound first, then the one of the whole table.
+  defp make_room(key, group) do
+    unless :ets.member(@table, key) do
+      if group, do: make_room_in(group, max_lookup_entries())
+      make_room_in(nil, max_entries())
     end
   end
 
-  defp evict_closest_to_expiry(max) do
+  # `group` is `nil` for the whole table.
+  defp make_room_in(group, max) do
+    if count(group) >= max do
+      sweep()
+      if count(group) >= max, do: evict_closest_to_expiry(group, max)
+    end
+  end
+
+  defp count(nil), do: :ets.info(@table, :size)
+  defp count(group), do: :ets.select_count(@table, [{{:_, :_, :_, group}, [], [true]}])
+
+  defp evict_closest_to_expiry(group, max) do
     @table
-    |> :ets.select([{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+    |> :ets.select([{{:"$1", :"$2", :_, group || :_}, [], [{{:"$1", :"$2"}}]}])
     |> Enum.sort_by(&elem(&1, 1))
     |> Enum.take(max(div(max, 10), 1))
     |> Enum.each(fn {key, _expires_at} -> :ets.delete(@table, key) end)
@@ -161,6 +205,20 @@ defmodule PhoenixKitEcommerce.Shipping.Cache do
     case Application.get_env(:phoenix_kit_ecommerce, :shipping_cache_max_entries) do
       max when is_integer(max) and max > 0 -> max
       _unset -> @default_max_entries
+    end
+  end
+
+  defp max_lookup_entries do
+    case Application.get_env(:phoenix_kit_ecommerce, :shipping_cache_max_lookup_entries) do
+      max when is_integer(max) and max > 0 -> max
+      _unset -> @default_max_lookup_entries
+    end
+  end
+
+  defp max_list_size do
+    case Application.get_env(:phoenix_kit_ecommerce, :shipping_cache_max_list_size) do
+      max when is_integer(max) and max > 0 -> max
+      _unset -> @default_max_list_size
     end
   end
 

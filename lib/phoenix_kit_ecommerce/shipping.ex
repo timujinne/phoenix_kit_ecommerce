@@ -19,6 +19,9 @@ defmodule PhoenixKitEcommerce.Shipping do
     * `:not_supported` - the provider does not implement the optional callback
     * `:unsupported_currency` - the provider declares `currencies/0` and the
       request currency is not among them
+    * `:rate_limited` - `search_localities/2` and `list_pickup_points/4` have
+      reached the calls per second one provider may get (see `RateLimit`);
+      transient, never cached
 
   `business_error?/1` tells the two families apart: a business error means
   "this method cannot serve this cart", everything else is transient.
@@ -29,7 +32,13 @@ defmodule PhoenixKitEcommerce.Shipping do
         shipping_providers: [MyShop.Shipping.MyCarrier],
         shipping_provider_timeout: 15_000,
         shipping_packer: PhoenixKitEcommerce.Shipping.Packer.SingleBox,
-        shipping_cache_ttl: [lookups: :timer.hours(6), quotes: :timer.minutes(10)]
+        shipping_cache_ttl: [lookups: :timer.hours(6), quotes: :timer.minutes(10)],
+        shipping_cache_max_lookup_entries: 500,
+        shipping_cache_max_list_size: 200,
+        shipping_lookup_rate: 20
+
+  See `PhoenixKitEcommerce.Shipping.Cache` for the cache bounds and
+  `PhoenixKitEcommerce.Shipping.RateLimit` for the lookup rate.
 
   ## Telemetry
 
@@ -49,6 +58,7 @@ defmodule PhoenixKitEcommerce.Shipping do
 
   alias PhoenixKit.Integrations
   alias PhoenixKitEcommerce.Shipping.{Address, Cache, Codec, Context, Destination, Locality}
+  alias PhoenixKitEcommerce.Shipping.RateLimit
   alias PhoenixKitEcommerce.Shipping.MethodConfig
   alias PhoenixKitEcommerce.Shipping.{Parcel, PickupPoint, Quote, RateRequest, Service}
   alias PhoenixKitEcommerce.Shipping.Providers.{Fixed, Table}
@@ -60,6 +70,9 @@ defmodule PhoenixKitEcommerce.Shipping do
   @min_query_length 2
   @context_option_keys [:provider, :settings, :service, :locale, :currency, :credentials]
   @max_query_length 64
+  @shopper_lookup [group: :query, list?: true]
+  @list_lookup [list?: true]
+  @rate_limited_operations [:search_localities, :list_pickup_points]
   @business_errors [
     :too_heavy,
     :too_large,
@@ -235,7 +248,7 @@ defmodule PhoenixKitEcommerce.Shipping do
         unsupported(ctx)
 
       true ->
-        call(ctx, :search_localities, {:lookups, [String.downcase(query)]}, fn ->
+        call(ctx, :search_localities, {:lookups, [String.downcase(query)], @shopper_lookup}, fn ->
           normalize(:ok_list, ctx.provider.search_localities(query, ctx))
         end)
     end
@@ -257,7 +270,7 @@ defmodule PhoenixKitEcommerce.Shipping do
       ctx
       |> call(
         :list_pickup_points,
-        {:lookups, [locality.id, query && String.downcase(query)]},
+        {:lookups, [locality.id, query && String.downcase(query)], lookup_cache_opts(query)},
         fn ->
           normalize(:ok_list, ctx.provider.list_pickup_points(locality, ctx.service, query, ctx))
         end
@@ -342,6 +355,10 @@ defmodule PhoenixKitEcommerce.Shipping do
       else: {:error, :unknown_provider}
   end
 
+  # What a shopper's own text asked for is cached in its own, smaller share.
+  defp lookup_cache_opts(nil), do: @list_lookup
+  defp lookup_cache_opts(_query), do: @shopper_lookup
+
   defp normalize_query(query) when is_binary(query) do
     case query |> String.trim() |> String.slice(0, @max_query_length) do
       "" -> nil
@@ -399,20 +416,37 @@ defmodule PhoenixKitEcommerce.Shipping do
 
   # Runs (and logs) only on a cache miss: a cached failure answers silently.
   defp run_logged(key, operation, ctx, fun) do
-    result = guarded(ctx, fun)
+    result =
+      if rate_limited?(key, operation),
+        do: {:error, :rate_limited},
+        else: guarded(ctx, fun)
+
     log_error(result, key, operation)
     result
   end
 
+  # Only the lookups a shopper's typing causes are limited, and only when
+  # they really go to the carrier.
+  defp rate_limited?(key, operation) when operation in @rate_limited_operations,
+    do: RateLimit.take(key) == :rate_limited
+
+  defp rate_limited?(_key, _operation), do: false
+
   # Never cached: the answer depends on nothing but the arguments.
   defp cached(:none, _provider_key, _operation, _ctx, fun), do: fun.()
 
-  defp cached({kind, parts}, provider_key, operation, ctx, fun) do
+  defp cached({kind, parts}, provider_key, operation, ctx, fun),
+    do: cached({kind, parts, []}, provider_key, operation, ctx, fun)
+
+  defp cached({kind, parts, cache_opts}, provider_key, operation, ctx, fun) do
     key = {:shipping, provider_key, operation, fingerprint(ctx), parts}
 
-    Cache.fetch(key, Cache.ttl(kind), fun,
-      negative_ttl: Cache.ttl(:negative),
-      cacheable_error?: &cacheable_error?(&1, ctx)
+    Cache.fetch(
+      key,
+      Cache.ttl(kind),
+      fun,
+      cache_opts ++
+        [negative_ttl: Cache.ttl(:negative), cacheable_error?: &cacheable_error?(&1, ctx)]
     )
   end
 
@@ -420,6 +454,7 @@ defmodule PhoenixKitEcommerce.Shipping do
   # `:timeout` measured against a caller-specific `ctx.opts[:timeout]` says
   # nothing about the default timeout other callers use.
   defp cacheable_error?(:timeout, %Context{opts: opts}), do: is_nil(Keyword.get(opts, :timeout))
+  defp cacheable_error?(:rate_limited, _ctx), do: false
   defp cacheable_error?(reason, _ctx), do: not business_error?(reason)
 
   defp fingerprint(%Context{} = ctx) do
@@ -504,7 +539,11 @@ defmodule PhoenixKitEcommerce.Shipping do
   defp log_error({:error, reason}, key, operation) do
     message = "Shipping provider #{key} #{operation} failed: #{inspect(reason, limit: 10)}"
 
-    if business_error?(reason), do: Logger.info(message), else: Logger.warning(message)
+    cond do
+      reason == :rate_limited -> Logger.debug(message)
+      business_error?(reason) -> Logger.info(message)
+      true -> Logger.warning(message)
+    end
   end
 
   defp log_error(_ok, _key, _operation), do: :ok

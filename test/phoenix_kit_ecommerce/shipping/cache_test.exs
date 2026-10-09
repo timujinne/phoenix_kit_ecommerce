@@ -182,6 +182,65 @@ defmodule PhoenixKitEcommerce.Shipping.CacheTest do
       assert :ets.info(:phoenix_kit_ecommerce_shipping_cache, :size) == 2
     end
 
+    test "a group of entries is bounded apart from the table" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_cache_max_lookup_entries, 4)
+
+      on_exit(fn ->
+        Application.delete_env(:phoenix_kit_ecommerce, :shipping_cache_max_lookup_entries)
+      end)
+
+      Cache.fetch(:plain, 60_000, fn -> {:ok, :kept} end)
+      for n <- 1..40, do: Cache.fetch({:q, n}, 60_000 + n, fn -> {:ok, n} end, group: :query)
+
+      grouped =
+        :ets.select_count(:phoenix_kit_ecommerce_shipping_cache, [
+          {{:_, :_, :_, :query}, [], [true]}
+        ])
+
+      assert grouped in 1..4
+      assert {:ok, :kept} = Cache.fetch(:plain, 60_000, fn -> :recomputed end)
+    end
+
+    test "a group that is full evicts the entries closest to expiry among its own" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_cache_max_lookup_entries, 2)
+
+      on_exit(fn ->
+        Application.delete_env(:phoenix_kit_ecommerce, :shipping_cache_max_lookup_entries)
+      end)
+
+      Cache.fetch(:other, 1_000, fn -> {:ok, 0} end)
+      Cache.fetch(:a, 60_000, fn -> {:ok, 1} end, group: :query)
+      Cache.fetch(:b, 120_000, fn -> {:ok, 2} end, group: :query)
+      Cache.fetch(:c, 90_000, fn -> {:ok, 3} end, group: :query)
+
+      # The shortest-lived of the group (:a) went, the ungrouped one stayed.
+      assert {:ok, 0} = Cache.fetch(:other, 1_000, fn -> :recomputed end)
+      assert {:ok, 2} = Cache.fetch(:b, 120_000, fn -> :recomputed end, group: :query)
+      assert {:ok, 3} = Cache.fetch(:c, 90_000, fn -> :recomputed end, group: :query)
+      assert :recomputed = Cache.fetch(:a, 60_000, fn -> :recomputed end, group: :query)
+    end
+
+    test "list? skips lists over the size limit", %{agent: agent} do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_cache_max_list_size, 2)
+
+      on_exit(fn ->
+        Application.delete_env(:phoenix_kit_ecommerce, :shipping_cache_max_list_size)
+      end)
+
+      Cache.fetch(:long, 60_000, counted(agent, {:ok, [1, 2, 3]}), list?: true)
+      Cache.fetch(:long, 60_000, counted(agent, {:ok, [1, 2, 3]}), list?: true)
+      assert Agent.get(agent, & &1) == 2
+
+      Cache.fetch(:short, 60_000, counted(agent, {:ok, [1, 2]}), list?: true)
+      Cache.fetch(:short, 60_000, counted(agent, {:ok, [1, 2]}), list?: true)
+      assert Agent.get(agent, & &1) == 3
+
+      # Without the option a list is a value like any other.
+      Cache.fetch(:plain, 60_000, counted(agent, {:ok, [1, 2, 3]}))
+      Cache.fetch(:plain, 60_000, counted(agent, {:ok, [1, 2, 3]}))
+      assert Agent.get(agent, & &1) == 4
+    end
+
     test "child_spec starts a named process" do
       assert %{id: Cache, start: {Cache, :start_link, _}} = Cache.child_spec([])
     end

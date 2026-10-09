@@ -512,6 +512,9 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
   defp lookup_error(:timeout),
     do: gettext("The carrier did not answer in time. Please try again.")
 
+  defp lookup_error(:rate_limited),
+    do: gettext("The service is busy right now. Please try again in a moment.")
+
   defp lookup_error(_reason),
     do: gettext("The list could not be loaded right now. Please try again.")
 
