@@ -58,9 +58,8 @@ defmodule PhoenixKitEcommerce.Shipping do
 
   alias PhoenixKit.Integrations
   alias PhoenixKitEcommerce.Shipping.{Address, Cache, Codec, Context, Destination, Locality}
-  alias PhoenixKitEcommerce.Shipping.RateLimit
   alias PhoenixKitEcommerce.Shipping.MethodConfig
-  alias PhoenixKitEcommerce.Shipping.{Parcel, PickupPoint, Quote, RateRequest, Service}
+  alias PhoenixKitEcommerce.Shipping.{Parcel, PickupPoint, Quote, RateLimit, RateRequest, Service}
   alias PhoenixKitEcommerce.Shipping.Providers.{Fixed, Table}
 
   @builtin_providers [Fixed, Table]

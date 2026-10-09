@@ -15,6 +15,7 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
     Parcel,
     PickupPoint,
     Quote,
+    RateLimit,
     RateRequest,
     Service
   }
@@ -919,11 +920,11 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
       assert search_calls() == 3
 
       # Not cached: once the bucket has room again the same query is asked.
-      PhoenixKitEcommerce.Shipping.RateLimit.reset()
+      RateLimit.reset()
       assert {:ok, [_]} = Shipping.search_localities(ctx, "limited 6")
 
       # A cached answer costs nothing.
-      PhoenixKitEcommerce.Shipping.RateLimit.reset()
+      RateLimit.reset()
       for _ <- 1..10, do: assert({:ok, [_]} = Shipping.search_localities(ctx, "limited 6"))
     end
 

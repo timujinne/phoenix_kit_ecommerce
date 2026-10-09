@@ -4287,32 +4287,38 @@ defmodule PhoenixKitEcommerce do
   defp check_shipping_destination(method, request),
     do: check_destination(shipping_service(method), request)
 
-  defp check_destination(service_result, %RateRequest{destination: destination} = request) do
+  defp check_destination(service_result, %RateRequest{} = request) do
     case service_result do
       {:ok, nil, _context} ->
         :ok
 
       {:ok, %ShippingService{destination: kind} = service, context}
       when kind in [:pickup_point, :address] ->
-        cond do
-          CartQuote.incomplete?(kind, destination) ->
-            {:error, :needs_destination}
-
-          kind == :pickup_point and not point_fits_request?(destination, request) ->
-            {:error, {:needs_destination, "point_limits"}}
-
-          Shipping.validate_destination(context, destination, service) != :ok ->
-            {:error, :needs_destination}
-
-          true ->
-            :ok
-        end
+        check_given_destination(kind, service, context, request)
 
       {:ok, _service, _context} ->
         :ok
 
       {:error, reason} ->
         {:error, {:unavailable, CartQuote.error_reason(reason)}}
+    end
+  end
+
+  defp check_given_destination(kind, service, context, request) do
+    destination = request.destination
+
+    cond do
+      CartQuote.incomplete?(kind, destination) ->
+        {:error, :needs_destination}
+
+      kind == :pickup_point and not point_fits_request?(destination, request) ->
+        {:error, {:needs_destination, "point_limits"}}
+
+      Shipping.validate_destination(context, destination, service) != :ok ->
+        {:error, :needs_destination}
+
+      true ->
+        :ok
     end
   end
 

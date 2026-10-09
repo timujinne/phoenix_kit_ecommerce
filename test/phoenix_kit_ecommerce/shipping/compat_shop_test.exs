@@ -1,6 +1,8 @@
 defmodule PhoenixKitEcommerce.Shipping.CompatShopTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixKit.Modules.Shop
+
   # The shim core still calls must carry every public shipping function.
   test "PhoenixKit.Modules.Shop delegates the calculated shipping API" do
     functions = [
@@ -22,7 +24,7 @@ defmodule PhoenixKitEcommerce.Shipping.CompatShopTest do
       refresh_pay_on_delivery_shipping: 1
     ]
 
-    shim = PhoenixKit.Modules.Shop
+    shim = Shop
     Code.ensure_loaded!(shim)
     Code.ensure_loaded!(PhoenixKitEcommerce)
 
@@ -33,7 +35,7 @@ defmodule PhoenixKitEcommerce.Shipping.CompatShopTest do
   end
 
   test "the shim answers like the module for a call that needs no database" do
-    assert PhoenixKit.Modules.Shop.cart_shipping_destination(%PhoenixKitEcommerce.Cart{
+    assert Shop.cart_shipping_destination(%PhoenixKitEcommerce.Cart{
              metadata: %{}
            }) == nil
   end
