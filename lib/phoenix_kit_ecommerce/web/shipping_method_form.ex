@@ -10,15 +10,20 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Shipping
+  alias PhoenixKitEcommerce.Shipping.MethodParams
   alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.ShippingProviderState, as: ProviderState
 
   import PhoenixKitEcommerce.Web.Components.ShippingProviderCard,
-    only: [shipping_provider_card: 1]
+    only: [shipping_provider_card: 1, locality_search_forms: 1]
 
-  # How long the form waits for a carrier before it shows what it has.
-  @lookup_timeout 3_000
+  # How long a lookup waits for a carrier. The same as the service check on
+  # save (`Shipping.MethodParams`), so one slow carrier costs one wait.
+  @lookup_timeout 2_000
+
+  # What LiveView sends as the `_target` when the admin picks a provider.
+  @provider_target ["shipping_method", "shipping_provider", "provider"]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -74,40 +79,41 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   @impl true
   def handle_event("validate", %{"shipping_method" => params} = posted, socket) do
-    {socket, change} = sync_provider(socket, params, Map.get(posted, "shipping_locality_query"))
+    {socket, change} = sync_provider(socket, params, posted["_target"] == @provider_target)
     params = provider_params(socket, params)
 
     # Right after another provider is chosen its (empty) settings are not
     # "wrong" yet: no errors until the admin has had a chance to fill them in.
-    action = if change == :provider_changed, do: nil, else: :validate
+    action = if change == :provider_chosen, do: nil, else: :validate
 
+    # `check_service: false`: validating while typing never waits for a carrier.
     changeset =
       socket.assigns.method
-      |> Shop.change_shipping_method(params)
+      |> ShippingMethod.changeset(params, check_service: false)
       |> Map.put(:action, action)
 
     {:noreply,
      socket
      |> assign(:form_params, params)
-     |> assign_form(changeset)}
+     |> assign_form_errors(changeset)}
   end
 
-  def handle_event("pick_locality", %{"key" => key, "index" => index}, socket) do
-    with true <- locality_key?(socket, key),
-         [_ | _] = results <- Map.get(socket.assigns.locality_results, key),
-         {position, ""} <- Integer.parse(index),
-         %{id: id, name: name} when is_binary(id) and is_binary(name) <-
-           Enum.at(results, position) do
-      {:noreply, put_locality(socket, key, %{"id" => id, "name" => name})}
-    else
-      _ -> {:noreply, socket}
-    end
+  def handle_event("search_locality", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("search_locality", params, socket)
+    end)
   end
 
-  def handle_event("clear_locality", %{"key" => key}, socket) do
-    if locality_key?(socket, key),
-      do: {:noreply, put_locality(socket, key, nil)},
-      else: {:noreply, socket}
+  def handle_event("pick_locality", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("pick_locality", params, socket)
+    end)
+  end
+
+  def handle_event("clear_locality", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("clear_locality", params, socket)
+    end)
   end
 
   @impl true
@@ -116,6 +122,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   end
 
   @impl true
+  # A task that was cancelled (another provider was chosen, a locality picked)
+  # reports its own death: not a failure.
+  def handle_async(_name, {:exit, {:shutdown, :cancel}}, socket), do: {:noreply, socket}
+
+  def handle_async(:services, result, socket) do
+    {:noreply, finish_services(socket, result)}
+  end
+
   def handle_async({:locality_search, key}, result, socket) do
     {:noreply, finish_locality_search(socket, key, result)}
   end
@@ -131,6 +145,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           metadata: %{
             "slug" => method.slug,
             "active" => method.active,
+            "provider" => ShippingMethod.shipping_config(method).provider,
             "pay_on_delivery" => ShippingMethod.pay_on_delivery?(method)
           }
         )
@@ -141,7 +156,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
          |> push_navigate(to: Routes.path("/admin/shop/shipping"))}
 
       {:error, changeset} ->
-        {:noreply, assign_form(socket, changeset)}
+        {:noreply, assign_form_errors(socket, changeset)}
     end
   end
 
@@ -156,6 +171,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           metadata: %{
             "slug" => method.slug,
             "active" => method.active,
+            "provider" => ShippingMethod.shipping_config(method).provider,
             "pay_on_delivery" => ShippingMethod.pay_on_delivery?(method)
           }
         )
@@ -166,7 +182,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
          |> push_navigate(to: Routes.path("/admin/shop/shipping"))}
 
       {:error, changeset} ->
-        {:noreply, assign_form(socket, changeset)}
+        {:noreply, assign_form_errors(socket, changeset)}
     end
   end
 
@@ -302,13 +318,15 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           <.shipping_provider_card
             state={@sp}
             provider_options={provider_select_options(@provider_options, @sp.provider)}
-            service_options={service_select_options(@services, @sp.service)}
-            services_error={@services_error}
-            fields={ProviderState.fields(@sp.provider)}
+            provider_known?={@provider_known?}
+            service_options={service_select_options(@services, @sp.service, @services_status)}
+            services_status={@services_status}
+            fields={@provider_fields}
             integration={@integration}
             locality_results={@locality_results}
             locality_loading={@locality_loading}
-            errors={provider_errors(@changeset)}
+            field_errors={@provider_errors.fields}
+            errors={@provider_errors.general}
           />
 
           <%!-- Constraints --%>
@@ -439,14 +457,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
             </button>
           </div>
         </.form>
+
+        <%!-- The locality search inputs belong to these forms (`form` attribute);
+             they cannot live inside the main one. --%>
+        <.locality_search_forms fields={@provider_fields} />
       </div>
     """
   end
-
-  defp provider_errors(%Ecto.Changeset{action: nil}), do: []
-
-  defp provider_errors(%Ecto.Changeset{errors: errors}),
-    do: for({:shipping_provider, error} <- errors, do: error)
 
   defp load_currencies do
     Billing.list_currencies(enabled: true)
@@ -468,9 +485,36 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   end
 
   defp gated_event("save", %{"shipping_method" => params}, socket) do
-    {socket, _change} = sync_provider(socket, params, nil)
+    {socket, _change} = sync_provider(socket, params, false)
     save_method(socket, socket.assigns.live_action, provider_params(socket, params))
   end
+
+  defp gated_event("search_locality", %{"locality_query" => %{} = queries}, socket) do
+    {:noreply, search_localities(socket, queries)}
+  end
+
+  defp gated_event("pick_locality", %{"key" => key, "index" => index} = params, socket) do
+    # Only a result of the provider on screen can be picked: a click on a
+    # stale list, or an index that is not a position, selects nothing.
+    with true <- Map.get(params, "provider") == socket.assigns.sp.provider,
+         true <- locality_key?(socket, key),
+         [_ | _] = results <- Map.get(socket.assigns.locality_results, key),
+         {position, ""} when position >= 0 <- Integer.parse(to_string(index)),
+         %{id: id, name: name} when is_binary(id) and is_binary(name) <-
+           Enum.at(results, position) do
+      {:noreply, put_locality(socket, key, %{"id" => id, "name" => name})}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  defp gated_event("clear_locality", %{"key" => key}, socket) do
+    if locality_key?(socket, key),
+      do: {:noreply, put_locality(socket, key, nil)},
+      else: {:noreply, socket}
+  end
+
+  defp gated_event(_event, _params, socket), do: {:noreply, socket}
 
   # -- shipping cost calculation card --------------------------------------
 
@@ -479,13 +523,17 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> assign(:sp, ProviderState.from_method(method))
     |> assign(:form_params, %{})
     |> assign(:provider_options, provider_options())
-    |> assign(:services_key, nil)
+    |> assign(:loaded_provider, nil)
+    |> assign(:provider_known?, true)
+    |> assign(:provider_fields, [])
     |> assign(:services, [])
-    |> assign(:services_error, false)
+    |> assign(:services_status, :idle)
     |> assign(:integration, nil)
     |> assign(:locality_results, %{})
     |> assign(:locality_loading, %{})
-    |> refresh_services()
+    |> assign(:provider_errors, %{fields: %{}, general: []})
+    |> assign(:provider_error_list, [])
+    |> refresh_provider()
   end
 
   defp provider_options do
@@ -497,34 +545,38 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   defp provider_select_options(options, provider) do
     if Enum.any?(options, &(elem(&1, 1) == provider)),
       do: options,
-      else: options ++ [{gettext("%{provider} (unavailable)", provider: provider), provider}]
+      else: options ++ [{gettext("%{provider} (not installed)", provider: provider), provider}]
   end
 
-  defp service_select_options(services, service) do
+  # The saved service is always offered as the current value. It is called
+  # unavailable only when the carrier answered and does not list it: while the
+  # list loads or the carrier is down nothing is known about it.
+  defp service_select_options(services, service, status) do
     options = Enum.map(services, &{&1.label || &1.key, &1.key})
 
-    if service in ["", nil] or Enum.any?(options, &(elem(&1, 1) == service)),
-      do: options,
-      else: options ++ [{gettext("%{service} (unavailable)", service: service), service}]
+    cond do
+      service in ["", nil] ->
+        options
+
+      Enum.any?(options, &(elem(&1, 1) == service)) ->
+        options
+
+      status == :ok and options != [] ->
+        options ++ [{gettext("%{service} (unavailable)", service: service), service}]
+
+      true ->
+        options ++ [{service, service}]
+    end
   end
 
-  # Folds the posted provider card into the state, reloads what depends on it
-  # and starts the locality searches the post asks for. Returns the socket and
-  # whether another provider was chosen.
-  defp sync_provider(socket, params, queries) do
-    {state, change} = ProviderState.apply_params(socket.assigns.sp, params["shipping_provider"])
+  # Folds the posted provider card into the state and reloads what depends on
+  # the provider. Returns the socket and whether the admin chose another
+  # provider just now.
+  defp sync_provider(socket, params, provider_chosen?) do
+    {state, change} =
+      ProviderState.apply_params(socket.assigns.sp, params["shipping_provider"], provider_chosen?)
 
-    # What was typed into the previous provider's search boxes is not a query
-    # of the new one.
-    queries = if change == :provider_changed, do: nil, else: queries
-
-    socket =
-      socket
-      |> assign(:sp, state)
-      |> refresh_services()
-      |> search_localities(queries)
-
-    {socket, change}
+    {socket |> assign(:sp, state) |> refresh_provider(), change}
   end
 
   defp provider_params(socket, params) do
@@ -540,37 +592,76 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     )
   end
 
-  # The services (and whether the provider's connection is there) depend on
-  # the provider and its settings only, so keystrokes in other inputs cost
+  # Everything the card knows about a provider is loaded when the provider
+  # changes, and only then: keystrokes in other inputs cost the carrier
   # nothing.
-  defp refresh_services(socket) do
-    %{provider: provider, settings: settings} = state = socket.assigns.sp
-    key = {provider, settings}
+  defp refresh_provider(socket) do
+    provider = socket.assigns.sp.provider
 
-    if socket.assigns.services_key == key do
+    if socket.assigns.loaded_provider == provider,
+      do: socket,
+      else: load_provider(socket, provider)
+  end
+
+  defp load_provider(socket, provider) do
+    socket =
       socket
+      |> cancel_lookups()
+      |> assign(:loaded_provider, provider)
+      |> assign(:provider_fields, ProviderState.fields(provider))
+      |> assign(:provider_known?, match?({:ok, _}, Shipping.provider(provider)))
+      |> assign(:services, [])
+      |> assign(:services_status, :idle)
+      |> assign(:integration, nil)
+      |> assign(:locality_results, %{})
+      |> assign(:locality_loading, %{})
+
+    if provider == ProviderState.fixed() or not socket.assigns.provider_known?,
+      do: socket,
+      else: start_provider_lookups(socket, provider)
+  end
+
+  defp start_provider_lookups(socket, provider) do
+    ctx = provider_context(socket.assigns.sp)
+    socket = assign(socket, :integration, integration_status(ctx))
+
+    # The carrier is called on behalf of an operator who may change settings.
+    if Authz.can?(socket, :manage_settings) do
+      socket
+      |> assign(:services_status, :loading)
+      |> start_async(:services, fn -> {provider, Shipping.services(ctx)} end)
     else
-      ctx = provider_context(state)
-      {services, error?} = load_services(provider, ctx)
-
       socket
-      |> assign(:services_key, key)
-      |> assign(:services, services)
-      |> assign(:services_error, error?)
-      |> assign(:integration, integration_status(ctx))
-      |> assign(:sp, pick_service(state, services))
     end
   end
 
-  defp load_services(provider, ctx) do
-    with true <- provider != ProviderState.fixed(),
-         {:ok, services} <- Shipping.services(ctx) do
-      {services, false}
+  defp cancel_lookups(socket) do
+    socket.assigns
+    |> Map.get(:locality_loading, %{})
+    |> Map.keys()
+    |> Enum.reduce(cancel_async(socket, :services), fn key, acc ->
+      cancel_async(acc, {:locality_search, key})
+    end)
+  end
+
+  defp finish_services(socket, {:ok, {provider, result}}) do
+    if provider == socket.assigns.sp.provider do
+      case result do
+        {:ok, services} ->
+          socket
+          |> assign(:services, services)
+          |> assign(:services_status, :ok)
+          |> update(:sp, &pick_service(&1, services))
+
+        {:error, _reason} ->
+          assign(socket, :services_status, :error)
+      end
     else
-      false -> {[], false}
-      {:error, _reason} -> {[], true}
+      socket
     end
   end
+
+  defp finish_services(socket, {:exit, _reason}), do: assign(socket, :services_status, :error)
 
   # No service chosen yet: the first one the provider offers.
   defp pick_service(%{provider: provider, service: ""} = state, [%{key: key} | _])
@@ -599,46 +690,45 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   defp integration_status(_ctx), do: nil
 
   defp locality_key?(socket, key) do
-    socket.assigns.sp.provider
-    |> ProviderState.fields()
-    |> Enum.any?(&(&1.type == :locality and &1.key == key))
+    Enum.any?(socket.assigns.provider_fields, &(&1.type == :locality and &1.key == key))
   end
 
-  defp search_localities(socket, %{} = queries) do
-    state = socket.assigns.sp
-
+  defp search_localities(socket, queries) do
     Enum.reduce(queries, socket, fn {key, query}, acc ->
       query = if is_binary(query), do: query, else: ""
 
-      if Map.get(state.queries, key, "") != query and locality_key?(acc, key),
+      if Map.get(acc.assigns.sp.queries, key, "") != query and locality_key?(acc, key),
         do: start_locality_search(acc, key, query),
         else: acc
     end)
   end
-
-  defp search_localities(socket, _queries), do: socket
 
   defp start_locality_search(socket, key, query) do
     socket = update(socket, :sp, &%{&1 | queries: Map.put(&1.queries, key, query)})
 
     if String.length(String.trim(query)) < 2 do
       socket
-      |> assign(:locality_results, Map.delete(socket.assigns.locality_results, key))
-      |> assign(:locality_loading, Map.delete(socket.assigns.locality_loading, key))
+      |> cancel_async({:locality_search, key})
+      |> update(:locality_results, &Map.delete(&1, key))
+      |> update(:locality_loading, &Map.delete(&1, key))
     else
       ctx = provider_context(socket.assigns.sp)
+      provider = socket.assigns.sp.provider
 
       socket
-      |> assign(:locality_loading, Map.put(socket.assigns.locality_loading, key, true))
+      |> update(:locality_loading, &Map.put(&1, key, true))
       |> start_async({:locality_search, key}, fn ->
-        {query, Shipping.search_localities(ctx, query)}
+        {provider, query, Shipping.search_localities(ctx, query)}
       end)
     end
   end
 
-  # An answer to a query the admin has already typed past is dropped.
-  defp finish_locality_search(socket, key, {:ok, {query, result}}) do
-    if Map.get(socket.assigns.sp.queries, key) == query do
+  # An answer to a query the admin has already typed past, or for a provider
+  # no longer on screen, is dropped.
+  defp finish_locality_search(socket, key, {:ok, {provider, query, result}}) do
+    %{sp: sp} = socket.assigns
+
+    if provider == sp.provider and Map.get(sp.queries, key) == query do
       results =
         case result do
           {:ok, localities} -> localities
@@ -646,8 +736,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
         end
 
       socket
-      |> assign(:locality_results, Map.put(socket.assigns.locality_results, key, results))
-      |> assign(:locality_loading, Map.delete(socket.assigns.locality_loading, key))
+      |> update(:locality_results, &Map.put(&1, key, results))
+      |> update(:locality_loading, &Map.delete(&1, key))
     else
       socket
     end
@@ -655,8 +745,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp finish_locality_search(socket, key, {:exit, _reason}) do
     socket
-    |> assign(:locality_results, Map.put(socket.assigns.locality_results, key, :error))
-    |> assign(:locality_loading, Map.delete(socket.assigns.locality_loading, key))
+    |> update(:locality_results, &Map.put(&1, key, :error))
+    |> update(:locality_loading, &Map.delete(&1, key))
   end
 
   defp put_locality(socket, key, value) do
@@ -665,19 +755,46 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
         do: Map.put(socket.assigns.sp.settings, key, value),
         else: Map.delete(socket.assigns.sp.settings, key)
 
-    socket =
-      socket
-      |> update(:sp, &%{&1 | settings: settings, queries: Map.delete(&1.queries, key)})
-      |> assign(:locality_results, Map.delete(socket.assigns.locality_results, key))
-      |> assign(:locality_loading, Map.delete(socket.assigns.locality_loading, key))
-      |> cancel_async({:locality_search, key})
-      |> refresh_services()
+    socket
+    |> update(:sp, &%{&1 | settings: settings, queries: Map.delete(&1.queries, key)})
+    |> cancel_async({:locality_search, key})
+    |> update(:locality_results, &Map.delete(&1, key))
+    |> update(:locality_loading, &Map.delete(&1, key))
+    |> recheck_provider_errors(key)
+  end
 
-    changeset =
-      socket.assigns.method
-      |> Shop.change_shipping_method(provider_params(socket, socket.assigns.form_params))
-      |> Map.put(:action, :validate)
+  # What the pick or the clear changes about the errors on the card, and
+  # nothing else: errors on fields the admin has not touched yet (the name of
+  # the method, other settings) stay hidden until they are validated.
+  defp recheck_provider_errors(socket, key) do
+    current =
+      case MethodParams.build(ProviderState.to_param(socket.assigns.sp), check_service: false) do
+        {:error, messages} -> messages
+        _ -> []
+      end
 
-    assign_form(socket, changeset)
+    shown = socket.assigns.provider_error_list
+
+    visible =
+      Enum.filter(current, fn error ->
+        error in shown or error == {"required setting %{setting} is missing", [setting: key]}
+      end)
+
+    assign_provider_errors(socket, visible)
+  end
+
+  defp assign_form_errors(socket, %Ecto.Changeset{} = changeset) do
+    raw =
+      if changeset.action,
+        do: for({:shipping_provider, error} <- changeset.errors, do: error),
+        else: []
+
+    socket |> assign_form(changeset) |> assign_provider_errors(raw)
+  end
+
+  defp assign_provider_errors(socket, raw) do
+    socket
+    |> assign(:provider_error_list, raw)
+    |> assign(:provider_errors, ProviderState.errors(raw, socket.assigns.provider_fields))
   end
 end

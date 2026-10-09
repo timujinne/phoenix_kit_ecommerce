@@ -360,6 +360,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
         <%!-- Form --%>
         <.form
           for={@form}
+          id="category-form"
           phx-change="validate"
           phx-submit="save"
           class="space-y-6"

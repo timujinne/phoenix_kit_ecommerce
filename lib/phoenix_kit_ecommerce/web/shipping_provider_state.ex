@@ -11,6 +11,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
   # `shipping_provider` param (`to_param/1`) that `ShippingMethod.changeset/2`
   # validates and stores.
 
+  use Gettext, backend: PhoenixKitEcommerce.Gettext
+
   alias PhoenixKitEcommerce.Shipping
   alias PhoenixKitEcommerce.Shipping.{Codec, Field}
   alias PhoenixKitEcommerce.ShippingMethod
@@ -51,38 +53,55 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
   @doc """
   Folds the posted `shipping_provider` param into the state.
 
-  Choosing another provider starts it from scratch: no service (the form picks
-  the first one it offers) and the default value of each of its settings; what
-  was typed for the previous provider means nothing to the new one. Otherwise
-  the posted service, settings and pricing replace the old ones; a part the
-  post does not carry keeps its value.
+  `provider_chosen?` is whether this post is the admin choosing another
+  provider in the select (the `_target` of the change event). Then the new
+  provider starts from scratch: no service (the form picks the first one it
+  offers) and the default value of each of its settings; what was typed for
+  the previous provider means nothing to it.
 
-  Returns `{state, :provider_changed | :unchanged}`.
+  Any other post is taken as it stands, provider included: it is also what
+  LiveView sends to recover a form after a reconnect, when the provider, the
+  service and the settings all arrive at once and none of them is a change.
+  A part the post does not carry keeps its value.
+
+  Returns `{state, :provider_chosen | :unchanged}`.
   """
-  @spec apply_params(t(), term()) :: {t(), :provider_changed | :unchanged}
-  def apply_params(state, %{} = raw) do
+  @spec apply_params(t(), term(), boolean()) :: {t(), :provider_chosen | :unchanged}
+  def apply_params(state, raw, provider_chosen? \\ false)
+
+  def apply_params(state, %{} = raw, provider_chosen?) do
     provider = posted_provider(raw, state.provider)
 
-    if provider == state.provider do
-      {%{
-         state
-         | service: posted_service(raw, state.service),
-           settings: posted_settings(raw, state),
-           pricing: posted_pricing(raw, state.pricing)
-       }, :unchanged}
-    else
-      {%{
-         state
-         | provider: provider,
-           service: "",
-           settings: defaults(provider),
-           pricing: posted_pricing(raw, state.pricing),
-           queries: %{}
-       }, :provider_changed}
+    cond do
+      provider_chosen? and provider != state.provider ->
+        {%{
+           state
+           | provider: provider,
+             service: "",
+             settings: defaults(provider),
+             pricing: posted_pricing(raw, state.pricing),
+             queries: %{}
+         }, :provider_chosen}
+
+      provider != state.provider ->
+        base = %{state | provider: provider, settings: %{}, service: "", queries: %{}}
+        {fold(base, raw), :unchanged}
+
+      true ->
+        {fold(state, raw), :unchanged}
     end
   end
 
-  def apply_params(state, _other), do: {state, :unchanged}
+  def apply_params(state, _other, _provider_chosen?), do: {state, :unchanged}
+
+  defp fold(state, raw) do
+    %{
+      state
+      | service: posted_service(raw, state.service),
+        settings: posted_settings(raw, state),
+        pricing: posted_pricing(raw, state.pricing)
+    }
+  end
 
   @doc """
   The `shipping_provider` param for `ShippingMethod.changeset/2`.
@@ -140,6 +159,87 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
       :error -> field.default
     end
   end
+
+  @doc "The label of each markup input."
+  @spec pricing_label(String.t()) :: String.t()
+  def pricing_label("markup_percent"), do: gettext("Markup, %")
+  def pricing_label("markup_fixed"), do: gettext("Fixed markup")
+  def pricing_label("round_to"), do: gettext("Round up to a multiple of")
+
+  @doc """
+  Turns the errors `MethodParams` puts on `:shipping_provider` (`{message,
+  bindings}` pairs) into text for the card: `fields` maps `"service"`,
+  `"setting:<key>"` and `"pricing:<key>"` to the messages shown under that
+  input, `general` is what has no input of its own.
+  """
+  @spec errors([{String.t(), keyword()}], [Field.t()]) :: %{
+          fields: %{optional(String.t()) => [String.t()]},
+          general: [String.t()]
+        }
+  def errors(raw_errors, fields) do
+    Enum.reduce(raw_errors, %{fields: %{}, general: []}, fn error, acc ->
+      classify(error, fields, acc)
+    end)
+    |> then(fn %{fields: by_field, general: general} ->
+      %{
+        fields: Map.new(by_field, fn {k, v} -> {k, Enum.reverse(v)} end),
+        general: Enum.reverse(general)
+      }
+    end)
+  end
+
+  defp classify({"service is required", _opts}, _fields, acc),
+    do: put_field_error(acc, "service", gettext("Choose a service"))
+
+  defp classify({"unknown service %{service}", opts}, _fields, acc) do
+    put_field_error(
+      acc,
+      "service",
+      gettext("The provider does not offer the service %{service}", service: opts[:service])
+    )
+  end
+
+  defp classify({"required setting %{setting} is missing", opts}, fields, acc) do
+    key = to_string(opts[:setting])
+    label = Enum.find_value(fields, key, &(&1.key == key && &1.label))
+    put_field_error(acc, "setting:" <> key, gettext("%{setting} is required", setting: label))
+  end
+
+  defp classify({message, opts}, _fields, acc)
+       when message in [
+              "%{field} must be a number",
+              "%{field} must be at most %{max}",
+              "%{field} must be greater than 0",
+              "%{field} must be 0 or greater"
+            ] do
+    put_field_error(acc, "pricing:#{opts[:field]}", pricing_message(message, opts))
+  end
+
+  defp classify({"unknown provider %{provider}", opts}, _fields, acc) do
+    put_general_error(
+      acc,
+      gettext("The provider %{provider} is not installed", provider: opts[:provider])
+    )
+  end
+
+  defp classify(_other, _fields, acc),
+    do: put_general_error(acc, gettext("The shipping provider settings are not valid"))
+
+  defp pricing_message("%{field} must be a number", _opts), do: gettext("Must be a number")
+
+  defp pricing_message("%{field} must be greater than 0", _opts),
+    do: gettext("Must be greater than 0")
+
+  defp pricing_message("%{field} must be 0 or greater", _opts),
+    do: gettext("Must be 0 or greater")
+
+  defp pricing_message("%{field} must be at most %{max}", opts),
+    do: gettext("Must be at most %{max}", max: opts[:max])
+
+  defp put_field_error(acc, key, message),
+    do: %{acc | fields: Map.update(acc.fields, key, [message], &[message | &1])}
+
+  defp put_general_error(acc, message), do: %{acc | general: [message | acc.general]}
 
   # -- reading the post ---------------------------------------------------
 

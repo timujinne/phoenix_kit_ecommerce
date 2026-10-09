@@ -98,8 +98,12 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
 
   @doc """
   Changeset for shipping method creation and updates.
+
+  Option `check_service: false` leaves out the check that the chosen service
+  is offered by the provider (see `Shipping.MethodParams.build/2`); forms use
+  it while validating, never on save.
   """
-  def changeset(method, attrs) do
+  def changeset(method, attrs, opts \\ []) do
     attrs = normalize_booleans(attrs, [:active, :tracking_supported])
     {pay_on_delivery, attrs} = pop_pay_on_delivery(attrs)
     {shipping_provider, attrs} = pop_shipping_provider(attrs)
@@ -107,7 +111,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     method
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> put_pay_on_delivery(pay_on_delivery)
-    |> put_shipping_provider(shipping_provider)
+    |> put_shipping_provider(shipping_provider, opts)
     |> zero_pay_on_delivery_price()
     |> validate_required(@required_fields)
     |> validate_length(:name, max: 255)
@@ -336,10 +340,10 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
 
   defp pop_shipping_provider(attrs), do: {:unset, attrs}
 
-  defp put_shipping_provider(changeset, :unset), do: changeset
+  defp put_shipping_provider(changeset, :unset, _opts), do: changeset
 
-  defp put_shipping_provider(changeset, {:set, param}) do
-    case MethodParams.build(param) do
+  defp put_shipping_provider(changeset, {:set, param}, opts) do
+    case MethodParams.build(param, opts) do
       {:ok, block} ->
         metadata = get_field(changeset, :metadata) || %{}
         key = MethodConfig.metadata_key()

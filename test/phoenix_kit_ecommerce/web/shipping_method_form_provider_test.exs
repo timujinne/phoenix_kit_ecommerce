@@ -15,6 +15,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
   alias PhoenixKitEcommerce.Test.Shipping.StubProvider
 
   @form "#shipping-method-form"
+  @provider_target ["shipping_method", "shipping_provider", "provider"]
 
   setup %{conn: conn} do
     previous = Application.get_env(:phoenix_kit_ecommerce, :shipping_providers)
@@ -31,16 +32,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       Providers.clear_cache()
     end)
 
-    StubProvider.put(%{
-      localities: fn query ->
-        {:ok,
-         [
-           %Locality{id: "c-poltava", name: "Poltava", region: "Poltava oblast"},
-           %Locality{id: "c-pol", name: "Polonne", region: "Khmelnytskyi oblast"}
-         ]
-         |> Enum.filter(&String.starts_with?(String.downcase(&1.name), String.downcase(query)))}
-      end
-    })
+    stub(%{localities: &poltava_search/1})
 
     %{conn: put_test_scope(conn, fake_scope())}
   end
@@ -60,6 +52,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       refute has_element?(view, "#shipping-provider-pricing")
       refute has_element?(view, "#shipping-provider-fallback-hint")
       assert has_element?(view, "#shipping-provider-setting-destination")
+      refute_received {:stub_called, :services, _}
     end
 
     test "choosing a provider shows its services, settings, markup and fallback hint",
@@ -79,6 +72,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       assert has_element?(view, "#shipping-provider-fallback-hint")
       # No error is shown for settings the admin has not had a chance to fill.
       refute has_element?(view, "#shipping-provider-errors")
+      refute has_element?(view, "#shipping-provider-error-setting-sender_city")
     end
 
     test "choosing a provider resets what was typed for the previous one", %{conn: conn} do
@@ -93,14 +87,40 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       })
       |> render_change()
 
-      assert render(element(view, "#shipping-provider-setting-rates")) =~ "1 90"
+      assert has_element?(view, "textarea#shipping-provider-setting-rates", "1 90")
 
       choose_provider(view, "stub")
       refute has_element?(view, "#shipping-provider-setting-rates")
       assert has_element?(view, "#shipping-provider-setting-sender_city")
 
       choose_provider(view, "table")
-      refute render(element(view, "#shipping-provider-setting-rates")) =~ "1 90"
+      refute has_element?(view, "textarea#shipping-provider-setting-rates", "1 90")
+    end
+
+    test "a post that carries the provider, service and settings together keeps all of them",
+         %{conn: conn} do
+      # What LiveView sends to recover a form after a reconnect: no `_target`,
+      # everything at once. None of it is a provider change to reset.
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+
+      render_change(view, "validate", %{
+        "shipping_method" => %{
+          "name" => "Recovered",
+          "shipping_provider" => %{
+            "provider" => "stub",
+            "service" => "courier",
+            "settings" => %{"sender_city" => %{"id" => "c-lviv", "name" => "Lviv"}},
+            "pricing" => %{"markup_percent" => "15"}
+          }
+        }
+      })
+
+      render_async(view)
+
+      assert has_element?(view, "#shipping-provider-select option[value='stub'][selected]")
+      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
+      assert has_element?(view, "#shipping-locality-selected-sender_city", "Lviv")
+      assert has_element?(view, "#shipping-pricing-markup_percent[value='15']")
     end
 
     test "a provider with an integration shows the connection and links to Integrations",
@@ -110,10 +130,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       choose_provider(view, "stub")
 
       assert has_element?(view, "#shipping-provider-integration")
-      assert render(element(view, "#shipping-provider-integration-status")) =~ "not connected"
+      assert has_element?(view, "#shipping-provider-integration-status", "not connected")
 
-      assert render(element(view, "#shipping-provider-integration-link")) =~
-               "/admin/settings/integrations"
+      assert has_element?(
+               view,
+               ~s(#shipping-provider-integration-link[href$="/admin/settings/integrations"])
+             )
 
       choose_provider(view, "table")
       refute has_element?(view, "#shipping-provider-integration")
@@ -127,20 +149,94 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
       choose_provider(view, "stub")
 
-      status = render(element(view, "#shipping-provider-integration-status"))
-      assert status =~ "connected"
-      refute status =~ "not connected"
+      assert has_element?(
+               view,
+               "#shipping-provider-integration-status",
+               "Stub carrier: connected"
+             )
+
+      refute has_element?(view, "#shipping-provider-integration-status", "not connected")
+    end
+  end
+
+  describe "a slow or failing carrier" do
+    test "does not hold the form up, and typing never calls it again", %{conn: conn} do
+      method = stub_method!("Hung carrier", [])
+      stub(%{modes: %{services: :hang}})
+
+      {microseconds, {:ok, view, _html}} =
+        :timer.tc(fn -> live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit") end)
+
+      # The service list is loaded in the background: the page is there long
+      # before the 2 s the carrier is given.
+      assert microseconds < 1_500_000
+      assert_receive {:stub_called, :services, _}
+      assert has_element?(view, "#shipping-services-loading")
+      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
+      refute has_element?(view, "#shipping-service-select", "unavailable")
+
+      for name <- ["Hung carrier A", "Hung carrier AB"] do
+        view
+        |> form(@form, %{"shipping_method" => %{"name" => name}})
+        |> render_change()
+      end
+
+      refute_receive {:stub_called, :services, _}, 150
     end
 
-    test "services the carrier cannot list are reported and do not break the form",
+    test "services the carrier cannot list are reported, the saved service is kept",
          %{conn: conn} do
-      StubProvider.put(%{modes: %{services: :crash}})
+      method = stub_method!("Crashing carrier", [])
+      stub(%{modes: %{services: :crash}})
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
-      choose_provider(view, "stub")
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+      render_async(view)
 
       assert has_element?(view, "#shipping-services-error")
-      assert has_element?(view, "#shipping-service-select")
+      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
+      refute has_element?(view, "#shipping-service-select", "unavailable")
+    end
+
+    test "a service the carrier answered without is called unavailable", %{conn: conn} do
+      method = stub_method!("Dropped service", [])
+
+      stub(%{
+        services: [
+          %PhoenixKitEcommerce.Shipping.Service{key: "branch", label: "To a branch"}
+        ]
+      })
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+      render_async(view)
+
+      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
+      assert has_element?(view, "#shipping-service-select", "courier (unavailable)")
+    end
+
+    test "validating leaves the service check to the save", %{conn: conn} do
+      stub(%{})
+      attrs = stub_attrs()
+
+      refute_received {:stub_called, :services, _}
+      assert ShippingMethod.changeset(%ShippingMethod{}, attrs, check_service: false).valid?
+      refute_received {:stub_called, :services, _}
+
+      assert ShippingMethod.changeset(%ShippingMethod{}, attrs).valid?
+      assert_received {:stub_called, :services, _}
+
+      table = %{
+        "name" => "T",
+        "price" => "1",
+        "shipping_provider" => %{
+          "provider" => "table",
+          "service" => "bogus",
+          "settings" => %{"rates" => "1 90"}
+        }
+      }
+
+      assert ShippingMethod.changeset(%ShippingMethod{}, table, check_service: false).valid?
+      refute ShippingMethod.changeset(%ShippingMethod{}, table).valid?
+      _ = conn
     end
   end
 
@@ -161,6 +257,9 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       assert has_element?(view, "#shipping-provider-setting-sender_city-id[value='c-poltava']")
       assert has_element?(view, "#shipping-provider-setting-sender_city-name[value='Poltava']")
       refute has_element?(view, "#shipping-locality-option-sender_city-0")
+      # Picking touches nothing else: the untouched name is not "blank" yet.
+      refute has_element?(view, @form, "be blank")
+      refute has_element?(view, "#shipping-provider-errors")
 
       view
       |> form(@form, %{
@@ -187,9 +286,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       assert Decimal.equal?(method.price, Decimal.new("70.00"))
     end
 
-    test "a short query lists nothing and does not call the carrier", %{conn: conn} do
+    test "a short query does not call the carrier, a real one does", %{conn: conn} do
+      stub(%{localities: &poltava_search/1})
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
       choose_provider(view, "stub")
+
+      search_locality(view, "sender_city", "Pol")
+      assert_received {:stub_called, :search_localities, ["Pol"]}
+      assert has_element?(view, "#shipping-locality-option-sender_city-0")
 
       search_locality(view, "sender_city", "P")
 
@@ -203,11 +307,83 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       choose_provider(view, "stub")
 
       search_locality(view, "sender_city", "Zzz")
-      assert render(element(view, "#shipping-locality-results-sender_city")) =~ "Nothing found"
+      assert has_element?(view, "#shipping-locality-results-sender_city", "Nothing found")
 
-      StubProvider.put(%{localities: {:error, :boom}})
+      stub(%{localities: {:error, :boom}})
       search_locality(view, "sender_city", "Zzzz")
-      assert render(element(view, "#shipping-locality-results-sender_city")) =~ "unavailable"
+      assert has_element?(view, "#shipping-locality-results-sender_city", "unavailable")
+    end
+
+    test "typing past a slow search drops its late answer without an error", %{conn: conn} do
+      stub(%{localities: blocking_search()})
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view, "stub")
+
+      view |> element("#shipping-locality-search-sender_city") |> render_change(query("Pol"))
+      assert_receive {:lookup, slow, "Pol"}
+      assert has_element?(view, "#shipping-locality-results-sender_city [role=status]")
+
+      # The admin deletes the text before the carrier answers.
+      view |> element("#shipping-locality-search-sender_city") |> render_change(query("P"))
+      refute has_element?(view, "#shipping-locality-results-sender_city [role=status]")
+
+      send(slow, :release)
+      render_async(view)
+
+      refute has_element?(view, "#shipping-locality-option-sender_city-0")
+      refute has_element?(view, "#shipping-locality-results-sender_city", "unavailable")
+    end
+
+    test "choosing another provider mid-search drops the search for good", %{conn: conn} do
+      stub(%{localities: blocking_search()})
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view, "stub")
+
+      view |> element("#shipping-locality-search-sender_city") |> render_change(query("Pol"))
+      assert_receive {:lookup, slow, "Pol"}
+
+      choose_provider(view, "table")
+      refute has_element?(view, "#shipping-provider-setting-sender_city")
+
+      send(slow, :release)
+      render_async(view)
+
+      # Back on the first provider nothing of the old search is left to pick.
+      choose_provider(view, "stub")
+      render_async(view)
+
+      refute has_element?(view, "#shipping-locality-option-sender_city-0")
+      refute has_element?(view, "#shipping-locality-results-sender_city [role=status]")
+      refute has_element?(view, "#shipping-locality-results-sender_city", "unavailable")
+    end
+
+    test "only an offered result of the provider on screen can be picked", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view, "stub")
+      search_locality(view, "sender_city", "Pol")
+
+      pick = fn attrs ->
+        render_click(
+          view,
+          "pick_locality",
+          Map.merge(%{"key" => "sender_city", "index" => "0", "provider" => "stub"}, attrs)
+        )
+      end
+
+      for bad <- [
+            %{"index" => "-1"},
+            %{"index" => "99"},
+            %{"index" => "abc"},
+            %{"index" => "0.5"},
+            %{"provider" => "table"},
+            %{"key" => "nowhere"}
+          ] do
+        pick.(bad)
+        refute has_element?(view, "#shipping-locality-selected-sender_city")
+      end
+
+      pick.(%{})
+      assert has_element?(view, "#shipping-locality-selected-sender_city", "Poltava")
     end
 
     test "clearing the pick brings the search back and the required error", %{conn: conn} do
@@ -221,7 +397,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
 
       refute has_element?(view, "#shipping-locality-selected-sender_city")
       refute has_element?(view, "#shipping-provider-setting-sender_city-id")
-      assert render(element(view, "#shipping-provider-errors")) =~ "sender_city"
+
+      assert has_element?(
+               view,
+               "#shipping-provider-error-setting-sender_city",
+               "Sender city is required"
+             )
     end
 
     test "a method with the required setting missing is not saved and says why",
@@ -233,8 +414,65 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       |> form(@form, %{"shipping_method" => %{"name" => "Nowhere", "price" => "1"}})
       |> render_submit()
 
-      assert render(element(view, "#shipping-provider-errors")) =~ "sender_city"
+      assert has_element?(
+               view,
+               "#shipping-provider-error-setting-sender_city[role=alert]",
+               "Sender city is required"
+             )
+
       refute method_named("Nowhere")
+    end
+
+    test "a markup that is not a number is reported under its input", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view, "stub")
+      search_locality(view, "sender_city", "Pol")
+      view |> element("#shipping-locality-option-sender_city-0") |> render_click()
+
+      view
+      |> form(@form, %{
+        "shipping_method" => %{
+          "name" => "Bad markup",
+          "price" => "1",
+          "shipping_provider" => %{"pricing" => %{"markup_percent" => "abc"}}
+        }
+      })
+      |> render_submit()
+
+      assert has_element?(view, "#shipping-provider-pricing", "Must be a number")
+      refute method_named("Bad markup")
+    end
+  end
+
+  describe "who may ask the carrier" do
+    setup %{conn: conn} do
+      scope = fake_scope(permissions: ["shop", "shop.manage_catalog"], roles: ["Employee"])
+      %{conn: put_test_scope(conn, scope), method: stub_method!("Read only", [])}
+    end
+
+    test "without manage_settings no lookup reaches the carrier", %{conn: conn, method: method} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+      render_async(view)
+
+      refute has_element?(view, "#shipping-services-loading")
+      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
+
+      view |> element("#shipping-locality-search-sender_city") |> render_change(query("Pol"))
+      render_async(view)
+      render_click(view, "clear_locality", %{"key" => "sender_city"})
+
+      refute_received {:stub_called, _, _}
+      assert has_element?(view, "#shipping-locality-selected-sender_city", "Lviv")
+    end
+
+    test "and saving changes nothing", %{conn: conn, method: method} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+
+      view
+      |> form(@form, %{"shipping_method" => %{"name" => "Renamed"}})
+      |> render_submit()
+
+      assert Shop.get_shipping_method!(method.uuid).name == method.name
     end
   end
 
@@ -294,7 +532,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       refute Map.has_key?(method_named("Plain").metadata, "shipping_provider")
     end
 
-    test "a provider the host no longer registers stays selected", %{conn: conn} do
+    test "a provider the host no longer registers is said to be gone and cannot be saved",
+         %{conn: conn} do
       {:ok, method} =
         Shop.create_shipping_method(%{
           "name" => "Gone #{System.unique_integer([:positive])}",
@@ -303,8 +542,22 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
         })
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+      render_async(view)
 
       assert has_element?(view, "#shipping-provider-select option[value='gone'][selected]")
+      assert has_element?(view, "#shipping-provider-unknown[role=alert]", "no longer installed")
+      refute has_element?(view, "#shipping-services-error")
+      refute has_element?(view, "#shipping-services-loading")
+
+      view |> form(@form, %{"shipping_method" => %{"name" => "Renamed"}}) |> render_submit()
+
+      assert has_element?(view, "#shipping-provider-errors[role=alert]", "gone")
+      assert Shop.get_shipping_method!(method.uuid).name == method.name
+
+      choose_provider(view, "fixed")
+      view |> form(@form, %{"shipping_method" => %{"name" => "Renamed"}}) |> render_submit()
+
+      assert Shop.get_shipping_method!(method.uuid).name == "Renamed"
     end
   end
 
@@ -316,26 +569,77 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping")
 
-      assert render(element(view, "#shipping-method-provider-#{fixed.uuid}")) =~ "Fixed price"
-      assert render(element(view, "#shipping-method-provider-#{stub.uuid}")) =~ "Stub carrier"
+      assert has_element?(view, "#shipping-method-provider-#{fixed.uuid}", "Fixed price")
+      assert has_element?(view, "#shipping-method-provider-#{stub.uuid}", "Stub carrier")
+      assert has_element?(view, "#shipping-method-provider-#{table.uuid}", "Rate table by weight")
+    end
+  end
 
-      assert render(element(view, "#shipping-method-provider-#{table.uuid}")) =~
-               "Rate table by weight"
+  describe "activity" do
+    test "the provider is part of what is logged", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view, "table")
+
+      view
+      |> form(@form, %{
+        "shipping_method" => %{
+          "name" => "Logged table",
+          "price" => "2",
+          "shipping_provider" => %{"settings" => %{"rates" => "1 90"}}
+        }
+      })
+      |> render_submit()
+
+      assert_activity_logged("shop.shipping_method_created",
+        resource_uuid: method_named("Logged table").uuid,
+        metadata_has: %{"provider" => "table"}
+      )
     end
   end
 
   # -- helpers -----------------------------------------------------------
 
+  # The stub's behaviour for this test; its calls are reported to the test.
+  defp stub(config), do: StubProvider.put(Map.put_new(config, :notify, self()))
+
+  defp poltava_search(query) do
+    {:ok,
+     [
+       %Locality{id: "c-poltava", name: "Poltava", region: "Poltava oblast"},
+       %Locality{id: "c-pol", name: "Polonne", region: "Khmelnytskyi oblast"}
+     ]
+     |> Enum.filter(&String.starts_with?(String.downcase(&1.name), String.downcase(query)))}
+  end
+
+  # A carrier that answers a search only when the test lets it.
+  defp blocking_search do
+    test = self()
+
+    fn query ->
+      send(test, {:lookup, self(), query})
+
+      receive do
+        :release -> poltava_search(query)
+      after
+        1_500 -> {:error, :never_released}
+      end
+    end
+  end
+
+  defp query(text), do: %{"locality_query" => %{"sender_city" => text}}
+
   defp choose_provider(view, provider) do
     view
     |> form(@form, %{"shipping_method" => %{"shipping_provider" => %{"provider" => provider}}})
-    |> render_change()
+    |> render_change(%{"_target" => @provider_target})
+
+    render_async(view)
   end
 
   defp search_locality(view, key, query) do
     view
-    |> form(@form, %{"shipping_locality_query" => %{key => query}})
-    |> render_change()
+    |> element("#shipping-locality-search-#{key}")
+    |> render_change(%{"locality_query" => %{key => query}})
 
     render_async(view)
   end
@@ -361,6 +665,18 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
     %{"provider" => "table", "service" => "default", "settings" => %{"rates" => "1 90"}}
   end
 
+  defp stub_attrs do
+    %{
+      "name" => "Stub",
+      "price" => "1",
+      "shipping_provider" => %{
+        "provider" => "stub",
+        "service" => "branch",
+        "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Poltava"}}
+      }
+    }
+  end
+
   defp stub_method!(name, opts) do
     {:ok, method} =
       create_method(name, %{
@@ -373,6 +689,17 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
         }
       })
 
+    # Saving the method asked the stub for its services: not what a test
+    # about the form is counting.
+    flush_stub_calls()
     method
+  end
+
+  defp flush_stub_calls do
+    receive do
+      {:stub_called, _, _} -> flush_stub_calls()
+    after
+      0 -> :ok
+    end
   end
 end

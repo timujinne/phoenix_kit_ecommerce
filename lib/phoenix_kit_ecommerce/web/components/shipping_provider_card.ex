@@ -4,10 +4,12 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
   service, the provider's own settings, markup and the state of its
   Integrations connection.
 
-  Everything is posted under `shipping_method[shipping_provider]`; the locality
-  search boxes are the only inputs outside it (`shipping_locality_query[key]`),
-  so a half-typed query never becomes a setting. The events (`pick_locality`,
-  `clear_locality`) are handled by `PhoenixKitEcommerce.Web.ShippingMethodForm`.
+  Everything is posted under `shipping_method[shipping_provider]`. The locality
+  search boxes sit in this card but belong to their own sibling forms
+  (`locality_search_forms/1`, outside the main form, tied to the input by its
+  `form` attribute), so typing a query neither validates nor submits the
+  method. The events (`search_locality`, `pick_locality`, `clear_locality`) are
+  handled by `PhoenixKitEcommerce.Web.ShippingMethodForm`.
   """
 
   use Phoenix.Component
@@ -25,16 +27,28 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
   alias PhoenixKitEcommerce.Web.ShippingProviderState, as: State
 
   @prefix "shipping_method[shipping_provider]"
+  @query_length 64
 
   attr :state, :map, required: true, doc: "`ShippingProviderState.t/0`"
   attr :provider_options, :list, required: true, doc: "`[{label, key}]`"
+  attr :provider_known?, :boolean, default: true, doc: "whether the host still registers it"
   attr :service_options, :list, default: [], doc: "`[{label, key}]`"
-  attr :services_error, :boolean, default: false
+
+  attr :services_status, :atom,
+    default: :idle,
+    values: [:idle, :loading, :ok, :error],
+    doc: "the state of the carrier's service list"
+
   attr :fields, :list, default: [], doc: "`Field` structs of the chosen provider"
   attr :integration, :map, default: nil, doc: "`%{name:, connected?:}` or `nil`"
   attr :locality_results, :map, default: %{}
   attr :locality_loading, :map, default: %{}
-  attr :errors, :list, default: [], doc: "changeset errors on `:shipping_provider`"
+
+  attr :field_errors, :map,
+    default: %{},
+    doc: "messages per input: `\"service\"`, `\"setting:<key>\"`, `\"pricing:<key>\"`"
+
+  attr :errors, :list, default: [], doc: "messages that belong to no input"
 
   def shipping_provider_card(assigns) do
     assigns = assign(assigns, :calculated?, assigns.state.provider != State.fixed())
@@ -58,7 +72,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
             />
           </div>
 
-          <div :if={@calculated?} class="fieldset w-full">
+          <div :if={@calculated? and @provider_known?} class="fieldset w-full">
             <.select
               id="shipping-service-select"
               name={"#{prefix()}[service]"}
@@ -66,11 +80,42 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
               label={gettext("Service")}
               prompt={gettext("Select a service")}
               options={@service_options}
+              errors={Map.get(@field_errors, "service", [])}
             />
-            <p :if={@services_error} id="shipping-services-error" class="text-warning text-sm mt-1">
-              {gettext("The carrier's services could not be loaded. Try again in a moment.")}
+            <p
+              :if={@services_status == :loading}
+              id="shipping-services-loading"
+              role="status"
+              class="text-sm text-base-content/60 mt-1"
+            >
+              <span class="loading loading-spinner loading-xs"></span>
+              {gettext("Loading the carrier's services")}
+            </p>
+            <p
+              :if={@services_status == :error}
+              id="shipping-services-error"
+              role="alert"
+              class="text-warning text-sm mt-1"
+            >
+              {gettext(
+                "The carrier's services could not be loaded. Reload the page to try again; the saved service is kept."
+              )}
             </p>
           </div>
+        </div>
+
+        <div
+          :if={not @provider_known?}
+          id="shipping-provider-unknown"
+          role="alert"
+          class="alert alert-warning mt-4"
+        >
+          <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
+          <span>
+            {gettext(
+              "This provider is no longer installed. Choose another one; until then the method keeps its fixed price."
+            )}
+          </span>
         </div>
 
         <div
@@ -114,6 +159,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
             state={@state}
             results={Map.get(@locality_results, field.key)}
             loading={Map.get(@locality_loading, field.key, false)}
+            errors={Map.get(@field_errors, "setting:" <> field.key, [])}
           />
         </div>
 
@@ -124,25 +170,13 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
             <h3 class="font-medium mb-3">{gettext("Markup on the carrier's price")}</h3>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
               <.decimal_input
-                id="shipping-pricing-markup_percent"
-                name={"#{prefix()}[pricing][markup_percent]"}
-                value={@state.pricing["markup_percent"]}
-                label={gettext("Markup, %")}
-                placeholder="0"
-              />
-              <.decimal_input
-                id="shipping-pricing-markup_fixed"
-                name={"#{prefix()}[pricing][markup_fixed]"}
-                value={@state.pricing["markup_fixed"]}
-                label={gettext("Fixed markup")}
-                placeholder="0"
-              />
-              <.decimal_input
-                id="shipping-pricing-round_to"
-                name={"#{prefix()}[pricing][round_to]"}
-                value={@state.pricing["round_to"]}
-                label={gettext("Round up to a multiple of")}
-                placeholder="1"
+                :for={key <- State.pricing_keys()}
+                id={"shipping-pricing-#{key}"}
+                name={"#{prefix()}[pricing][#{key}]"}
+                value={@state.pricing[key]}
+                label={State.pricing_label(key)}
+                placeholder={if key == "round_to", do: "1", else: "0"}
+                errors={Map.get(@field_errors, "pricing:" <> key, [])}
               />
             </div>
           </div>
@@ -155,9 +189,14 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
           </p>
         <% end %>
 
-        <div :if={@errors != []} id="shipping-provider-errors" class="alert alert-error mt-4">
+        <div
+          :if={@errors != []}
+          id="shipping-provider-errors"
+          role="alert"
+          class="alert alert-error mt-4"
+        >
           <ul class="list-disc list-inside">
-            <li :for={error <- @errors}>{translate_error(error)}</li>
+            <li :for={error <- @errors}>{error}</li>
           </ul>
         </div>
       </div>
@@ -165,16 +204,37 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
     """
   end
 
+  attr :fields, :list, required: true, doc: "`Field` structs; one search form per locality field"
+
+  @doc """
+  The sibling forms the locality search inputs belong to. Render them OUTSIDE
+  the main form: forms do not nest.
+  """
+  def locality_search_forms(assigns) do
+    ~H"""
+    <.form
+      :for={%Field{type: :locality} = field <- @fields}
+      for={%{}}
+      id={"shipping-locality-search-#{field.key}"}
+      phx-change="search_locality"
+      phx-submit="search_locality"
+    >
+    </.form>
+    """
+  end
+
   attr :field, Field, required: true
   attr :state, :map, required: true
   attr :results, :any, default: nil
   attr :loading, :boolean, default: false
+  attr :errors, :list, default: []
 
   def setting_field(%{field: %Field{type: :locality}} = assigns) do
     assigns =
       assigns
       |> assign(:selected, State.field_value(assigns.state, assigns.field))
       |> assign(:query, Map.get(assigns.state.queries, assigns.field.key, ""))
+      |> assign(:query_length, @query_length)
 
     ~H"""
     <div id={"shipping-provider-setting-#{@field.key}"} class="fieldset w-full">
@@ -215,17 +275,21 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
 
       <.input
         id={"shipping-locality-query-#{@field.key}"}
-        name={"shipping_locality_query[#{@field.key}]"}
+        name={"locality_query[#{@field.key}]"}
+        form={"shipping-locality-search-#{@field.key}"}
         value={@query}
         type="text"
         placeholder={gettext("Start typing a city")}
         autocomplete="off"
+        maxlength={@query_length}
         phx-debounce="300"
-        onkeydown="if (event.key === 'Enter') event.preventDefault()"
       />
 
-      <div id={"shipping-locality-results-#{@field.key}"} class="mt-1">
-        <span :if={@loading} class="loading loading-spinner loading-sm"></span>
+      <div id={"shipping-locality-results-#{@field.key}"} class="mt-1" aria-live="polite">
+        <p :if={@loading} role="status" class="text-sm text-base-content/60">
+          <span class="loading loading-spinner loading-sm"></span>
+          <span class="sr-only">{gettext("Searching")}</span>
+        </p>
         <p :if={@results == :error} class="text-warning text-sm">
           {gettext("The search is unavailable right now.")}
         </p>
@@ -243,6 +307,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
               phx-click="pick_locality"
               phx-value-key={@field.key}
               phx-value-index={index}
+              phx-value-provider={@state.provider}
             >
               <span>{locality.name}</span>
               <span :if={locality_hint(locality)} class="text-xs text-base-content/60">
@@ -254,6 +319,14 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
       </div>
 
       <p :if={@field.help} class="text-sm text-base-content/60 mt-1">{@field.help}</p>
+      <p
+        :for={error <- @errors}
+        id={"shipping-provider-error-setting-#{@field.key}"}
+        role="alert"
+        class="text-error text-sm mt-1"
+      >
+        {error}
+      </p>
     </div>
     """
   end
@@ -268,6 +341,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
         name={"#{prefix()}[settings][#{@field.key}]"}
         checked={@value in [true, "true"]}
         label={@field.label}
+        errors={@errors}
       />
       <p :if={@field.help} class="text-sm text-base-content/60 mt-1">{@field.help}</p>
     </div>
@@ -285,6 +359,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
         value={@value}
         label={@field.label}
         options={@field.options}
+        errors={@errors}
       />
       <p :if={@field.help} class="text-sm text-base-content/60 mt-1">{@field.help}</p>
     </div>
@@ -302,6 +377,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
         value={@value}
         label={required_label(@field)}
         rows="5"
+        errors={@errors}
       />
       <p :if={@field.help} class="text-sm text-base-content/60 mt-1">{@field.help}</p>
     </div>
@@ -318,6 +394,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
         name={"#{prefix()}[settings][#{@field.key}]"}
         value={@value}
         label={required_label(@field)}
+        errors={@errors}
       />
       <p :if={@field.help} class="text-sm text-base-content/60 mt-1">{@field.help}</p>
     </div>
@@ -338,6 +415,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
         value={@value}
         type={@input_type}
         label={required_label(@field)}
+        errors={@errors}
       />
       <p :if={@field.help} class="text-sm text-base-content/60 mt-1">{@field.help}</p>
     </div>

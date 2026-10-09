@@ -834,6 +834,15 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     }
   end
 
+  # 0 is "unknown", shown as an empty input: the hint says to leave it empty.
+  defp blank_zero(value) when value in [nil, 0, "0", ""], do: ""
+  defp blank_zero(value), do: value
+
+  defp blank_weight_to_zero(%{"weight_grams" => weight} = params) when weight in ["", nil],
+    do: Map.put(params, "weight_grams", "0")
+
+  defp blank_weight_to_zero(params), do: params
+
   defp price_to_string(nil), do: nil
   defp price_to_string(%Decimal{} = price), do: Decimal.to_string(price)
   defp price_to_string(price), do: to_string(price)
@@ -859,6 +868,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
         <%!-- Form --%>
         <.form
           for={@form}
+          id="product-form"
           phx-change="validate"
           phx-submit="save"
           class="space-y-6"
@@ -1100,6 +1110,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     id="product-weight-grams"
                     type="number"
                     min="0"
+                    value={blank_zero(@form[:weight_grams].value)}
                     label={gettext("Weight (g)")}
                   />
                 </div>
@@ -2662,6 +2673,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
           String.starts_with?(k, "_add_option_")
       end)
       |> Map.new()
+
+    # An empty weight is "unknown", which is what 0 has always meant here.
+    product_params = blank_weight_to_zero(product_params)
 
     # Merge metadata into product params
     metadata = product_params["metadata"] || %{}

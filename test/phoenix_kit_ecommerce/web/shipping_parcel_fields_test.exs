@@ -23,7 +23,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingParcelFieldsTest do
       assert has_element?(view, "#product-dimensions")
 
       view
-      |> form(~s(form.space-y-6), %{
+      |> form("#product-form", %{
         "product" => %{
           "title" => "Crate",
           "price" => "10.00",
@@ -39,6 +39,18 @@ defmodule PhoenixKitEcommerce.Web.ShippingParcelFieldsTest do
 
       assert product.weight_grams == 1200
       assert Product.dimensions_mm(Product.with_dimensions(product)) == [400, 300, 200]
+    end
+
+    test "the weight starts empty and an empty weight is stored as 0 (unknown)", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/products/new")
+
+      assert has_element?(view, ~s(#product-weight-grams[value=""]))
+
+      view
+      |> form("#product-form", %{"product" => %{"title" => "Light", "price" => "1"}})
+      |> render_submit()
+
+      assert Enum.find(Shop.list_products(), &(&1.title["en"] == "Light")).weight_grams == 0
     end
 
     test "prefills the stored size, and clearing it removes it", %{conn: conn} do
@@ -60,7 +72,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingParcelFieldsTest do
       assert has_element?(view, "#product-weight-grams[value='900']")
 
       view
-      |> form(~s(form.space-y-6), %{
+      |> form("#product-form", %{
         "product" => %{"length_mm" => "", "width_mm" => "", "height_mm" => ""}
       })
       |> render_submit()
@@ -75,14 +87,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingParcelFieldsTest do
     test "a negative side is refused with an error", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/shop/products/new")
 
-      rendered =
-        view
-        |> form(~s(form.space-y-6), %{
-          "product" => %{"title" => "Crate", "price" => "10", "length_mm" => "-5"}
-        })
-        |> render_change()
+      view
+      |> form("#product-form", %{
+        "product" => %{"title" => "Crate", "price" => "10", "length_mm" => "-5"}
+      })
+      |> render_change()
 
-      assert rendered =~ "must be greater than or equal to"
+      assert has_element?(view, "#product-dimensions", "must be greater than or equal to")
     end
   end
 
@@ -93,7 +104,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingParcelFieldsTest do
       assert has_element?(view, "#category-parcel-defaults")
 
       view
-      |> form(~s(form.space-y-6), %{
+      |> form("#category-form", %{
         "category" => %{
           "name" => "Crates",
           "parcel_length_mm" => "500",
@@ -128,7 +139,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingParcelFieldsTest do
       assert has_element?(view, "#category-parcel-weight-g[value='2500']")
 
       view
-      |> form(~s(form.space-y-6), %{
+      |> form("#category-form", %{
         "category" => %{
           "parcel_length_mm" => "",
           "parcel_width_mm" => "",
@@ -185,19 +196,18 @@ defmodule PhoenixKitEcommerce.Web.ShippingParcelFieldsTest do
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
 
-      html =
-        view
-        |> form("#shipping-parcel-defaults-form", %{
-          "parcel" => %{
-            "length_mm" => "abc",
-            "width_mm" => "200",
-            "height_mm" => "100",
-            "weight_g" => "500"
-          }
-        })
-        |> render_submit()
+      view
+      |> form("#shipping-parcel-defaults-form", %{
+        "parcel" => %{
+          "length_mm" => "abc",
+          "width_mm" => "200",
+          "height_mm" => "100",
+          "weight_g" => "500"
+        }
+      })
+      |> render_submit()
 
-      assert html =~ "must be a whole number"
+      assert has_element?(view, "#shipping-parcel-defaults-form", "must be a whole number")
       assert Shop.shipping_parcel_defaults().box_mm == [300, 200, 100]
       refute_activity_logged("shop.shipping_parcel_defaults_changed")
     end
@@ -205,19 +215,23 @@ defmodule PhoenixKitEcommerce.Web.ShippingParcelFieldsTest do
     test "all three sides or none", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
 
-      html =
-        view
-        |> form("#shipping-parcel-defaults-form", %{
-          "parcel" => %{
-            "length_mm" => "300",
-            "width_mm" => "",
-            "height_mm" => "",
-            "weight_g" => ""
-          }
-        })
-        |> render_submit()
+      view
+      |> form("#shipping-parcel-defaults-form", %{
+        "parcel" => %{
+          "length_mm" => "300",
+          "width_mm" => "",
+          "height_mm" => "",
+          "weight_g" => ""
+        }
+      })
+      |> render_submit()
 
-      assert html =~ "is required when the other sides are set"
+      assert has_element?(
+               view,
+               "#shipping-parcel-defaults-form",
+               "is required when the other sides are set"
+             )
+
       assert Shop.shipping_parcel_defaults().box_mm == nil
     end
 

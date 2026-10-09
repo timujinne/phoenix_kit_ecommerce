@@ -39,6 +39,11 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
   @doc """
   Normalises and validates the param.
 
+  Option `check_service: false` skips the one check that calls the provider
+  (that the service is offered), for interactive validation: a slow carrier
+  must not slow down every keystroke of a form. The shape of the service, the
+  settings and the pricing are still checked.
+
     * `{:ok, block}` - the map to store
     * `{:ok, nil}` - the block is to be removed: no provider, or `"fixed"`
       without settings (the behaviour of a method without the block)
@@ -49,8 +54,10 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
   `"fixed"` with no service and nothing but its default settings
   (`destination: "none"`) is a method without the block.
   """
-  @spec build(term()) :: {:ok, map() | nil} | {:error, [message()]}
-  def build(param) when is_map(param) do
+  @spec build(term(), keyword()) :: {:ok, map() | nil} | {:error, [message()]}
+  def build(param, opts \\ [])
+
+  def build(param, opts) when is_map(param) do
     provider = param |> Codec.get(:provider) |> Codec.string() |> trim()
     service = param |> Codec.get(:service) |> Codec.string() |> trim()
     settings = param |> Codec.get(:settings) |> Codec.string_map() |> drop_blank()
@@ -59,11 +66,11 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
     if provider in ["", @fixed] and plain_fixed?(service, settings) do
       {:ok, nil}
     else
-      validate(provider_key(provider), service, settings, pricing)
+      validate(provider_key(provider), service, settings, pricing, opts)
     end
   end
 
-  def build(_param), do: {:error, [{"must be a map", []}]}
+  def build(_param, _opts), do: {:error, [{"must be a map", []}]}
 
   defp plain_fixed?("", settings) do
     {destination, rest} = Map.pop(settings, "destination", "none")
@@ -75,13 +82,14 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
   defp provider_key(""), do: @fixed
   defp provider_key(key), do: key
 
-  defp validate(key, service, settings, pricing) do
+  defp validate(key, service, settings, pricing, opts) do
     case find_provider(key) do
       {:ok, module} ->
         {pricing_block, pricing_errors} = pricing_block(pricing)
 
         case pricing_errors ++
-               settings_errors(module, settings) ++ service_errors(module, service, settings) do
+               settings_errors(module, settings) ++
+               service_errors(module, service, settings, opts) do
           [] -> {:ok, block(key, service, settings, pricing_block)}
           errors -> {:error, errors}
         end
@@ -109,7 +117,13 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
 
   # -- service -----------------------------------------------------------
 
-  defp service_errors(module, service, settings) do
+  defp service_errors(module, service, settings, opts) do
+    if Keyword.get(opts, :check_service, true),
+      do: check_service_offered(module, service, settings),
+      else: []
+  end
+
+  defp check_service_offered(module, service, settings) do
     ctx =
       Shipping.context(nil,
         provider: module,
