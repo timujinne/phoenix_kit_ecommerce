@@ -53,6 +53,11 @@
                     <%= if description != "" do %>
                       <div class="text-sm text-base-content/50">{description}</div>
                     <% end %>
+                    <ShippingDisplay.order_shipping_details
+                      :if={item["type"] == "shipping"}
+                      item={item}
+                      metadata={@order.metadata}
+                    />
                   </div>
                   <%!-- The unit belongs to the UNIT price, never to the line
                         total: "€40.00 per hour" × 2 hours is a line total of

@@ -10,6 +10,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.Policy
   alias PhoenixKitEcommerce.PriceDisplay
+  alias PhoenixKitEcommerce.Web.Components.ShippingDisplay
   alias PhoenixKitEcommerce.Web.Components.ShopLayouts
   alias PhoenixKitEcommerce.Web.Helpers
 
@@ -294,6 +295,11 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
                       <%= if item["type"] != "shipping" do %>
                         <span class="text-base-content/60 ml-2">× {item["quantity"]}</span>
                       <% end %>
+                      <ShippingDisplay.order_shipping_details
+                        :if={item["type"] == "shipping"}
+                        item={item}
+                        metadata={@order.metadata}
+                      />
                     </div>
                     <%!-- The unit belongs to the UNIT price, never to the line
                           total: "€40.00 per hour" × 2 hours is a line total of

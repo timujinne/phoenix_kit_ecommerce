@@ -428,6 +428,16 @@ defmodule PhoenixKitEcommerce do
     cart |> cart_items_loaded() |> pack_parcels()
   end
 
+  @doc """
+  The value a carrier insures and collects for the cart, in the BASE currency:
+  the exact base amounts of its lines. It is the `declared_value` of
+  `build_cart_rate_request/1`, which needs a complete destination to answer.
+  """
+  @spec cart_declared_value(Cart.t()) :: Decimal.t()
+  def cart_declared_value(%Cart{} = cart) do
+    items_base_subtotal(cart, cart_items_loaded(cart))
+  end
+
   defp pack_parcels(items) do
     items |> CartPacking.pack_items() |> Packer.pack(shipping_parcel_defaults())
   end
