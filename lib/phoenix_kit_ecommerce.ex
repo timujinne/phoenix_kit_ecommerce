@@ -66,6 +66,11 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.ProductSource
+  alias PhoenixKitEcommerce.Shipping
+  alias PhoenixKitEcommerce.Shipping.CartPacking
+  alias PhoenixKitEcommerce.Shipping.Codec, as: ShippingCodec
+  alias PhoenixKitEcommerce.Shipping.Packer
+  alias PhoenixKitEcommerce.Shipping.Packer.Defaults, as: ParcelDefaults
   alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.ShopConfig
   alias PhoenixKitEcommerce.Shopify.Provider, as: ShopifyProvider
@@ -100,9 +105,40 @@ defmodule PhoenixKitEcommerce do
   def required_integrations, do: if(shopify_enabled?(), do: ["shopify"], else: [])
 
   @impl PhoenixKit.Module
+  def children, do: [Shipping.Cache]
+
+  @impl PhoenixKit.Module
+  # Shopify (while its toggle is on) followed by the Integrations definition of
+  # every registered shipping provider that has one, so a carrier's API key
+  # is entered where every other credential is.
   def integration_providers do
-    if shopify_enabled?(), do: [ShopifyProvider.definition()], else: []
+    shopify = if shopify_enabled?(), do: [ShopifyProvider.definition()], else: []
+
+    Enum.uniq_by(shopify ++ shipping_integrations(), &integration_key/1)
   end
+
+  defp shipping_integrations do
+    for provider <- Shipping.providers(),
+        function_exported?(provider, :integration, 0),
+        %{} = definition <- [safe_integration(provider)],
+        do: definition
+  end
+
+  defp safe_integration(provider) do
+    provider.integration()
+  rescue
+    error ->
+      Logger.warning(
+        "[PhoenixKitEcommerce] shipping provider #{inspect(provider)} integration/0 failed: " <>
+          Exception.message(error)
+      )
+
+      nil
+  end
+
+  defp integration_key(%{key: key}), do: to_string(key)
+  defp integration_key(%{"key" => key}), do: to_string(key)
+  defp integration_key(other), do: other
 
   @doc """
   Whether the Shopify sync integration exists at all (design §4.7): the
@@ -252,6 +288,133 @@ defmodule PhoenixKitEcommerce do
       "always" -> :always
       _ -> :off
     end
+  end
+
+  @parcel_defaults_key "shop_shipping_parcel_defaults"
+  @parcel_default_fields [:length_mm, :width_mm, :height_mm, :weight_g]
+
+  @doc """
+  The shop-wide packing defaults (setting `shop_shipping_parcel_defaults`, a
+  JSON map with `length_mm`, `width_mm`, `height_mm` and `weight_g`): the box
+  every parcel is at least as big as, and the weight assumed for a cart line
+  without one. A missing, partial or malformed setting leaves the
+  corresponding part `nil`.
+  """
+  @spec shipping_parcel_defaults() :: ParcelDefaults.t()
+  def shipping_parcel_defaults do
+    stored = Settings.get_json_setting_cached(@parcel_defaults_key, %{})
+    parcel_defaults_from(stored)
+  rescue
+    _ -> %ParcelDefaults{}
+  catch
+    :exit, _ -> %ParcelDefaults{}
+  end
+
+  defp parcel_defaults_from(%{} = stored) do
+    [length, width, height, weight] =
+      Enum.map(@parcel_default_fields, &stored_positive(stored, &1))
+
+    box = [length, width, height]
+
+    %ParcelDefaults{
+      weight_g: weight,
+      box_mm: if(Enum.all?(box, & &1), do: box)
+    }
+  end
+
+  defp parcel_defaults_from(_other), do: %ParcelDefaults{}
+
+  defp stored_positive(stored, key) do
+    case ShippingCodec.integer(ShippingCodec.get(stored, key)) do
+      value when is_integer(value) and value > 0 -> value
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Saves the shop-wide packing defaults. `attrs` has `length_mm`, `width_mm`,
+  `height_mm` and `weight_g` (string or atom keys; numbers or numeric strings;
+  blank or 0 means "not set"). The three sides are all set or all blank.
+
+  Returns `{:ok, defaults}` (see `shipping_parcel_defaults/0`), `{:error,
+  [{field, message}]}` for invalid input, or the settings layer's error. A
+  successful save is logged to the activity feed as
+  `"shop.shipping_parcel_defaults_changed"`; pass `:actor_uuid` and
+  `:actor_role` (see `PhoenixKitEcommerce.Activity`) to attribute it.
+  """
+  @spec update_shipping_parcel_defaults(map(), keyword()) ::
+          {:ok, ParcelDefaults.t()} | {:error, [{atom(), String.t()}] | term()}
+  def update_shipping_parcel_defaults(attrs, opts \\ []) when is_map(attrs) do
+    with {:ok, values} <- parse_parcel_defaults(attrs),
+         {:ok, _setting} <-
+           Settings.update_json_setting_with_module(@parcel_defaults_key, values, "shop") do
+      PhoenixKitEcommerce.Activity.log("shop.shipping_parcel_defaults_changed",
+        actor_uuid: opts[:actor_uuid],
+        actor_role: opts[:actor_role],
+        resource_type: "setting",
+        metadata: values
+      )
+
+      {:ok, parcel_defaults_from(values)}
+    end
+  end
+
+  defp parse_parcel_defaults(attrs) do
+    parsed =
+      for field <- @parcel_default_fields do
+        {field, parse_parcel_value(ShippingCodec.get(attrs, field))}
+      end
+
+    case parcel_default_errors(parsed) do
+      [] ->
+        {:ok, for({field, value} <- parsed, value, into: %{}, do: {Atom.to_string(field), value})}
+
+      errors ->
+        {:error, errors}
+    end
+  end
+
+  defp parcel_default_errors(parsed) do
+    invalid = for {field, :error} <- parsed, do: {field, "must be a non-negative whole number"}
+    sides = for {field, value} <- Keyword.delete(parsed, :weight_g), do: {field, value}
+
+    if invalid == [] and Enum.any?(sides, &elem(&1, 1)) do
+      for {field, nil} <- sides, do: {field, "is required when the other sides are set"}
+    else
+      invalid
+    end
+  end
+
+  # nil = not set (blank, nil or 0); :error = not a non-negative whole number.
+  defp parse_parcel_value(value) when value in [nil, ""], do: nil
+
+  defp parse_parcel_value(value) do
+    case ShippingCodec.decimal(value) do
+      %Decimal{} = decimal ->
+        if Decimal.compare(decimal, 0) != :lt and Decimal.integer?(decimal),
+          do: decimal |> Decimal.to_integer() |> zero_to_nil(),
+          else: :error
+
+      nil ->
+        :error
+    end
+  end
+
+  defp zero_to_nil(0), do: nil
+  defp zero_to_nil(value), do: value
+
+  @doc """
+  The parcels the cart ships in: its shipping lines (see
+  `PhoenixKitEcommerce.Shipping.CartPacking.pack_items/1`) packed by the
+  configured `PhoenixKitEcommerce.Shipping.Packer` with
+  `shipping_parcel_defaults/0`. A cart with nothing to ship has no parcels.
+  """
+  @spec cart_parcels(Cart.t()) :: [PhoenixKitEcommerce.Shipping.Parcel.t()]
+  def cart_parcels(%Cart{} = cart) do
+    cart
+    |> cart_items_loaded()
+    |> CartPacking.pack_items()
+    |> Packer.pack(shipping_parcel_defaults())
   end
 
   @doc """
@@ -2791,6 +2954,7 @@ defmodule PhoenixKitEcommerce do
                 |> Map.put(:unit_price, snapshot_unit_price(cart, calculated_price))
                 |> Map.put(:base_unit_price, calculated_price)
                 |> Map.update!(:compare_at_price, &(&1 && snapshot_unit_price(cart, &1)))
+                |> put_shipping_profile(locked_product)
 
               %CartItem{} |> CartItem.changeset(attrs) |> repo().insert!()
 
@@ -2821,6 +2985,45 @@ defmodule PhoenixKitEcommerce do
         error
     end
   end
+
+  # What the packer needs to know about one unit of the line, frozen with the
+  # line (see `Shipping.CartPacking`). Never blocks an add: whatever cannot be
+  # read leaves that part of the profile `nil`.
+  defp put_shipping_profile(attrs, %Product{} = product) do
+    Map.update!(
+      attrs,
+      :metadata,
+      &Map.put(&1, CartPacking.profile_key(), shipping_profile(product))
+    )
+  end
+
+  defp shipping_profile(product) do
+    CartPacking.profile(product, product_category(product))
+  rescue
+    error ->
+      Logger.warning(
+        "[Shop] shipping profile of #{product.uuid} unavailable: #{Exception.message(error)}"
+      )
+
+      %{"dims_mm" => nil, "default_weight_g" => nil}
+  end
+
+  # The category already on the product when it has one (a catalogue view-struct
+  # is reloaded with its category), else one primary-key read of the legacy
+  # table; a catalogue product never touches that table.
+  defp product_category(%Product{category: %Category{} = category}), do: category
+  defp product_category(%Product{__meta__: %Ecto.Schema.Metadata{state: :built}}), do: nil
+
+  defp product_category(%Product{category_uuid: uuid}) when is_binary(uuid) do
+    Category
+    |> where([c], c.uuid == ^uuid)
+    |> select([c], struct(c, [:uuid, :metadata]))
+    |> repo().one()
+  rescue
+    _ -> nil
+  end
+
+  defp product_category(_product), do: nil
 
   # §12.2: the ONLY rate a line snapshot may use is the cart's OWN frozen
   # rate — never a fresh table lookup, and never `Currency.effective_rate/2`
@@ -2896,6 +3099,7 @@ defmodule PhoenixKitEcommerce do
                 |> Map.put(:unit_price, snapshot_unit_price(cart, calculated_price))
                 |> Map.put(:base_unit_price, calculated_price)
                 |> Map.update!(:compare_at_price, &(&1 && snapshot_unit_price(cart, &1)))
+                |> put_shipping_profile(locked_product)
                 |> Map.put(:selected_specs, selected_specs)
 
               %CartItem{} |> CartItem.changeset(attrs) |> repo().insert!()

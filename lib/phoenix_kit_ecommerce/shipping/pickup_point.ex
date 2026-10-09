@@ -54,23 +54,31 @@ defmodule PhoenixKitEcommerce.Shipping.PickupPoint do
         }
 
   @doc """
-  A pickup point known only by the code the customer typed. The code is the
-  `id`, `number` and `name`; it is also the `postcode` when it looks like one
-  (4 to 6 digits). `extra["manual"]` is `"true"`.
-  """
-  @spec manual(String.t()) :: t()
-  def manual(code) when is_binary(code) do
-    code = String.trim(code)
+  A pickup point known only by the code the customer typed. The trimmed code
+  is the `id`, `number` and `name`; nothing else is derived from it (what a
+  code means, a postcode included, is up to the carrier adapter).
+  `extra["manual"]` is `"true"`.
 
-    %__MODULE__{
-      id: code,
-      number: code,
-      name: code,
-      postcode: if(Regex.match?(~r/\A\d{4,6}\z/, code), do: code),
-      kind: :other,
-      extra: %{"manual" => "true"}
-    }
+  A blank code (empty, whitespace or not a string) has no point: `nil`.
+  """
+  @spec manual(term()) :: t() | nil
+  def manual(code) when is_binary(code) do
+    case String.trim(code) do
+      "" ->
+        nil
+
+      code ->
+        %__MODULE__{
+          id: code,
+          number: code,
+          name: code,
+          kind: :other,
+          extra: %{"manual" => "true"}
+        }
+    end
   end
+
+  def manual(_other), do: nil
 
   @doc "Serialises the point into a JSON-safe map."
   @spec to_map(t()) :: map()

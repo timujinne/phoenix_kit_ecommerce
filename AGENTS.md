@@ -518,6 +518,22 @@ All stored via `PhoenixKit.Settings`. Keys are **`shop_`-prefixed**.
   page renders **no** shipping section at all, so nothing may redirect a
   shopper there to "pick another method"; `CheckoutPage` re-enters its own
   `:shipping` step instead.
+- `shop_shipping_parcel_defaults` — JSON `%{"length_mm", "width_mm",
+  "height_mm", "weight_g"}`: the standard box and the weight assumed for a
+  line without one. Read via `shipping_parcel_defaults/0`, written via
+  `update_shipping_parcel_defaults/2` (validates, logs activity).
+- Packing data has no columns: a product's size lives in
+  `metadata["dimensions_mm"]` (virtual `length_mm`/`width_mm`/`height_mm`,
+  `Product.dimensions_mm/1`; catalogue items keep it in
+  `data["ecommerce"]`), a category's in `metadata["parcel_defaults"]`
+  (`Category.parcel_defaults/1`; catalogue: `CategoryCommerce.parcel_*`,
+  exposed by `View.category_view/2` through the same metadata key). Adding a
+  line freezes `metadata["shipping_profile"]` on it (`Shipping.CartPacking`);
+  `cart_parcels/1` packs from those snapshots, never from the live product.
+- A shipping method's `metadata["shipping_provider"]` is set through the
+  top-level `shipping_provider` param of `ShippingMethod.changeset/2`
+  (validated by `Shipping.MethodParams`), never as `metadata` itself, which
+  `cast/3` would replace whole.
 
 **Storefront notifications**
 

@@ -33,10 +33,18 @@ defmodule PhoenixKitEcommerce.Shipping.Cache do
   ]
   @default_max_entries 5_000
 
-  @doc "Starts the cache process, which owns the ETS table."
+  @doc """
+  Starts the cache process, which owns the ETS table. The process is a
+  singleton: when it is already running (the module's `children/0` and a
+  host's own supervision tree both listing it, a test starting it again) the
+  extra start is `:ignore`d instead of failing the supervisor.
+  """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, opts, name: __MODULE__) do
+      {:error, {:already_started, _pid}} -> :ignore
+      other -> other
+    end
   end
 
   @doc """

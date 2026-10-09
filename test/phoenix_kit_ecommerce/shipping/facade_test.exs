@@ -29,6 +29,26 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
     def key, do: "fixed"
   end
 
+  defmodule BadCurrencies do
+    @moduledoc false
+    @behaviour PhoenixKitEcommerce.Shipping.Provider
+
+    @impl true
+    def key, do: "bad_currencies"
+    @impl true
+    def label, do: "Bad currencies"
+    @impl true
+    def services(_ctx), do: []
+    @impl true
+    def settings_fields, do: []
+    @impl true
+    def currencies, do: raise("currencies blew up")
+
+    @impl true
+    def quote(_request, _ctx),
+      do: {:ok, %PhoenixKitEcommerce.Shipping.Quote{amount: Decimal.new(1)}}
+  end
+
   defmodule NotAProvider do
     @moduledoc false
   end
@@ -502,6 +522,26 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
       end
     end
 
+    test "the worker is already gone when the timeout is reported" do
+      test_pid = self()
+
+      ctx =
+        stub_ctx(
+          %{
+            quote: fn _request, _ctx ->
+              send(test_pid, {:worker, self()})
+              Process.sleep(:infinity)
+            end
+          },
+          timeout: 50
+        )
+
+      capture_log(fn -> assert Shipping.quote(ctx, request()) == {:error, :timeout} end)
+
+      assert_received {:worker, worker}
+      assert Process.info(worker) == nil
+    end
+
     test "no stray messages are left in the caller mailbox" do
       ctx = stub_ctx(%{mode: :hang}, timeout: 20)
       capture_log(fn -> Shipping.quote(ctx, request()) end)
@@ -658,6 +698,16 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
       assert Shipping.quote(ctx, request(currency: nil)) == {:error, :unsupported_currency}
     end
 
+    test "a currencies/0 that raises does not escape the facade" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_providers, [BadCurrencies])
+      ctx = Shipping.context(nil, provider: "bad_currencies")
+
+      capture_log(fn ->
+        assert {:error, {:provider_crashed, message}} = Shipping.quote(ctx, request())
+        assert message =~ "currencies blew up"
+      end)
+    end
+
     test "providers without currencies/0 accept any currency" do
       assert {:ok, _} = Shipping.quote(stub_ctx(), request(currency: "JPY"))
     end
@@ -676,6 +726,27 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
       two = request(origin: %{"b" => [%{"q" => 2, "p" => 1}], "a" => %{"y" => 2, "x" => 1}})
 
       assert Shipping.request_hash(one) == Shipping.request_hash(two)
+    end
+
+    test "never raises, whatever the origin holds" do
+      for origin <- [
+            %{"bytes" => <<255, 254, 0>>},
+            %{{:tuple, :key} => 1},
+            %{"pid" => self(), "tuple" => {1, :two, "3"}, "fun" => &is_atom/1},
+            %{"nested" => [<<0xC3, 0x28>>, {:a, <<255>>}]},
+            %{<<255>> => 1}
+          ] do
+        assert hash = Shipping.request_hash(request(origin: origin))
+        assert hash =~ ~r/\A[0-9a-f]{32}\z/
+        assert hash == Shipping.request_hash(request(origin: origin))
+      end
+    end
+
+    test "different non-UTF-8 bytes hash differently" do
+      one = request(origin: %{"b" => <<255>>})
+      two = request(origin: %{"b" => <<254>>})
+
+      refute Shipping.request_hash(one) == Shipping.request_hash(two)
     end
 
     test "is pinned to the canonical JSON, since carts store it" do
@@ -806,6 +877,41 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
 
       assert_received {:stub_called, :quote, _}
       refute_received {:stub_called, :quote, _}
+    end
+
+    test "a timeout of a caller-specific short timeout is not cached" do
+      ctx = stub_ctx(%{mode: :hang}, timeout: 30)
+
+      capture_log(fn ->
+        assert {:error, :timeout} = Shipping.quote(ctx, request())
+        assert {:error, :timeout} = Shipping.quote(ctx, request())
+      end)
+
+      assert_received {:stub_called, :quote, _}
+      assert_received {:stub_called, :quote, _}
+    end
+
+    test "a timeout of the default timeout is cached" do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_provider_timeout, 30)
+      ctx = stub_ctx(%{mode: :hang})
+
+      capture_log(fn ->
+        assert {:error, :timeout} = Shipping.quote(ctx, request())
+        assert {:error, :timeout} = Shipping.quote(ctx, request())
+      end)
+
+      assert_received {:stub_called, :quote, _}
+      refute_received {:stub_called, :quote, _}
+    end
+
+    test "a negative cache hit does not log the failure again" do
+      ctx = stub_ctx(%{quote: {:error, :offline}})
+
+      first = capture_log(fn -> Shipping.quote(ctx, request()) end)
+      second = capture_log(fn -> assert {:error, :offline} = Shipping.quote(ctx, request()) end)
+
+      assert first =~ "failed: :offline"
+      refute second =~ "failed"
     end
 
     test "the negative entry expires" do

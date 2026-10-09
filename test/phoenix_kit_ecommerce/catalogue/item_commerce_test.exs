@@ -33,9 +33,38 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerceTest do
       assert Keyword.has_key?(errors, :download_limit)
     end
 
+    test "rejects a negative side on each dimension" do
+      for field <- ~w(length_mm width_mm height_mm) do
+        assert {:error, errors} = ItemCommerce.cast(%{field => "-1"}, %{})
+        assert Keyword.has_key?(errors, String.to_existing_atom(field))
+      end
+    end
+
     test "rejects a negative weight_grams" do
       assert {:error, errors} = ItemCommerce.cast(%{"weight_grams" => "-5"}, %{})
       assert Keyword.has_key?(errors, :weight_grams)
+    end
+  end
+
+  describe "cast/2 dimensions" do
+    test "the three sides round-trip as integers" do
+      params = %{"length_mm" => "300", "width_mm" => 200, "height_mm" => "100"}
+
+      assert {:ok, %{"length_mm" => 300, "width_mm" => 200, "height_mm" => 100}} =
+               ItemCommerce.cast(params, %{})
+    end
+
+    test "merging keeps the sides already stored" do
+      assert {:ok, map} =
+               ItemCommerce.cast(%{"vendor" => "Acme"}, %{"length_mm" => 300, "width_mm" => 200})
+
+      assert map["length_mm"] == 300
+      assert map["width_mm"] == 200
+    end
+
+    test "a blank side clears it" do
+      assert {:ok, map} = ItemCommerce.cast(%{"length_mm" => ""}, %{"length_mm" => 300})
+      assert map["length_mm"] == nil
     end
   end
 
@@ -74,6 +103,9 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerceTest do
                "currency" => nil,
                "taxable" => true,
                "weight_grams" => 0,
+               "length_mm" => nil,
+               "width_mm" => nil,
+               "height_mm" => nil,
                "requires_shipping" => true,
                "made_to_order" => false,
                "file_uuid" => nil,

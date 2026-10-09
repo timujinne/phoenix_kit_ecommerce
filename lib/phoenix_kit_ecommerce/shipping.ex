@@ -278,13 +278,11 @@ defmodule PhoenixKitEcommerce.Shipping do
         currency: request.currency || ctx.currency
     }
 
-    if currency_supported?(ctx.provider, request.currency) do
-      call(ctx, :quote, {:quotes, [request_hash(request)]}, fn ->
-        normalize(:quote, ctx.provider.quote(request, ctx))
-      end)
-    else
-      {:error, :unsupported_currency}
-    end
+    call(ctx, :quote, {:quotes, [request_hash(request)]}, fn ->
+      if currency_supported?(ctx.provider, request.currency),
+        do: normalize(:quote, ctx.provider.quote(request, ctx)),
+        else: {:error, :unsupported_currency}
+    end)
   end
 
   defp currency_supported?(provider, currency) when is_binary(currency) do
@@ -353,10 +351,18 @@ defmodule PhoenixKitEcommerce.Shipping do
 
     result =
       :telemetry.span(@telemetry_event, metadata, fn ->
-        result = cached(cache, key, operation, ctx, fn -> guarded(ctx, fun) end)
+        result =
+          cached(cache, key, operation, ctx, fn -> run_logged(key, operation, ctx, fun) end)
+
         {result, Map.put(metadata, :status, status(result))}
       end)
 
+    result
+  end
+
+  # Runs (and logs) only on a cache miss: a cached failure answers silently.
+  defp run_logged(key, operation, ctx, fun) do
+    result = guarded(ctx, fun)
     log_error(result, key, operation)
     result
   end
@@ -366,9 +372,15 @@ defmodule PhoenixKitEcommerce.Shipping do
 
     Cache.fetch(key, Cache.ttl(kind), fun,
       negative_ttl: Cache.ttl(:negative),
-      cacheable_error?: &(not business_error?(&1))
+      cacheable_error?: &cacheable_error?(&1, ctx)
     )
   end
+
+  # Business errors are answers about the cart, not about the carrier, and a
+  # `:timeout` measured against a caller-specific `ctx.opts[:timeout]` says
+  # nothing about the default timeout other callers use.
+  defp cacheable_error?(:timeout, %Context{opts: opts}), do: is_nil(Keyword.get(opts, :timeout))
+  defp cacheable_error?(reason, _ctx), do: not business_error?(reason)
 
   defp fingerprint(%Context{} = ctx) do
     method =
@@ -408,8 +420,14 @@ defmodule PhoenixKitEcommerce.Shipping do
         {:error, {:provider_crashed, Exception.format_exit(reason)}}
     after
       timeout ->
+        # Wait for the worker to be gone (like `Task.shutdown/2`): signals from
+        # one process arrive in order, so after the :DOWN no late result tuple
+        # can still show up in the caller's mailbox.
         Process.exit(pid, :kill)
-        Process.demonitor(monitor, [:flush])
+
+        receive do
+          {:DOWN, ^monitor, :process, ^pid, _reason} -> :ok
+        end
 
         receive do
           {^tag, _late} -> :ok
@@ -530,7 +548,15 @@ defmodule PhoenixKitEcommerce.Shipping do
     }
     |> canonical()
     |> Jason.encode!()
-    |> then(&:crypto.hash(:sha256, &1))
+    |> digest()
+  rescue
+    # Never raises: a request nothing can encode still gets a stable hash.
+    _error -> request |> :erlang.term_to_binary([:deterministic]) |> digest()
+  end
+
+  defp digest(binary) do
+    :sha256
+    |> :crypto.hash(binary)
     |> binary_part(0, 16)
     |> Base.encode16(case: :lower)
   end
@@ -555,7 +581,7 @@ defmodule PhoenixKitEcommerce.Shipping do
 
   defp canonical(map) when is_map(map) do
     map
-    |> Enum.map(fn {key, value} -> {to_string(key), canonical(value)} end)
+    |> Enum.map(fn {key, value} -> {key_string(key), canonical(value)} end)
     |> Enum.sort()
     |> Jason.OrderedObject.new()
   end
@@ -563,5 +589,18 @@ defmodule PhoenixKitEcommerce.Shipping do
   defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
   defp canonical(value) when is_boolean(value) or is_nil(value), do: value
   defp canonical(value) when is_atom(value), do: Atom.to_string(value)
-  defp canonical(value), do: value
+  defp canonical(value) when is_number(value), do: value
+
+  # Valid text is kept as is (stored hashes depend on it); bytes that are not
+  # UTF-8 would make the JSON encoder raise, so they travel base64 encoded.
+  defp canonical(value) when is_binary(value) do
+    if String.valid?(value), do: value, else: "base64:" <> Base.encode64(value)
+  end
+
+  # Tuples, pids, functions...: whatever `Codec.dump/1` makes of them.
+  defp canonical(value), do: value |> Codec.dump() |> canonical()
+
+  defp key_string(key) when is_binary(key), do: canonical(key)
+  defp key_string(key) when is_atom(key), do: Atom.to_string(key)
+  defp key_string(key), do: key |> Codec.dump() |> inspect()
 end

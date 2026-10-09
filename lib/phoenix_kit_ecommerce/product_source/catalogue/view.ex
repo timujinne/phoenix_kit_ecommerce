@@ -96,6 +96,9 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
           base_currency_code(),
       taxable: Map.get(ecommerce, "taxable", true),
       weight_grams: Map.get(ecommerce, "weight_grams") || 0,
+      length_mm: Map.get(ecommerce, "length_mm"),
+      width_mm: Map.get(ecommerce, "width_mm"),
+      height_mm: Map.get(ecommerce, "height_mm"),
       requires_shipping: Map.get(ecommerce, "requires_shipping", true),
       made_to_order: Map.get(ecommerce, "made_to_order", false),
       product_type: Map.get(ecommerce, "product_type") || "physical",
@@ -173,12 +176,31 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
       featured_product_uuid: Map.get(ecommerce, "featured_item_uuid"),
       featured_product: featured_product_placeholder(Keyword.get(opts, :featured_image_uuid)),
       storefront_filters: Map.get(ecommerce, "storefront_filters") || %{},
-      metadata: %{},
+      metadata: category_metadata(ecommerce),
       inserted_at: Map.get(category, :inserted_at),
       updated_at: Map.get(category, :updated_at)
     }
 
     struct(Category, fields)
+  end
+
+  # What the shop reads off a legacy category's `metadata["parcel_defaults"]`
+  # (`Category.parcel_defaults/1`) is built from the catalogue category's
+  # `parcel_*` fields, so both sources answer through the same reader.
+  defp category_metadata(ecommerce) do
+    parcel =
+      for {field, key} <- [
+            {"parcel_length_mm", "length_mm"},
+            {"parcel_width_mm", "width_mm"},
+            {"parcel_height_mm", "height_mm"},
+            {"parcel_weight_g", "weight_g"}
+          ],
+          value = Map.get(ecommerce, field),
+          value != 0,
+          into: %{},
+          do: {key, value}
+
+    if parcel == %{}, do: %{}, else: %{"parcel_defaults" => parcel}
   end
 
   defp featured_product_placeholder(image_uuid) when is_binary(image_uuid) and image_uuid != "" do

@@ -34,6 +34,8 @@ defmodule PhoenixKitEcommerce.Product do
   - `download_limit` - Max downloads (digital)
   - `download_expiry_days` - Days until download expires
   - `metadata` - JSONB for custom fields
+  - `length_mm`, `width_mm`, `height_mm` - virtual; the size of one unit in
+    millimetres, kept in `metadata["dimensions_mm"]` (see `dimensions_mm/1`)
   """
 
   use Ecto.Schema
@@ -42,6 +44,7 @@ defmodule PhoenixKitEcommerce.Product do
 
   alias PhoenixKit.Utils.Slug
   alias PhoenixKitEcommerce.LocalizedSlug
+  alias PhoenixKitEcommerce.Shipping.MetadataFields
 
   @type t :: %__MODULE__{}
 
@@ -49,6 +52,8 @@ defmodule PhoenixKitEcommerce.Product do
   @product_types ["physical", "digital"]
 
   @primary_key {:uuid, UUIDv7, autogenerate: true}
+
+  @dimension_fields [length_mm: :length_mm, width_mm: :width_mm, height_mm: :height_mm]
 
   schema "phoenix_kit_shop_products" do
     # Localized fields (JSONB maps: %{"en" => "value", "ru" => "значение"})
@@ -108,6 +113,13 @@ defmodule PhoenixKitEcommerce.Product do
     # Extensibility
     field :metadata, :map, default: %{}
 
+    # Size of one unit, millimetres. Not columns: the changeset keeps them in
+    # `metadata["dimensions_mm"]` (the catalogue source builds them from the
+    # item's `data["ecommerce"]`), `with_dimensions/1` fills them for forms.
+    field :length_mm, :integer, virtual: true
+    field :width_mm, :integer, virtual: true
+    field :height_mm, :integer, virtual: true
+
     # Relations
     belongs_to :category, PhoenixKitEcommerce.Category,
       foreign_key: :category_uuid,
@@ -159,6 +171,7 @@ defmodule PhoenixKitEcommerce.Product do
       :category_uuid,
       :created_by_uuid
     ])
+    |> MetadataFields.cast_fields(attrs, @dimension_fields)
     |> normalize_map_fields(@localized_fields)
     |> validate_required([:price])
     |> validate_localized_required(:title)
@@ -171,6 +184,7 @@ defmodule PhoenixKitEcommerce.Product do
     |> validate_number(:download_limit, greater_than: 0)
     |> validate_number(:download_expiry_days, greater_than: 0)
     |> validate_length(:currency, is: 3)
+    |> MetadataFields.put(attrs, :dimensions_mm, @dimension_fields)
     |> LocalizedSlug.maybe_generate(:title)
     # V171's projection pkey (base language, value). The trigger insert is
     # what raises; Ecto matches this name so a collision is a :slug error
@@ -182,6 +196,42 @@ defmodule PhoenixKitEcommerce.Product do
   Returns the list of localized field names.
   """
   def localized_fields, do: @localized_fields
+
+  @doc """
+  The size of one unit as `[longest, middle, shortest]` millimetres, or `nil`
+  unless all three sides are known and positive.
+
+  Reads the virtual `length_mm`/`width_mm`/`height_mm` first (what a form or
+  the catalogue source set), the stored `metadata["dimensions_mm"]` when none
+  of them is set.
+  """
+  @spec dimensions_mm(t() | term()) :: [pos_integer()] | nil
+  def dimensions_mm(%__MODULE__{} = product) do
+    virtual = Enum.map(@dimension_fields, fn {field, _key} -> Map.get(product, field) end)
+
+    sides =
+      if Enum.any?(virtual, &(not is_nil(&1))),
+        do: virtual,
+        else: MetadataFields.stored(product, :dimensions_mm, @dimension_fields)
+
+    if Enum.all?(sides, &(is_integer(&1) and &1 > 0)), do: Enum.sort(sides, :desc)
+  end
+
+  def dimensions_mm(_other), do: nil
+
+  @doc """
+  Fills the virtual dimension fields of a product from
+  `metadata["dimensions_mm"]`, for editing forms. Fields that are already set
+  are kept.
+  """
+  @spec with_dimensions(t()) :: t()
+  def with_dimensions(%__MODULE__{} = product) do
+    @dimension_fields
+    |> Enum.zip(MetadataFields.stored(product, :dimensions_mm, @dimension_fields))
+    |> Enum.reduce(product, fn {{field, _key}, stored}, acc ->
+      if is_nil(Map.get(acc, field)), do: Map.put(acc, field, stored), else: acc
+    end)
+  end
 
   @doc """
   Returns true if product is active.

@@ -272,11 +272,16 @@ defmodule PhoenixKitEcommerce.Shipping.StructsTest do
              } = PickupPoint.manual(" 12 ")
     end
 
-    test "a code that looks like a postcode is also the postcode" do
-      assert %PickupPoint{id: "36000", postcode: "36000"} = PickupPoint.manual("36000")
-      assert %PickupPoint{postcode: "3600"} = PickupPoint.manual("3600")
-      assert %PickupPoint{postcode: nil} = PickupPoint.manual("360000000")
-      assert %PickupPoint{postcode: nil} = PickupPoint.manual("36A00")
+    test "does not derive a postcode from the code" do
+      for code <- ["36000", "3600", "360000000", "36A00"] do
+        assert %PickupPoint{id: ^code, postcode: nil} = PickupPoint.manual(code)
+      end
+    end
+
+    test "a blank or non-string code has no point" do
+      assert PickupPoint.manual("") == nil
+      assert PickupPoint.manual("   ") == nil
+      assert PickupPoint.manual(nil) == nil
     end
 
     test "survives a JSON round-trip" do
