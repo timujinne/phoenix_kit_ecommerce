@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.Shipping.Providers.FixedTest do
   use ExUnit.Case, async: true
 
-  alias PhoenixKitEcommerce.Shipping.{Context, Field, Quote, RateRequest, Service}
+  alias PhoenixKitEcommerce.Shipping.{Context, Quote, RateRequest, Service}
   alias PhoenixKitEcommerce.Shipping.Providers.Fixed
   alias PhoenixKitEcommerce.ShippingMethod
 
@@ -14,25 +14,19 @@ defmodule PhoenixKitEcommerce.Shipping.Providers.FixedTest do
   end
 
   describe "services/1" do
-    test "defaults to no destination" do
+    test "offers one service that never asks for a destination" do
       assert [%Service{key: "default", destination: :none, lookup: :manual}] =
                Fixed.services(ctx())
     end
 
-    test "address destination" do
-      assert [%Service{destination: :address}] =
-               Fixed.services(ctx(settings: %{"destination" => "address"}))
-    end
-
-    test "anything else means no destination" do
+    test "ignores a leftover destination setting" do
       assert [%Service{destination: :none}] =
-               Fixed.services(ctx(settings: %{"destination" => "warp"}))
+               Fixed.services(ctx(settings: %{"destination" => "address"}))
     end
   end
 
-  test "settings_fields/0 describes the destination select" do
-    assert [%Field{key: "destination", type: :select, options: options}] = Fixed.settings_fields()
-    assert Enum.map(options, &elem(&1, 1)) == ["none", "address"]
+  test "has no settings" do
+    assert Fixed.settings_fields() == []
   end
 
   describe "quote/2" do

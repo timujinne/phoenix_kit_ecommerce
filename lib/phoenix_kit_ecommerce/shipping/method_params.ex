@@ -7,11 +7,14 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
   The param (string or atom keys):
 
       %{
-        "provider" => "nova_poshta",
+        "provider" => "acme_post",
         "service" => "warehouse",
-        "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Poltava"}},
+        "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Springfield"}},
         "pricing" => %{"markup_percent" => "10", "markup_fixed" => "0", "round_to" => "5"}
       }
+
+  `round_to` is the rounding step of the price: empty or `0` means no
+  rounding, a positive number rounds up to a multiple of it.
 
   Validation uses the provider registry only: no database, no credentials and
   nothing but a short (2 s) call to the provider's `services/1`:
@@ -46,13 +49,14 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
 
     * `{:ok, block}` - the map to store
     * `{:ok, nil}` - the block is to be removed: no provider, or `"fixed"`
-      without settings (the behaviour of a method without the block)
+      (it has no service and no settings: the behaviour of a method without
+      the block)
     * `{:error, messages}` - what is wrong, as `{message, bindings}` pairs for
       `Ecto.Changeset.add_error/4` (user text only ever travels in the
       bindings); a param that is not a map is an error too
 
-  `"fixed"` with no service and nothing but its default settings
-  (`destination: "none"`) is a method without the block.
+  `"fixed"` is always a method without the block, whatever else the param
+  carries.
   """
   @spec build(term(), keyword()) :: {:ok, map() | nil} | {:error, [message()]}
   def build(param, opts \\ [])
@@ -63,24 +67,14 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
     settings = param |> Codec.get(:settings) |> Codec.string_map() |> drop_blank()
     pricing = Codec.get(param, :pricing)
 
-    if provider in ["", @fixed] and plain_fixed?(service, settings) do
+    if provider in ["", @fixed] do
       {:ok, nil}
     else
-      validate(provider_key(provider), service, settings, pricing, opts)
+      validate(provider, service, settings, pricing, opts)
     end
   end
 
   def build(_param, _opts), do: {:error, [{"must be a map", []}]}
-
-  defp plain_fixed?("", settings) do
-    {destination, rest} = Map.pop(settings, "destination", "none")
-    rest == %{} and String.trim(to_string(destination)) == "none"
-  end
-
-  defp plain_fixed?(_service, settings), do: settings == %{}
-
-  defp provider_key(""), do: @fixed
-  defp provider_key(key), do: key
 
   defp validate(key, service, settings, pricing, opts) do
     case find_provider(key) do
@@ -233,9 +227,6 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
     cond do
       Decimal.compare(decimal, @max_pricing) == :gt ->
         {:error, {"%{field} must be at most %{max}", [field: key, max: @max_pricing]}}
-
-      key == :round_to and Decimal.compare(decimal, 0) != :gt ->
-        {:error, {"%{field} must be greater than 0", [field: key]}}
 
       Decimal.compare(decimal, 0) == :lt ->
         {:error, {"%{field} must be 0 or greater", [field: key]}}

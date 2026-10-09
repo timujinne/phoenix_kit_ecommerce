@@ -125,11 +125,16 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
       assert get_field(changeset(%{"provider" => "fixed"}, %{}, method), :metadata) == %{}
     end
 
-    test "fixed with only its default settings and no service removes the block" do
+    test "fixed removes the block whatever settings and service it carries" do
       method = %ShippingMethod{metadata: %{"shipping_provider" => stub()}}
 
-      for settings <- [%{"destination" => "none"}, %{"destination" => " none "}, %{}] do
-        cs = changeset(%{"provider" => "fixed", "settings" => settings}, %{}, method)
+      for param <- [
+            %{"provider" => "fixed", "settings" => %{"destination" => "none"}},
+            %{"provider" => "fixed", "settings" => %{"destination" => "address"}},
+            %{"provider" => "fixed", "service" => "default", "settings" => %{}},
+            %{"provider" => "fixed", "settings" => %{}}
+          ] do
+        cs = changeset(param, %{}, method)
 
         assert cs.valid?
         assert get_field(cs, :metadata) == %{}
@@ -147,24 +152,22 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
       end
     end
 
-    test "fixed with settings keeps the block" do
-      cs =
-        changeset(%{
-          "provider" => "fixed",
-          "service" => "default",
-          "settings" => %{"destination" => "address"}
-        })
+    test "a stored fixed block with an address destination is read as no block" do
+      method = %ShippingMethod{
+        metadata: %{
+          "shipping_provider" => %{
+            "provider" => "fixed",
+            "service" => "default",
+            "settings" => %{"destination" => "address"}
+          }
+        }
+      }
 
-      assert cs.valid?
-      assert %{"provider" => "fixed", "settings" => %{"destination" => "address"}} = block(cs)
-      refute ShippingMethod.calculated?(apply_changes(cs))
-    end
+      assert %MethodConfig{provider: "fixed", service: nil, settings: settings} =
+               ShippingMethod.shipping_config(method)
 
-    test "blank settings values are dropped" do
-      cs = changeset(%{"provider" => "fixed", "settings" => %{"destination" => ""}})
-
-      assert cs.valid?
-      assert get_field(cs, :metadata) == %{}
+      assert settings == %{}
+      refute ShippingMethod.calculated?(method)
     end
   end
 
@@ -339,12 +342,14 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
       end
     end
 
-    test "round_to must be positive" do
-      for value <- ["0", "-5"] do
-        cs = changeset(stub(%{"pricing" => %{"round_to" => value}}))
-        assert %{shipping_provider: [message]} = errors_on(cs)
-        assert message =~ "round_to"
-      end
+    test "round_to may not be negative, zero means no rounding" do
+      cs = changeset(stub(%{"pricing" => %{"round_to" => "-5"}}))
+      assert %{shipping_provider: [message]} = errors_on(cs)
+      assert message =~ "round_to"
+
+      cs = changeset(stub(%{"pricing" => %{"round_to" => "0"}}))
+      assert cs.valid?
+      assert block(cs)["pricing"] == %{"round_to" => "0"}
     end
 
     test "garbage is not a number" do
@@ -354,7 +359,7 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
     end
 
     test "every problem is reported" do
-      pricing = %{"markup_percent" => "-1", "markup_fixed" => "-2", "round_to" => "0"}
+      pricing = %{"markup_percent" => "-1", "markup_fixed" => "-2", "round_to" => "-3"}
       cs = changeset(stub(%{"pricing" => pricing, "settings" => %{}}))
 
       assert %{shipping_provider: messages} = errors_on(cs)

@@ -4,14 +4,15 @@ defmodule PhoenixKitEcommerce.Shipping.MethodConfig do
   `method.metadata["shipping_provider"]`:
 
       %{
-        "provider" => "nova_poshta",
+        "provider" => "acme_post",
         "service" => "warehouse",
-        "settings" => %{"sender_city" => %{"id" => "...", "name" => "Poltava"}},
-        "pricing" => %{"markup_percent" => "0", "markup_fixed" => "0", "round_to" => "1"}
+        "settings" => %{"sender_city" => %{"id" => "...", "name" => "Springfield"}},
+        "pricing" => %{"markup_percent" => "0", "markup_fixed" => "0", "round_to" => "5"}
       }
 
   A method without the block uses the `"fixed"` provider, which is the
-  behaviour shipping methods always had.
+  behaviour shipping methods always had. `round_to` is `nil` (no rounding)
+  unless a positive step is stored.
   """
 
   alias PhoenixKitEcommerce.Shipping.Codec
@@ -25,13 +26,13 @@ defmodule PhoenixKitEcommerce.Shipping.MethodConfig do
             pricing: %{
               markup_percent: Decimal.new(0),
               markup_fixed: Decimal.new(0),
-              round_to: Decimal.new(1)
+              round_to: nil
             }
 
   @type pricing :: %{
           markup_percent: Decimal.t(),
           markup_fixed: Decimal.t(),
-          round_to: Decimal.t()
+          round_to: Decimal.t() | nil
         }
 
   @type t :: %__MODULE__{
@@ -50,17 +51,26 @@ defmodule PhoenixKitEcommerce.Shipping.MethodConfig do
   def from_method(%{metadata: metadata}), do: from_metadata(metadata)
   def from_method(_other), do: from_metadata(nil)
 
-  @doc "Reads the configuration out of a metadata map."
+  @doc """
+  Reads the configuration out of a metadata map. A `"fixed"` block (an older
+  one could ask the customer for an address) is read as no block at all.
+  """
   @spec from_metadata(term()) :: t()
   def from_metadata(metadata) do
     block = Codec.get(metadata, :shipping_provider)
 
-    %__MODULE__{
-      provider: block |> Codec.get(:provider) |> provider_key(),
-      service: block |> Codec.get(:service) |> service_key(),
-      settings: block |> Codec.get(:settings) |> Codec.string_map(),
-      pricing: block |> Codec.get(:pricing) |> pricing_from()
-    }
+    case block |> Codec.get(:provider) |> provider_key() do
+      @fixed ->
+        %__MODULE__{}
+
+      provider ->
+        %__MODULE__{
+          provider: provider,
+          service: block |> Codec.get(:service) |> service_key(),
+          settings: block |> Codec.get(:settings) |> Codec.string_map(),
+          pricing: block |> Codec.get(:pricing) |> pricing_from()
+        }
+    end
   end
 
   @doc """
@@ -93,7 +103,7 @@ defmodule PhoenixKitEcommerce.Shipping.MethodConfig do
     %{
       markup_percent: non_negative(Codec.get(pricing, :markup_percent), Decimal.new(0)),
       markup_fixed: non_negative(Codec.get(pricing, :markup_fixed), Decimal.new(0)),
-      round_to: positive(Codec.get(pricing, :round_to), Decimal.new(1))
+      round_to: positive(Codec.get(pricing, :round_to), nil)
     }
   end
 

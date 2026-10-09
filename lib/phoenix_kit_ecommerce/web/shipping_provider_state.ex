@@ -106,21 +106,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
   @doc """
   The `shipping_provider` param for `ShippingMethod.changeset/2`.
 
-  The fixed provider has one service, `default`, which the form does not ask
-  for: it is sent only when the provider needs it (the customer gives an
-  address), so that a plain fixed price stays a method without a block.
-  Pricing is not a thing of the fixed provider.
+  The fixed provider has no service and no settings and no pricing, so it is
+  sent bare and a plain fixed price stays a method without a block.
   """
   @spec to_param(t()) :: map()
-  def to_param(%{provider: @fixed} = state) do
-    destination = state.settings["destination"]
-
-    %{
-      "provider" => @fixed,
-      "service" => if(destination == "address", do: "default", else: ""),
-      "settings" => Map.take(state.settings, ["destination"]),
-      "pricing" => %{}
-    }
+  def to_param(%{provider: @fixed}) do
+    %{"provider" => @fixed, "service" => "", "settings" => %{}, "pricing" => %{}}
   end
 
   def to_param(state) do
@@ -209,7 +200,6 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
        when message in [
               "%{field} must be a number",
               "%{field} must be at most %{max}",
-              "%{field} must be greater than 0",
               "%{field} must be 0 or greater"
             ] do
     put_field_error(acc, "pricing:#{opts[:field]}", pricing_message(message, opts))
@@ -226,9 +216,6 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
     do: put_general_error(acc, gettext("The shipping provider settings are not valid"))
 
   defp pricing_message("%{field} must be a number", _opts), do: gettext("Must be a number")
-
-  defp pricing_message("%{field} must be greater than 0", _opts),
-    do: gettext("Must be greater than 0")
 
   defp pricing_message("%{field} must be 0 or greater", _opts),
     do: gettext("Must be 0 or greater")

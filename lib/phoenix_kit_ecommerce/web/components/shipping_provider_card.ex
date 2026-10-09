@@ -39,6 +39,10 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
     values: [:idle, :loading, :ok, :error],
     doc: "the state of the carrier's service list"
 
+  attr :pay_on_delivery, :boolean,
+    default: false,
+    doc: "the method is paid on delivery: the Pricing card price is not a fallback then"
+
   attr :fields, :list, default: [], doc: "`Field` structs of the chosen provider"
   attr :integration, :map, default: nil, doc: "`%{name:, connected?:}` or `nil`"
   attr :locality_results, :map, default: %{}
@@ -175,13 +179,20 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
                 name={"#{prefix()}[pricing][#{key}]"}
                 value={@state.pricing[key]}
                 label={State.pricing_label(key)}
-                placeholder={if key == "round_to", do: "1", else: "0"}
+                placeholder={if key == "round_to", do: gettext("No rounding"), else: "0"}
                 errors={Map.get(@field_errors, "pricing:" <> key, [])}
               />
             </div>
+            <p id="shipping-pricing-round-to-help" class="text-sm text-base-content/60 mt-2">
+              {gettext("Leave the rounding empty for no rounding.")}
+            </p>
           </div>
 
-          <p id="shipping-provider-fallback-hint" class="text-sm text-base-content/60 mt-4">
+          <p
+            :if={not @pay_on_delivery}
+            id="shipping-provider-fallback-hint"
+            class="text-sm text-base-content/60 mt-4"
+          >
             <.icon name="hero-information-circle" class="w-4 h-4 inline mr-1" />
             {gettext(
               "The price in the Pricing card is the fallback price: the customer pays it when the carrier does not answer."

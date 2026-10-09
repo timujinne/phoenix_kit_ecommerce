@@ -321,6 +321,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
             provider_known?={@provider_known?}
             service_options={service_select_options(@services, @sp.service, @services_status)}
             services_status={@services_status}
+            pay_on_delivery={@pay_on_delivery}
             fields={@provider_fields}
             integration={@integration}
             locality_results={@locality_results}

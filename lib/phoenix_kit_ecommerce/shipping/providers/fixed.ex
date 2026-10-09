@@ -3,15 +3,16 @@ defmodule PhoenixKitEcommerce.Shipping.Providers.Fixed do
   The built-in `"fixed"` provider: the price is the price of the shipping
   method, exactly as shipping methods have always worked.
 
-  The only setting is `destination`: `none` (default) or `address`. It offers
-  a single service, `default`, and never searches anything.
+  It has no settings, offers a single service, `default`, and never asks the
+  customer for a destination or searches anything: it is the not-calculated
+  path of a shipping method.
   """
 
   @behaviour PhoenixKitEcommerce.Shipping.Provider
 
   use Gettext, backend: PhoenixKitEcommerce.Gettext
 
-  alias PhoenixKitEcommerce.Shipping.{Context, Field, Quote, RateRequest, Service}
+  alias PhoenixKitEcommerce.Shipping.{Context, Quote, RateRequest, Service}
 
   @impl true
   def key, do: "fixed"
@@ -20,23 +21,12 @@ defmodule PhoenixKitEcommerce.Shipping.Providers.Fixed do
   def label, do: gettext("Fixed price")
 
   @impl true
-  def services(%Context{settings: settings}) do
-    destination = if settings["destination"] == "address", do: :address, else: :none
-    [%Service{key: "default", label: gettext("Delivery"), destination: destination}]
+  def services(%Context{}) do
+    [%Service{key: "default", label: gettext("Delivery"), destination: :none}]
   end
 
   @impl true
-  def settings_fields do
-    [
-      %Field{
-        key: "destination",
-        label: gettext("Customer provides"),
-        type: :select,
-        options: [{gettext("Nothing"), "none"}, {gettext("Address"), "address"}],
-        default: "none"
-      }
-    ]
-  end
+  def settings_fields, do: []
 
   @impl true
   def quote(%RateRequest{}, %Context{method: %{price: %Decimal{} = price} = method} = ctx) do

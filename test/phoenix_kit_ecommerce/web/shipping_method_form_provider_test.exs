@@ -51,7 +51,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       refute has_element?(view, "#shipping-service-select")
       refute has_element?(view, "#shipping-provider-pricing")
       refute has_element?(view, "#shipping-provider-fallback-hint")
-      assert has_element?(view, "#shipping-provider-setting-destination")
+      refute has_element?(view, "#shipping-provider-setting-destination")
+      refute has_element?(view, "#shipping-provider-settings")
       refute_received {:stub_called, :services, _}
     end
 
@@ -68,11 +69,31 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       assert has_element?(view, "#shipping-provider-pricing")
       assert has_element?(view, "#shipping-pricing-markup_percent")
       assert has_element?(view, "#shipping-pricing-markup_fixed")
-      assert has_element?(view, "#shipping-pricing-round_to")
+      assert has_element?(view, "#shipping-pricing-round_to[placeholder='No rounding']")
+      assert has_element?(view, "#shipping-pricing-round-to-help")
       assert has_element?(view, "#shipping-provider-fallback-hint")
       # No error is shown for settings the admin has not had a chance to fill.
       refute has_element?(view, "#shipping-provider-errors")
       refute has_element?(view, "#shipping-provider-error-setting-sender_city")
+    end
+
+    test "the fallback hint goes away while the method is paid on delivery", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view, "stub")
+      assert has_element?(view, "#shipping-provider-fallback-hint")
+
+      view
+      |> form(@form, %{"shipping_method" => %{"pay_on_delivery" => "true"}})
+      |> render_change()
+
+      refute has_element?(view, "#shipping-provider-fallback-hint")
+      assert has_element?(view, "#shipping-provider-pricing")
+
+      view
+      |> form(@form, %{"shipping_method" => %{"pay_on_delivery" => "false"}})
+      |> render_change()
+
+      assert has_element?(view, "#shipping-provider-fallback-hint")
     end
 
     test "choosing a provider resets what was typed for the previous one", %{conn: conn} do
@@ -501,24 +522,34 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       assert ShippingMethod.pay_on_delivery?(method)
     end
 
-    test "a plain fixed price with an address stores the fixed block", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+    test "a stored fixed block with an address destination is dropped on save",
+         %{conn: conn} do
+      {:ok, method} =
+        Shop.create_shipping_method(%{
+          "name" => "Legacy fixed #{System.unique_integer([:positive])}",
+          "price" => "9",
+          "metadata" => %{
+            "shipping_provider" => %{
+              "provider" => "fixed",
+              "service" => "default",
+              "settings" => %{"destination" => "address"}
+            }
+          }
+        })
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+
+      refute has_element?(view, "#shipping-provider-setting-destination")
+      refute has_element?(view, "#shipping-provider-settings")
 
       view
-      |> form(@form, %{
-        "shipping_method" => %{
-          "name" => "Courier flat",
-          "price" => "9.00",
-          "shipping_provider" => %{"settings" => %{"destination" => "address"}}
-        }
-      })
+      |> form(@form, %{"shipping_method" => %{"name" => "Legacy renamed"}})
       |> render_submit()
 
-      assert method_named("Courier flat").metadata["shipping_provider"] == %{
-               "provider" => "fixed",
-               "service" => "default",
-               "settings" => %{"destination" => "address"}
-             }
+      refute Map.has_key?(
+               Shop.get_shipping_method!(method.uuid).metadata,
+               "shipping_provider"
+             )
     end
 
     test "saving without touching the card leaves a fixed method without a block",

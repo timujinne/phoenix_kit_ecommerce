@@ -22,7 +22,7 @@ defmodule PhoenixKitEcommerce.Shipping.Pricing do
     3. a `:fallback` quote (the carrier could not be reached) costs the
        `method.price`
     4. otherwise `amount * (1 + markup_percent / 100) + markup_fixed`, rounded
-       up to a multiple of `round_to`
+       up to a multiple of `round_to` (no rounding when it is unset)
   """
   @spec final_amount(MethodConfig.t(), Quote.t(), map(), Decimal.t()) :: Decimal.t()
   def final_amount(%MethodConfig{} = config, %Quote{} = rate, method, base_subtotal) do
@@ -62,6 +62,8 @@ defmodule PhoenixKitEcommerce.Shipping.Pricing do
     |> Decimal.max(@zero)
     |> round_up(pricing.round_to)
   end
+
+  defp round_up(amount, nil), do: amount
 
   defp round_up(amount, step) do
     amount

@@ -12,7 +12,7 @@ defmodule PhoenixKitEcommerce.Shipping.PricingTest do
           %{
             markup_percent: Decimal.new(0),
             markup_fixed: Decimal.new(0),
-            round_to: Decimal.new(1)
+            round_to: nil
           },
           pricing
         )
@@ -32,8 +32,20 @@ defmodule PhoenixKitEcommerce.Shipping.PricingTest do
     assert Decimal.equal?(final(config(), quote_of("85"), method()), 85)
   end
 
-  test "rounds a fractional price up to whole units" do
-    assert Decimal.equal?(final(config(), quote_of("85.10"), method()), 86)
+  test "does not round by default" do
+    assert Decimal.equal?(final(config(), quote_of("85.10"), method()), "85.10")
+  end
+
+  test "a Table rate with the default pricing keeps its fractions" do
+    config = MethodConfig.from_metadata(%{"shipping_provider" => %{"provider" => "table"}})
+
+    assert Decimal.equal?(final(config, quote_of("4.35"), method()), "4.35")
+  end
+
+  test "a round_to of 1 rounds up to whole units" do
+    config = config(%{round_to: Decimal.new(1)})
+
+    assert Decimal.equal?(final(config, quote_of("85.10"), method()), 86)
   end
 
   test "applies the percent markup" do
