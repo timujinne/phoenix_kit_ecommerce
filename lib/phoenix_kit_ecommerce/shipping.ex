@@ -131,8 +131,11 @@ defmodule PhoenixKitEcommerce.Shipping do
     * everything else is passed through as `ctx.opts` (`:timeout`, `:req_options`...)
 
   Credentials are only loaded when the provider implements `integration/0`:
-  the connection named by `settings["integration"]`, else the first connection
-  of the provider. Any failure leaves `credentials` as `nil`.
+  the system connection named by `settings["integration"]`, else the first
+  connection of the provider. A connection of another integration than the
+  provider's own (`integration/0`'s `key`, else the provider key) is refused
+  with a warning that names no secret. Any failure leaves `credentials` as
+  `nil`.
   """
   @spec context(term(), keyword()) :: Context.t()
   def context(method, opts \\ []) do
@@ -184,9 +187,14 @@ defmodule PhoenixKitEcommerce.Shipping do
     end
   end
 
+  # The connection must be a system one (the shop's, not a user's) and belong
+  # to the provider's own integration: `settings["integration"]` is a uuid an
+  # admin typed or a form posted, and must not lend another integration's
+  # secrets to a carrier.
   defp load_credentials(provider, settings) do
     with uuid when is_binary(uuid) <- connection_uuid(provider, settings),
-         {:ok, %{} = data} <- Integrations.get_credentials(uuid) do
+         {:ok, %{} = data} <- Integrations.get_credentials(uuid, owner: :system),
+         :ok <- check_connection_provider(provider, data) do
       data
     else
       _ -> nil
@@ -201,6 +209,19 @@ defmodule PhoenixKitEcommerce.Shipping do
       nil
   catch
     :exit, _reason -> nil
+  end
+
+  defp check_connection_provider(provider, data) do
+    if Codec.get(data, :provider) == integration_key(provider) do
+      :ok
+    else
+      Logger.warning(
+        "Shipping credentials for #{provider.key()} ignored: the chosen " <>
+          "connection belongs to another integration than #{integration_key(provider)}"
+      )
+
+      :mismatch
+    end
   end
 
   defp connection_uuid(provider, settings) do
