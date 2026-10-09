@@ -25,7 +25,7 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuoteTest do
 
   alias PhoenixKitEcommerce.Test.Shipping.StubProvider
 
-  @city %{"id" => "c1", "name" => "Poltava"}
+  @city %{"id" => "c1", "name" => "Springfield"}
   @locality %Locality{id: "L1", name: "Kyiv"}
 
   defmodule StrictProvider do
@@ -1307,7 +1307,7 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuoteTest do
       assert label.(%Destination{
                locality: %Locality{name: "Lviv"},
                pickup_point: %PickupPoint{number: "12"}
-             }) == "Lviv, №12"
+             }) == "Lviv, No. 12"
 
       assert label.(%Destination{
                locality: %Locality{name: "Lviv"},

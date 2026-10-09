@@ -33,7 +33,7 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
   end
 
   @valid %{"name" => "Carrier", "price" => "5.00"}
-  @city %{"id" => "c1", "name" => "Poltava"}
+  @city %{"id" => "c1", "name" => "Springfield"}
 
   setup do
     previous = Application.get_env(:phoenix_kit_ecommerce, :shipping_providers)
@@ -82,7 +82,7 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
         shipping_provider: %{
           provider: "stub",
           service: "courier",
-          settings: %{sender_city: %{id: "c1", name: "Poltava"}}
+          settings: %{sender_city: %{id: "c1", name: "Springfield"}}
         }
       }
 
@@ -260,8 +260,8 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
     test "a locality setting needs an id and a name" do
       for city <- [
             %{"id" => "c1"},
-            %{"name" => "Poltava"},
-            "Poltava",
+            %{"name" => "Springfield"},
+            "Springfield",
             %{"id" => "", "name" => ""}
           ] do
         cs = changeset(stub(%{"settings" => %{"sender_city" => city}}))

@@ -32,7 +32,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       Providers.clear_cache()
     end)
 
-    stub(%{localities: &poltava_search/1})
+    stub(%{localities: &city_search/1})
 
     %{conn: put_test_scope(conn, fake_scope())}
   end
@@ -266,17 +266,26 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
       choose_provider(view, "stub")
 
-      search_locality(view, "sender_city", "Pol")
+      search_locality(view, "sender_city", "Spr")
 
       assert has_element?(view, "#shipping-locality-results-sender_city")
-      assert has_element?(view, "#shipping-locality-option-sender_city-0", "Poltava")
-      assert has_element?(view, "#shipping-locality-option-sender_city-1", "Polonne")
+      assert has_element?(view, "#shipping-locality-option-sender_city-0", "Springfield")
+      assert has_element?(view, "#shipping-locality-option-sender_city-1", "Sprucewood")
 
       view |> element("#shipping-locality-option-sender_city-0") |> render_click()
 
-      assert has_element?(view, "#shipping-locality-selected-sender_city", "Poltava")
-      assert has_element?(view, "#shipping-provider-setting-sender_city-id[value='c-poltava']")
-      assert has_element?(view, "#shipping-provider-setting-sender_city-name[value='Poltava']")
+      assert has_element?(view, "#shipping-locality-selected-sender_city", "Springfield")
+
+      assert has_element?(
+               view,
+               "#shipping-provider-setting-sender_city-id[value='c-springfield']"
+             )
+
+      assert has_element?(
+               view,
+               "#shipping-provider-setting-sender_city-name[value='Springfield']"
+             )
+
       refute has_element?(view, "#shipping-locality-option-sender_city-0")
       # Picking touches nothing else: the untouched name is not "blank" yet.
       refute has_element?(view, @form, "be blank")
@@ -299,7 +308,9 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       assert method.metadata["shipping_provider"] == %{
                "provider" => "stub",
                "service" => "branch",
-               "settings" => %{"sender_city" => %{"id" => "c-poltava", "name" => "Poltava"}},
+               "settings" => %{
+                 "sender_city" => %{"id" => "c-springfield", "name" => "Springfield"}
+               },
                "pricing" => %{"markup_percent" => "10", "round_to" => "5"}
              }
 
@@ -308,12 +319,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
     end
 
     test "a short query does not call the carrier, a real one does", %{conn: conn} do
-      stub(%{localities: &poltava_search/1})
+      stub(%{localities: &city_search/1})
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
       choose_provider(view, "stub")
 
-      search_locality(view, "sender_city", "Pol")
-      assert_received {:stub_called, :search_localities, ["Pol"]}
+      search_locality(view, "sender_city", "Spr")
+      assert_received {:stub_called, :search_localities, ["Spr"]}
       assert has_element?(view, "#shipping-locality-option-sender_city-0")
 
       search_locality(view, "sender_city", "P")
@@ -340,8 +351,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
       choose_provider(view, "stub")
 
-      view |> element("#shipping-locality-search-sender_city") |> render_change(query("Pol"))
-      assert_receive {:lookup, slow, "Pol"}
+      view |> element("#shipping-locality-search-sender_city") |> render_change(query("Spr"))
+      assert_receive {:lookup, slow, "Spr"}
       assert has_element?(view, "#shipping-locality-results-sender_city [role=status]")
 
       # The admin deletes the text before the carrier answers.
@@ -360,8 +371,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
       choose_provider(view, "stub")
 
-      view |> element("#shipping-locality-search-sender_city") |> render_change(query("Pol"))
-      assert_receive {:lookup, slow, "Pol"}
+      view |> element("#shipping-locality-search-sender_city") |> render_change(query("Spr"))
+      assert_receive {:lookup, slow, "Spr"}
 
       choose_provider(view, "table")
       refute has_element?(view, "#shipping-provider-setting-sender_city")
@@ -381,7 +392,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
     test "only an offered result of the provider on screen can be picked", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
       choose_provider(view, "stub")
-      search_locality(view, "sender_city", "Pol")
+      search_locality(view, "sender_city", "Spr")
 
       pick = fn attrs ->
         render_click(
@@ -404,13 +415,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       end
 
       pick.(%{})
-      assert has_element?(view, "#shipping-locality-selected-sender_city", "Poltava")
+      assert has_element?(view, "#shipping-locality-selected-sender_city", "Springfield")
     end
 
     test "clearing the pick brings the search back and the required error", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
       choose_provider(view, "stub")
-      search_locality(view, "sender_city", "Pol")
+      search_locality(view, "sender_city", "Spr")
       view |> element("#shipping-locality-option-sender_city-0") |> render_click()
       assert has_element?(view, "#shipping-locality-selected-sender_city")
 
@@ -447,7 +458,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
     test "a markup that is not a number is reported under its input", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
       choose_provider(view, "stub")
-      search_locality(view, "sender_city", "Pol")
+      search_locality(view, "sender_city", "Spr")
       view |> element("#shipping-locality-option-sender_city-0") |> render_click()
 
       view
@@ -478,7 +489,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       refute has_element?(view, "#shipping-services-loading")
       assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
 
-      view |> element("#shipping-locality-search-sender_city") |> render_change(query("Pol"))
+      view |> element("#shipping-locality-search-sender_city") |> render_change(query("Spr"))
       render_async(view)
       render_click(view, "clear_locality", %{"key" => "sender_city"})
 
@@ -633,11 +644,11 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
   # The stub's behaviour for this test; its calls are reported to the test.
   defp stub(config), do: StubProvider.put(Map.put_new(config, :notify, self()))
 
-  defp poltava_search(query) do
+  defp city_search(query) do
     {:ok,
      [
-       %Locality{id: "c-poltava", name: "Poltava", region: "Poltava oblast"},
-       %Locality{id: "c-pol", name: "Polonne", region: "Khmelnytskyi oblast"}
+       %Locality{id: "c-springfield", name: "Springfield", region: "Springfield oblast"},
+       %Locality{id: "c-spruce", name: "Sprucewood", region: "Springfield oblast"}
      ]
      |> Enum.filter(&String.starts_with?(String.downcase(&1.name), String.downcase(query)))}
   end
@@ -650,7 +661,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       send(test, {:lookup, self(), query})
 
       receive do
-        :release -> poltava_search(query)
+        :release -> city_search(query)
       after
         1_500 -> {:error, :never_released}
       end
@@ -703,7 +714,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       "shipping_provider" => %{
         "provider" => "stub",
         "service" => "branch",
-        "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Poltava"}}
+        "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Springfield"}}
       }
     }
   end

@@ -107,7 +107,7 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
     )
   end
 
-  defp locality, do: %Locality{id: "city-1", name: "Poltava"}
+  defp locality, do: %Locality{id: "city-1", name: "Springfield"}
 
   defp request(attrs \\ []) do
     struct(
@@ -283,7 +283,7 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
     end
 
     test "a provider without the callback is not supported" do
-      assert Shipping.search_localities(Shipping.context(nil), "Poltava") ==
+      assert Shipping.search_localities(Shipping.context(nil), "Springfield") ==
                {:error, :not_supported}
     end
   end
@@ -635,7 +635,7 @@ defmodule PhoenixKitEcommerce.Shipping.FacadeTest do
 
         assert Shipping.services(ctx) == {:error, :unknown_provider}
         assert Shipping.quote(ctx, request()) == {:error, :unknown_provider}
-        assert Shipping.search_localities(ctx, "Poltava") == {:error, :unknown_provider}
+        assert Shipping.search_localities(ctx, "Springfield") == {:error, :unknown_provider}
         assert Shipping.list_pickup_points(ctx, locality()) == {:error, :unknown_provider}
       end
     end

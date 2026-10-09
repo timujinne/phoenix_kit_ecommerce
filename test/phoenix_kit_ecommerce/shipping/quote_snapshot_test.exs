@@ -42,7 +42,7 @@ defmodule PhoenixKitEcommerce.Shipping.QuoteSnapshotTest do
             "shipping_provider" => %{
               "provider" => "stub",
               "service" => "branch",
-              "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Poltava"}},
+              "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Springfield"}},
               "pricing" => %{"markup_percent" => "0", "markup_fixed" => "0", "round_to" => "1"}
             }
           },

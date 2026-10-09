@@ -23,6 +23,8 @@ defmodule PhoenixKitEcommerce.Shipping.CompatShopTest do
     ]
 
     shim = PhoenixKit.Modules.Shop
+    Code.ensure_loaded!(shim)
+    Code.ensure_loaded!(PhoenixKitEcommerce)
 
     for {name, arity} <- functions do
       assert function_exported?(shim, name, arity), "#{name}/#{arity} is not delegated"

@@ -34,7 +34,8 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
     * `:pickup_point` with `:manual` - the city and the code of the point typed
       in (`PickupPoint.manual/1`)
     * `:address` - the street, house and apartment, after a city search or
-      with the city typed in
+      with the city typed in; the postcode is asked for either way and
+      required only when the service says so (`Service.postcode_required`)
     * `:none` - nothing to ask, the price is requested straight away
 
   A complete destination is shown as a summary with a "Change" button, and
@@ -629,7 +630,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
         gettext("Please enter the city")
       )
       |> require_if(
-        manual?,
+        socket.assigns.service.postcode_required,
         :postcode,
         text(params, "postcode"),
         gettext("Please enter the postcode")
@@ -888,6 +889,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
               }
               pid={@id}
               manual={@service.lookup == :manual}
+              postcode_required={@service.postcode_required}
               form={@form}
               errors={@form_errors}
               myself={@myself}
@@ -1212,6 +1214,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
 
   attr :pid, :string, required: true
   attr :manual, :boolean, required: true
+  attr :postcode_required, :boolean, required: true
   attr :form, :map, required: true
   attr :errors, :map, required: true
   attr :myself, :any, required: true
@@ -1289,7 +1292,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
             value={@form["postcode"]}
             class={["input w-full", @errors[:postcode] && "input-error"]}
             maxlength="255"
-            required={@manual}
+            required={@postcode_required}
           />
           <p :if={@errors[:postcode]} class="fieldset-label text-error">{@errors[:postcode]}</p>
         </fieldset>
@@ -1397,11 +1400,13 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
   defp point_title(%PickupPoint{name: name, number: number}) do
     cond do
       blank?(name) and blank?(number) -> ""
-      blank?(name) -> "№" <> number
+      blank?(name) -> point_number(number)
       blank?(number) or String.contains?(name, number) -> name
-      true -> "№" <> number <> ", " <> name
+      true -> point_number(number) <> ", " <> name
     end
   end
+
+  defp point_number(number), do: gettext("No. %{number}", number: number)
 
   defp blank?(value), do: not is_binary(value) or String.trim(value) == ""
 

@@ -32,7 +32,7 @@ defmodule PhoenixKitEcommerce.Shipping.StructsTest do
   defp locality,
     do: %Locality{
       id: "city-1",
-      name: "Poltava",
+      name: "Springfield",
       region: "Poltavska",
       postcode: "36000",
       extra: %{"settlement_ref" => "abc"}
@@ -78,6 +78,7 @@ defmodule PhoenixKitEcommerce.Shipping.StructsTest do
         point_code_label: "Branch number",
         point_code_format: "^\\d{1,5}$"
       },
+      %Service{key: "courier", label: "Courier", destination: :address, postcode_required: true},
       %Field{
         key: "mode",
         label: "Mode",
@@ -203,6 +204,19 @@ defmodule PhoenixKitEcommerce.Shipping.StructsTest do
       assert %PickupPoint{kind: :other} = PickupPoint.from_map(%{"kind" => "spaceport"})
       assert %Field{type: :string} = Field.from_map(%{"type" => "rainbow"})
       assert %Quote{source: :api} = Quote.from_map(%{"source" => "oracle"})
+    end
+
+    test "a service does not require the postcode unless it says so" do
+      assert %Service{postcode_required: false} = %Service{}
+      assert %Service{postcode_required: false} = Service.from_map(%{"key" => "x"})
+
+      assert %Service{postcode_required: false} =
+               Service.from_map(%{"postcode_required" => "yes"})
+
+      assert %Service{postcode_required: true} = Service.from_map(%{"postcode_required" => true})
+      assert %Service{postcode_required: true} = Service.from_map(%{postcode_required: "true"})
+
+      assert Service.to_map(%Service{postcode_required: true})["postcode_required"] == true
     end
 
     test "unparseable numbers become nil or the default" do

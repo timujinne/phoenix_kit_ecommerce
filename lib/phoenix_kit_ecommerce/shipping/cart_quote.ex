@@ -318,7 +318,7 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuote do
   defp point_name(%PickupPoint{name: name, number: number}) do
     cond do
       not blank?(name) -> name
-      not blank?(number) -> "№" <> number
+      not blank?(number) -> gettext("No. %{number}", number: number)
       true -> nil
     end
   end

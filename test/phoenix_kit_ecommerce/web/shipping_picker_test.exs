@@ -45,7 +45,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
     def validate_destination(_destination, _service, _ctx), do: :ok
   end
 
-  @poltava %Locality{id: "L1", name: "Poltava", region: "Poltava region"}
+  @springfield %Locality{id: "L1", name: "Springfield", region: "Springfield region"}
   @kyiv %Locality{id: "L2", name: "Kyiv", region: "Kyiv region"}
 
   setup do
@@ -97,7 +97,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       assert %Destination{locality: %Locality{id: "L1"}} =
                cart |> reload() |> Shop.cart_shipping_destination()
 
-      assert has_element?(view, ps("locality-selected"), "Poltava")
+      assert has_element?(view, ps("locality-selected"), "Springfield")
       assert has_element?(view, "#{ps("points")} #{ps("point-P1")}")
       assert has_element?(view, "#{ps("points")} #{ps("point-P2")}")
 
@@ -111,7 +111,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       view |> element(ps("point-P2")) |> render_click()
       settle(view)
 
-      assert has_element?(view, ps("destination-summary"), "Poltava")
+      assert has_element?(view, ps("destination-summary"), "Springfield")
       assert has_element?(view, ps("destination-summary"), "Locker 2")
       refute has_element?(view, ps("editor"))
 
@@ -149,7 +149,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
     test "a chosen point that stops taking the parcel sends the shopper back to the list",
          %{conn: conn} do
       limited = %Destination{
-        locality: @poltava,
+        locality: @springfield,
         pickup_point: %PickupPoint{
           id: "P2",
           number: "2",
@@ -177,7 +177,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       refute has_element?(view, ps("destination-rejected"))
       refute has_element?(view, ps("quote-price"))
       assert has_element?(view, ps("editor"))
-      assert has_element?(view, ps("locality-selected"), "Poltava")
+      assert has_element?(view, ps("locality-selected"), "Springfield")
       assert has_element?(view, "#{ps("points")} #{ps("point-P1")}")
 
       view |> element(ps("point-P1")) |> render_click()
@@ -187,6 +187,22 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       assert has_element?(view, ps("destination-summary"), "Branch 1")
       assert has_element?(view, ps("quote-price"), "100")
       assert Shop.shipping_quote_status(reload(cart)) == :ok
+    end
+
+    test "a point without a name is titled by its number", %{conn: conn} do
+      numbered = fn _locality, _service, _query ->
+        {:ok, [%PickupPoint{id: "N7", number: "7", address: "Main 7"}]}
+      end
+
+      stub!(%{points: numbered})
+
+      {conn, _cart, _method} =
+        cart_session(conn, destination: %Destination{locality: @springfield})
+
+      {:ok, view, _html} = live(conn, "/cart")
+      settle(view)
+
+      assert has_element?(view, ps("point-N7"), "No. 7")
     end
 
     test "the change button reopens the editor on the same city", %{conn: conn} do
@@ -201,7 +217,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       settle(view)
 
       assert has_element?(view, ps("editor"))
-      assert has_element?(view, ps("locality-selected"), "Poltava")
+      assert has_element?(view, ps("locality-selected"), "Springfield")
       assert has_element?(view, ps("point-P2"))
 
       # Cancelling keeps what the cart has.
@@ -236,7 +252,10 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
     test "failing points are an inline message with a retry", %{conn: conn} do
       stub!(%{points: {:error, {:http, 500}}})
-      {conn, _cart, _method} = cart_session(conn, destination: %Destination{locality: @poltava})
+
+      {conn, _cart, _method} =
+        cart_session(conn, destination: %Destination{locality: @springfield})
+
       {:ok, view, _html} = live(conn, "/cart")
       settle(view)
 
@@ -262,7 +281,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       refute has_element?(view, ps("locality-input"))
 
       view
-      |> form(ps("manual-form"), %{"manual" => %{"locality" => "Poltava", "point" => "12"}})
+      |> form(ps("manual-form"), %{"manual" => %{"locality" => "Springfield", "point" => "12"}})
       |> render_submit()
 
       assert has_element?(view, ps("manual-form"))
@@ -271,18 +290,18 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
       view
       |> form(ps("manual-form"), %{
-        "manual" => %{"locality" => "Poltava", "point" => "36000"}
+        "manual" => %{"locality" => "Springfield", "point" => "36000"}
       })
       |> render_submit()
 
       settle(view)
 
       refute has_element?(view, ps("manual-form"))
-      assert has_element?(view, ps("destination-summary"), "Poltava")
+      assert has_element?(view, ps("destination-summary"), "Springfield")
       assert has_element?(view, ps("quote-price"), "100")
 
       destination = cart |> reload() |> Shop.cart_shipping_destination()
-      assert %Locality{name: "Poltava", id: nil} = destination.locality
+      assert %Locality{name: "Springfield", id: nil} = destination.locality
       assert %PickupPoint{id: "36000", extra: %{"manual" => "true"}} = destination.pickup_point
     end
 
@@ -331,11 +350,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
     end
 
     test "an address typed in whole needs the city and the postcode", %{conn: conn} do
-      stub!(%{services: [courier(:manual)]})
+      stub!(%{services: [courier(:manual, postcode_required: true)]})
       {conn, _cart, _method} = cart_session(conn, service: "courier")
       {:ok, view, _html} = live(conn, "/cart")
 
       assert has_element?(view, ps("address-locality"))
+      assert has_element?(view, ps("address-postcode") <> "[required]")
       refute has_element?(view, ps("locality-input"))
 
       view
@@ -352,7 +372,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
         "address" => %{
           "street" => "Soborna",
           "house" => "7",
-          "locality" => "Poltava",
+          "locality" => "Springfield",
           "postcode" => "36000"
         }
       })
@@ -360,8 +380,47 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
       settle(view)
 
-      assert has_element?(view, ps("destination-summary"), "Poltava")
+      assert has_element?(view, ps("destination-summary"), "Springfield")
       assert has_element?(view, ps("quote-price"), "100")
+    end
+
+    test "an address typed in whole does not need a postcode the carrier does not ask for",
+         %{conn: conn} do
+      stub!(%{services: [courier(:manual)]})
+      {conn, cart, _method} = cart_session(conn, service: "courier")
+      {:ok, view, _html} = live(conn, "/cart")
+
+      assert has_element?(view, ps("address-postcode"))
+      refute has_element?(view, ps("address-postcode") <> "[required]")
+
+      # The city is still required.
+      view
+      |> form(ps("address-form"), %{
+        "address" => %{"street" => "Main", "house" => "7", "locality" => "", "postcode" => ""}
+      })
+      |> render_submit()
+
+      assert has_element?(view, "#{ps("address-form")} p.text-error")
+
+      view
+      |> form(ps("address-form"), %{
+        "address" => %{
+          "street" => "Main",
+          "house" => "7",
+          "locality" => "Springfield",
+          "postcode" => ""
+        }
+      })
+      |> render_submit()
+
+      settle(view)
+
+      assert has_element?(view, ps("destination-summary"), "Springfield")
+      assert has_element?(view, ps("quote-price"), "100")
+
+      destination = cart |> reload() |> Shop.cart_shipping_destination()
+      assert destination.address.postcode == nil
+      assert destination.locality.name == "Springfield"
     end
 
     test "a point the carrier refuses sends the shopper back to the editor", %{conn: conn} do
@@ -375,7 +434,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
       view
       |> form(ps("manual-form"), %{
-        "manual" => %{"locality" => "Poltava", "point" => "00000"}
+        "manual" => %{"locality" => "Springfield", "point" => "00000"}
       })
       |> render_submit()
 
@@ -388,7 +447,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
       view
       |> form(ps("manual-form"), %{
-        "manual" => %{"locality" => "Poltava", "point" => "36000"}
+        "manual" => %{"locality" => "Springfield", "point" => "36000"}
       })
       |> render_submit()
 
@@ -594,7 +653,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       send(second, :answer)
       settle(view)
 
-      assert has_element?(view, ps("locality-selected"), "Poltava")
+      assert has_element?(view, ps("locality-selected"), "Springfield")
       refute has_element?(view, "[id*='-locality-option-']")
       refute has_element?(view, ps("locality-input"))
       assert Shop.cart_shipping_destination(reload(cart)).locality.id == "L1"
@@ -602,7 +661,10 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
     test "the filter is throttled the same way", %{conn: conn} do
       Application.put_env(:phoenix_kit_ecommerce, :shipping_lookup_interval, 200)
-      {conn, _cart, _method} = cart_session(conn, destination: %Destination{locality: @poltava})
+
+      {conn, _cart, _method} =
+        cart_session(conn, destination: %Destination{locality: @springfield})
+
       {:ok, view, _html} = live(conn, "/cart")
       settle(view)
       flush_calls(:list_pickup_points)
@@ -653,7 +715,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       for event <- ["filter_points", "retry_points"],
           assigns <- [
             %{editing: true, locality: nil},
-            %{editing: false, locality: %Locality{id: "L1", name: "Poltava"}}
+            %{editing: false, locality: %Locality{id: "L1", name: "Springfield"}}
           ] do
         socket =
           socket_with(
@@ -751,7 +813,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
       view
       |> form(ps("manual-form"), %{
-        "manual" => %{"locality" => "Poltava", "point" => String.duplicate("9", 5000)}
+        "manual" => %{"locality" => "Springfield", "point" => String.duplicate("9", 5000)}
       })
       |> render_submit()
 
@@ -946,7 +1008,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
       view
       |> form(ps("manual-form"), %{
-        "manual" => %{"locality" => "Poltava", "point" => "36000"}
+        "manual" => %{"locality" => "Springfield", "point" => "36000"}
       })
       |> render_submit()
 
@@ -959,7 +1021,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       view |> element("#checkout-shipping-continue") |> render_click()
 
       # The review shows where it goes, when, and the carrier's fee.
-      assert has_element?(view, "#checkout-review-shipping-destination", "Poltava")
+      assert has_element?(view, "#checkout-review-shipping-destination", "Springfield")
       assert has_element?(view, "#checkout-review-shipping-eta")
       assert has_element?(view, "#checkout-review-shipping-cod-fee", "20")
       assert has_element?(view, "#checkout-confirm-order:not([disabled])")
@@ -975,7 +1037,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
       view
       |> form(ps("manual-form"), %{
-        "manual" => %{"locality" => "Poltava", "point" => "36000"}
+        "manual" => %{"locality" => "Springfield", "point" => "36000"}
       })
       |> render_submit()
 
@@ -1018,7 +1080,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
       view
       |> form(ps("manual-form"), %{
-        "manual" => %{"locality" => "Poltava", "point" => "36000"}
+        "manual" => %{"locality" => "Springfield", "point" => "36000"}
       })
       |> render_submit()
 
@@ -1032,7 +1094,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       order_uuid = path |> String.split("/") |> List.last()
       {:ok, complete, _html} = live(conn, "/checkout/complete/#{order_uuid}")
 
-      assert has_element?(complete, "#order-shipping-destination", "Poltava")
+      assert has_element?(complete, "#order-shipping-destination", "Springfield")
       assert has_element?(complete, "#order-shipping-eta")
       assert has_element?(complete, "#order-shipping-cod-fee", "20")
       refute has_element?(complete, "#order-shipping-fallback")
@@ -1237,7 +1299,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
       {:ok, view, _html} = live(conn, "/checkout/complete/#{order.uuid}")
 
-      assert has_element?(view, "#order-line-shipping #order-shipping-destination", "Poltava")
+      assert has_element?(view, "#order-line-shipping #order-shipping-destination", "Springfield")
       assert has_element?(view, "#order-line-shipping #order-shipping-destination", "Branch 1")
       assert has_element?(view, "#order-shipping-eta")
       assert has_element?(view, "#order-shipping-cod-fee", "20")
@@ -1295,7 +1357,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       Map.merge(
         %{
           notify: self(),
-          localities: fn _query -> {:ok, [@poltava, @kyiv]} end,
+          localities: fn _query -> {:ok, [@springfield, @kyiv]} end,
           points: &points/3,
           quote: &quote_of/2
         },
@@ -1315,7 +1377,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       send(test, {:locality_search, self(), query})
 
       receive do
-        :answer -> {:ok, [@poltava, @kyiv]}
+        :answer -> {:ok, [@springfield, @kyiv]}
       end
     end
   end
@@ -1406,12 +1468,18 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
     }
   end
 
-  defp courier(lookup),
-    do: %Service{key: "courier", label: "Courier", destination: :address, lookup: lookup}
+  defp courier(lookup, opts \\ []),
+    do: %Service{
+      key: "courier",
+      label: "Courier",
+      destination: :address,
+      lookup: lookup,
+      postcode_required: Keyword.get(opts, :postcode_required, false)
+    }
 
   defp branch(id),
     do: %Destination{
-      locality: @poltava,
+      locality: @springfield,
       pickup_point: %PickupPoint{id: id, name: "Branch #{id |> String.trim_leading("P")}"}
     }
 
@@ -1463,7 +1531,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
         "shipping_provider" => %{
           "provider" => Keyword.get(opts, :provider, "stub"),
           "service" => Keyword.get(opts, :service, "branch"),
-          "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Poltava"}},
+          "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Springfield"}},
           "pricing" => %{"markup_percent" => "0", "markup_fixed" => "0", "round_to" => "1"}
         }
       })

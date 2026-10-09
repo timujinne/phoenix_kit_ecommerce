@@ -51,7 +51,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingDisplayTest do
     test "where it goes, when, the carrier's fee" do
       item = %{
         "type" => "shipping",
-        "destination_label" => "Poltava, Branch 1",
+        "destination_label" => "Springfield, Branch 1",
         "eta" => %{"min_days" => 1, "max_days" => 2, "date" => nil}
       }
 
@@ -77,7 +77,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingDisplayTest do
     end
 
     test "an estimated price is flagged, a zero fee is not shown" do
-      item = %{"type" => "shipping", "destination_label" => "Poltava"}
+      item = %{"type" => "shipping", "destination_label" => "Springfield"}
 
       metadata = %{
         "shipping_quote" => %{
