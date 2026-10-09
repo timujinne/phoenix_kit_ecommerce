@@ -63,7 +63,10 @@ defmodule PhoenixKitEcommerce.Shipping.Pricing do
     |> round_up(pricing.round_to)
   end
 
-  defp round_up(amount, nil), do: amount
+  # No step: only a markup percentage can add digits (4.35 × 1.075 =
+  # 4.67625); settle on cents like the amount columns do, so the in-memory
+  # cart agrees with the stored one.
+  defp round_up(amount, nil), do: Decimal.round(amount, 2, :half_up)
 
   defp round_up(amount, step) do
     amount

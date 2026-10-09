@@ -42,6 +42,12 @@ defmodule PhoenixKitEcommerce.Shipping.PricingTest do
     assert Decimal.equal?(final(config, quote_of("4.35"), method()), "4.35")
   end
 
+  test "a markup without a rounding step settles on cents" do
+    config = config(%{markup_percent: Decimal.new("7.5"), round_to: nil})
+
+    assert Decimal.equal?(final(config, quote_of("4.35"), method()), "4.68")
+  end
+
   test "a round_to of 1 rounds up to whole units" do
     config = config(%{round_to: Decimal.new(1)})
 
