@@ -156,7 +156,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
       # Country will be set at checkout based on billing info
       case Shop.set_cart_shipping(cart, method, nil) do
         {:ok, updated_cart} ->
-          {:noreply, assign(socket, :cart, updated_cart)}
+          {:noreply, put_cart(socket, updated_cart)}
 
         {:error, _} ->
           {:noreply, put_flash(socket, :error, gettext("Failed to set shipping method"))}
@@ -220,6 +220,38 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
     |> assign(:skip_mode, skip_mode)
     |> assign(:shipping_position, position)
     |> assign(:shipping_required_here, shipping_required_here)
+    |> assign_shipping_view()
+  end
+
+  defp put_cart(socket, cart) do
+    socket |> assign(:cart, cart) |> assign_shipping_view()
+  end
+
+  # The shipping of the cart is worked out HERE, when the cart changes, and
+  # handed to the render: packing, the request hash, the service list and the
+  # provider's check of the destination are too much to redo on every render.
+  # Nothing is worked out for a page that does not pick the shipping.
+  defp assign_shipping_view(%{assigns: %{shipping_required_here: true}} = socket) do
+    %{cart: cart, shipping_methods: methods} = socket.assigns
+    snapshot = Shop.shipping_quote_snapshot(cart)
+
+    presented =
+      Map.new(methods, fn method ->
+        presented =
+          if method.uuid == cart.shipping_method_uuid and snapshot.presented,
+            do: snapshot.presented,
+            else: Shop.present_shipping_method(cart, method)
+
+        {method.uuid, presented}
+      end)
+
+    socket |> assign(:shipping_snapshot, snapshot) |> assign(:shipping_presented, presented)
+  end
+
+  defp assign_shipping_view(socket) do
+    socket
+    |> assign(:shipping_snapshot, Shop.shipping_quote_snapshot(socket.assigns.cart, nil))
+    |> assign(:shipping_presented, %{})
   end
 
   # Available shipping methods are only fetched when shipping is both
@@ -329,18 +361,23 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
 
   @impl true
   def handle_info({:shipping_selected, cart}, socket) do
-    {:noreply, assign(socket, :cart, cart)}
+    if same_cart?(cart, socket.assigns.cart) do
+      {:noreply, socket}
+    else
+      {:noreply, put_cart(socket, cart)}
+    end
   end
 
-  # The delivery picker changed the cart (a place, a quote): the totals show it.
+  # The picker says the answer may have changed without the cart (the delivery
+  # options were asked for again, the carrier refused the request).
   @impl true
-  def handle_info({:shipping_cart_updated, cart}, socket) do
-    {:noreply, assign(socket, :cart, cart)}
+  def handle_info(:shipping_recheck, socket) do
+    {:noreply, assign_shipping_view(socket)}
   end
 
   @impl true
   def handle_info({:payment_selected, cart}, socket) do
-    {:noreply, assign(socket, :cart, cart)}
+    {:noreply, put_cart(socket, cart)}
   end
 
   @impl true
@@ -589,7 +626,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                             </div>
                             <%!-- `method.price` and the free threshold are BASE
                                  amounts; the cart is in its own currency. --%>
-                            <% presented = Shop.present_shipping_method(@cart, method) %>
+                            <% presented = @shipping_presented[method.uuid] %>
                             <div id={"cart-shipping-price-#{method.uuid}"} class="text-right">
                               <%= cond do %>
                                 <% presented.pay_on_delivery? -> %>
@@ -625,6 +662,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                             id={"shipping-picker-#{method.uuid}"}
                             cart={@cart}
                             method={method}
+                            snapshot={@shipping_snapshot}
                             locale={@locale}
                             currency={@currency}
                           />
@@ -662,7 +700,9 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                     <%= cond do %>
                       <% is_nil(@cart.shipping_method_uuid) -> %>
                         <span class="text-base-content/50">{gettext("Select method")}</span>
-                      <% @shipping_pending and not ShippingMethod.pay_on_delivery?(@cart.shipping_method) -> %>
+                      <% @shipping_pending and @shipping_snapshot.status == :unavailable -> %>
+                        <span class="text-error">{gettext("Not available")}</span>
+                      <% @shipping_pending -> %>
                         <span class="text-base-content/50">{gettext("To be calculated")}</span>
                                       <% PriceDisplay.cart_shipping_pay_on_delivery?(@cart) -> %>
                         <span>{gettext("Paid on delivery")}</span>
@@ -692,8 +732,22 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
 
                   <div id="cart-summary-total" class="flex justify-between text-lg font-bold">
                     <span>{gettext("Total")}</span>
-                    <span>{format_price(@cart.total, @currency)}</span>
+                    <span id="cart-summary-total">
+                      <span :if={@shipping_pending}>≈</span>
+                      {format_price(@cart.total, @currency)}
+                    </span>
                   </div>
+
+                  <%!-- The total of a cart whose carrier-priced delivery is not
+                        settled carries the price of the method as a placeholder:
+                        said so. --%>
+                  <p
+                    :if={@shipping_pending}
+                    id="cart-summary-total-estimate"
+                    class="text-xs text-base-content/60"
+                  >
+                    {gettext("The delivery cost is still to be calculated: the total will change.")}
+                  </p>
 
                   <%!-- An on-request line contributes 0 to every figure above, so
                         a cart holding one shows a total that is not the bill. The
@@ -759,11 +813,23 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
   # A carrier-priced method whose delivery place or price is not settled yet:
   # its amount is not known, so the summary says so rather than show the
   # price of the method.
-  defp shipping_pending?(%{cart: cart, requires_shipping: true, shipping_required_here: true})
+  defp shipping_pending?(%{
+         cart: cart,
+         requires_shipping: true,
+         shipping_required_here: true,
+         shipping_snapshot: %{blocks?: true}
+       })
        when not is_nil(cart.shipping_method_uuid),
-       do: Shop.shipping_quote_blocks_checkout?(cart)
+       do: not ShippingMethod.pay_on_delivery?(cart.shipping_method)
 
   defp shipping_pending?(_assigns), do: false
+
+  defp same_cart?(%{uuid: uuid} = a, %{uuid: uuid} = b) do
+    [:updated_at, :metadata, :total, :shipping_method_uuid, :payment_option_uuid, :items_count]
+    |> Enum.all?(&(Map.get(a, &1) == Map.get(b, &1)))
+  end
+
+  defp same_cart?(_a, _b), do: false
 
   defp generate_session_id do
     :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)

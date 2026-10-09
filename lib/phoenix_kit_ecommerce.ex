@@ -4154,15 +4154,17 @@ defmodule PhoenixKitEcommerce do
   `shipping_quote_status/1` is `:needs_destination`, `:missing`, `:stale` or
   `:unavailable`.
   """
+  @blocking_shipping_statuses [:needs_destination, :missing, :stale, :unavailable]
+
   @spec shipping_quote_blocks_checkout?(Cart.t()) :: boolean()
   def shipping_quote_blocks_checkout?(%Cart{} = cart) do
-    shipping_quote_status(cart) in [:needs_destination, :missing, :stale, :unavailable]
+    shipping_quote_status(cart) in @blocking_shipping_statuses
   end
 
   # `{status, stored}`; `stored` is the stored entry only when it is current.
-  defp cart_quote_state(cart, method, items) do
+  defp cart_quote_state(cart, method, items, service_lookup \\ &shipping_service/1) do
     with {:ok, request} <- shipping_rate_request(cart, method, items),
-         :ok <- check_shipping_destination(method, request.destination) do
+         :ok <- check_destination(service_lookup.(method), request.destination) do
       stored_quote_state(CartQuote.stored(cart.metadata), request)
     else
       {:error, :needs_destination} ->
@@ -4267,8 +4269,11 @@ defmodule PhoenixKitEcommerce do
   # When the kind of destination cannot be determined (the provider is gone
   # or cannot list its services right now) the cart is `:unavailable` rather
   # than let through: with no destination an order could not be delivered.
-  defp check_shipping_destination(method, destination) do
-    case shipping_service(method) do
+  defp check_shipping_destination(method, destination),
+    do: check_destination(shipping_service(method), destination)
+
+  defp check_destination(service_result, destination) do
+    case service_result do
       {:ok, nil, _context} ->
         :ok
 
@@ -6643,40 +6648,129 @@ defmodule PhoenixKitEcommerce do
               | nil
           }
   def present_shipping_method(%Cart{} = cart, %ShippingMethod{} = method) do
+    shipping_quote_snapshot(cart, method).presented
+  end
+
+  @doc """
+  Everything a page needs to know about the shipping of a cart at one moment,
+  worked out once (packing, the request hash, the payment lookup, the
+  service list and the provider's check of the destination are not free, so
+  pages compute this when the cart changes and pass it down, never per
+  render):
+
+    * `status` - `shipping_quote_status/1`
+    * `entry` - `cart_shipping_quote/1`
+    * `presented` - `present_shipping_method/2` (`nil` without a method)
+    * `blocks?` - `shipping_quote_blocks_checkout?/1`
+    * `service` - the `PhoenixKitEcommerce.Shipping.Service` of a selected
+      calculated method (a service that asks for nothing when the provider
+      lists none), else `nil`
+    * `service_error` - why the services cannot be listed (`nil` when they can)
+    * `transient?` - the service listing failed in a way that may pass (a
+      timeout, a crash) rather than for good (the provider or the service is
+      gone); the buyer is offered a retry
+
+  Without a method argument it describes the cart's selected one. A calculated
+  method that is not the selected one has no quote (`:missing`).
+  """
+  @spec shipping_quote_snapshot(Cart.t(), ShippingMethod.t() | nil | :selected) :: %{
+          status:
+            :not_needed
+            | :needs_destination
+            | :missing
+            | :stale
+            | :unavailable
+            | :ok
+            | :fallback,
+          entry: map() | nil,
+          presented: map() | nil,
+          blocks?: boolean(),
+          service: ShippingService.t() | nil,
+          service_error: term(),
+          transient?: boolean()
+        }
+  def shipping_quote_snapshot(cart, method \\ :selected)
+
+  def shipping_quote_snapshot(%Cart{} = cart, :selected),
+    do: shipping_quote_snapshot(cart, cart_selected_method(cart))
+
+  def shipping_quote_snapshot(%Cart{}, nil) do
+    %{
+      status: :not_needed,
+      entry: nil,
+      presented: nil,
+      blocks?: false,
+      service: nil,
+      service_error: nil,
+      transient?: false
+    }
+  end
+
+  def shipping_quote_snapshot(%Cart{} = cart, %ShippingMethod{} = method) do
+    items = cart_items_loaded(cart)
+    {{status, stored} = state, service_result} = snapshot_state(cart, method, items)
+    {service, service_error} = snapshot_service(service_result)
+
+    %{
+      status: status,
+      entry: stored && Map.take(stored, [:status, :quote, :reason]),
+      presented: present_state(cart, method, state),
+      blocks?: status in @blocking_shipping_statuses,
+      service: service,
+      service_error: service_error,
+      transient?: service_error not in [nil, :unknown_provider, :unknown_service]
+    }
+  end
+
+  # `{{status, stored}, service_result}`; the service is looked up only for
+  # the selected calculated method of a cart that ships something.
+  defp snapshot_state(cart, method, items) do
+    cond do
+      not ShippingMethod.calculated?(method) ->
+        {{:not_needed, nil}, nil}
+
+      not items_require_shipping?(items) ->
+        {{:not_needed, nil}, nil}
+
+      # The quote on the cart belongs to the selected method alone.
+      method.uuid != cart.shipping_method_uuid ->
+        {{:missing, nil}, nil}
+
+      true ->
+        result = shipping_service(method)
+        {cart_quote_state(cart, method, items, fn _method -> result end), result}
+    end
+  end
+
+  defp snapshot_service(nil), do: {nil, nil}
+  defp snapshot_service({:error, reason}), do: {nil, reason}
+
+  defp snapshot_service({:ok, nil, context}),
+    do: {%ShippingService{key: context.service, destination: :none}, nil}
+
+  defp snapshot_service({:ok, service, _context}), do: {service, nil}
+
+  defp present_state(cart, method, state) do
     base_subtotal = to_base(cart, cart.subtotal || Decimal.new("0"))
     pay_on_delivery? = ShippingMethod.pay_on_delivery?(method)
 
-    %{
+    presented = %{
       price: method.price && from_base(method.price, cart),
       free?: not pay_on_delivery? and ShippingMethod.free_for?(method, base_subtotal),
       pay_on_delivery?: pay_on_delivery?,
       quote_status: :not_needed,
       estimate: nil
     }
-    |> present_shipping_quote(cart, method, base_subtotal)
-  end
 
-  defp present_shipping_quote(presented, cart, method, base_subtotal) do
-    cond do
-      not ShippingMethod.calculated?(method) ->
+    case state do
+      {:ok, %{quote: %Quote{} = quote}} ->
         presented
+        |> Map.put(:quote_status, :ok)
+        |> Map.put(:estimate, quote_estimate(quote, cart))
+        |> put_quoted_price(quote_final_amount(cart, method, quote, base_subtotal))
 
-      # The quote on the cart belongs to the selected method alone.
-      method.uuid != cart.shipping_method_uuid ->
-        status = if cart_requires_shipping?(cart), do: :missing, else: :not_needed
+      {status, _stored} ->
         %{presented | quote_status: status}
-
-      true ->
-        case cart_quote_state(cart, method, cart_items_loaded(cart)) do
-          {:ok, %{quote: %Quote{} = quote}} ->
-            presented
-            |> Map.put(:quote_status, :ok)
-            |> Map.put(:estimate, quote_estimate(quote, cart))
-            |> put_quoted_price(quote_final_amount(cart, method, quote, base_subtotal))
-
-          {status, _stored} ->
-            %{presented | quote_status: status}
-        end
     end
   end
 

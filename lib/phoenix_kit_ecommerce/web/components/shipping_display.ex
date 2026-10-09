@@ -16,6 +16,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDisplay do
   import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
   import PhoenixKitWeb.Components.Core.Icon
 
+  alias PhoenixKit.Utils.Date, as: UtilsDate
   alias PhoenixKitEcommerce.Shipping.Codec
 
   attr :id, :string, required: true, doc: "prefix of the ids of the lines"
@@ -115,7 +116,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDisplay do
     max = eta |> Codec.get(:max_days) |> Codec.integer()
 
     cond do
-      date -> gettext("Delivery by %{date}", date: Calendar.strftime(date, "%d.%m.%Y"))
+      date -> gettext("Delivery by %{date}", date: UtilsDate.format_date_with_user_format(date))
       min && max && min != max -> days_range(min, max)
       days = max || min -> days_count(days)
       true -> nil

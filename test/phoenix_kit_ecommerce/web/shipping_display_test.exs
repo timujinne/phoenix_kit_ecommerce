@@ -14,8 +14,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingDisplayTest do
 
   describe "eta_text/1" do
     test "a date" do
-      assert ShippingDisplay.eta_text(%{date: ~D[2026-10-12]}) =~ "12.10.2026"
-      assert ShippingDisplay.eta_text(%{"date" => "2026-10-12"}) =~ "12.10.2026"
+      assert ShippingDisplay.eta_text(%{date: ~D[2026-10-12]}) =~ "2026-10-12"
+      assert ShippingDisplay.eta_text(%{"date" => "2026-10-12"}) =~ "2026-10-12"
     end
 
     test "a range of days, or one number" do
