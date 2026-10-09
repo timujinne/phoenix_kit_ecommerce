@@ -42,6 +42,8 @@ defmodule PhoenixKitEcommerce do
   require Logger
 
   @version Mix.Project.config()[:version]
+  @shipping_lookup_timeout 2_000
+  @blocking_shipping_statuses [:needs_destination, :missing, :stale, :unavailable]
 
   alias PhoenixKit.Dashboard.Tab
   alias PhoenixKit.Migrations.Postgres, as: PostgresMigrations
@@ -3942,8 +3944,6 @@ defmodule PhoenixKitEcommerce do
   Where the cart's calculated shipping goes (`cart.metadata["shipping_destination"]`),
   or `nil` when none was set.
   """
-  @shipping_lookup_timeout 2_000
-
   @spec cart_shipping_destination(Cart.t()) :: Destination.t() | nil
   def cart_shipping_destination(%Cart{metadata: metadata}), do: CartQuote.destination(metadata)
 
@@ -4011,7 +4011,9 @@ defmodule PhoenixKitEcommerce do
   Errors: `:no_method` (no method selected), `:not_calculated` (the method has
   a fixed price), `:not_needed` (nothing in the cart ships) and
   `:needs_destination` (the service needs a pickup point or an address that is
-  missing, or the provider refuses the one given). `{:unavailable, reason}`
+  missing, or the provider refuses the one given, or the chosen pickup point
+  cannot take the parcels of the cart: its weight, size or value limits).
+  `{:unavailable, reason}`
   says the kind of destination the service takes cannot be determined: the
   provider is not configured any more or does not list the service (reason
   `"unknown_provider"`, `"unknown_service"`), or cannot list its services
@@ -4029,8 +4031,11 @@ defmodule PhoenixKitEcommerce do
     method = cart_selected_method(cart)
 
     with {:ok, request} <- shipping_rate_request(cart, method, cart_items_loaded(cart)),
-         :ok <- check_shipping_destination(method, request.destination) do
+         :ok <- check_shipping_destination(method, request) do
       {:ok, request}
+    else
+      {:error, {:needs_destination, _reason}} -> {:error, :needs_destination}
+      other -> other
     end
   end
 
@@ -4124,7 +4129,7 @@ defmodule PhoenixKitEcommerce do
   @spec shipping_quote_status(Cart.t()) ::
           :not_needed | :needs_destination | :missing | :stale | :unavailable | :ok | :fallback
   def shipping_quote_status(%Cart{} = cart) do
-    {status, _stored} =
+    {status, _stored, _reason} =
       cart_quote_state(cart, cart_selected_method(cart), cart_items_loaded(cart))
 
     status
@@ -4144,8 +4149,8 @@ defmodule PhoenixKitEcommerce do
           | nil
   def cart_shipping_quote(%Cart{} = cart) do
     case cart_quote_state(cart, cart_selected_method(cart), cart_items_loaded(cart)) do
-      {_status, %{} = stored} -> Map.take(stored, [:status, :quote, :reason])
-      {_status, nil} -> nil
+      {_status, %{} = stored, _reason} -> Map.take(stored, [:status, :quote, :reason])
+      {_status, nil, _reason} -> nil
     end
   end
 
@@ -4154,27 +4159,31 @@ defmodule PhoenixKitEcommerce do
   `shipping_quote_status/1` is `:needs_destination`, `:missing`, `:stale` or
   `:unavailable`.
   """
-  @blocking_shipping_statuses [:needs_destination, :missing, :stale, :unavailable]
-
   @spec shipping_quote_blocks_checkout?(Cart.t()) :: boolean()
   def shipping_quote_blocks_checkout?(%Cart{} = cart) do
     shipping_quote_status(cart) in @blocking_shipping_statuses
   end
 
-  # `{status, stored}`; `stored` is the stored entry only when it is current.
+  # `{status, stored, reason}`; `stored` is the stored entry only when it is
+  # current, `reason` says why a `:needs_destination` is one (`"point_limits"`:
+  # the chosen pickup point cannot take the parcels) and is `nil` otherwise.
   defp cart_quote_state(cart, method, items, service_lookup \\ &shipping_service/1) do
     with {:ok, request} <- shipping_rate_request(cart, method, items),
-         :ok <- check_destination(service_lookup.(method), request.destination) do
-      stored_quote_state(CartQuote.stored(cart.metadata), request)
+         :ok <- check_destination(service_lookup.(method), request) do
+      {status, stored} = stored_quote_state(CartQuote.stored(cart.metadata), request)
+      {status, stored, nil}
     else
       {:error, :needs_destination} ->
-        {:needs_destination, nil}
+        {:needs_destination, nil, nil}
+
+      {:error, {:needs_destination, reason}} ->
+        {:needs_destination, nil, reason}
 
       {:error, {:unavailable, reason}} ->
-        {:unavailable, %{status: :unavailable, quote: nil, reason: reason}}
+        {:unavailable, %{status: :unavailable, quote: nil, reason: reason}, nil}
 
       {:error, _not_needed} ->
-        {:not_needed, nil}
+        {:not_needed, nil, nil}
     end
   end
 
@@ -4263,26 +4272,39 @@ defmodule PhoenixKitEcommerce do
   # accepts. `services/1` and `validate_destination/3` are pure by contract
   # (they run from render paths and under the cart lock), cached or cheap,
   # and asked with a short timeout and no credentials - unless the provider
-  # does not list the service without them (a keyed Ukrposhta), when the
+  # does not list the service without them (a keyed carrier API), when the
   # lookup is repeated once with the real ones.
   #
   # When the kind of destination cannot be determined (the provider is gone
   # or cannot list its services right now) the cart is `:unavailable` rather
   # than let through: with no destination an order could not be delivered.
-  defp check_shipping_destination(method, destination),
-    do: check_destination(shipping_service(method), destination)
+  #
+  # A pickup point that is chosen must also take THIS cart: the limits it
+  # declares (weight, size, declared value) hold now, not only when the
+  # points were listed. The cart may have grown since.
+  defp check_shipping_destination(method, request),
+    do: check_destination(shipping_service(method), request)
 
-  defp check_destination(service_result, destination) do
+  defp check_destination(service_result, %RateRequest{destination: destination} = request) do
     case service_result do
       {:ok, nil, _context} ->
         :ok
 
       {:ok, %ShippingService{destination: kind} = service, context}
       when kind in [:pickup_point, :address] ->
-        if CartQuote.incomplete?(kind, destination) or
-             Shipping.validate_destination(context, destination, service) != :ok,
-           do: {:error, :needs_destination},
-           else: :ok
+        cond do
+          CartQuote.incomplete?(kind, destination) ->
+            {:error, :needs_destination}
+
+          kind == :pickup_point and not point_fits_request?(destination, request) ->
+            {:error, {:needs_destination, "point_limits"}}
+
+          Shipping.validate_destination(context, destination, service) != :ok ->
+            {:error, :needs_destination}
+
+          true ->
+            :ok
+        end
 
       {:ok, _service, _context} ->
         :ok
@@ -4291,6 +4313,9 @@ defmodule PhoenixKitEcommerce do
         {:error, {:unavailable, CartQuote.error_reason(reason)}}
     end
   end
+
+  defp point_fits_request?(%Destination{pickup_point: point}, request),
+    do: Shipping.fits_point?(point, request.parcels, request.declared_value)
 
   # `{:ok, service | nil, context}` (`nil`: the provider has no services to
   # choose from) or `{:error, reason}`.
@@ -6659,6 +6684,10 @@ defmodule PhoenixKitEcommerce do
   render):
 
     * `status` - `shipping_quote_status/1`
+    * `reason` - why a `:needs_destination` is one when it is not just a
+      missing destination: `"point_limits"` (the chosen pickup point cannot
+      take the parcels of the cart, by weight, size or declared value);
+      `nil` otherwise
     * `entry` - `cart_shipping_quote/1`
     * `presented` - `present_shipping_method/2` (`nil` without a method)
     * `blocks?` - `shipping_quote_blocks_checkout?/1`
@@ -6682,6 +6711,7 @@ defmodule PhoenixKitEcommerce do
             | :unavailable
             | :ok
             | :fallback,
+          reason: String.t() | nil,
           entry: map() | nil,
           presented: map() | nil,
           blocks?: boolean(),
@@ -6697,6 +6727,7 @@ defmodule PhoenixKitEcommerce do
   def shipping_quote_snapshot(%Cart{}, nil) do
     %{
       status: :not_needed,
+      reason: nil,
       entry: nil,
       presented: nil,
       blocks?: false,
@@ -6708,11 +6739,12 @@ defmodule PhoenixKitEcommerce do
 
   def shipping_quote_snapshot(%Cart{} = cart, %ShippingMethod{} = method) do
     items = cart_items_loaded(cart)
-    {{status, stored} = state, service_result} = snapshot_state(cart, method, items)
+    {{status, stored, reason} = state, service_result} = snapshot_state(cart, method, items)
     {service, service_error} = snapshot_service(service_result)
 
     %{
       status: status,
+      reason: reason,
       entry: stored && Map.take(stored, [:status, :quote, :reason]),
       presented: present_state(cart, method, state),
       blocks?: status in @blocking_shipping_statuses,
@@ -6722,19 +6754,19 @@ defmodule PhoenixKitEcommerce do
     }
   end
 
-  # `{{status, stored}, service_result}`; the service is looked up only for
+  # `{{status, stored, reason}, service_result}`; the service is looked up only for
   # the selected calculated method of a cart that ships something.
   defp snapshot_state(cart, method, items) do
     cond do
       not ShippingMethod.calculated?(method) ->
-        {{:not_needed, nil}, nil}
+        {{:not_needed, nil, nil}, nil}
 
       not items_require_shipping?(items) ->
-        {{:not_needed, nil}, nil}
+        {{:not_needed, nil, nil}, nil}
 
       # The quote on the cart belongs to the selected method alone.
       method.uuid != cart.shipping_method_uuid ->
-        {{:missing, nil}, nil}
+        {{:missing, nil, nil}, nil}
 
       true ->
         result = shipping_service(method)
@@ -6763,13 +6795,13 @@ defmodule PhoenixKitEcommerce do
     }
 
     case state do
-      {:ok, %{quote: %Quote{} = quote}} ->
+      {:ok, %{quote: %Quote{} = quote}, _reason} ->
         presented
         |> Map.put(:quote_status, :ok)
         |> Map.put(:estimate, quote_estimate(quote, cart))
         |> put_quoted_price(quote_final_amount(cart, method, quote, base_subtotal))
 
-      {status, _stored} ->
+      {status, _stored, _reason} ->
         %{presented | quote_status: status}
     end
   end

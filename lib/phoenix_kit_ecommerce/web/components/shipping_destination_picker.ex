@@ -183,6 +183,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
       destination_label: CartQuote.destination_label(destination),
       complete?: complete?,
       rejected?: rejected?,
+      point_limits?: rejected? and snapshot.reason == "point_limits",
       editing: editing?(socket.assigns.editing, complete?, rejected?)
     )
     |> assign_quote_details(snapshot)
@@ -820,10 +821,20 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
             id={"#{@id}-editor"}
             class="space-y-3"
           >
-            <p :if={@rejected?} id={"#{@id}-destination-rejected"} class="text-error">
+            <p
+              :if={@rejected? and not @point_limits?}
+              id={"#{@id}-destination-rejected"}
+              class="text-error"
+            >
               <.icon name="hero-exclamation-circle" class="w-4 h-4 inline" />
               {gettext(
                 "The carrier does not accept this delivery place. Please choose another one."
+              )}
+            </p>
+            <p :if={@point_limits?} id={"#{@id}-point-limits"} class="text-error">
+              <.icon name="hero-exclamation-circle" class="w-4 h-4 inline" />
+              {gettext(
+                "The chosen point can't take this parcel (weight/size/value). Please choose another one."
               )}
             </p>
 

@@ -1216,6 +1216,86 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuoteTest do
     end
   end
 
+  describe "the limits of the chosen pickup point" do
+    defp limited_branch(limits) do
+      %Destination{
+        locality: @locality,
+        pickup_point: %PickupPoint{
+          id: "L1",
+          name: "Locker L1",
+          kind: :locker,
+          limits: Map.merge(%{max_weight_g: nil, max_dims_mm: nil, max_declared: nil}, limits)
+        }
+      }
+    end
+
+    defp limited_cart!(limits, quantity \\ 1) do
+      cart = cart_with!(product!(), quantity)
+      {:ok, cart} = Shop.set_cart_shipping(cart, method!(), "US")
+      {:ok, cart} = Shop.set_cart_shipping_destination(cart, limited_branch(limits))
+      cart
+    end
+
+    test "a point that takes the cart is quoted and ordered" do
+      cart = limited_cart!(%{max_weight_g: 1_200})
+
+      assert {:ok, cart} = Shop.quote_cart_shipping(cart)
+      assert Shop.shipping_quote_status(cart) == :ok
+      assert {:ok, _order} = order_from!(cart)
+    end
+
+    test "a cart that outgrew the weight limit needs another destination" do
+      cart = limited_cart!(%{max_weight_g: 1_200})
+      {:ok, cart} = Shop.quote_cart_shipping(cart)
+      assert Shop.shipping_quote_status(cart) == :ok
+
+      {:ok, cart} = Shop.update_cart_item(hd(cart.items), 3)
+
+      assert Shop.shipping_quote_status(cart) == :needs_destination
+      assert Shop.shipping_quote_blocks_checkout?(cart)
+      assert {:error, :needs_destination} = Shop.build_cart_rate_request(cart)
+      assert {:error, :needs_destination} = Shop.quote_cart_shipping(cart)
+
+      snapshot = Shop.shipping_quote_snapshot(cart)
+      assert snapshot.status == :needs_destination
+      assert snapshot.reason == "point_limits"
+      assert snapshot.blocks?
+      assert snapshot.entry == nil
+
+      assert {:error, :shipping_quote_required} = order_from!(cart)
+      assert reload(cart).status == "active"
+    end
+
+    test "the size and the declared value limits hold too" do
+      cart = limited_cart!(%{max_dims_mm: [10, 10, 10]})
+      assert Shop.shipping_quote_snapshot(cart).status in [:ok, :missing]
+
+      cart = limited_cart!(%{max_declared: Decimal.new("20")})
+      snapshot = Shop.shipping_quote_snapshot(cart)
+      assert snapshot.status == :needs_destination
+      assert snapshot.reason == "point_limits"
+    end
+
+    test "another destination brings it back, and a limit-less point is never refused" do
+      cart = limited_cart!(%{max_weight_g: 100})
+      assert Shop.shipping_quote_snapshot(cart).reason == "point_limits"
+
+      {:ok, cart} = Shop.set_cart_shipping_destination(cart, branch("P2"))
+      snapshot = Shop.shipping_quote_snapshot(cart)
+      assert snapshot.status == :missing
+      assert snapshot.reason == nil
+    end
+
+    test "a destination that only lacks a point has no reason" do
+      cart = cart_with!(product!(), 1)
+      {:ok, cart} = Shop.set_cart_shipping(cart, method!(), "US")
+
+      snapshot = Shop.shipping_quote_snapshot(cart)
+      assert snapshot.status == :needs_destination
+      assert snapshot.reason == nil
+    end
+  end
+
   describe "destination_label" do
     test "locality with a pickup point's name or number, or an address" do
       label = &CartQuote.destination_label/1

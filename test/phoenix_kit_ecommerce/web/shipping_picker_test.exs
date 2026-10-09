@@ -146,6 +146,49 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       refute has_element?(view, ps("point-P3"))
     end
 
+    test "a chosen point that stops taking the parcel sends the shopper back to the list",
+         %{conn: conn} do
+      limited = %Destination{
+        locality: @poltava,
+        pickup_point: %PickupPoint{
+          id: "P2",
+          number: "2",
+          name: "Locker 2",
+          kind: :locker,
+          limits: %{max_weight_g: 1_200, max_dims_mm: nil, max_declared: nil}
+        }
+      }
+
+      {conn, cart, _method} = cart_session(conn, destination: limited)
+      {:ok, view, _html} = live(conn, "/cart")
+      settle(view)
+
+      assert has_element?(view, ps("destination-summary"), "Locker 2")
+      assert has_element?(view, ps("quote-price"), "100")
+      refute has_element?(view, ps("point-limits"))
+
+      # Three pieces weigh 1500 g, the locker takes 1200 g.
+      [item] = reload(cart).items
+      {:ok, _cart} = Shop.update_cart_item(item, 3)
+      settle(view)
+
+      assert Shop.shipping_quote_status(reload(cart)) == :needs_destination
+      assert has_element?(view, ps("point-limits"))
+      refute has_element?(view, ps("destination-rejected"))
+      refute has_element?(view, ps("quote-price"))
+      assert has_element?(view, ps("editor"))
+      assert has_element?(view, ps("locality-selected"), "Poltava")
+      assert has_element?(view, "#{ps("points")} #{ps("point-P1")}")
+
+      view |> element(ps("point-P1")) |> render_click()
+      settle(view)
+
+      refute has_element?(view, ps("point-limits"))
+      assert has_element?(view, ps("destination-summary"), "Branch 1")
+      assert has_element?(view, ps("quote-price"), "100")
+      assert Shop.shipping_quote_status(reload(cart)) == :ok
+    end
+
     test "the change button reopens the editor on the same city", %{conn: conn} do
       {conn, _cart, _method} = cart_session(conn, destination: branch("P1"))
       {:ok, view, _html} = live(conn, "/cart")
