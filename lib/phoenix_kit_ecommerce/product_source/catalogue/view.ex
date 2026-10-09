@@ -32,6 +32,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   alias PhoenixKitEcommerce.Category
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.Product
+  alias PhoenixKitEcommerce.Shipping.Codec
   alias PhoenixKitEcommerce.Translations
 
   @doc """
@@ -96,9 +97,9 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
           base_currency_code(),
       taxable: Map.get(ecommerce, "taxable", true),
       weight_grams: Map.get(ecommerce, "weight_grams") || 0,
-      length_mm: Map.get(ecommerce, "length_mm"),
-      width_mm: Map.get(ecommerce, "width_mm"),
-      height_mm: Map.get(ecommerce, "height_mm"),
+      length_mm: side(ecommerce, "length_mm"),
+      width_mm: side(ecommerce, "width_mm"),
+      height_mm: side(ecommerce, "height_mm"),
       requires_shipping: Map.get(ecommerce, "requires_shipping", true),
       made_to_order: Map.get(ecommerce, "made_to_order", false),
       product_type: Map.get(ecommerce, "product_type") || "physical",
@@ -195,13 +196,17 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
             {"parcel_height_mm", "height_mm"},
             {"parcel_weight_g", "weight_g"}
           ],
-          value = Map.get(ecommerce, field),
+          value = side(ecommerce, field),
           value != 0,
           into: %{},
           do: {key, value}
 
     if parcel == %{}, do: %{}, else: %{"parcel_defaults" => parcel}
   end
+
+  # Whole millimetres or grams out of whatever the JSON holds (a string typed
+  # into a form, a float from an import); `nil` when it is not a number.
+  defp side(ecommerce, key), do: Codec.integer(Map.get(ecommerce, key))
 
   defp featured_product_placeholder(image_uuid) when is_binary(image_uuid) and image_uuid != "" do
     struct(Product, featured_image_uuid: image_uuid)

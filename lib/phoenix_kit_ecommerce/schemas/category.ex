@@ -140,22 +140,18 @@ defmodule PhoenixKitEcommerce.Category do
 
       %{dims_mm: [longest, middle, shortest] | nil, weight_g: pos_integer() | nil}
 
-  `dims_mm` is `nil` unless all three sides are positive. Reads the virtual
-  `parcel_*` fields first (what a form set), `metadata["parcel_defaults"]`
-  (legacy categories, and what the catalogue source builds from
-  `CategoryCommerce`) when none of them is set.
+  `dims_mm` is `nil` unless all three sides are positive. Each value is the
+  virtual `parcel_*` field (what a form set) when set, else the one in
+  `metadata["parcel_defaults"]` (legacy categories, and what the catalogue
+  source builds from `CategoryCommerce`).
   """
   @spec parcel_defaults(t() | term()) :: %{
           dims_mm: [pos_integer()] | nil,
           weight_g: pos_integer() | nil
         }
   def parcel_defaults(%__MODULE__{} = category) do
-    virtual = Enum.map(@parcel_fields, fn {field, _key} -> Map.get(category, field) end)
-
     [length, width, height, weight] =
-      if Enum.any?(virtual, &(not is_nil(&1))),
-        do: virtual,
-        else: MetadataFields.stored(category, :parcel_defaults, @parcel_fields)
+      MetadataFields.merged(category, :parcel_defaults, @parcel_fields)
 
     dims = [length, width, height]
 

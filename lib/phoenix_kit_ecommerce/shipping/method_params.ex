@@ -13,17 +13,28 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
         "pricing" => %{"markup_percent" => "10", "markup_fixed" => "0", "round_to" => "5"}
       }
 
-  Validation uses the provider registry only: no network, no database. The
-  services come from `PhoenixKitEcommerce.Shipping.services/1` with empty
-  credentials; a provider whose `services/1` fails is accepted as is, because
-  an outage of the carrier must not stop the admin from saving a method.
+  Validation uses the provider registry only: no database, no credentials and
+  nothing but a short (2 s) call to the provider's `services/1`:
+
+    * a provider whose `services/1` fails is accepted as is, because an outage
+      of the carrier must not stop the admin from saving a method
+    * so is one that lists no services at all
+    * a service the credential-less list does not know is accepted when the
+      provider has an `integration/0`, since its credentials may unlock more
+      services than we can see here
   """
+
+  require Logger
 
   alias PhoenixKitEcommerce.Shipping
   alias PhoenixKitEcommerce.Shipping.{Codec, Field}
 
   @fixed "fixed"
   @pricing_keys [:markup_percent, :markup_fixed, :round_to]
+  @max_pricing 1_000_000
+  @services_timeout 2_000
+
+  @type message :: {String.t(), keyword()}
 
   @doc """
   Normalises and validates the param.
@@ -31,21 +42,35 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
     * `{:ok, block}` - the map to store
     * `{:ok, nil}` - the block is to be removed: no provider, or `"fixed"`
       without settings (the behaviour of a method without the block)
-    * `{:error, messages}` - what is wrong, as plain strings
+    * `{:error, messages}` - what is wrong, as `{message, bindings}` pairs for
+      `Ecto.Changeset.add_error/4` (user text only ever travels in the
+      bindings); a param that is not a map is an error too
+
+  `"fixed"` with no service and nothing but its default settings
+  (`destination: "none"`) is a method without the block.
   """
-  @spec build(term()) :: {:ok, map() | nil} | {:error, [String.t()]}
-  def build(param) do
+  @spec build(term()) :: {:ok, map() | nil} | {:error, [message()]}
+  def build(param) when is_map(param) do
     provider = param |> Codec.get(:provider) |> Codec.string() |> trim()
     service = param |> Codec.get(:service) |> Codec.string() |> trim()
     settings = param |> Codec.get(:settings) |> Codec.string_map() |> drop_blank()
     pricing = Codec.get(param, :pricing)
 
-    if provider in ["", @fixed] and settings == %{} do
+    if provider in ["", @fixed] and plain_fixed?(service, settings) do
       {:ok, nil}
     else
       validate(provider_key(provider), service, settings, pricing)
     end
   end
+
+  def build(_param), do: {:error, [{"must be a map", []}]}
+
+  defp plain_fixed?("", settings) do
+    {destination, rest} = Map.pop(settings, "destination", "none")
+    rest == %{} and String.trim(to_string(destination)) == "none"
+  end
+
+  defp plain_fixed?(_service, settings), do: settings == %{}
 
   defp provider_key(""), do: @fixed
   defp provider_key(key), do: key
@@ -69,7 +94,7 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
   defp find_provider(key) do
     case Shipping.provider(key) do
       {:ok, module} -> {:ok, module}
-      :error -> {:error, ["unknown provider #{inspect(key)}"]}
+      :error -> {:error, [{"unknown provider %{provider}", [provider: key]}]}
     end
   end
 
@@ -90,24 +115,37 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
         provider: module,
         settings: settings,
         service: nilify(service),
-        credentials: nil
+        credentials: nil,
+        timeout: @services_timeout
       )
 
     case Shipping.services(ctx) do
       {:ok, []} -> []
-      {:ok, services} -> check_service(services, service)
+      {:ok, services} -> check_service(module, services, service)
       {:error, _reason} -> []
     end
   end
 
-  defp check_service(services, "") do
-    if Enum.any?(services), do: ["service is required"], else: []
+  defp check_service(_module, _services, "") do
+    [{"service is required", []}]
   end
 
-  defp check_service(services, service) do
-    if Enum.any?(services, &(&1.key == service)),
-      do: [],
-      else: ["unknown service #{inspect(service)}"]
+  defp check_service(module, services, service) do
+    cond do
+      Enum.any?(services, &(&1.key == service)) ->
+        []
+
+      function_exported?(module, :integration, 0) ->
+        Logger.debug(
+          "Shipping method service #{inspect(service)} is not offered to #{module.key()} " <>
+            "without credentials; accepted"
+        )
+
+        []
+
+      true ->
+        [{"unknown service %{service}", [service: service]}]
+    end
   end
 
   # -- settings ----------------------------------------------------------
@@ -115,7 +153,7 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
   defp settings_errors(module, settings) do
     for %Field{required: true} = field <- fields(module),
         not present?(field.type, Map.get(settings, field.key)) do
-      "required setting #{field.key} is missing"
+      {"required setting %{setting} is missing", [setting: field.key]}
     end
   end
 
@@ -169,20 +207,28 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
       else: value |> Codec.decimal() |> checked_pricing(key)
   end
 
-  defp canonical(decimal), do: decimal |> Decimal.normalize() |> Decimal.to_string(:normal)
-
-  defp checked_pricing(nil, key), do: {:error, "#{key} must be a number"}
-
-  defp checked_pricing(decimal, :round_to) do
-    if Decimal.compare(decimal, 0) == :gt,
-      do: {:ok, decimal},
-      else: {:error, "round_to must be greater than 0"}
+  defp canonical(decimal) do
+    if Decimal.eq?(decimal, 0),
+      do: "0",
+      else: decimal |> Decimal.normalize() |> Decimal.to_string(:normal)
   end
 
+  defp checked_pricing(nil, key), do: {:error, {"%{field} must be a number", [field: key]}}
+
   defp checked_pricing(decimal, key) do
-    if Decimal.compare(decimal, 0) == :lt,
-      do: {:error, "#{key} must be 0 or greater"},
-      else: {:ok, decimal}
+    cond do
+      Decimal.compare(decimal, @max_pricing) == :gt ->
+        {:error, {"%{field} must be at most %{max}", [field: key, max: @max_pricing]}}
+
+      key == :round_to and Decimal.compare(decimal, 0) != :gt ->
+        {:error, {"%{field} must be greater than 0", [field: key]}}
+
+      Decimal.compare(decimal, 0) == :lt ->
+        {:error, {"%{field} must be 0 or greater", [field: key]}}
+
+      true ->
+        {:ok, decimal}
+    end
   end
 
   defp trim(nil), do: ""

@@ -90,7 +90,7 @@ defmodule PhoenixKitEcommerce.Schemas.CategoryParcelDefaultsTest do
       assert Category.parcel_defaults(category) == %{dims_mm: [300, 200, 100], weight_g: 450}
     end
 
-    test "the virtual fields win over the metadata" do
+    test "a virtual field wins over the same field in the metadata" do
       category = %Category{
         parcel_length_mm: 10,
         parcel_width_mm: 20,
@@ -98,7 +98,40 @@ defmodule PhoenixKitEcommerce.Schemas.CategoryParcelDefaultsTest do
         metadata: %{"parcel_defaults" => %{"weight_g" => 450}}
       }
 
-      assert Category.parcel_defaults(category) == %{dims_mm: [30, 20, 10], weight_g: nil}
+      assert Category.parcel_defaults(category) == %{dims_mm: [30, 20, 10], weight_g: 450}
+    end
+
+    test "merges per field: a partly filled struct still sees the stored values" do
+      category = %Category{
+        parcel_length_mm: 15,
+        metadata: %{
+          "parcel_defaults" => %{
+            "length_mm" => 5,
+            "width_mm" => 20,
+            "height_mm" => 30,
+            "weight_g" => 450
+          }
+        }
+      }
+
+      assert Category.parcel_defaults(category) == %{dims_mm: [30, 20, 15], weight_g: 450}
+    end
+
+    test "the struct returned by an update of one field sees the others" do
+      {:ok, category} =
+        Shop.create_category(
+          Map.merge(@valid, %{
+            "parcel_length_mm" => "10",
+            "parcel_width_mm" => "20",
+            "parcel_height_mm" => "30",
+            "parcel_weight_g" => "450"
+          })
+        )
+
+      fresh = Shop.get_category!(category.uuid)
+
+      assert {:ok, updated} = Shop.update_category(fresh, %{"parcel_weight_g" => "500"})
+      assert Category.parcel_defaults(updated) == %{dims_mm: [30, 20, 10], weight_g: 500}
     end
 
     test "a partial box has no dimensions but keeps the weight" do

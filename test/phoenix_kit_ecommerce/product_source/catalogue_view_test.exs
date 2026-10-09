@@ -408,6 +408,15 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert Product.dimensions_mm(product) == [300, 200, 100]
     end
 
+    test "sides stored as strings or floats are coerced to integers" do
+      item =
+        build_item(%{
+          "ecommerce" => %{"length_mm" => "100", "width_mm" => 300.0, "height_mm" => "x"}
+        })
+
+      assert %Product{length_mm: 100, width_mm: 300, height_mm: nil} = product_view(item, [])
+    end
+
     test "an item without sizes has none" do
       product = product_view(build_item(), [])
 
@@ -660,6 +669,17 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
              }
 
       assert Category.parcel_defaults(view) == %{dims_mm: [300, 200, 100], weight_g: 450}
+    end
+
+    test "parcel values are coerced to integers" do
+      view =
+        category_view(
+          build_category(%{
+            "ecommerce" => %{"parcel_weight_g" => "450", "parcel_length_mm" => "x"}
+          })
+        )
+
+      assert view.metadata == %{"parcel_defaults" => %{"weight_g" => 450}}
     end
 
     test "a category without them has empty metadata" do

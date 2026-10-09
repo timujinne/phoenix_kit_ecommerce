@@ -299,6 +299,7 @@ defmodule PhoenixKitEcommerce do
 
   @parcel_defaults_key "shop_shipping_parcel_defaults"
   @parcel_default_fields [:length_mm, :width_mm, :height_mm, :weight_g]
+  @max_parcel_value 10_000_000
 
   @doc """
   The shop-wide packing defaults (setting `shop_shipping_parcel_defaults`, a
@@ -312,9 +313,13 @@ defmodule PhoenixKitEcommerce do
     stored = Settings.get_json_setting_cached(@parcel_defaults_key, %{})
     parcel_defaults_from(stored)
   rescue
-    _ -> %ParcelDefaults{}
+    error ->
+      Logger.warning("[Shop] shipping parcel defaults unavailable: #{Exception.message(error)}")
+      %ParcelDefaults{}
   catch
-    :exit, _ -> %ParcelDefaults{}
+    :exit, reason ->
+      Logger.warning("[Shop] shipping parcel defaults unavailable: #{inspect(reason)}")
+      %ParcelDefaults{}
   end
 
   defp parcel_defaults_from(%{} = stored) do
@@ -341,27 +346,19 @@ defmodule PhoenixKitEcommerce do
   @doc """
   Saves the shop-wide packing defaults. `attrs` has `length_mm`, `width_mm`,
   `height_mm` and `weight_g` (string or atom keys; numbers or numeric strings;
-  blank or 0 means "not set"). The three sides are all set or all blank.
+  blank, whitespace or 0 means "not set"; at most #{@max_parcel_value}). The
+  three sides are all set or all blank.
 
   Returns `{:ok, defaults}` (see `shipping_parcel_defaults/0`), `{:error,
-  [{field, message}]}` for invalid input, or the settings layer's error. A
-  successful save is logged to the activity feed as
-  `"shop.shipping_parcel_defaults_changed"`; pass `:actor_uuid` and
-  `:actor_role` (see `PhoenixKitEcommerce.Activity`) to attribute it.
+  [{field, message}]}` for invalid input, or the settings layer's error.
+  Audit logging is the caller's job (the settings LiveView).
   """
-  @spec update_shipping_parcel_defaults(map(), keyword()) ::
+  @spec update_shipping_parcel_defaults(map()) ::
           {:ok, ParcelDefaults.t()} | {:error, [{atom(), String.t()}] | term()}
-  def update_shipping_parcel_defaults(attrs, opts \\ []) when is_map(attrs) do
+  def update_shipping_parcel_defaults(attrs) when is_map(attrs) do
     with {:ok, values} <- parse_parcel_defaults(attrs),
          {:ok, _setting} <-
            Settings.update_json_setting_with_module(@parcel_defaults_key, values, "shop") do
-      PhoenixKitEcommerce.Activity.log("shop.shipping_parcel_defaults_changed",
-        actor_uuid: opts[:actor_uuid],
-        actor_role: opts[:actor_role],
-        resource_type: "setting",
-        metadata: values
-      )
-
       {:ok, parcel_defaults_from(values)}
     end
   end
@@ -382,7 +379,10 @@ defmodule PhoenixKitEcommerce do
   end
 
   defp parcel_default_errors(parsed) do
-    invalid = for {field, :error} <- parsed, do: {field, "must be a non-negative whole number"}
+    invalid =
+      for {field, :error} <- parsed,
+          do: {field, "must be a whole number from 0 to #{@max_parcel_value}"}
+
     sides = for {field, value} <- Keyword.delete(parsed, :weight_g), do: {field, value}
 
     if invalid == [] and Enum.any?(sides, &elem(&1, 1)) do
@@ -393,14 +393,21 @@ defmodule PhoenixKitEcommerce do
   end
 
   # nil = not set (blank, nil or 0); :error = not a non-negative whole number.
-  defp parse_parcel_value(value) when value in [nil, ""], do: nil
+  defp parse_parcel_value(nil), do: nil
 
-  defp parse_parcel_value(value) do
+  defp parse_parcel_value(value) when is_binary(value) do
+    if String.trim(value) == "", do: nil, else: parse_parcel_number(value)
+  end
+
+  defp parse_parcel_value(value), do: parse_parcel_number(value)
+
+  defp parse_parcel_number(value) do
     case ShippingCodec.decimal(value) do
       %Decimal{} = decimal ->
-        if Decimal.compare(decimal, 0) != :lt and Decimal.integer?(decimal),
-          do: decimal |> Decimal.to_integer() |> zero_to_nil(),
-          else: :error
+        if Decimal.compare(decimal, 0) != :lt and Decimal.integer?(decimal) and
+             Decimal.compare(decimal, @max_parcel_value) != :gt,
+           do: decimal |> Decimal.to_integer() |> zero_to_nil(),
+           else: :error
 
       nil ->
         :error
@@ -3018,7 +3025,10 @@ defmodule PhoenixKitEcommerce do
 
   # The category already on the product when it has one (a catalogue view-struct
   # is reloaded with its category), else one primary-key read of the legacy
-  # table; a catalogue product never touches that table.
+  # table; a catalogue product never touches that table. The read runs in a
+  # savepoint: it happens inside the add-to-cart transaction, and a failing
+  # statement would otherwise poison that transaction (every later statement
+  # fails) however carefully the error is rescued here.
   defp product_category(%Product{category: %Category{} = category}), do: category
   defp product_category(%Product{__meta__: %Ecto.Schema.Metadata{state: :built}}), do: nil
 
@@ -3026,7 +3036,7 @@ defmodule PhoenixKitEcommerce do
     Category
     |> where([c], c.uuid == ^uuid)
     |> select([c], struct(c, [:uuid, :metadata]))
-    |> repo().one()
+    |> repo().one(mode: :savepoint)
   rescue
     _ -> nil
   end

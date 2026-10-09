@@ -201,18 +201,13 @@ defmodule PhoenixKitEcommerce.Product do
   The size of one unit as `[longest, middle, shortest]` millimetres, or `nil`
   unless all three sides are known and positive.
 
-  Reads the virtual `length_mm`/`width_mm`/`height_mm` first (what a form or
-  the catalogue source set), the stored `metadata["dimensions_mm"]` when none
-  of them is set.
+  Each side is the virtual `length_mm`/`width_mm`/`height_mm` (what a form or
+  the catalogue source set) when set, else the one stored in
+  `metadata["dimensions_mm"]`.
   """
   @spec dimensions_mm(t() | term()) :: [pos_integer()] | nil
   def dimensions_mm(%__MODULE__{} = product) do
-    virtual = Enum.map(@dimension_fields, fn {field, _key} -> Map.get(product, field) end)
-
-    sides =
-      if Enum.any?(virtual, &(not is_nil(&1))),
-        do: virtual,
-        else: MetadataFields.stored(product, :dimensions_mm, @dimension_fields)
+    sides = MetadataFields.merged(product, :dimensions_mm, @dimension_fields)
 
     if Enum.all?(sides, &(is_integer(&1) and &1 > 0)), do: Enum.sort(sides, :desc)
   end

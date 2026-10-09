@@ -350,7 +350,9 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
         if updated == metadata, do: changeset, else: put_change(changeset, :metadata, updated)
 
       {:error, messages} ->
-        Enum.reduce(messages, changeset, &add_error(&2, :shipping_provider, &1))
+        Enum.reduce(messages, changeset, fn {message, opts}, acc ->
+          add_error(acc, :shipping_provider, message, opts)
+        end)
     end
   end
 

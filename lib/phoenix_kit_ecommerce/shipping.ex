@@ -349,15 +349,12 @@ defmodule PhoenixKitEcommerce.Shipping do
   defp run_call(key, ctx, operation, cache, fun) do
     metadata = %{provider: key, operation: operation}
 
-    result =
-      :telemetry.span(@telemetry_event, metadata, fn ->
-        result =
-          cached(cache, key, operation, ctx, fn -> run_logged(key, operation, ctx, fun) end)
+    :telemetry.span(@telemetry_event, metadata, fn ->
+      result =
+        cached(cache, key, operation, ctx, fn -> run_logged(key, operation, ctx, fun) end)
 
-        {result, Map.put(metadata, :status, status(result))}
-      end)
-
-    result
+      {result, Map.put(metadata, :status, status(result))}
+    end)
   end
 
   # Runs (and logs) only on a cache miss: a cached failure answers silently.

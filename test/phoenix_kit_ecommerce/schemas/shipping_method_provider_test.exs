@@ -8,12 +8,36 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
   alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.Test.Shipping.StubProvider
 
+  defmodule Plain do
+    @moduledoc false
+    @behaviour PhoenixKitEcommerce.Shipping.Provider
+
+    alias PhoenixKitEcommerce.Shipping.Service
+
+    @impl true
+    def key, do: "plain"
+    @impl true
+    def label, do: "Plain"
+    @impl true
+    def services(ctx) do
+      if pid = Process.whereis(:shipping_timeout_probe),
+        do: send(pid, {:services_timeout, ctx.opts[:timeout]})
+
+      [%Service{key: "home", label: "Home", destination: :address}]
+    end
+
+    @impl true
+    def settings_fields, do: []
+    @impl true
+    def quote(_request, _ctx), do: {:error, :no_rates}
+  end
+
   @valid %{"name" => "Carrier", "price" => "5.00"}
   @city %{"id" => "c1", "name" => "Poltava"}
 
   setup do
     previous = Application.get_env(:phoenix_kit_ecommerce, :shipping_providers)
-    Application.put_env(:phoenix_kit_ecommerce, :shipping_providers, [StubProvider])
+    Application.put_env(:phoenix_kit_ecommerce, :shipping_providers, [StubProvider, Plain])
 
     on_exit(fn ->
       if previous,
@@ -99,7 +123,28 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
       method = %ShippingMethod{metadata: %{"shipping_provider" => stub()}}
 
       assert get_field(changeset(%{"provider" => "fixed"}, %{}, method), :metadata) == %{}
-      assert get_field(changeset(nil, %{}, method), :metadata) == %{}
+    end
+
+    test "fixed with only its default settings and no service removes the block" do
+      method = %ShippingMethod{metadata: %{"shipping_provider" => stub()}}
+
+      for settings <- [%{"destination" => "none"}, %{"destination" => " none "}, %{}] do
+        cs = changeset(%{"provider" => "fixed", "settings" => settings}, %{}, method)
+
+        assert cs.valid?
+        assert get_field(cs, :metadata) == %{}
+      end
+    end
+
+    test "a param that is not a map is an error, not a silent removal" do
+      method = %ShippingMethod{metadata: %{"shipping_provider" => stub()}}
+
+      for param <- [nil, "stub", ["stub"], 1] do
+        cs = changeset(param, %{}, method)
+
+        refute cs.valid?, "expected #{inspect(param)} to be rejected"
+        assert %{shipping_provider: [_]} = errors_on(cs)
+      end
     end
 
     test "fixed with settings keeps the block" do
@@ -133,11 +178,54 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
       refute Map.has_key?(cs.changes, :metadata)
     end
 
-    test "an unknown service is an error" do
-      cs = changeset(stub(%{"service" => "teleport"}))
+    test "an unknown service of a provider without credentials is an error" do
+      cs = changeset(%{"provider" => "plain", "service" => "teleport"})
 
       assert %{shipping_provider: [message]} = errors_on(cs)
       assert message =~ "unknown service"
+      assert message =~ "teleport"
+      assert changeset(%{"provider" => "plain", "service" => "home"}).valid?
+    end
+
+    test "user text stays out of the message and travels in the error bindings" do
+      cs = changeset(%{"provider" => "plain", "service" => "te%{x}st"})
+
+      assert [{message, opts}] = Keyword.get_values(cs.errors, :shipping_provider)
+      assert message == "unknown service %{service}"
+      assert opts[:service] == "te%{x}st"
+
+      cs = changeset(stub(%{"provider" => "no%{y}pe"}))
+
+      assert [{"unknown provider %{provider}", opts}] =
+               Keyword.get_values(cs.errors, :shipping_provider)
+
+      assert opts[:provider] == "no%{y}pe"
+    end
+
+    test "a service the credential-less list lacks is accepted for a provider with credentials" do
+      cs = changeset(stub(%{"service" => "teleport"}))
+
+      assert cs.valid?
+      assert block(cs)["service"] == "teleport"
+    end
+
+    test "a provider that lists no services is accepted" do
+      StubProvider.put(%{services: []})
+
+      assert changeset(stub(%{"service" => "anything"})).valid?
+    end
+
+    test "services are asked for with a short timeout" do
+      Process.register(self(), :shipping_timeout_probe)
+
+      assert changeset(%{"provider" => "plain", "service" => "home"}).valid?
+      assert_received {:services_timeout, 2_000}
+    end
+
+    test "a hanging provider does not block saving" do
+      StubProvider.put(%{mode: :hang})
+
+      capture_log(fn -> assert changeset(stub(%{"service" => "x"})).valid? end)
     end
 
     test "a missing service is an error when the provider offers services" do
@@ -222,6 +310,25 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
     test "zero markups are fine" do
       cs = changeset(stub(%{"pricing" => %{"markup_percent" => "0", "markup_fixed" => 0}}))
       assert cs.valid?
+    end
+
+    test "negative zero is stored as zero" do
+      cs = changeset(stub(%{"pricing" => %{"markup_percent" => "-0", "markup_fixed" => "0.00"}}))
+
+      assert cs.valid?
+      assert block(cs)["pricing"] == %{"markup_percent" => "0", "markup_fixed" => "0"}
+    end
+
+    test "magnitudes are capped" do
+      assert changeset(stub(%{"pricing" => %{"markup_fixed" => "1000000"}})).valid?
+
+      for key <- ["markup_percent", "markup_fixed", "round_to"] do
+        cs = changeset(stub(%{"pricing" => %{key => "1000001"}}))
+        assert %{shipping_provider: [message]} = errors_on(cs)
+        assert message =~ "at most"
+
+        refute changeset(stub(%{"pricing" => %{key => "1e30"}})).valid?
+      end
     end
 
     test "negative markups are errors" do

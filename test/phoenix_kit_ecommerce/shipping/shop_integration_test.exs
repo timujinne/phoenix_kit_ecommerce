@@ -186,28 +186,40 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
       assert Keyword.keys(errors) == [:height_mm]
     end
 
-    test "a rejected save changes nothing and logs nothing" do
+    test "a rejected save changes nothing" do
       Shop.update_shipping_parcel_defaults(%{"weight_g" => "450"})
-      {:error, _} = Shop.update_shipping_parcel_defaults(%{"weight_g" => "-5"})
+      assert {:error, _} = Shop.update_shipping_parcel_defaults(%{"weight_g" => "-5"})
 
       assert Shop.shipping_parcel_defaults().weight_g == 450
-      # exactly one row: the successful save
-      assert_activity_logged("shop.shipping_parcel_defaults_changed")
     end
 
-    test "a save is logged with the actor" do
-      actor = Ecto.UUID.generate()
+    test "whitespace is unset, like a blank" do
+      assert {:ok, %Defaults{box_mm: nil, weight_g: 450}} =
+               Shop.update_shipping_parcel_defaults(%{
+                 "length_mm" => "  ",
+                 "width_mm" => " \t",
+                 "height_mm" => "",
+                 "weight_g" => "450"
+               })
+    end
 
-      assert {:ok, _} =
-               Shop.update_shipping_parcel_defaults(%{"weight_g" => "450"},
-                 actor_uuid: actor,
-                 actor_role: "Admin"
-               )
+    test "values above the limit are rejected, the limit itself is fine" do
+      assert {:ok, %Defaults{weight_g: 10_000_000}} =
+               Shop.update_shipping_parcel_defaults(%{"weight_g" => "10000000"})
 
-      assert_activity_logged("shop.shipping_parcel_defaults_changed",
-        actor_uuid: actor,
-        metadata_has: %{"weight_g" => 450}
-      )
+      assert {:error, [{:weight_g, message}]} =
+               Shop.update_shipping_parcel_defaults(%{"weight_g" => "10000001"})
+
+      assert message =~ "10000000"
+
+      assert {:error, [{:weight_g, _}]} =
+               Shop.update_shipping_parcel_defaults(%{"weight_g" => "1e30"})
+    end
+
+    test "saving writes no audit row (the caller logs)" do
+      assert {:ok, _} = Shop.update_shipping_parcel_defaults(%{"weight_g" => "450"})
+
+      refute_activity_logged("shop.shipping_parcel_defaults_changed")
     end
   end
 
@@ -259,6 +271,36 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
       {:ok, cart} = Shop.add_to_cart(new_cart(), product, 1)
 
       assert profile_of(cart) == %{"dims_mm" => nil, "default_weight_g" => nil}
+    end
+
+    test "a category whose parcel defaults are damaged does not block the add" do
+      category = category!()
+
+      Repo.update_all(
+        from(c in Category, where: c.uuid == ^category.uuid),
+        set: [metadata: %{"parcel_defaults" => "junk"}]
+      )
+
+      {:ok, cart} = Shop.add_to_cart(new_cart(), product!(%{"category_uuid" => category.uuid}), 1)
+
+      assert profile_of(cart) == %{"dims_mm" => nil, "default_weight_g" => nil}
+    end
+
+    test "a failing read in a savepoint leaves the surrounding transaction usable" do
+      # The mechanism the category read relies on: add-to-cart runs it inside
+      # its transaction, and an unprotected failing statement aborts that.
+      assert {:ok, count} =
+               Repo.transaction(fn ->
+                 assert_raise Postgrex.Error, fn ->
+                   Repo.one(from(c in "phoenix_kit_shop_categories", select: c.no_such_column),
+                     mode: :savepoint
+                   )
+                 end
+
+                 Repo.one(from(c in "phoenix_kit_shop_categories", select: count(c.uuid)))
+               end)
+
+      assert is_integer(count)
     end
 
     test "a product whose category vanished is still added" do
@@ -409,8 +451,10 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
           start: {Supervisor, :start_link, [Shop.children(), [strategy: :one_for_one]]}
         })
 
-      assert Process.alive?(supervisor)
+      # The second start was ignored: the original process still owns the name
+      # and the supervisor has no child of its own.
       assert Process.whereis(Cache) == pid
+      assert [{Cache, :undefined, :worker, _}] = Supervisor.which_children(supervisor)
     end
   end
 end

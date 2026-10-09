@@ -31,6 +31,20 @@ defmodule PhoenixKitEcommerce.Shipping.MetadataFields do
   end
 
   @doc """
+  The effective values in the order of `fields`, field by field: the virtual
+  field when set, else the stored one. A partly filled struct (a form that
+  carried one field, the result of an update that changed one) therefore still
+  sees the others.
+  """
+  @spec merged(map(), atom(), keyword()) :: [integer() | nil]
+  def merged(struct, metadata_key, fields) do
+    struct
+    |> stored(metadata_key, fields)
+    |> Enum.zip(fields)
+    |> Enum.map(fn {stored, {name, _key}} -> Map.get(struct, name) || stored end)
+  end
+
+  @doc """
   Writes the virtual fields into `metadata[metadata_key]`, but only when
   `attrs` mentions one of them, so every other save leaves the metadata (and
   its other keys) alone. A field that is blank or 0 is not stored; one that

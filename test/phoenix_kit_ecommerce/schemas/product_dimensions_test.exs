@@ -127,6 +127,27 @@ defmodule PhoenixKitEcommerce.Schemas.ProductDimensionsTest do
       assert Product.dimensions_mm(product) == [30, 20, 10]
     end
 
+    test "merges per side: a partly filled struct still sees the stored sides" do
+      product = %Product{
+        length_mm: 15,
+        metadata: %{"dimensions_mm" => %{"length_mm" => 5, "width_mm" => 20, "height_mm" => 30}}
+      }
+
+      assert Product.dimensions_mm(product) == [30, 20, 15]
+    end
+
+    test "the struct returned by an update of one side sees the others" do
+      {:ok, product} =
+        Shop.create_product(
+          Map.merge(@valid, %{"length_mm" => "10", "width_mm" => "20", "height_mm" => "30"})
+        )
+
+      fresh = Shop.get_product!(product.uuid)
+
+      assert {:ok, updated} = Shop.update_product(fresh, %{"length_mm" => "15"})
+      assert Product.dimensions_mm(updated) == [30, 20, 15]
+    end
+
     test "is nil unless all three sides are positive" do
       assert Product.dimensions_mm(%Product{length_mm: 10, width_mm: 20}) == nil
       assert Product.dimensions_mm(%Product{length_mm: 10, width_mm: 20, height_mm: 0}) == nil

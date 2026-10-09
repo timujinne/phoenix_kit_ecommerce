@@ -521,7 +521,8 @@ All stored via `PhoenixKit.Settings`. Keys are **`shop_`-prefixed**.
 - `shop_shipping_parcel_defaults` — JSON `%{"length_mm", "width_mm",
   "height_mm", "weight_g"}`: the standard box and the weight assumed for a
   line without one. Read via `shipping_parcel_defaults/0`, written via
-  `update_shipping_parcel_defaults/2` (validates, logs activity).
+  `update_shipping_parcel_defaults/1` (validates; the settings LiveView
+  logs `shop.shipping_parcel_defaults_changed`).
 - Packing data has no columns: a product's size lives in
   `metadata["dimensions_mm"]` (virtual `length_mm`/`width_mm`/`height_mm`,
   `Product.dimensions_mm/1`; catalogue items keep it in
