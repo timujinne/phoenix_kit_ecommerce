@@ -994,6 +994,18 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     |> push_navigate(to: Routes.path("/cart"))
   end
 
+  # A carrier-priced method whose quote is missing, out of date or refused:
+  # the price the shopper saw is not one the order can carry.
+  defp handle_order_result({:error, :shipping_quote_required}, socket) do
+    socket
+    |> assign(:processing, false)
+    |> put_flash(
+      :error,
+      gettext("The delivery price needs to be confirmed - please check your delivery details")
+    )
+    |> push_navigate(to: Routes.path("/cart"))
+  end
+
   defp handle_order_result({:error, {:product_not_available, _uuid}}, socket) do
     socket
     |> assign(:processing, false)
