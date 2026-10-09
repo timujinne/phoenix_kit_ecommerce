@@ -534,7 +534,21 @@ All stored via `PhoenixKit.Settings`. Keys are **`shop_`-prefixed**.
 - A shipping method's `metadata["shipping_provider"]` is set through the
   top-level `shipping_provider` param of `ShippingMethod.changeset/2`
   (validated by `Shipping.MethodParams`), never as `metadata` itself, which
-  `cast/3` would replace whole.
+  `cast/3` would replace whole. The `"fixed"` provider is the not-calculated
+  path: it has no settings or service and never asks for a destination, and a
+  stored fixed block is read as no block. Price rounding is off unless
+  `pricing.round_to` is a positive step.
+- The limits of a chosen pickup point (weight, size, value) are re-checked
+  against the cart whenever its shipping status is worked out
+  (`check_destination`): a point that no longer takes the parcels makes the
+  status `:needs_destination` with snapshot `reason: "point_limits"`, which
+  blocks checkout like any other missing destination.
+- Locality search and pickup point listing are rate limited per provider
+  (`Shipping.RateLimit`, `:shipping_lookup_rate`, default 20/s; `{:error,
+  :rate_limited}` is transient and never cached) and their cache entries are
+  bounded apart (`:shipping_cache_max_lookup_entries`,
+  `:shipping_cache_max_list_size`). Both need `Shipping.Cache` running (it
+  owns the tables).
 
 **Storefront notifications**
 
