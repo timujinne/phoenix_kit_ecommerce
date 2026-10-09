@@ -43,6 +43,7 @@ defmodule PhoenixKitEcommerce.Errors do
           | :forbidden
           | :import_log_not_found
           | :invalid_csv_format
+          | :invalid_destination
           | :invalid_host
           | :invalid_scheme
           | :missing_content_type
@@ -57,6 +58,7 @@ defmodule PhoenixKitEcommerce.Errors do
           | :rate_limited
           | :redirect_loop
           | :server_error
+          | :shipping_quote_required
           | :temp_file_missing
           | :timeout
           | :unknown_format
@@ -98,6 +100,7 @@ defmodule PhoenixKitEcommerce.Errors do
   def message(:forbidden), do: gettext("You do not have permission to perform this action.")
   def message(:import_log_not_found), do: gettext("The import log could not be found.")
   def message(:invalid_csv_format), do: gettext("The CSV file format is invalid.")
+  def message(:invalid_destination), do: gettext("The delivery details are not valid.")
   def message(:invalid_host), do: gettext("The URL host is not allowed.")
   def message(:invalid_scheme), do: gettext("The URL scheme is not allowed.")
   def message(:missing_content_type), do: gettext("The response is missing a content type.")
@@ -112,6 +115,10 @@ defmodule PhoenixKitEcommerce.Errors do
   def message(:rate_limited), do: gettext("Too many requests. Please try again later.")
   def message(:redirect_loop), do: gettext("The URL redirected too many times.")
   def message(:server_error), do: gettext("The server returned an error.")
+
+  def message(:shipping_quote_required),
+    do: gettext("The delivery price has to be calculated before the order can be placed.")
+
   def message(:temp_file_missing), do: gettext("The temporary file is missing.")
   def message(:timeout), do: gettext("The operation timed out.")
   def message(:unknown_format), do: gettext("The file format is not recognized.")

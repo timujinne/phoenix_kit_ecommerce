@@ -163,6 +163,20 @@ defmodule PhoenixKit.Modules.Shop do
   defdelegate update_shipping_method(method, attrs), to: PhoenixKitEcommerce
   defdelegate delete_shipping_method(method), to: PhoenixKitEcommerce
 
+  # Calculated shipping
+  defdelegate shipping_parcel_defaults(), to: PhoenixKitEcommerce
+  defdelegate update_shipping_parcel_defaults(attrs), to: PhoenixKitEcommerce
+  defdelegate cart_parcels(cart), to: PhoenixKitEcommerce
+  defdelegate cart_declared_value(cart), to: PhoenixKitEcommerce
+  defdelegate cart_shipping_destination(cart), to: PhoenixKitEcommerce
+  defdelegate set_cart_shipping_destination(cart, destination), to: PhoenixKitEcommerce
+  defdelegate build_cart_rate_request(cart), to: PhoenixKitEcommerce
+  defdelegate quote_cart_shipping(cart, opts \\ []), to: PhoenixKitEcommerce
+  defdelegate shipping_quote_status(cart), to: PhoenixKitEcommerce
+  defdelegate cart_shipping_quote(cart), to: PhoenixKitEcommerce
+  defdelegate shipping_quote_blocks_checkout?(cart), to: PhoenixKitEcommerce
+  defdelegate shipping_quote_snapshot(cart, method \\ :selected), to: PhoenixKitEcommerce
+
   # Imports
   defdelegate list_import_configs(opts \\ []), to: PhoenixKitEcommerce
   defdelegate get_import_config(id), to: PhoenixKitEcommerce

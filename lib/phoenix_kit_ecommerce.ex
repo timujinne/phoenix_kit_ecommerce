@@ -38,6 +38,8 @@ defmodule PhoenixKitEcommerce do
   # xref check would otherwise complain about it.
   @compile {:no_warn_undefined, PhoenixKitEcommerce.ProductSource.Catalogue}
 
+  use Gettext, backend: PhoenixKitEcommerce.Gettext
+
   import Ecto.Query, warn: false
   require Logger
 
@@ -383,12 +385,12 @@ defmodule PhoenixKitEcommerce do
   defp parcel_default_errors(parsed) do
     invalid =
       for {field, :error} <- parsed,
-          do: {field, "must be a whole number from 0 to #{@max_parcel_value}"}
+          do: {field, gettext("must be a whole number from 0 to %{max}", max: @max_parcel_value)}
 
     sides = for {field, value} <- Keyword.delete(parsed, :weight_g), do: {field, value}
 
     if invalid == [] and Enum.any?(sides, &elem(&1, 1)) do
-      for {field, nil} <- sides, do: {field, "is required when the other sides are set"}
+      for {field, nil} <- sides, do: {field, gettext("is required when the other sides are set")}
     else
       invalid
     end
