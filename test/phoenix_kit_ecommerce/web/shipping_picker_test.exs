@@ -589,6 +589,30 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       assert handle.(:idle, :needs_destination) == :idle
     end
 
+    test "a filter without a city asks nothing" do
+      lookups = %{
+        localities: %{at: nil, pending: false, timer: false},
+        points: %{at: nil, pending: false, timer: false}
+      }
+
+      for event <- ["filter_points", "retry_points"],
+          assigns <- [
+            %{editing: true, locality: nil},
+            %{editing: false, locality: %Locality{id: "L1", name: "Poltava"}}
+          ] do
+        socket =
+          socket_with(
+            Map.merge(assigns, %{lookups: lookups, points_state: :idle, point_query: ""})
+          )
+
+        {:noreply, socket} =
+          ShippingDestinationPicker.handle_event(event, %{"q" => "any"}, socket)
+
+        assert socket.assigns.lookups.points.at == nil
+        assert socket.assigns.points_state == :idle
+      end
+    end
+
     test "events of a shape nobody sends are ignored", %{conn: conn} do
       {conn, cart, _method} = cart_session(conn)
       {:ok, view, _html} = live(conn, "/cart")
@@ -661,8 +685,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       assert String.length(query) == 64
     end
 
-    test "a code of any length is refused, not matched", %{conn: conn} do
-      stub!(%{services: [manual_branch()]})
+    test "a code over the cap is refused, not cut and not matched", %{conn: conn} do
+      # No format to match: only the length stands between the code and the cart.
+      stub!(%{
+        services: [%Service{key: "branch", destination: :pickup_point, lookup: :manual}]
+      })
+
       {conn, cart, _method} = cart_session(conn)
       {:ok, view, _html} = live(conn, "/cart")
 
@@ -687,10 +715,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
         "manual" => %{"locality" => String.duplicate("a", 600), "point" => "123", "evil" => "x"}
       })
 
-      html = render(view)
-      assert html =~ String.duplicate("a", 255)
-      refute html =~ String.duplicate("a", 256)
-      refute html =~ "evil"
+      assert has_element?(
+               view,
+               ps("manual-locality") <> "[value='#{String.duplicate("a", 255)}']"
+             )
+
+      assert has_element?(view, ps("manual-point") <> "[value='123']")
+      refute render(view) =~ "evil"
     end
   end
 
@@ -823,7 +854,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       settle(view)
 
       assert has_element?(view, "#cart-summary-shipping", "Not available")
-      assert has_element?(view, "#cart-summary-total-estimate")
+      refute has_element?(view, "#cart-summary-total-estimate")
     end
 
     test "a free method that fell back to its price does not claim an estimate",
@@ -898,7 +929,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       assert has_element?(view, ps("quote-unavailable"))
       assert has_element?(view, "#checkout-shipping-continue[disabled]")
       assert has_element?(view, "#checkout-summary-shipping", "Not available")
-      assert has_element?(view, "#checkout-summary-total-estimate")
+      refute has_element?(view, "#checkout-summary-total-estimate")
 
       # Even a click that was not offered moves nothing.
       render_click(view, "shipping_continue", %{})

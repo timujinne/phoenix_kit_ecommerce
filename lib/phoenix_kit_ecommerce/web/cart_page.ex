@@ -22,6 +22,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
   alias PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker
   alias PhoenixKitEcommerce.Web.Components.ShopLayouts
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.ShippingRequote
 
   import PhoenixKitEcommerce.Web.Helpers,
     only: [format_price: 2, humanize_key: 1, get_current_user: 1]
@@ -361,7 +362,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
 
   @impl true
   def handle_info({:shipping_selected, cart}, socket) do
-    if same_cart?(cart, socket.assigns.cart) do
+    if ShippingRequote.same_cart?(cart, socket.assigns.cart) do
       {:noreply, socket}
     else
       {:noreply, put_cart(socket, cart)}
@@ -742,7 +743,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                         settled carries the price of the method as a placeholder:
                         said so. --%>
                   <p
-                    :if={@shipping_pending}
+                    :if={@shipping_pending and @shipping_snapshot.status != :unavailable}
                     id="cart-summary-total-estimate"
                     class="text-xs text-base-content/60"
                   >
@@ -823,13 +824,6 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
        do: not ShippingMethod.pay_on_delivery?(cart.shipping_method)
 
   defp shipping_pending?(_assigns), do: false
-
-  defp same_cart?(%{uuid: uuid} = a, %{uuid: uuid} = b) do
-    [:updated_at, :metadata, :total, :shipping_method_uuid, :payment_option_uuid, :items_count]
-    |> Enum.all?(&(Map.get(a, &1) == Map.get(b, &1)))
-  end
-
-  defp same_cart?(_a, _b), do: false
 
   defp generate_session_id do
     :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)

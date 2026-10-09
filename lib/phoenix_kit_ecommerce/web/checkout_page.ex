@@ -266,15 +266,25 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   # The shipping of the cart is worked out HERE, when the cart changes, and
   # handed to the render: packing, the request hash, the service list and the
   # provider's check of the destination are too much to redo on every render.
+  # Only the steps that show or approve the shipping work it out; the payment
+  # and billing steps carry an empty snapshot until `advance_after_billing/1`.
   defp put_cart(socket, cart) do
     socket |> assign(:cart, cart) |> assign_shipping_view()
   end
 
-  # `refresh_shipping/1` is the same, for the moments the time alone can
-  # change the answer (a quote ages out): an event that decides on it.
-  defp refresh_shipping(socket), do: assign_shipping_view(socket)
+  defp assign_shipping_view(%{assigns: %{step: step}} = socket) when step in [:shipping, :review],
+    do: refresh_shipping(socket)
 
   defp assign_shipping_view(socket) do
+    socket
+    |> assign(:shipping_snapshot, Shop.shipping_quote_snapshot(socket.assigns.cart, nil))
+    |> assign(:shipping_presented, %{})
+  end
+
+  # Works the shipping out whatever the step: for the moments that decide on
+  # it (the billing is settled, an order is placed), when the time alone can
+  # change the answer (a quote ages out).
+  defp refresh_shipping(socket) do
     cart = socket.assigns.cart
     snapshot = Shop.shipping_quote_snapshot(cart)
 
@@ -1338,7 +1348,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   # What this page already holds is not worked out again.
   @impl true
   def handle_info({:shipping_selected, cart}, socket) do
-    if same_cart?(cart, socket.assigns.cart) do
+    if ShippingRequote.same_cart?(cart, socket.assigns.cart) do
       {:noreply, socket}
     else
       {:noreply, assign_cart_repriced(socket, cart)}
@@ -1587,14 +1597,6 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
        do: snapshot.blocks?
 
   defp shipping_blocked?(_assigns), do: false
-
-  # The helper `same_cart?/2` below: the same row at the same moment.
-  defp same_cart?(%{uuid: uuid} = a, %{uuid: uuid} = b) do
-    [:updated_at, :metadata, :total, :shipping_method_uuid, :payment_option_uuid, :items_count]
-    |> Enum.all?(&(Map.get(a, &1) == Map.get(b, &1)))
-  end
-
-  defp same_cart?(_a, _b), do: false
 
   # Components
 
@@ -2398,7 +2400,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
           <%!-- The total of a cart whose carrier-priced delivery is not settled
                 carries the price of the method as a placeholder: said so. --%>
           <p
-            :if={@shipping_unsettled}
+            :if={@shipping_unsettled and @snapshot.status != :unavailable}
             id="checkout-summary-total-estimate"
             class="text-xs text-base-content/60"
           >

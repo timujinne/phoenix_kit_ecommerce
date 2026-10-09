@@ -40,6 +40,19 @@ defmodule PhoenixKitEcommerce.Web.ShippingRequote do
     status in [:missing, :stale] and streak < @max_streak and key(cart, status) != last_key
   end
 
+  @doc """
+  Whether two carts are the same row at the same moment: the cart a page holds
+  against one that arrives by broadcast. What a page already holds is not
+  worked out again.
+  """
+  @spec same_cart?(map(), map()) :: boolean()
+  def same_cart?(%{uuid: uuid} = a, %{uuid: uuid} = b) do
+    [:updated_at, :metadata, :total, :shipping_method_uuid, :payment_option_uuid, :items_count]
+    |> Enum.all?(&(Map.get(a, &1) == Map.get(b, &1)))
+  end
+
+  def same_cart?(_a, _b), do: false
+
   defp items_signature(%{items: items}) when is_list(items),
     do: Enum.map(items, &{&1.uuid, &1.quantity})
 

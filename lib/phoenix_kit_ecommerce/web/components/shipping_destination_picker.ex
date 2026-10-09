@@ -528,7 +528,11 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
        |> put_lookup(:localities, pending: false)
        |> assign(localities: [], localities_state: :idle, localities_error: nil)}
     else
-      {:noreply, request_lookup(socket, :localities)}
+      {:noreply,
+       if(lookup_wanted?(socket, :localities),
+         do: request_lookup(socket, :localities),
+         else: socket
+       )}
     end
   end
 
@@ -559,11 +563,15 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
 
   def handle_event("filter_points", params, socket) do
     text = params |> query_param() |> String.slice(0, @query_length)
-    {:noreply, socket |> assign(point_query: text) |> request_lookup(:points)}
+    socket = assign(socket, point_query: text)
+
+    {:noreply,
+     if(lookup_wanted?(socket, :points), do: request_lookup(socket, :points), else: socket)}
   end
 
   def handle_event("retry_points", _params, socket) do
-    {:noreply, request_lookup(socket, :points)}
+    {:noreply,
+     if(lookup_wanted?(socket, :points), do: request_lookup(socket, :points), else: socket)}
   end
 
   def handle_event("pick_point", %{"id" => id}, socket) when is_binary(id) do
@@ -582,7 +590,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
 
   def handle_event("apply_manual", %{"manual" => params}, socket) when is_map(params) do
     locality = text(params, "locality")
-    code = text(params, "point", @code_length)
+    code = text(params, "point", @code_length + 1)
 
     errors =
       %{}
@@ -755,6 +763,9 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
       code == "" ->
         Map.put(errors, :point, gettext("Please enter the code of the delivery point"))
 
+      String.length(code) > @code_length ->
+        Map.put(errors, :point, gettext("This code is too long. Please check it."))
+
       point_code_mismatch?(service.point_code_format, code) ->
         Map.put(errors, :point, gettext("This code does not look right. Please check it."))
 
@@ -764,8 +775,8 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
   end
 
   # The format is a regex the HTML `pattern` carries too; one that does not
-  # compile is the provider's slip and does not stop the buyer. The code was
-  # capped before it gets here.
+  # compile is the provider's slip and does not stop the buyer. A code over the
+  # cap was refused before it gets here (never cut: a cut code is another code).
   defp point_code_mismatch?(format, code) when is_binary(format) and format != "" do
     case Regex.compile("^(?:" <> format <> ")$") do
       {:ok, regex} -> not Regex.match?(regex, code)
