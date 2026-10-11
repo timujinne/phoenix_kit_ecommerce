@@ -22,6 +22,7 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce.ProductSource
+  alias PhoenixKitEcommerce.StorefrontCache
   alias PhoenixKitEcommerce.Translations
 
   # ---------------------------------------------------------------------------
@@ -246,6 +247,26 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   @spec sidebar_categories_enabled?() :: boolean()
   def sidebar_categories_enabled? do
     PhoenixKit.Settings.get_setting_cached("shop_sidebar_show_categories", "true") == "true"
+  end
+
+  @doc """
+  `PhoenixKitEcommerce.list_active_categories/1` through
+  `PhoenixKitEcommerce.StorefrontCache`, for the storefront's category
+  navigation: one list shared by every visitor for about a minute (up to
+  ~66 s).
+
+  The key carries the product source (switchable at runtime) and the
+  options. The list is language-independent - category views hold every
+  translation and the query takes no language - so the language, which comes
+  from the URL, is deliberately not part of the key: a client cannot mint
+  entries for this list at all, and each language does not pay its own cold
+  miss. The list holds nothing viewer-specific.
+  """
+  def list_active_categories_cached(opts \\ []) do
+    StorefrontCache.fetch(
+      {:categories, ProductSource.current(), opts},
+      fn -> PhoenixKitEcommerce.list_active_categories(opts) end
+    )
   end
 
   @doc """

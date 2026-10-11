@@ -4,10 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.5.20 - 2026-10-11
 
 ### Added
 
+- **Storefront category and facet cache** (#79). `/shop` and the category
+  page share the category list and the filter facets for about a minute
+  (`StorefrontCache`, started through `children/0`), and the category-image
+  query no longer ships every item's `data`. This package's own product,
+  category, filter and Shopify-sync writes clear the cache; edits made in
+  `phoenix_kit_catalogue` show within the TTL.
+- **Stock tracking switch** (#81). A settings card for
+  `shop_stock_tracking_enabled`, effective only while the optional
+  `phoenix_kit_warehouse` (`~> 0.5`) is installed and enabled.
 - **Checkout starts on the shop's own country** (#76). A new cart with no
   shipping country no longer opens on `EE`: the country comes from the
   company country, `shop_default_tax_country`, the one country every
@@ -21,12 +30,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `save_billing_profile: true` and creates the profile in the conversion
   transaction. Ukrainian translations for the new strings.
 
+### Changed
+
+- **Shopify sync is off by default and fails closed** (#80). **Upgrade
+  note:** run `mix phoenix_kit.update`. The chain's new V3 step writes
+  `shop_shopify_enabled = "true"` for an install that already uses Shopify
+  and has no such row; a host that skips the update loses the Shopify tab
+  and provider until the toggle is switched on.
+
 ### Fixed
 
 - **The `phoenix_kit_billing` floor is now `~> 0.20`.** Checkout's billing
   form needs `BillingProfileFields` and `BillingProfile.fields_changeset/3`,
   which 0.20 is the first release to ship; against 0.13-0.19 the checkout
   page failed at runtime. A floor test pins them.
+- **Hidden billing fields no longer block checkout after a type switch.**
+  An invalid company VAT number or overlong individual name was still
+  validated after its field disappeared. Checkout validates only the
+  selected type while preserving the other type's draft values.
+- **Unavailable checkout shipping can be replaced in checkout.** When
+  shipping selection is configured for checkout, an unavailable method on
+  mount or a missing/disabled selection at confirmation returns to its
+  picker instead of sending the shopper to a cart with no shipping controls.
+- **The transitional shop namespace exports the new APIs.**
+  `PhoenixKit.Modules.Shop` now delegates `default_checkout_country/0`,
+  `children/0`, `stock_tracking_enabled?/0` and `warehouse_status/0`.
 
 ## 0.5.19 - 2026-10-10
 
@@ -1212,7 +1240,7 @@ resolve this release.
   do both, which is why the local copy existed. Stored slugs are not rewritten;
   only newly generated ones change.
 
-## Unreleased
+## 0.5.20 - 2026-10-11
 
 ### Added
 - **Cart-activity notifications for shop operators.** Three individually

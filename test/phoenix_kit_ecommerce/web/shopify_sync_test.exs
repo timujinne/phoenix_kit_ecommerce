@@ -54,6 +54,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
   defp integrations_permissions, do: ["integrations_system" | shop_permissions()]
 
   defp connect_shopify do
+    enable_shopify!()
+
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
 
@@ -120,6 +122,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
 
   describe "not connected" do
     setup %{conn: conn} do
+      enable_shopify!()
       {:ok, conn: put_test_scope(conn, fake_scope())}
     end
 

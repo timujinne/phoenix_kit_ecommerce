@@ -195,6 +195,57 @@ defmodule PhoenixKitEcommerce.Web.CheckoutBillingProfileTest do
       assert is_nil(profile.last_name)
     end
 
+    test "an invalid hidden VAT number does not block an individual order", %{
+      conn: conn,
+      cart: cart
+    } do
+      {:ok, view, _html} = live(conn, "/checkout")
+      view |> element("#checkout-billing-type-company") |> render_click()
+
+      view
+      |> form(@form, billing: %{company_name: "Acme", company_vat_number: "12-34"})
+      |> render_change()
+
+      view |> element("#checkout-billing-type-individual") |> render_click()
+      fill_and_continue(view, %{"save_profile" => false})
+
+      assert has_element?(view, "button[phx-click='confirm_order']")
+      confirm_order(view)
+
+      snapshot = placed_order(cart).billing_snapshot
+      assert snapshot["type"] == "individual"
+      refute Map.has_key?(snapshot, "company_vat_number")
+    end
+
+    test "an overlong hidden individual name does not block saving a company profile", %{
+      conn: conn,
+      user: user
+    } do
+      {:ok, view, _html} = live(conn, "/checkout")
+      long_name = String.duplicate("x", 256)
+      view |> form(@form, billing: %{first_name: long_name}) |> render_change()
+      view |> element("#checkout-billing-type-company") |> render_click()
+
+      # Switching back preserves the draft, even though it is excluded from
+      # the company's validation and persisted profile.
+      view |> element("#checkout-billing-type-individual") |> render_click()
+      assert has_element?(view, "#checkout-billing-first_name[value='#{long_name}']")
+      view |> element("#checkout-billing-type-company") |> render_click()
+
+      view
+      |> form(@form, billing: %{company_name: "Acme", email: user.email, country: "EE"})
+      |> render_change()
+
+      view |> element("button[phx-click='proceed_to_review']") |> render_click()
+      assert has_element?(view, "button[phx-click='confirm_order']")
+      confirm_order(view)
+
+      assert [profile] = Billing.list_user_billing_profiles(user.uuid)
+      assert profile.type == "company"
+      assert profile.company_name == "Acme"
+      assert is_nil(profile.first_name)
+    end
+
     test "details that stop being a valid profile at confirm roll the order back", %{
       conn: conn,
       user: user,

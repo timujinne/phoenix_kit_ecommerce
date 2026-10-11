@@ -49,6 +49,19 @@ defmodule PhoenixKitEcommerce.DependencyFloorTest do
     assert Code.ensure_loaded?(PhoenixKit.Migrations.Postgres.ShopSlugProjection)
   end
 
+  test "the phoenix_kit floor ships the cache API StorefrontCache runs on" do
+    # `PhoenixKitEcommerce.children/0` starts a `PhoenixKit.Cache` with `:ttl`
+    # and `:max_size`, and `StorefrontCache` reads it through `remember/4`,
+    # `clear/1` and `Registry.cache_exists?/1`. Without them the storefront
+    # cache fails to start or every /shop mount raises.
+    assert Code.ensure_loaded?(PhoenixKit.Cache)
+    assert function_exported?(PhoenixKit.Cache, :remember, 4)
+    assert function_exported?(PhoenixKit.Cache, :clear, 1)
+    assert Code.ensure_loaded?(PhoenixKit.Cache.Registry)
+    assert function_exported?(PhoenixKit.Cache.Registry, :cache_exists?, 1)
+    assert {:children, 0} in PhoenixKit.Module.behaviour_info(:callbacks)
+  end
+
   test "the phoenix_kit_billing floor ships Order.payment_option_uuid" do
     # `maybe_put_payment_option/2` writes this attr once core is at V162.
     # `cast/3` ignores a key the schema does not declare, so against an older
@@ -84,9 +97,30 @@ defmodule PhoenixKitEcommerce.DependencyFloorTest do
     # Checkout renders the component and validates over `fields_changeset/3`;
     # both arrived in billing 0.20. Below it the page fails at runtime.
     assert Code.ensure_loaded?(PhoenixKitBilling.Web.Components.BillingProfileFields)
+
+    assert function_exported?(
+             PhoenixKitBilling.Web.Components.BillingProfileFields,
+             :billing_profile_fields,
+             1
+           )
+
+    # function_exported?/3 is false for a module that is not loaded yet.
+    assert Code.ensure_loaded?(PhoenixKitBilling.BillingProfile)
     assert function_exported?(PhoenixKitBilling.BillingProfile, :fields_changeset, 3)
     assert function_exported?(PhoenixKitBilling.BillingProfile, :form_fields, 0)
     assert Code.ensure_loaded?(PhoenixKitBilling.Gettext)
+  end
+
+  test "the declared billing requirement excludes releases without the checkout form" do
+    # The resolved symbols above cannot catch a lowered requirement while
+    # mix.lock still selects a newer release. Inspect the shipped pin too,
+    # including when a local path override is active for this test run.
+    assert [_, requirement] =
+             Regex.run(~r/:phoenix_kit_billing,\s*"([^"]+)"/, File.read!("mix.exs"))
+
+    refute Version.match?("0.19.0", requirement)
+    assert Version.match?("0.20.0", requirement)
+    assert Version.match?("0.21.0", requirement)
   end
 
   test "the phoenix_kit floor ships V186's cart/order freeze columns" do

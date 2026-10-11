@@ -1,5 +1,5 @@
 defmodule PhoenixKitEcommerce.Shopify.SyncTest do
-  use PhoenixKitEcommerce.DataCase, async: true
+  use PhoenixKitEcommerce.DataCase, async: false
 
   alias PhoenixKit.Integrations
   alias PhoenixKitEcommerce, as: Shop
@@ -25,6 +25,8 @@ defmodule PhoenixKitEcommerce.Shopify.SyncTest do
   end
 
   defp connect_shopify(attrs \\ %{}) do
+    enable_shopify!()
+
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
 

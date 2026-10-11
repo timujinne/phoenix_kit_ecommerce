@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.MixProject do
   use Mix.Project
 
-  @version "0.5.19"
+  @version "0.5.20"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_ecommerce"
 
   def project do
@@ -176,6 +176,10 @@ defmodule PhoenixKitEcommerce.MixProject do
       # unavailable" rather than crashing — but `~> 0.24` is what makes the
       # sweep exist at all.
       pk_dep(:phoenix_kit_ai, "~> 0.24", optional: true),
+      # Optional: only the "Stock tracking" switch uses it. Without it the
+      # switch is shown disabled with a pointer to Modules -> Not installed
+      # (see `PhoenixKitEcommerce.StockTracking`).
+      pk_dep(:phoenix_kit_warehouse, "~> 0.5", optional: true),
       # No declared dependency on `phoenix_kit_catalogue`, though this app
       # DOES call into `PhoenixKitCatalogue` directly (the ProductSource
       # catalogue adapter, `Catalogue.Writer`, and the Shopify-sync 6a
@@ -203,10 +207,13 @@ defmodule PhoenixKitEcommerce.MixProject do
       # can actually execute against a real local checkout instead of
       # staying excluded forever — set `PHOENIX_KIT_CATALOGUE_PATH` and
       # `PHOENIX_KIT_ENTITIES_PATH` (matching branches the host app
-      # itself pins) and run `mix test`; leave them unset and `mix test`
-      # behaves exactly as before (no dependency added, `test_helper.exs`
-      # excludes `:catalogue`). Never resolves via Hex, so the "no
-      # released version" rationale above is untouched.
+      # itself pins) and run `mix test`; leave them unset and no dependency
+      # is added by the bridge. The bridge itself never resolves via Hex,
+      # so the "no released version" rationale above is untouched. Note
+      # that the optional `phoenix_kit_warehouse` dependency above pulls
+      # `phoenix_kit_catalogue` (and `phoenix_kit_entities`) in from Hex
+      # transitively; with it resolved `test_helper.exs` no longer excludes
+      # `:catalogue` and those tests run by default.
 
       # LiveView is needed for the admin and storefront pages.
       {:phoenix_live_view, "~> 1.1"},

@@ -5144,6 +5144,81 @@ msgstr "Диагностика — последние записи журнал�
 msgid "Enable Shopify sync"
 msgstr "Включить синхронизацию Shopify"
 
+#: lib/phoenix_kit_ecommerce/web/settings.ex:726
+#, elixir-autogen, elixir-format
+msgid "Stock"
+msgstr "Остатки"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:732
+#, elixir-autogen, elixir-format
+msgid "Stock tracking"
+msgstr "Учёт остатков"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1523
+#, elixir-autogen, elixir-format
+msgid "Stock tracking enabled"
+msgstr "Учёт остатков включён"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1524
+#, elixir-autogen, elixir-format
+msgid "Stock tracking disabled"
+msgstr "Учёт остатков выключен"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1843
+#, elixir-autogen, elixir-format
+msgid "Stock tracking was not turned on: the Warehouse module is not installed."
+msgstr "Учёт остатков не включён: модуль Warehouse не установлен."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1846
+#, elixir-autogen, elixir-format
+msgid "Stock tracking was not turned on: the Warehouse module is disabled."
+msgstr "Учёт остатков не включён: модуль Warehouse отключён."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1849
+#, elixir-autogen, elixir-format
+msgid "Failed to update stock tracking"
+msgstr "Не удалось обновить учёт остатков"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1863
+#, elixir-autogen, elixir-format
+msgid "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
+msgstr "Для учёта остатков нужен модуль Warehouse. Установите его в разделе Модули → Не установленные."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1875
+#, elixir-autogen, elixir-format
+msgid "Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."
+msgstr "Для учёта остатков нужен модуль Warehouse. Включите его в разделе Модули → Отключённые."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1884
+#, elixir-autogen, elixir-format
+msgid "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
+msgstr "Остатками управляет модуль Warehouse. Сначала выберите склад по умолчанию в настройках Warehouse."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1896
+#, elixir-autogen, elixir-format
+msgid "Stock is kept by the Warehouse module."
+msgstr "Остатками управляет модуль Warehouse."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1866
+#, elixir-autogen, elixir-format
+msgid "Open Modules"
+msgstr "Открыть модули"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1876
+#, elixir-autogen, elixir-format
+msgid "Enable Warehouse"
+msgstr "Включить Warehouse"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1888
+#, elixir-autogen, elixir-format
+msgid "Set up Warehouse"
+msgstr "Настроить Warehouse"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1897
+#, elixir-autogen, elixir-format
+msgid "Open stock"
+msgstr "Открыть остатки"
+
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1729
 #, elixir-autogen, elixir-format
 msgid "Enable automatic sweep"

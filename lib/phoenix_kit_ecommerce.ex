@@ -86,6 +86,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.ShopConfig
   alias PhoenixKitEcommerce.Shopify.Provider, as: ShopifyProvider
   alias PhoenixKitEcommerce.SlugResolver
+  alias PhoenixKitEcommerce.StorefrontCache
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.TranslationSweepSettings
   alias PhoenixKitEcommerce.Web.Helpers
@@ -114,9 +115,6 @@ defmodule PhoenixKitEcommerce do
   # (`integrations/providers.ex:1393-1414`'s "which modules use this
   # integration" map), nothing forces the integration on because of it.
   def required_integrations, do: if(shopify_enabled?(), do: ["shopify"], else: [])
-
-  @impl PhoenixKit.Module
-  def children, do: [Shipping.Cache]
 
   @impl PhoenixKit.Module
   # Shopify (while its toggle is on) followed by the Integrations definition of
@@ -156,9 +154,12 @@ defmodule PhoenixKitEcommerce do
   sidebar entry, the sync page, and the Shopify option offered on the
   integrations page.
 
-  Defaults to `true` — Shopify sync predates this toggle, so a stand that
-  never touches `shop_shopify_enabled` keeps behaving exactly as it did
-  before this setting existed.
+  Defaults to `false`, and a failing settings read also answers `false`
+  (fail closed): Shopify is one optional product source, not part of every
+  shop, so a fresh install shows no Shopify UI until an admin turns it on.
+  Installs that already used Shopify under the old default of `true` keep it:
+  the `PhoenixKitEcommerce.Migrations` V3 step writes
+  `shop_shopify_enabled = "true"` for them when no row exists yet.
 
   Turning it off does **not** touch the stored integration record or its
   access token; re-enabling restores everything (design §4.7). Read via
@@ -167,11 +168,21 @@ defmodule PhoenixKitEcommerce do
   """
   @spec shopify_enabled?() :: boolean()
   def shopify_enabled? do
-    Settings.get_setting_cached("shop_shopify_enabled", "true") == "true"
+    read_shopify_setting() == "true"
   rescue
-    _ -> true
+    _ -> false
   catch
-    :exit, _ -> true
+    :exit, _ -> false
+  end
+
+  # Test seam: `:shopify_setting_reader` is an `{module, function}` called
+  # as `module.function(key, default)`, so a test can make the read raise or
+  # exit and reach the fail-closed clauses above.
+  defp read_shopify_setting do
+    case Application.get_env(:phoenix_kit_ecommerce, :shopify_setting_reader) do
+      {mod, fun} -> apply(mod, fun, ["shop_shopify_enabled", "false"])
+      _ -> Settings.get_setting_cached("shop_shopify_enabled", "false")
+    end
   end
 
   @impl PhoenixKit.Module
@@ -579,6 +590,21 @@ defmodule PhoenixKitEcommerce do
   end
 
   @doc """
+  Whether stock tracking is effectively on: the `shop_stock_tracking_enabled`
+  setting AND the Warehouse module installed AND enabled. See
+  `PhoenixKitEcommerce.StockTracking`.
+  """
+  @spec stock_tracking_enabled?() :: boolean()
+  defdelegate stock_tracking_enabled?, to: PhoenixKitEcommerce.StockTracking, as: :enabled?
+
+  @doc """
+  The Warehouse module's state as the shop sees it (`:not_installed`,
+  `:disabled`, `:no_default_location` or `:ready`).
+  """
+  @spec warehouse_status() :: PhoenixKitEcommerce.StockTracking.warehouse_status()
+  defdelegate warehouse_status, to: PhoenixKitEcommerce.StockTracking
+
+  @doc """
   Returns dashboard statistics for the shop.
   """
   def get_dashboard_stats do
@@ -781,6 +807,15 @@ defmodule PhoenixKitEcommerce do
 
   @impl PhoenixKit.Module
   def version, do: @version
+
+  # The storefront cache (`PhoenixKitEcommerce.StorefrontCache`). Picked up
+  # by core's `PhoenixKit.Supervisor` through
+  # `PhoenixKit.ModuleRegistry.static_children/0` - no host wiring - and
+  # started after `PhoenixKit.Cache.Registry`, a fixed earlier child of the
+  # same supervisor.
+  # The shipping lookup cache (`Shipping.Cache`) goes in the same list.
+  @impl PhoenixKit.Module
+  def children, do: StorefrontCache.children() ++ [Shipping.Cache]
 
   @impl PhoenixKit.Module
   def permission_metadata do
@@ -1277,17 +1312,25 @@ defmodule PhoenixKitEcommerce do
   def update_storefront_filters(filters) when is_list(filters) do
     value = %{"filters" => filters}
 
-    case repo().get(ShopConfig, @storefront_filters_key) do
-      nil ->
-        %ShopConfig{}
-        |> ShopConfig.changeset(%{key: @storefront_filters_key, value: value})
-        |> repo().insert()
+    result =
+      case repo().get(ShopConfig, @storefront_filters_key) do
+        nil ->
+          %ShopConfig{}
+          |> ShopConfig.changeset(%{key: @storefront_filters_key, value: value})
+          |> repo().insert()
 
-      config ->
-        config
-        |> ShopConfig.changeset(%{value: value})
-        |> repo().update()
-    end
+        config ->
+          config
+          |> ShopConfig.changeset(%{value: value})
+          |> repo().update()
+      end
+
+    # The enabled filters and their facets are cached on the storefront for
+    # about a minute (`StorefrontCache`); a saved change must show on the next
+    # page view, not after the TTL.
+    if match?({:ok, _}, result), do: StorefrontCache.clear()
+
+    result
   end
 
   @doc """
@@ -1651,6 +1694,10 @@ defmodule PhoenixKitEcommerce do
           ]
         )
 
+      # Does not broadcast, so the storefront cache (`StorefrontCache`) is
+      # cleared here.
+      if count > 0, do: StorefrontCache.clear()
+
       count
     end
   end
@@ -1666,6 +1713,11 @@ defmodule PhoenixKitEcommerce do
     else
       query = Product |> where([p], p.uuid in ^ids)
       {count, _} = repo().delete_all(query)
+
+      # Does not broadcast, so the storefront cache (`StorefrontCache`) is
+      # cleared here.
+      if count > 0, do: StorefrontCache.clear()
+
       count
     end
   end

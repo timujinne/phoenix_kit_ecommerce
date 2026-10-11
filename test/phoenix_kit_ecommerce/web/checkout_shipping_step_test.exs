@@ -267,6 +267,84 @@ defmodule PhoenixKitEcommerce.Web.CheckoutShippingStepTest do
     assert has_element?(view, "#checkout-billing-form")
   end
 
+  test "an unavailable selection on mount can be replaced inside checkout", %{conn: conn} do
+    PhoenixKit.Settings.update_setting_with_module(
+      "shop_shipping_selection_position",
+      "checkout",
+      "shop"
+    )
+
+    old_method = shipping_method(countries: ["EE"])
+    replacement = shipping_method(countries: ["EE"])
+    conn = setup_shippable_cart_session(conn)
+    cart = Shop.find_active_cart(session_id: get_session(conn, "shop_session_id"))
+    {:ok, cart} = Shop.set_cart_shipping(cart, old_method, "EE")
+    {:ok, _} = Shop.update_shipping_method(old_method, %{"active" => false})
+
+    {:ok, view, _html} = live(conn, "/checkout")
+    assert is_nil(Shop.get_cart!(cart.uuid).shipping_method_uuid)
+
+    view |> fill_billing_form(country: "EE") |> render_change()
+    view |> element("button[phx-click='proceed_to_review']") |> render_click()
+
+    assert has_element?(view, "#checkout-shipping-method-#{replacement.uuid}")
+    refute has_element?(view, "#checkout-shipping-method-#{old_method.uuid}")
+  end
+
+  for change <- [:disabled, :cleared] do
+    test "a shipping selection #{change} after review returns to the checkout picker on confirm",
+         %{
+           conn: conn
+         } do
+      PhoenixKit.Settings.update_setting_with_module(
+        "shop_shipping_selection_position",
+        "checkout",
+        "shop"
+      )
+
+      old_method = shipping_method(countries: ["EE"])
+      replacement = shipping_method(countries: ["EE"])
+      conn = setup_shippable_cart_session(conn)
+
+      {:ok, view, _html} = live(conn, "/checkout")
+      view |> fill_billing_form(country: "EE") |> render_change()
+      view |> element("button[phx-click='proceed_to_review']") |> render_click()
+
+      view
+      |> element("#checkout-shipping-method-#{old_method.uuid} input[type='radio']")
+      |> render_click()
+
+      view |> element("#checkout-shipping-continue") |> render_click()
+
+      case unquote(change) do
+        :disabled ->
+          {:ok, _} = Shop.update_shipping_method(old_method, %{"active" => false})
+
+        :cleared ->
+          cart = Shop.find_active_cart(session_id: get_session(conn, "shop_session_id"))
+          {:ok, _} = Shop.clear_cart_shipping(cart)
+      end
+
+      view |> element("button[phx-click='confirm_order']") |> render_click()
+
+      assert has_element?(view, "#checkout-shipping-method-#{replacement.uuid}")
+
+      if unquote(change) == :disabled do
+        refute has_element?(view, "#checkout-shipping-method-#{old_method.uuid}")
+      end
+
+      refute has_element?(view, "#checkout-shipping-continue:not([disabled])")
+
+      view
+      |> element("#checkout-shipping-method-#{replacement.uuid} input[type='radio']")
+      |> render_click()
+
+      view |> element("#checkout-shipping-continue") |> render_click()
+      view |> element("button[phx-click='confirm_order']") |> render_click()
+      assert_redirect(view)
+    end
+  end
+
   # Core migrations seed one row per `PaymentOption.codes/0` entry
   # (inactive, default `requires_billing_profile`), so `code` is never
   # free to insert fresh - fetch the seeded row and flip it to what this

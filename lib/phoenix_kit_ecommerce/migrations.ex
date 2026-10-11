@@ -44,6 +44,22 @@ defmodule PhoenixKitEcommerce.Migrations do
   currency stores NULL. Existing rows are untouched; `down/1` restores the
   defaults.
 
+  ## V3 — Shopify sync is off by default
+
+  `PhoenixKitEcommerce.shopify_enabled?/0` used to default to `true` when
+  `shop_shopify_enabled` had no row, and now defaults to `false`. An install
+  that already uses Shopify may never have written that row and ran on the old
+  default alone; V3 writes `shop_shopify_enabled = "true"` for it so the
+  upgrade does not quietly switch its sync off. It does so only when the row
+  is MISSING and Shopify is already configured — a Shopify integration
+  connection exists, or catalogue items
+  (`data->'ecommerce'->'shopify'->>'product_id'`) or legacy products
+  (`metadata->'_shopify'->>'product_id'`) carry a Shopify product id. An
+  existing row, true or false, is never touched, and a missing catalogue or
+  products table counts as "no ids" rather than an error. See
+  `shopify_upgrade_statements/1`. `down/1` leaves the row alone: it is an
+  admin-visible setting, not schema.
+
   ## What `down/1` is NOT
 
   `down/1` unstamps the version marker and restores the V2 column
@@ -68,7 +84,7 @@ defmodule PhoenixKitEcommerce.Migrations do
 
   use Ecto.Migration
 
-  @current_version 2
+  @current_version 3
   @marker_prefix "pke_schema:"
   @version_table "phoenix_kit_shop_config"
 
@@ -154,6 +170,7 @@ defmodule PhoenixKitEcommerce.Migrations do
       triggers(p) ++
       indexes(prefix, p) ++
       v2_drop_currency_defaults(p) ++
+      shopify_upgrade_statements(prefix) ++
       [marker_statement(p, @current_version)]
   end
 
@@ -205,6 +222,64 @@ defmodule PhoenixKitEcommerce.Migrations do
     for t <- @currency_default_tables do
       ~s(ALTER TABLE #{p}#{t} ALTER COLUMN "currency" SET DEFAULT 'USD'::character varying)
     end
+  end
+
+  @doc """
+  The V3 step as data: one idempotent statement that writes
+  `shop_shopify_enabled = "true"` only when that setting has no row AND
+  Shopify is already configured (see the moduledoc). Insert-only, with
+  `ON CONFLICT DO NOTHING`, so it can never overwrite an existing row.
+
+  The catalogue and legacy-product lookups run through `EXECUTE` behind a
+  `to_regclass/1` check, so a schema without those tables is not an error.
+  """
+  @spec shopify_upgrade_statements(String.t()) :: [String.t()]
+  def shopify_upgrade_statements(prefix \\ "public") do
+    prefix = validated_prefix(prefix: prefix)
+    p = "#{prefix}."
+
+    [
+      """
+      DO $$
+      DECLARE
+        configured boolean;
+      BEGIN
+        IF EXISTS (SELECT 1 FROM #{p}phoenix_kit_settings WHERE key = 'shop_shopify_enabled') THEN
+          RETURN;
+        END IF;
+
+        configured := EXISTS (
+          SELECT 1 FROM #{p}phoenix_kit_settings
+          WHERE module = 'integrations' AND value_json ->> 'provider' = 'shopify'
+        );
+
+        IF NOT configured AND to_regclass('#{p}phoenix_kit_cat_items') IS NOT NULL THEN
+          EXECUTE $q$
+            SELECT EXISTS (
+              SELECT 1 FROM #{p}phoenix_kit_cat_items
+              WHERE COALESCE(data #>> '{ecommerce,shopify,product_id}', '') <> ''
+            )
+          $q$ INTO configured;
+        END IF;
+
+        IF NOT configured AND to_regclass('#{p}phoenix_kit_shop_products') IS NOT NULL THEN
+          EXECUTE $q$
+            SELECT EXISTS (
+              SELECT 1 FROM #{p}phoenix_kit_shop_products
+              WHERE COALESCE(metadata #>> '{_shopify,product_id}', '') <> ''
+            )
+          $q$ INTO configured;
+        END IF;
+
+        IF configured THEN
+          INSERT INTO #{p}phoenix_kit_settings (key, value, module)
+          VALUES ('shop_shopify_enabled', 'true', 'shop')
+          ON CONFLICT (key) DO NOTHING;
+        END IF;
+      END
+      $$
+      """
+    ]
   end
 
   defp marker_statement(p, version),

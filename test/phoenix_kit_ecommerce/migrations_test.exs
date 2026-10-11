@@ -16,8 +16,8 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
     phoenix_kit_shop_import_logs
   )
 
-  test "chain is V2 and marks phoenix_kit_shop_config" do
-    assert Migrations.current_version() == 2
+  test "chain is V3 and marks phoenix_kit_shop_config" do
+    assert Migrations.current_version() == 3
     assert Migrations.version_table() == "phoenix_kit_shop_config"
   end
 
@@ -28,7 +28,7 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
       assert Enum.any?(stmts, &String.contains?(&1, "CREATE TABLE IF NOT EXISTS public.#{t} ("))
     end
 
-    assert List.last(stmts) == "COMMENT ON TABLE public.phoenix_kit_shop_config IS 'pke_schema:2'"
+    assert List.last(stmts) == "COMMENT ON TABLE public.phoenix_kit_shop_config IS 'pke_schema:3'"
   end
 
   test "no statement can destroy data, in either direction" do
@@ -68,8 +68,8 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
     stmts = Migrations.up_statements("public")
 
     # 10 tables + 2 functions + 23 constraints + 2 triggers + 39 indexes
-    # + 4 V2 `DROP DEFAULT`s + 1 marker
-    assert length(stmts) == 81
+    # + 4 V2 `DROP DEFAULT`s + 1 V3 Shopify-default step + 1 marker
+    assert length(stmts) == 82
 
     for name <- ~w(
           idx_shop_config_key
@@ -176,6 +176,20 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
     # Rolling back TO V2 is not rolling V2 back — the defaults stay dropped.
     assert Migrations.down_statements("public", 2) ==
              ["COMMENT ON TABLE public.phoenix_kit_shop_config IS 'pke_schema:2'"]
+  end
+
+  test "V3 carries the Shopify-default upgrade step, ahead of the marker" do
+    stmts = Migrations.up_statements("public")
+
+    assert Migrations.shopify_upgrade_statements("public") -- stmts == []
+    assert Enum.at(stmts, -2) == hd(Migrations.shopify_upgrade_statements("public"))
+  end
+
+  test "the Shopify-default step only ever inserts, and never overwrites" do
+    [step] = Migrations.shopify_upgrade_statements("public")
+
+    assert step =~ "ON CONFLICT (key) DO NOTHING"
+    refute step =~ ~r/\bUPDATE\b/i
   end
 
   test "prefix is validated before it reaches DDL" do

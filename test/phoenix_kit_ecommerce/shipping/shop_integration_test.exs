@@ -395,6 +395,10 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
   end
 
   describe "module wiring" do
+    setup do
+      enable_shopify!()
+    end
+
     test "integration_providers/0 adds the integration of shipping providers" do
       with_providers([StubProvider])
 
@@ -439,8 +443,8 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
       assert Enum.map(Shop.integration_providers(), & &1.key) == ["stub"]
     end
 
-    test "children/0 is the shipping cache, and starting it twice is harmless" do
-      assert Shop.children() == [Cache]
+    test "children/0 carries the shipping cache, and starting it twice is harmless" do
+      assert Cache in Shop.children()
 
       start_supervised!(Cache)
       pid = Process.whereis(Cache)
@@ -448,7 +452,7 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
       supervisor =
         start_supervised!(%{
           id: :second_start,
-          start: {Supervisor, :start_link, [Shop.children(), [strategy: :one_for_one]]}
+          start: {Supervisor, :start_link, [[Cache], [strategy: :one_for_one]]}
         })
 
       # The second start was ignored: the original process still owns the name

@@ -94,13 +94,17 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         {:ok, redirect_to_cart(socket, gettext("Please select a shipping method"))}
 
       selected_shipping_method_outgrown?(cart, requires_shipping) ->
-        {:ok,
-         redirect_to_cart(
-           socket,
-           gettext(
-             "The selected shipping method is no longer available for this cart - please pick another"
-           )
-         )}
+        if Shop.shipping_selection_position() == :checkout do
+          {:ok, setup_checkout_assigns(socket, drop_shipping_selection(cart), user)}
+        else
+          {:ok,
+           redirect_to_cart(
+             socket,
+             gettext(
+               "The selected shipping method is no longer available for this cart - please pick another"
+             )
+           )}
+        end
 
       true ->
         {:ok, setup_checkout_assigns(socket, cart, user)}
@@ -459,12 +463,15 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     do: @shared_billing_fields ++ ~w(first_name middle_name last_name)a
 
   # The shop adds to billing's rules: the country is always needed (it drives
-  # tax and shipping), and a cart that ships needs the full address.
+  # tax and shipping), and a cart that ships needs the full address. Validate
+  # only the selected type; the other type's draft stays available in `data`
+  # without hidden errors blocking the form.
   defp billing_changeset(socket) do
     %{billing_data: data, billing_type: type, cart: cart} = socket.assigns
 
     params =
       data
+      |> clean_for_type(type)
       |> Map.put("type", type)
       |> Map.put("save_profile", to_string(socket.assigns.save_billing_profile))
 
@@ -969,12 +976,12 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   # So for `:checkout` we drop the now-ineligible selection and re-enter the
   # step that owns the choice, with the methods for the country the shopper
   # actually just entered.
-  defp reject_invalid_shipping_selection(socket) do
-    message =
-      gettext(
-        "The selected shipping method is not available for your address - please pick another"
-      )
-
+  defp reject_invalid_shipping_selection(
+         socket,
+         message \\ gettext(
+           "The selected shipping method is not available for your address - please pick another"
+         )
+       ) do
     if Shop.shipping_selection_position() == :checkout do
       socket
       |> put_cart(drop_shipping_selection(socket.assigns.cart))
@@ -1134,8 +1141,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   defp handle_order_result({:error, :no_shipping_method}, socket) do
     socket
     |> assign(:processing, false)
-    |> put_flash(:error, gettext("Please select a shipping method"))
-    |> push_navigate(to: Routes.path("/cart"))
+    |> reject_invalid_shipping_selection(gettext("Please select a shipping method"))
   end
 
   defp handle_order_result({:error, :email_already_registered}, socket) do
@@ -1151,13 +1157,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   defp handle_order_result({:error, :shipping_method_unavailable}, socket) do
     socket
     |> assign(:processing, false)
-    |> put_flash(
-      :error,
-      gettext(
-        "The selected shipping method is not available for your address - please pick another"
-      )
-    )
-    |> push_navigate(to: Routes.path("/cart"))
+    |> reject_invalid_shipping_selection()
   end
 
   # A carrier-priced method whose quote is missing, out of date or refused:

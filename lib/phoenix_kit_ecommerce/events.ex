@@ -72,6 +72,7 @@ defmodule PhoenixKitEcommerce.Events do
 
   alias PhoenixKit.PubSub.Manager
   alias PhoenixKitEcommerce.Cart
+  alias PhoenixKitEcommerce.StorefrontCache
 
   # ============================================
   # TOPIC CONSTANTS
@@ -395,6 +396,28 @@ defmodule PhoenixKitEcommerce.Events do
     |> Enum.each(fn topic ->
       Manager.broadcast(topic, message)
     end)
+  end
+
+  # The product and category writes of the legacy product source announce
+  # themselves on one of these two topics (single create/update/delete, bulk
+  # product status, bulk category status/parent/delete), so this is the one
+  # place that sees them - clearing here keeps the storefront's cached
+  # categories and facet counts (`StorefrontCache`) from outliving a change
+  # the admin just made, without a clear call in each write function. Cleared
+  # BEFORE the broadcast: a LiveView that reacts to the message and re-reads
+  # must not be handed the old entries. Per-product and inventory topics do
+  # not touch the cached values. The clear is node-local; other nodes rely on
+  # the TTL.
+  #
+  # Not covered here, but cleared at the write itself:
+  # `bulk_update_product_category/2` and `bulk_delete_products/1` (they never
+  # broadcast) and the Shopify sync's catalogue writes (`Shopify.Sync`).
+  # TTL-only: edits made in `phoenix_kit_catalogue`, the background Shopify
+  # jobs (media/variants and collection sync) and a change of the enabled
+  # languages (not a write of this package). See `StorefrontCache`.
+  defp broadcast(topic, message) when topic in [@products_topic, @categories_topic] do
+    StorefrontCache.clear()
+    Manager.broadcast(topic, message)
   end
 
   defp broadcast(topic, message) do

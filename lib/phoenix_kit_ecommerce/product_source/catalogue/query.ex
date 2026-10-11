@@ -512,9 +512,8 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
      category (ordered by `position`, then `name`) that carries an image
      by the same rule — exactly the old admin form's "Auto-detect (first
      product with image)" hint. Resolved for every OTHER category in one
-     query fetching all their active items once, then walking the
-     (already category/position-ordered) rows in Elixir to keep the
-     first image-bearing one per category.
+     query that picks the first image-bearing item per category in SQL
+     (`DISTINCT ON`) and returns just the image uuid, not the item data.
 
   A category absent from the result has no image from either step (its
   `image_uuid`, if any — priority 1 — is a category-view concern, not
@@ -615,31 +614,78 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
   defp resolve_auto_images(categories, catalogue_uuid) do
     category_uuids = Enum.map(categories, & &1.uuid)
 
-    CatItem
-    |> where([i], i.catalogue_uuid == ^catalogue_uuid)
-    |> where([i], i.category_uuid in ^category_uuids)
-    |> active_visibility()
-    |> order_by([i], asc: i.category_uuid, asc: i.position, asc: i.name)
-    |> select([i], %{category_uuid: i.category_uuid, data: i.data})
+    # Only the image is projected, never the item's whole `data`: a
+    # catalogue item carries every translation in there (~20 KB of JSONB,
+    # about 12 KB of it the imported `html_source`), and shipping that for
+    # every active item just to pick one image per category dominated the
+    # storefront's category query. The inner query computes the image with
+    # the same rule as `item_image/1` (below), the outer `DISTINCT ON` keeps
+    # the first image-bearing item per category (position, then name) so one
+    # row per category comes back.
+    #
+    # The two sub-values are pulled out of `data` once per row, in a
+    # `LATERAL` with `OFFSET 0` (without it the planner inlines the
+    # expressions back into the `CASE`). Postgres detoasts the whole
+    # document on every `data->...` read, and a `CASE` that reads `data`
+    # itself did that two to five times per item (plus once for the
+    # visibility filter): more Postgres time than shipping `data` (~100 vs
+    # ~50 ms for 700 items), though about equal in wall time.
+    items =
+      CatItem
+      |> where([i], i.catalogue_uuid == ^catalogue_uuid)
+      |> where([i], i.category_uuid in ^category_uuids)
+      |> active_visibility()
+      |> join(
+        :cross_lateral,
+        [i],
+        x in fragment(
+          "(SELECT ?->'featured_image_uuid' AS f, ?->'media_order' AS m OFFSET 0)",
+          i.data,
+          i.data
+        ),
+        on: true
+      )
+      |> select([i, x], %{
+        category_uuid: i.category_uuid,
+        position: i.position,
+        name: i.name,
+        image:
+          fragment(
+            """
+            CASE
+              WHEN jsonb_typeof(?) = 'string' AND ? #>> '{}' <> ''
+                THEN ? #>> '{}'
+              WHEN jsonb_typeof(?) = 'array'
+                   AND jsonb_typeof(?->0) = 'string'
+                   AND ?->>0 <> ''
+                THEN ?->>0
+            END
+            """,
+            x.f,
+            x.f,
+            x.f,
+            x.m,
+            x.m,
+            x.m,
+            x.m
+          )
+      })
+
+    items
+    |> subquery()
+    |> where([s], not is_nil(s.image))
+    |> distinct([s], s.category_uuid)
+    |> order_by([s], asc: s.category_uuid, asc: s.position, asc: s.name)
+    |> select([s], {s.category_uuid, s.image})
     |> repo().all()
-    |> Enum.reduce(%{}, &put_first_image/2)
+    |> Map.new()
   end
 
-  defp put_first_image(%{category_uuid: category_uuid} = row, acc) do
-    if Map.has_key?(acc, category_uuid) do
-      acc
-    else
-      case item_image(row) do
-        image when is_binary(image) and image != "" -> Map.put(acc, category_uuid, image)
-        _ -> acc
-      end
-    end
-  end
-
-  # Shared by `resolve_explicit_images/1`, `resolve_auto_images/1` and
+  # Shared by `resolve_explicit_images/1` and
   # `category_item_image_options/1` — a real `CatItem` struct and the
   # plain `%{data: ...}` maps `select/3` projects above both work, since
-  # this only ever reads `.data`.
+  # this only ever reads `.data`. `resolve_auto_images/2` mirrors this
+  # rule in SQL: keep the two in step.
   defp item_image(%{data: data}) do
     data = data || %{}
 

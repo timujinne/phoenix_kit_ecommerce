@@ -212,7 +212,10 @@ handle/slug); a Shopify product with no local match is skipped. To
 bring a new product in from Shopify, use [CSV Import](#csv-import)
 first, then this to keep it current.
 
-Setup (all through the UI, no environment variables):
+Setup (all through the UI, no environment variables). Shopify sync is
+off by default: first turn on **Enable Shopify sync** in Shop → Settings.
+Until then the Shopify option is not offered under Settings →
+Integrations, and the sync page and its sidebar entry are hidden.
 
 1. **In Shopify admin**: Settings → Apps and sales channels → Develop
    apps → Create an app. Configure Admin API scopes — `read_products`

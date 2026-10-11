@@ -50,6 +50,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncIntegrationLinkTest do
   end
 
   defp connect_shopify do
+    enable_shopify!()
+
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
 
@@ -101,6 +103,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncIntegrationLinkTest do
 
   describe "not connected" do
     test "no link to a connection that does not exist", %{conn: conn} do
+      enable_shopify!()
+
       {:ok, view, _html} = live(conn, @page <> "?tab=settings")
 
       refute has_element?(view, "#open-shopify-integration")

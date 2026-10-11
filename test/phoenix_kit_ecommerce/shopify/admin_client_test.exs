@@ -1,5 +1,5 @@
 defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
-  use PhoenixKitEcommerce.DataCase, async: true
+  use PhoenixKitEcommerce.DataCase, async: false
 
   alias PhoenixKit.Integrations
   alias PhoenixKitEcommerce.Shopify.AdminClient
@@ -7,6 +7,8 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
   @stub __MODULE__
 
   defp connect_shopify(attrs \\ %{}) do
+    enable_shopify!()
+
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
 
@@ -43,6 +45,7 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
     end
 
     test "returns an error when the connection has never been configured" do
+      enable_shopify!()
       {:ok, %{uuid: uuid}} = Integrations.add_connection("shopify", "Unconfigured Shop")
 
       assert {:error, _reason} = AdminClient.fetch_products(uuid, req_options())
@@ -492,6 +495,7 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
     end
 
     test "returns an error when the connection has never been configured" do
+      enable_shopify!()
       {:ok, %{uuid: uuid}} = Integrations.add_connection("shopify", "Unconfigured Shop")
 
       assert {:error, _reason} = AdminClient.fetch_product(uuid, 123, req_options())
@@ -788,6 +792,7 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
     end
 
     test "returns an error when the connection has never been configured" do
+      enable_shopify!()
       {:ok, %{uuid: uuid}} = Integrations.add_connection("shopify", "Unconfigured Shop")
 
       assert {:error, _reason} = AdminClient.fetch_shop(uuid, req_options())

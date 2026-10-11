@@ -68,23 +68,4 @@ defmodule PhoenixKitEcommerce.ModuleCallbacksTest do
   test "version/0 is single-sourced from mix.exs" do
     assert PhoenixKitEcommerce.version() == Mix.Project.config()[:version]
   end
-
-  test "required_integrations/0 names shopify" do
-    assert "shopify" in PhoenixKitEcommerce.required_integrations()
-  end
-
-  test "integration_providers/0 registers the Shopify provider with credentials auth" do
-    assert [provider] = PhoenixKitEcommerce.integration_providers()
-
-    assert provider.key == "shopify"
-    assert provider.auth_type == :credentials
-
-    field_keys = Enum.map(provider.setup_fields, & &1.key)
-    assert "shop_domain" in field_keys
-    assert "access_token" in field_keys
-
-    access_token_field = Enum.find(provider.setup_fields, &(&1.key == "access_token"))
-    assert access_token_field.required
-    assert access_token_field.type == :password
-  end
 end

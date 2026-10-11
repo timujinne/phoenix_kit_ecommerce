@@ -79,6 +79,8 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCheckOneCatalogueTest do
   end
 
   defp connect_shopify(attrs \\ %{}) do
+    enable_shopify!()
+
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
 

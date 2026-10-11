@@ -32,6 +32,7 @@ defmodule PhoenixKitEcommerce.DataCase do
       import PhoenixKitEcommerce.ActivityLogAssertions
       import PhoenixKitEcommerce.NotificationAssertions
       import PhoenixKitEcommerce.CheckoutFixtures
+      import PhoenixKitEcommerce.ShopifyFixtures
       import PhoenixKitEcommerce.DataCase
     end
   end

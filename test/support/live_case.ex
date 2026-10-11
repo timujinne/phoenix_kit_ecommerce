@@ -33,6 +33,7 @@ defmodule PhoenixKitEcommerce.LiveCase do
       import PhoenixKitEcommerce.ActivityLogAssertions
       import PhoenixKitEcommerce.NotificationAssertions
       import PhoenixKitEcommerce.CheckoutFixtures
+      import PhoenixKitEcommerce.ShopifyFixtures
       # Reuse the helpers defined on DataCase so LiveView tests don't
       # need their own duplicate copies.
       import PhoenixKitEcommerce.DataCase, only: [errors_on: 1]

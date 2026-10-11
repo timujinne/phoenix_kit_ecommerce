@@ -29,6 +29,10 @@ defmodule PhoenixKit.Modules.Shop do
   defdelegate settings_tabs(), to: PhoenixKitEcommerce
   defdelegate user_dashboard_tabs(), to: PhoenixKitEcommerce
   defdelegate get_config(), to: PhoenixKitEcommerce
+  defdelegate children(), to: PhoenixKitEcommerce
+  defdelegate default_checkout_country(), to: PhoenixKitEcommerce
+  defdelegate stock_tracking_enabled?(), to: PhoenixKitEcommerce
+  defdelegate warehouse_status(), to: PhoenixKitEcommerce
 
   # Dashboard
   defdelegate get_dashboard_stats(), to: PhoenixKitEcommerce
