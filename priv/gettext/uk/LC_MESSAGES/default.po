@@ -5135,6 +5135,61 @@ msgstr "Діагностика — останні записи журналу з
 msgid "Enable Shopify sync"
 msgstr "Увімкнути синхронізацію Shopify"
 
+#: lib/phoenix_kit_ecommerce/web/settings.ex:726
+#, elixir-autogen, elixir-format
+msgid "Stock"
+msgstr "Залишки"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:732
+#, elixir-autogen, elixir-format
+msgid "Stock tracking"
+msgstr "Облік залишків"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1820
+#, elixir-autogen, elixir-format
+msgid "Stock tracking enabled"
+msgstr "Облік залишків увімкнено"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1821
+#, elixir-autogen, elixir-format
+msgid "Stock tracking disabled"
+msgstr "Облік залишків вимкнено"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1840
+#, elixir-autogen, elixir-format
+msgid "Stock tracking was not turned on: the Warehouse module is not installed."
+msgstr "Облік залишків не ввімкнено: модуль Warehouse не встановлено."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1843
+#, elixir-autogen, elixir-format
+msgid "Stock tracking was not turned on: the Warehouse module is disabled."
+msgstr "Облік залишків не ввімкнено: модуль Warehouse вимкнено."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1846
+#, elixir-autogen, elixir-format
+msgid "Failed to update stock tracking"
+msgstr "Не вдалося оновити облік залишків"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1853
+#, elixir-autogen, elixir-format
+msgid "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
+msgstr "Для обліку залишків потрібен модуль Warehouse. Встановіть його в розділі Модулі → Не встановлені."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1858
+#, elixir-autogen, elixir-format
+msgid "Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."
+msgstr "Для обліку залишків потрібен модуль Warehouse. Увімкніть його в розділі Модулі → Вимкнені."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1864
+#, elixir-autogen, elixir-format
+msgid "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
+msgstr "Залишками керує модуль Warehouse. Спершу виберіть склад за замовчуванням у налаштуваннях Warehouse."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1869
+#, elixir-autogen, elixir-format
+msgid "Stock is kept by the Warehouse module."
+msgstr "Залишками керує модуль Warehouse."
+
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1729
 #, elixir-autogen, elixir-format
 msgid "Enable automatic sweep"

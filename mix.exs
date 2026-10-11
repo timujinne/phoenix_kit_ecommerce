@@ -176,6 +176,10 @@ defmodule PhoenixKitEcommerce.MixProject do
       # unavailable" rather than crashing — but `~> 0.24` is what makes the
       # sweep exist at all.
       pk_dep(:phoenix_kit_ai, "~> 0.24", optional: true),
+      # Optional: only the "Stock tracking" switch uses it. Without it the
+      # switch is shown disabled with a pointer to Modules -> Not installed
+      # (see `PhoenixKitEcommerce.StockTracking`).
+      pk_dep(:phoenix_kit_warehouse, "~> 0.5", optional: true),
       # No declared dependency on `phoenix_kit_catalogue`, though this app
       # DOES call into `PhoenixKitCatalogue` directly (the ProductSource
       # catalogue adapter, `Catalogue.Writer`, and the Shopify-sync 6a

@@ -5101,6 +5101,61 @@ msgstr ""
 msgid "Enable Shopify sync"
 msgstr ""
 
+#: lib/phoenix_kit_ecommerce/web/settings.ex:726
+#, elixir-autogen, elixir-format
+msgid "Stock"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:732
+#, elixir-autogen, elixir-format
+msgid "Stock tracking"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1820
+#, elixir-autogen, elixir-format
+msgid "Stock tracking enabled"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1821
+#, elixir-autogen, elixir-format
+msgid "Stock tracking disabled"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1840
+#, elixir-autogen, elixir-format
+msgid "Stock tracking was not turned on: the Warehouse module is not installed."
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1843
+#, elixir-autogen, elixir-format
+msgid "Stock tracking was not turned on: the Warehouse module is disabled."
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1846
+#, elixir-autogen, elixir-format
+msgid "Failed to update stock tracking"
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1853
+#, elixir-autogen, elixir-format
+msgid "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1858
+#, elixir-autogen, elixir-format
+msgid "Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1864
+#, elixir-autogen, elixir-format
+msgid "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
+msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1869
+#, elixir-autogen, elixir-format
+msgid "Stock is kept by the Warehouse module."
+msgstr ""
+
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1729
 #, elixir-autogen, elixir-format
 msgid "Enable automatic sweep"

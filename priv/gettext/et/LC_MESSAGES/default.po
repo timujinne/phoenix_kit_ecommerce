@@ -5100,6 +5100,61 @@ msgstr "Diagnostika — AI päringute logi viimased kirjed"
 msgid "Enable Shopify sync"
 msgstr "Luba Shopify sünkroonimine"
 
+#: lib/phoenix_kit_ecommerce/web/settings.ex:726
+#, elixir-autogen, elixir-format
+msgid "Stock"
+msgstr "Laoseis"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:732
+#, elixir-autogen, elixir-format
+msgid "Stock tracking"
+msgstr "Laoseisu jälgimine"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1820
+#, elixir-autogen, elixir-format
+msgid "Stock tracking enabled"
+msgstr "Laoseisu jälgimine on sisse lülitatud"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1821
+#, elixir-autogen, elixir-format
+msgid "Stock tracking disabled"
+msgstr "Laoseisu jälgimine on välja lülitatud"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1840
+#, elixir-autogen, elixir-format
+msgid "Stock tracking was not turned on: the Warehouse module is not installed."
+msgstr "Laoseisu jälgimist ei lülitatud sisse: Warehouse'i moodul ei ole paigaldatud."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1843
+#, elixir-autogen, elixir-format
+msgid "Stock tracking was not turned on: the Warehouse module is disabled."
+msgstr "Laoseisu jälgimist ei lülitatud sisse: Warehouse'i moodul on keelatud."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1846
+#, elixir-autogen, elixir-format
+msgid "Failed to update stock tracking"
+msgstr "Laoseisu jälgimise uuendamine ebaõnnestus"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1853
+#, elixir-autogen, elixir-format
+msgid "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
+msgstr "Laoseisu jälgimine vajab Warehouse'i moodulit. Paigalda see jaotises Moodulid → Paigaldamata."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1858
+#, elixir-autogen, elixir-format
+msgid "Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."
+msgstr "Laoseisu jälgimine vajab Warehouse'i moodulit. Luba see jaotises Moodulid → Keelatud."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1864
+#, elixir-autogen, elixir-format
+msgid "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
+msgstr "Laoseisu haldab Warehouse'i moodul. Vali esmalt Warehouse'i seadetes vaikeladu."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1869
+#, elixir-autogen, elixir-format
+msgid "Stock is kept by the Warehouse module."
+msgstr "Laoseisu haldab Warehouse'i moodul."
+
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1729
 #, elixir-autogen, elixir-format
 msgid "Enable automatic sweep"

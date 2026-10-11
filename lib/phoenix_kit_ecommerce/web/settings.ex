@@ -17,6 +17,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.Notifications, as: ShopNotifications
   alias PhoenixKitEcommerce.Policy
+  alias PhoenixKitEcommerce.StockTracking
   alias PhoenixKitEcommerce.TranslationSweepSettings
   alias PhoenixKitEcommerce.Vocabulary
   alias PhoenixKitEcommerce.Web.Authz
@@ -72,6 +73,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign(:ai_translations_available, ai_translations_available?())
       |> assign(:translations_supported, Shop.translations_supported?())
       |> assign(:shop_shopify_enabled, Shop.shopify_enabled?())
+      |> assign_stock_tracking()
       |> assign_policy()
 
     {:ok, socket}
@@ -270,6 +272,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   def handle_event("toggle_shop_shopify_enabled", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("toggle_shop_shopify_enabled", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("toggle_shop_stock_tracking", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("toggle_shop_stock_tracking", params, socket)
     end)
   end
 
@@ -703,6 +712,46 @@ defmodule PhoenixKitEcommerce.Web.Settings do
             >
               {gettext("Open the Shopify sync page →")}
             </.link>
+          </div>
+        </div>
+
+        <%!-- Stock tracking switch (spec 8.1). Stock itself lives in the optional
+             Warehouse module; the hint tells the operator what is missing and
+             links to where to fix it. The server refuses turning it on while
+             Warehouse is missing or off (see `StockTracking.set_enabled/1`). --%>
+        <div class="card bg-base-100 shadow-xl mb-6" id="shop-stock-tracking-card">
+          <div class="card-body">
+            <h2 class="card-title text-xl mb-2">
+              <.icon name="hero-cube" class="w-6 h-6" />
+              {gettext("Stock")}
+            </h2>
+
+            <div class="fieldset">
+              <label class="label cursor-pointer justify-between">
+                <span class="fieldset-legend text-lg">
+                  <span class="font-semibold">{gettext("Stock tracking")}</span>
+                </span>
+                <input
+                  id="toggle-shop-stock-tracking"
+                  type="checkbox"
+                  class="toggle toggle-secondary"
+                  checked={@stock_tracking_enabled}
+                  disabled={@warehouse_status in [:not_installed, :disabled]}
+                  phx-click="toggle_shop_stock_tracking"
+                />
+              </label>
+            </div>
+
+            <% {hint, hint_path} = stock_tracking_hint(@warehouse_status) %>
+            <p id="shop-stock-tracking-hint" class="text-sm text-base-content/70">
+              <.link
+                id="shop-stock-tracking-hint-link"
+                navigate={hint_path}
+                class="link link-primary"
+              >
+                {hint}
+              </.link>
+            </p>
           </div>
         </div>
 
@@ -1453,6 +1502,37 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     do_toggle_shop_shopify_enabled(!socket.assigns.shop_shopify_enabled, socket)
   end
 
+  defp gated_event("toggle_shop_stock_tracking", _params, socket) do
+    new_value = !socket.assigns.stock_tracking_enabled
+
+    case StockTracking.set_enabled(new_value) do
+      {:ok, _} ->
+        Activity.log("shop.stock_tracking_changed",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "setting",
+          metadata: %{"enabled" => new_value}
+        )
+
+        {:noreply,
+         socket
+         |> assign_stock_tracking()
+         |> put_flash(
+           :info,
+           if(new_value,
+             do: gettext("Stock tracking enabled"),
+             else: gettext("Stock tracking disabled")
+           )
+         )}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign_stock_tracking()
+         |> put_flash(:error, stock_tracking_error(reason))}
+    end
+  end
+
   defp gated_event("update_catalog_vocabulary", %{"vocabulary" => vocabulary}, socket) do
     if vocabulary in Vocabulary.options() do
       case Settings.update_setting(Vocabulary.setting_key(), vocabulary) do
@@ -1748,6 +1828,45 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     end
 
     socket
+  end
+
+  defp assign_stock_tracking(socket) do
+    socket
+    |> assign(:warehouse_status, StockTracking.warehouse_status())
+    |> assign(:stock_tracking_enabled, StockTracking.enabled?())
+  end
+
+  defp stock_tracking_error(:warehouse_not_installed),
+    do: gettext("Stock tracking was not turned on: the Warehouse module is not installed.")
+
+  defp stock_tracking_error(:warehouse_disabled),
+    do: gettext("Stock tracking was not turned on: the Warehouse module is disabled.")
+
+  defp stock_tracking_error(:update_failed),
+    do: gettext("Failed to update stock tracking")
+
+  # Hint text and link under the Stock tracking switch, one row per Warehouse
+  # state (spec 8.1). The links go through `Routes.path/1`, so they follow the
+  # configured URL prefix.
+  defp stock_tracking_hint(:not_installed) do
+    {gettext(
+       "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
+     ), Routes.path("/admin/modules?tab=not_installed")}
+  end
+
+  defp stock_tracking_hint(:disabled) do
+    {gettext("Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."),
+     Routes.path("/admin/modules?tab=disabled")}
+  end
+
+  defp stock_tracking_hint(:no_default_location) do
+    {gettext(
+       "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
+     ), Routes.path("/admin/settings/warehouse")}
+  end
+
+  defp stock_tracking_hint(:ready) do
+    {gettext("Stock is kept by the Warehouse module."), Routes.path("/admin/warehouse")}
   end
 
   defp do_toggle_shop_shopify_enabled(new_value, socket) do

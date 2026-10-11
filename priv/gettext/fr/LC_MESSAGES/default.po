@@ -5102,6 +5102,61 @@ msgstr "Diagnostics — entrées récentes du journal des requêtes IA"
 msgid "Enable Shopify sync"
 msgstr "Activer la synchronisation Shopify"
 
+#: lib/phoenix_kit_ecommerce/web/settings.ex:726
+#, elixir-autogen, elixir-format
+msgid "Stock"
+msgstr "Stock"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:732
+#, elixir-autogen, elixir-format
+msgid "Stock tracking"
+msgstr "Suivi des stocks"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1820
+#, elixir-autogen, elixir-format
+msgid "Stock tracking enabled"
+msgstr "Suivi des stocks activé"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1821
+#, elixir-autogen, elixir-format
+msgid "Stock tracking disabled"
+msgstr "Suivi des stocks désactivé"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1840
+#, elixir-autogen, elixir-format
+msgid "Stock tracking was not turned on: the Warehouse module is not installed."
+msgstr "Le suivi des stocks n'a pas été activé : le module Warehouse n'est pas installé."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1843
+#, elixir-autogen, elixir-format
+msgid "Stock tracking was not turned on: the Warehouse module is disabled."
+msgstr "Le suivi des stocks n'a pas été activé : le module Warehouse est désactivé."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1846
+#, elixir-autogen, elixir-format
+msgid "Failed to update stock tracking"
+msgstr "Échec de la mise à jour du suivi des stocks"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1853
+#, elixir-autogen, elixir-format
+msgid "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
+msgstr "Le suivi des stocks nécessite le module Warehouse. Installez-le depuis Modules → Non installés."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1858
+#, elixir-autogen, elixir-format
+msgid "Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."
+msgstr "Le suivi des stocks nécessite le module Warehouse. Activez-le dans Modules → Désactivés."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1864
+#, elixir-autogen, elixir-format
+msgid "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
+msgstr "Le stock est géré par le module Warehouse. Choisissez d'abord un entrepôt par défaut dans les paramètres de Warehouse."
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1869
+#, elixir-autogen, elixir-format
+msgid "Stock is kept by the Warehouse module."
+msgstr "Le stock est géré par le module Warehouse."
+
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1729
 #, elixir-autogen, elixir-format
 msgid "Enable automatic sweep"
