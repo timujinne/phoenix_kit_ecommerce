@@ -615,6 +615,184 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.QueryTest do
       assert Query.resolve_category_images([empty_category, no_image_category]) == %{}
     end
 
+    test "auto-detect orders by position, then name, and picks the first item that carries an image",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      # The position-1 item sorts FIRST by name, so an ORDER BY that dropped
+      # `position` would pick it; the B/A pair at position 0 pins the name
+      # tie-break the same way.
+      for {name, position, image} <- [
+            {"A later position", 1, "img-later-position"},
+            {"B same position", 0, "img-b"},
+            {"A same position", 0, "img-a"}
+          ] do
+        create_item(catalogue, %{
+          name: name,
+          base_price: Decimal.new("1.00"),
+          category_uuid: category.uuid,
+          position: position,
+          data: %{"featured_image_uuid" => image}
+        })
+      end
+
+      assert Query.resolve_category_images([category]) == %{category.uuid => "img-a"}
+    end
+
+    test "auto-detect resolves each category independently from its own items",
+         %{catalogue: catalogue} do
+      {:ok, cat_a} = Catalogue.create_category(%{name: "Cat A", catalogue_uuid: catalogue.uuid})
+      {:ok, cat_b} = Catalogue.create_category(%{name: "Cat B", catalogue_uuid: catalogue.uuid})
+      {:ok, cat_c} = Catalogue.create_category(%{name: "Cat C", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "A1",
+        base_price: Decimal.new("1.00"),
+        category_uuid: cat_a.uuid,
+        position: 1,
+        data: %{"featured_image_uuid" => "img-a1"}
+      })
+
+      create_item(catalogue, %{
+        name: "A0 no image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: cat_a.uuid,
+        position: 0
+      })
+
+      create_item(catalogue, %{
+        name: "B0",
+        base_price: Decimal.new("1.00"),
+        category_uuid: cat_b.uuid,
+        position: 0,
+        data: %{"media_order" => ["img-b0"]}
+      })
+
+      create_item(catalogue, %{
+        name: "C0 no image",
+        base_price: Decimal.new("1.00"),
+        category_uuid: cat_c.uuid,
+        position: 0
+      })
+
+      assert Query.resolve_category_images([cat_a, cat_b, cat_c]) == %{
+               cat_a.uuid => "img-a1",
+               cat_b.uuid => "img-b0"
+             }
+    end
+
+    test "auto-detect prefers featured_image_uuid over media_order, and falls back to media_order when it is empty",
+         %{catalogue: catalogue} do
+      {:ok, featured_cat} =
+        Catalogue.create_category(%{name: "Featured", catalogue_uuid: catalogue.uuid})
+
+      {:ok, empty_featured_cat} =
+        Catalogue.create_category(%{name: "Empty featured", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "Both",
+        base_price: Decimal.new("1.00"),
+        category_uuid: featured_cat.uuid,
+        data: %{"featured_image_uuid" => "img-featured", "media_order" => ["img-media"]}
+      })
+
+      create_item(catalogue, %{
+        name: "Empty featured",
+        base_price: Decimal.new("1.00"),
+        category_uuid: empty_featured_cat.uuid,
+        data: %{"featured_image_uuid" => "", "media_order" => ["img-media-2"]}
+      })
+
+      assert Query.resolve_category_images([featured_cat, empty_featured_cat]) == %{
+               featured_cat.uuid => "img-featured",
+               empty_featured_cat.uuid => "img-media-2"
+             }
+    end
+
+    test "auto-detect treats an unusable image field as no image and moves on to the next item",
+         %{catalogue: catalogue} do
+      # Only the FIRST media_order entry counts, exactly as `item_image/1`
+      # reads it: an empty / non-string first entry does not fall through to
+      # the second one, the whole item is skipped.
+      unusable = [
+        {"empty media_order", %{"media_order" => []}},
+        {"media_order not a list", %{"media_order" => "img-string"}},
+        {"media_order is a map", %{"media_order" => %{"0" => "img-map"}}},
+        {"empty first entry", %{"media_order" => ["", "img-second"]}},
+        {"non-string first entry", %{"media_order" => [42, "img-second"]}},
+        {"null first entry", %{"media_order" => [nil, "img-second"]}},
+        {"featured not a string", %{"featured_image_uuid" => 7}},
+        {"featured null", %{"featured_image_uuid" => nil}},
+        {"featured empty and no media_order", %{"featured_image_uuid" => ""}}
+      ]
+
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      unusable
+      |> Enum.with_index()
+      |> Enum.each(fn {{name, data}, position} ->
+        create_item(catalogue, %{
+          name: name,
+          base_price: Decimal.new("1.00"),
+          category_uuid: category.uuid,
+          position: position,
+          data: data
+        })
+      end)
+
+      assert Query.resolve_category_images([category]) == %{}
+
+      create_item(catalogue, %{
+        name: "Usable, last",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: length(unusable),
+        data: %{"media_order" => ["img-usable"]}
+      })
+
+      assert Query.resolve_category_images([category]) == %{category.uuid => "img-usable"}
+    end
+
+    test "auto-detect ignores items hidden from the storefront",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Cat", catalogue_uuid: catalogue.uuid})
+
+      for {name, position, status, shop_status} <- [
+            {"Inactive", 0, "inactive", "active"},
+            {"Deleted", 1, "deleted", "active"},
+            {"Archived shop_status", 2, "active", "archived"},
+            {"Draft shop_status", 3, "active", "draft"}
+          ] do
+        create_item(catalogue, %{
+          name: name,
+          base_price: Decimal.new("1.00"),
+          category_uuid: category.uuid,
+          position: position,
+          status: status,
+          data: %{
+            "ecommerce" => %{"shop_status" => shop_status},
+            "featured_image_uuid" => "img-hidden-#{position}"
+          }
+        })
+      end
+
+      assert Query.resolve_category_images([category]) == %{}
+
+      # No shop_status override at all counts as active, like `View.product_status/2`.
+      create_item(catalogue, %{
+        name: "Visible by default",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        position: 4,
+        data: %{"featured_image_uuid" => "img-visible"}
+      })
+
+      assert Query.resolve_category_images([category]) == %{category.uuid => "img-visible"}
+    end
+
     test "resolves images for many categories without one query per category (no N+1)",
          %{catalogue: catalogue} do
       categories =

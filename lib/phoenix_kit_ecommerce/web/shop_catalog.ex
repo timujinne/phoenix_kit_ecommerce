@@ -45,7 +45,13 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
     current_language =
       params |> Helpers.get_language_from_params_or_default() |> Helpers.put_content_locale()
 
-    categories = Shop.list_active_categories(preload: [:parent, :featured_product])
+    # Shared across visitors for up to a minute (`StorefrontCache`); the
+    # products list, cart count and the other per-viewer assigns below are
+    # deliberately not.
+    categories =
+      Helpers.list_active_categories_cached(current_language,
+        preload: [:parent, :featured_product]
+      )
 
     per_page = 24
     page = Helpers.parse_page(params["page"])
@@ -54,7 +60,7 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
     # the listing query just below so a hidden category's items can't
     # inflate a facet count past what the shopper's result list shows.
     {enabled_filters, filter_values} =
-      FilterHelpers.load_filter_data(
+      FilterHelpers.load_filter_data_cached(
         language: current_language,
         exclude_hidden_categories: true
       )

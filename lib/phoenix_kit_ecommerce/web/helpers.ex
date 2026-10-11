@@ -22,6 +22,7 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce.ProductSource
+  alias PhoenixKitEcommerce.StorefrontCache
   alias PhoenixKitEcommerce.Translations
 
   # ---------------------------------------------------------------------------
@@ -246,6 +247,28 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   @spec sidebar_categories_enabled?() :: boolean()
   def sidebar_categories_enabled? do
     PhoenixKit.Settings.get_setting_cached("shop_sidebar_show_categories", "true") == "true"
+  end
+
+  @doc """
+  `PhoenixKitEcommerce.list_active_categories/1` through
+  `PhoenixKitEcommerce.StorefrontCache`, for the storefront's category
+  navigation: one list shared by every visitor for up to a minute.
+
+  The key carries the product source (switchable at runtime), the language
+  and the options. The language does not reach the query today - category
+  views hold every translation - but it is part of what a storefront list is
+  "for", so it stays in the key rather than silently pinning a future
+  per-language list to whichever visitor came first. The list holds nothing
+  viewer-specific. A `language` the shop has not enabled (it comes from the
+  URL) is computed directly, never cached - see
+  `StorefrontCache.fetch_in_language/3`.
+  """
+  def list_active_categories_cached(language, opts \\ []) do
+    StorefrontCache.fetch_in_language(
+      language,
+      {:categories, ProductSource.current(), language, opts},
+      fn -> PhoenixKitEcommerce.list_active_categories(opts) end
+    )
   end
 
   @doc """

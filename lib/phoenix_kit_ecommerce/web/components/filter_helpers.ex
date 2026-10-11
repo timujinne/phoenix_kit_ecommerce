@@ -10,6 +10,8 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpers do
   """
 
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.ProductSource
+  alias PhoenixKitEcommerce.StorefrontCache
 
   @doc """
   Loads enabled filters and their aggregated values.
@@ -34,6 +36,43 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpers do
     # The adapter would otherwise resolve this same list a second time.
     filter_values = Shop.aggregate_filter_values(Keyword.put(opts, :filters, filters))
     {filters, filter_values}
+  end
+
+  @doc """
+  `load_filter_data/1` through `PhoenixKitEcommerce.StorefrontCache`: the
+  result is shared by every visitor for up to a minute instead of
+  recomputing the facet aggregates (a sequential scan each) on every mount.
+
+  Takes the same options. The cached value is viewer-independent: the price
+  range is the raw catalogue amount (the sidebar shows it as a placeholder,
+  never converted), and filter labels are translated at render time, so
+  neither the display currency nor the Gettext locale belongs in the key.
+  A `:language` the shop has not enabled (it comes from the URL) is computed
+  directly, never cached - see `StorefrontCache.fetch_in_language/3`.
+  """
+  def load_filter_data_cached(opts \\ []) do
+    StorefrontCache.fetch_in_language(
+      Keyword.get(opts, :language),
+      filter_data_key(opts),
+      fn -> load_filter_data(opts) end
+    )
+  end
+
+  # Everything `load_filter_data/1` depends on: the product source (it can be
+  # switched at runtime), and the options - `:language`, `:category_uuid`,
+  # `:exclude_hidden_categories`. `:category` is reduced to its
+  # `storefront_filters` overrides, the only thing read from it: the whole
+  # struct would put a new key into the cache on every unrelated edit of the
+  # category, and an edit of the overrides themselves changes the key.
+  defp filter_data_key(opts) do
+    overrides =
+      case Keyword.get(opts, :category) do
+        %{storefront_filters: overrides} -> overrides
+        _ -> nil
+      end
+
+    {:filter_data, ProductSource.current(), overrides,
+     opts |> Keyword.delete(:category) |> Enum.sort()}
   end
 
   @doc """

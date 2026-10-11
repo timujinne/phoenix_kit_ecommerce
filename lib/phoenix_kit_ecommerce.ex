@@ -70,6 +70,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.ShopConfig
   alias PhoenixKitEcommerce.Shopify.Provider, as: ShopifyProvider
   alias PhoenixKitEcommerce.SlugResolver
+  alias PhoenixKitEcommerce.StorefrontCache
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.TranslationSweepSettings
   alias PhoenixKitEcommerce.Web.Helpers
@@ -608,6 +609,14 @@ defmodule PhoenixKitEcommerce do
   @impl PhoenixKit.Module
   def version, do: @version
 
+  # The storefront cache (`PhoenixKitEcommerce.StorefrontCache`). Picked up
+  # by core's `PhoenixKit.Supervisor` through
+  # `PhoenixKit.ModuleRegistry.static_children/0` - no host wiring - and
+  # started after `PhoenixKit.Cache.Registry`, a fixed earlier child of the
+  # same supervisor.
+  @impl PhoenixKit.Module
+  def children, do: StorefrontCache.children()
+
   @impl PhoenixKit.Module
   def permission_metadata do
     %{
@@ -1103,17 +1112,25 @@ defmodule PhoenixKitEcommerce do
   def update_storefront_filters(filters) when is_list(filters) do
     value = %{"filters" => filters}
 
-    case repo().get(ShopConfig, @storefront_filters_key) do
-      nil ->
-        %ShopConfig{}
-        |> ShopConfig.changeset(%{key: @storefront_filters_key, value: value})
-        |> repo().insert()
+    result =
+      case repo().get(ShopConfig, @storefront_filters_key) do
+        nil ->
+          %ShopConfig{}
+          |> ShopConfig.changeset(%{key: @storefront_filters_key, value: value})
+          |> repo().insert()
 
-      config ->
-        config
-        |> ShopConfig.changeset(%{value: value})
-        |> repo().update()
-    end
+        config ->
+          config
+          |> ShopConfig.changeset(%{value: value})
+          |> repo().update()
+      end
+
+    # The enabled filters and their facets are cached on the storefront for
+    # a minute (`StorefrontCache`); a saved change must show on the next
+    # page view, not after the TTL.
+    if match?({:ok, _}, result), do: StorefrontCache.clear()
+
+    result
   end
 
   @doc """

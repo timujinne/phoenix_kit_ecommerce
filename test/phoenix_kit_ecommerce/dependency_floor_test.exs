@@ -49,6 +49,19 @@ defmodule PhoenixKitEcommerce.DependencyFloorTest do
     assert Code.ensure_loaded?(PhoenixKit.Migrations.Postgres.ShopSlugProjection)
   end
 
+  test "the phoenix_kit floor ships the cache API StorefrontCache runs on" do
+    # `PhoenixKitEcommerce.children/0` starts a `PhoenixKit.Cache` with `:ttl`
+    # and `:max_size`, and `StorefrontCache` reads it through `remember/4`,
+    # `clear/1` and `Registry.cache_exists?/1`. Without them the storefront
+    # cache fails to start or every /shop mount raises.
+    assert Code.ensure_loaded?(PhoenixKit.Cache)
+    assert function_exported?(PhoenixKit.Cache, :remember, 4)
+    assert function_exported?(PhoenixKit.Cache, :clear, 1)
+    assert Code.ensure_loaded?(PhoenixKit.Cache.Registry)
+    assert function_exported?(PhoenixKit.Cache.Registry, :cache_exists?, 1)
+    assert {:children, 0} in PhoenixKit.Module.behaviour_info(:callbacks)
+  end
+
   test "the phoenix_kit_billing floor ships Order.payment_option_uuid" do
     # `maybe_put_payment_option/2` writes this attr once core is at V162.
     # `cast/3` ignores a key the schema does not declare, so against an older

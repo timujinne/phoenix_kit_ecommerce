@@ -65,7 +65,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
         # Load storefront filters (category-aware: applies this category's
         # `storefront_filters` overrides on top of the global config)
         {enabled_filters, filter_values} =
-          FilterHelpers.load_filter_data(
+          FilterHelpers.load_filter_data_cached(
             category_uuid: category.uuid,
             category: category,
             language: current_language
@@ -90,7 +90,9 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
         page = min(page, total_pages)
 
         currency = Shop.get_display_currency_code()
-        all_categories = Shop.list_active_categories(preload: [:featured_product])
+
+        all_categories =
+          Helpers.list_active_categories_cached(current_language, preload: [:featured_product])
 
         # Check if user is authenticated
         authenticated = not is_nil(socket.assigns[:phoenix_kit_current_user])

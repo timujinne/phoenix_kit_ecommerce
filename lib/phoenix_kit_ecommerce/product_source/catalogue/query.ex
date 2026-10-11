@@ -512,9 +512,8 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
      category (ordered by `position`, then `name`) that carries an image
      by the same rule — exactly the old admin form's "Auto-detect (first
      product with image)" hint. Resolved for every OTHER category in one
-     query fetching all their active items once, then walking the
-     (already category/position-ordered) rows in Elixir to keep the
-     first image-bearing one per category.
+     query that picks the first image-bearing item per category in SQL
+     (`DISTINCT ON`) and returns just the image uuid, not the item data.
 
   A category absent from the result has no image from either step (its
   `image_uuid`, if any — priority 1 — is a category-view concern, not
@@ -615,31 +614,60 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
   defp resolve_auto_images(categories, catalogue_uuid) do
     category_uuids = Enum.map(categories, & &1.uuid)
 
-    CatItem
-    |> where([i], i.catalogue_uuid == ^catalogue_uuid)
-    |> where([i], i.category_uuid in ^category_uuids)
-    |> active_visibility()
-    |> order_by([i], asc: i.category_uuid, asc: i.position, asc: i.name)
-    |> select([i], %{category_uuid: i.category_uuid, data: i.data})
+    # Only the image is projected, never the item's whole `data`: a
+    # catalogue item carries every translation in there (~12 KB of JSONB),
+    # and shipping that for every active item just to pick one image per
+    # category dominated the storefront's category query. The inner query
+    # computes the image with the same rule as `item_image/1` (below), the
+    # outer `DISTINCT ON` keeps the first image-bearing item per category
+    # (position, then name) so one row per category comes back.
+    items =
+      CatItem
+      |> where([i], i.catalogue_uuid == ^catalogue_uuid)
+      |> where([i], i.category_uuid in ^category_uuids)
+      |> active_visibility()
+      |> select([i], %{
+        category_uuid: i.category_uuid,
+        position: i.position,
+        name: i.name,
+        image:
+          fragment(
+            """
+            CASE
+              WHEN jsonb_typeof(?->'featured_image_uuid') = 'string'
+                   AND ?->>'featured_image_uuid' <> ''
+                THEN ?->>'featured_image_uuid'
+              WHEN jsonb_typeof(?->'media_order') = 'array'
+                   AND jsonb_typeof(?->'media_order'->0) = 'string'
+                   AND ?->'media_order'->>0 <> ''
+                THEN ?->'media_order'->>0
+            END
+            """,
+            i.data,
+            i.data,
+            i.data,
+            i.data,
+            i.data,
+            i.data,
+            i.data
+          )
+      })
+
+    items
+    |> subquery()
+    |> where([s], not is_nil(s.image))
+    |> distinct([s], s.category_uuid)
+    |> order_by([s], asc: s.category_uuid, asc: s.position, asc: s.name)
+    |> select([s], {s.category_uuid, s.image})
     |> repo().all()
-    |> Enum.reduce(%{}, &put_first_image/2)
+    |> Map.new()
   end
 
-  defp put_first_image(%{category_uuid: category_uuid} = row, acc) do
-    if Map.has_key?(acc, category_uuid) do
-      acc
-    else
-      case item_image(row) do
-        image when is_binary(image) and image != "" -> Map.put(acc, category_uuid, image)
-        _ -> acc
-      end
-    end
-  end
-
-  # Shared by `resolve_explicit_images/1`, `resolve_auto_images/1` and
+  # Shared by `resolve_explicit_images/1` and
   # `category_item_image_options/1` — a real `CatItem` struct and the
   # plain `%{data: ...}` maps `select/3` projects above both work, since
-  # this only ever reads `.data`.
+  # this only ever reads `.data`. `resolve_auto_images/2` mirrors this
+  # rule in SQL: keep the two in step.
   defp item_image(%{data: data}) do
     data = data || %{}
 
