@@ -14,6 +14,9 @@ defmodule PhoenixKitEcommerce.Category do
   - `position` - Sort order
   - `status` - Category status: "active", "hidden", "archived"
   - `metadata` - JSONB for custom fields
+  - `parcel_length_mm`, `parcel_width_mm`, `parcel_height_mm`, `parcel_weight_g` -
+    virtual; the box and weight assumed for products without their own, kept
+    in `metadata["parcel_defaults"]` (see `parcel_defaults/1`)
   - `option_schema` - Category-specific product option definitions (JSONB array)
   - `storefront_filters` - Per-category storefront filter overrides (virtual,
     not persisted on this schema/table; see
@@ -32,10 +35,18 @@ defmodule PhoenixKitEcommerce.Category do
 
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKitEcommerce.LocalizedSlug
+  alias PhoenixKitEcommerce.Shipping.MetadataFields
 
   @type t :: %__MODULE__{}
 
   @statuses ~w(active unlisted hidden)
+
+  @parcel_fields [
+    parcel_length_mm: :length_mm,
+    parcel_width_mm: :width_mm,
+    parcel_height_mm: :height_mm,
+    parcel_weight_g: :weight_g
+  ]
 
   @primary_key {:uuid, UUIDv7, autogenerate: true}
 
@@ -58,6 +69,14 @@ defmodule PhoenixKitEcommerce.Category do
     # Legacy categories always read back `%{}` (no override) without a
     # migration.
     field :storefront_filters, :map, default: %{}, virtual: true
+
+    # Shipping box and weight for products that have none of their own. Not
+    # columns: the changeset keeps them in `metadata["parcel_defaults"]`,
+    # `with_parcel_defaults/1` fills them for forms.
+    field :parcel_length_mm, :integer, virtual: true
+    field :parcel_width_mm, :integer, virtual: true
+    field :parcel_height_mm, :integer, virtual: true
+    field :parcel_weight_g, :integer, virtual: true
 
     # Self-referential for nesting
     belongs_to :parent, __MODULE__, foreign_key: :parent_uuid, references: :uuid, type: UUIDv7
@@ -99,10 +118,12 @@ defmodule PhoenixKitEcommerce.Category do
       :metadata,
       :option_schema
     ])
+    |> MetadataFields.cast_fields(attrs, @parcel_fields)
     |> normalize_map_fields(@localized_fields)
     |> validate_localized_required(:name)
     |> validate_number(:position, greater_than_or_equal_to: 0)
     |> validate_inclusion(:status, @statuses)
+    |> MetadataFields.put(attrs, :parcel_defaults, @parcel_fields)
     |> LocalizedSlug.maybe_generate(:name)
     |> validate_no_circular_parent()
     # V171's projection pkey — same shape as Product.
@@ -113,6 +134,50 @@ defmodule PhoenixKitEcommerce.Category do
   Returns the list of localized field names.
   """
   def localized_fields, do: @localized_fields
+
+  @doc """
+  What the category says about the parcels of its products:
+
+      %{dims_mm: [longest, middle, shortest] | nil, weight_g: pos_integer() | nil}
+
+  `dims_mm` is `nil` unless all three sides are positive. Each value is the
+  virtual `parcel_*` field (what a form set) when set, else the one in
+  `metadata["parcel_defaults"]` (legacy categories, and what the catalogue
+  source builds from `CategoryCommerce`).
+  """
+  @spec parcel_defaults(t() | term()) :: %{
+          dims_mm: [pos_integer()] | nil,
+          weight_g: pos_integer() | nil
+        }
+  def parcel_defaults(%__MODULE__{} = category) do
+    [length, width, height, weight] =
+      MetadataFields.merged(category, :parcel_defaults, @parcel_fields)
+
+    dims = [length, width, height]
+
+    %{
+      dims_mm: if(Enum.all?(dims, &positive?/1), do: Enum.sort(dims, :desc)),
+      weight_g: if(positive?(weight), do: weight)
+    }
+  end
+
+  def parcel_defaults(_other), do: %{dims_mm: nil, weight_g: nil}
+
+  defp positive?(value), do: is_integer(value) and value > 0
+
+  @doc """
+  Fills the virtual `parcel_*` fields of a category from
+  `metadata["parcel_defaults"]`, for editing forms. Fields that are already
+  set are kept.
+  """
+  @spec with_parcel_defaults(t()) :: t()
+  def with_parcel_defaults(%__MODULE__{} = category) do
+    @parcel_fields
+    |> Enum.zip(MetadataFields.stored(category, :parcel_defaults, @parcel_fields))
+    |> Enum.reduce(category, fn {{field, _key}, stored}, acc ->
+      if is_nil(Map.get(acc, field)), do: Map.put(acc, field, stored), else: acc
+    end)
+  end
 
   @doc """
   Returns the image URL for a category.

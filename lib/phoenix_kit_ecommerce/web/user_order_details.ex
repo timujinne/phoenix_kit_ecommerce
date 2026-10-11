@@ -17,6 +17,7 @@ defmodule PhoenixKitEcommerce.Web.UserOrderDetails do
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.PriceDisplay
+  alias PhoenixKitEcommerce.Web.Components.ShippingDisplay
   alias PhoenixKitEcommerce.Web.Helpers, as: ShopHelpers
 
   import PhoenixKitEcommerce.Web.Helpers,

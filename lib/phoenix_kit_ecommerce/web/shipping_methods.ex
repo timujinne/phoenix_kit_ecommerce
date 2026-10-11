@@ -8,6 +8,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
+  alias PhoenixKitEcommerce.Shipping
+  alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.Web.Authz
   import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
@@ -79,7 +81,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
                 label: "Delivery",
                 value:
                   PhoenixKitEcommerce.ShippingMethod.delivery_estimate(method) || "-"
-              }
+              },
+              %{label: gettext("Provider"), value: provider_label(method)}
             ]
           end}
         >
@@ -139,6 +142,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
                         {method.description}
                       </div>
                     <% end %>
+                    <span
+                      id={"shipping-method-provider-#{method.uuid}"}
+                      class="badge badge-outline badge-sm mt-1"
+                    >
+                      {provider_label(method)}
+                    </span>
                   </.table_default_cell>
                   <.table_default_cell>
                     <%= if PhoenixKitEcommerce.ShippingMethod.pay_on_delivery?(method) do %>
@@ -212,6 +221,17 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
         </.table_default>
       </div>
     """
+  end
+
+  # The provider the price comes from, as the form names it; the key of one
+  # the host no longer registers.
+  defp provider_label(method) do
+    %{provider: key} = ShippingMethod.shipping_config(method)
+
+    case Shipping.provider(key) do
+      {:ok, module} -> module.label()
+      :error -> key
+    end
   end
 
   defp format_weight(grams) when grams >= 1000, do: "#{Float.round(grams / 1000, 1)} kg"

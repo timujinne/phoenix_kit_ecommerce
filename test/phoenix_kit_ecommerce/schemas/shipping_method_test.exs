@@ -156,7 +156,7 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodTest do
         metadata: %{"pay_on_delivery" => true}
       }
 
-      cs = ShippingMethod.changeset(method, %{"name" => "Nova Poshta", "price" => "7"})
+      cs = ShippingMethod.changeset(method, %{"name" => "Acme Post", "price" => "7"})
 
       assert ShippingMethod.pay_on_delivery?(apply_changes(cs))
       assert Decimal.equal?(get_field(cs, :price), Decimal.new("0"))

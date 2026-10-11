@@ -112,7 +112,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
-    product = Shop.get_product!(id, preload: [:category])
+    product = id |> Shop.get_product!(preload: [:category]) |> Product.with_dimensions()
     changeset = Shop.change_product(product)
     categories = Shop.category_options()
     currency = Shop.get_base_currency()
@@ -834,6 +834,15 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     }
   end
 
+  # 0 is "unknown", shown as an empty input: the hint says to leave it empty.
+  defp blank_zero(value) when value in [nil, 0, "0", ""], do: ""
+  defp blank_zero(value), do: value
+
+  defp blank_weight_to_zero(%{"weight_grams" => weight} = params) when weight in ["", nil],
+    do: Map.put(params, "weight_grams", "0")
+
+  defp blank_weight_to_zero(params), do: params
+
   defp price_to_string(nil), do: nil
   defp price_to_string(%Decimal{} = price), do: Decimal.to_string(price)
   defp price_to_string(price), do: to_string(price)
@@ -859,6 +868,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
         <%!-- Form --%>
         <.form
           for={@form}
+          id="product-form"
           phx-change="validate"
           phx-submit="save"
           class="space-y-6"
@@ -1077,6 +1087,61 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     checked={@price_on_request}
                     label={gettext("Price on request (hide the amount)")}
                     wrapper_class="h-12 px-4 bg-base-200 rounded-lg mt-2"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <%!-- Card: Shipping parcel (weight and the size of one unit) --%>
+          <div class="card bg-base-100 shadow-xl" id="product-dimensions">
+            <div class="card-body">
+              <h2 class="card-title text-xl mb-2">{gettext("Shipping parcel")}</h2>
+              <p class="text-sm text-base-content/60 mb-4">
+                {gettext(
+                  "Weight and size of one unit. Carriers price the parcel by them; leave empty to use the category's or the shop's defaults."
+                )}
+              </p>
+
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-4">
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:weight_grams]}
+                    id="product-weight-grams"
+                    type="number"
+                    min="0"
+                    value={blank_zero(@form[:weight_grams].value)}
+                    label={gettext("Weight (g)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:length_mm]}
+                    id="product-length-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Length (mm)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:width_mm]}
+                    id="product-width-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Width (mm)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:height_mm]}
+                    id="product-height-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Height (mm)")}
                   />
                 </div>
               </div>
@@ -2608,6 +2673,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
           String.starts_with?(k, "_add_option_")
       end)
       |> Map.new()
+
+    # An empty weight is "unknown", which is what 0 has always meant here.
+    product_params = blank_weight_to_zero(product_params)
 
     # Merge metadata into product params
     metadata = product_params["metadata"] || %{}

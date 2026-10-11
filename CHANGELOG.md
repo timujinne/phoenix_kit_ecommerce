@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- **Checkout starts on the shop's own country** (#76). A new cart with no
+  shipping country no longer opens on `EE`: the country comes from the
+  company country, `shop_default_tax_country`, the one country every
+  active shipping method shares, or the first priority country. `EE`
+  remains the last resort.
+- **Checkout uses billing's profile form and can save the profile** (#77).
+  The billing step renders billing's shared fields (type switch, middle
+  name, second address line, state, company details) with live
+  validation. A logged-in shopper typing new details can tick "Save as a
+  billing profile"; `convert_cart_to_order/2` takes
+  `save_billing_profile: true` and creates the profile in the conversion
+  transaction. Ukrainian translations for the new strings.
+
+### Fixed
+
+- **The `phoenix_kit_billing` floor is now `~> 0.20`.** Checkout's billing
+  form needs `BillingProfileFields` and `BillingProfile.fields_changeset/3`,
+  which 0.20 is the first release to ship; against 0.13-0.19 the checkout
+  page failed at runtime. A floor test pins them.
+
 ## 0.5.19 - 2026-10-10
 
 ### Added

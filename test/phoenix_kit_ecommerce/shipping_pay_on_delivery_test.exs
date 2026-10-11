@@ -77,7 +77,7 @@ defmodule PhoenixKitEcommerce.ShippingPayOnDeliveryTest do
   describe "refresh_pay_on_delivery_shipping/1" do
     test "re-prices a cart still charging a method that became pay-on-delivery",
          %{cart: cart} do
-      method = method!("Nova Poshta", price: "5.00")
+      method = method!("Acme Post", price: "5.00")
       {:ok, cart} = Shop.set_cart_shipping(cart, method, "EE")
       assert Decimal.equal?(cart.shipping_amount, Decimal.new("5.00"))
 
@@ -161,7 +161,7 @@ defmodule PhoenixKitEcommerce.ShippingPayOnDeliveryTest do
   describe "convert_cart_to_order/2" do
     test "the shipping line and the order say the carrier is paid on delivery",
          %{cart: cart} do
-      method = method!("Nova Poshta", pay_on_delivery: true, description: "Branch pickup")
+      method = method!("Acme Post", pay_on_delivery: true, description: "Branch pickup")
       {:ok, cart} = Shop.set_cart_shipping(cart, method, "EE")
 
       assert {:ok, order} =

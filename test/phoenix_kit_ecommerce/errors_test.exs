@@ -55,6 +55,16 @@ defmodule PhoenixKitEcommerce.ErrorsTest do
       do:
         assert(Errors.message(:forbidden) == "You do not have permission to perform this action.")
 
+    test ":invalid_destination",
+      do: assert(Errors.message(:invalid_destination) == "The delivery details are not valid.")
+
+    test ":shipping_quote_required",
+      do:
+        assert(
+          Errors.message(:shipping_quote_required) ==
+            "The delivery price has to be calculated before the order can be placed."
+        )
+
     test ":import_log_not_found",
       do: assert(Errors.message(:import_log_not_found) == "The import log could not be found.")
 

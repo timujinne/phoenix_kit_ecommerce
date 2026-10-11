@@ -397,6 +397,34 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
     end
   end
 
+  describe "product_view/2 dimensions" do
+    test "the sides come from data[\"ecommerce\"] and feed Product.dimensions_mm/1" do
+      item =
+        build_item(%{"ecommerce" => %{"length_mm" => 100, "width_mm" => 300, "height_mm" => 200}})
+
+      product = product_view(item, [])
+
+      assert %Product{length_mm: 100, width_mm: 300, height_mm: 200} = product
+      assert Product.dimensions_mm(product) == [300, 200, 100]
+    end
+
+    test "sides stored as strings or floats are coerced to integers" do
+      item =
+        build_item(%{
+          "ecommerce" => %{"length_mm" => "100", "width_mm" => 300.0, "height_mm" => "x"}
+        })
+
+      assert %Product{length_mm: 100, width_mm: 300, height_mm: nil} = product_view(item, [])
+    end
+
+    test "an item without sizes has none" do
+      product = product_view(build_item(), [])
+
+      assert %Product{length_mm: nil, width_mm: nil, height_mm: nil} = product
+      assert Product.dimensions_mm(product) == nil
+    end
+  end
+
   describe "product_view/2 with :language (2026-09-06 plan, Task 3)" do
     # A value's per-language override lives in its OWN `:extras` (whatever
     # `AttributeSets.resolve_set/2` read off the value's `EntityData.data`
@@ -614,6 +642,51 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
 
       assert Category.get_image_url(view) ==
                Category.get_image_url(%Category{image_uuid: "catalogue-picked-uuid"})
+    end
+  end
+
+  describe "category_view/2 parcel defaults" do
+    test "the parcel fields are exposed as metadata[\"parcel_defaults\"]" do
+      category =
+        build_category(%{
+          "ecommerce" => %{
+            "parcel_length_mm" => 100,
+            "parcel_width_mm" => 300,
+            "parcel_height_mm" => 200,
+            "parcel_weight_g" => 450
+          }
+        })
+
+      view = category_view(category)
+
+      assert view.metadata == %{
+               "parcel_defaults" => %{
+                 "length_mm" => 100,
+                 "width_mm" => 300,
+                 "height_mm" => 200,
+                 "weight_g" => 450
+               }
+             }
+
+      assert Category.parcel_defaults(view) == %{dims_mm: [300, 200, 100], weight_g: 450}
+    end
+
+    test "parcel values are coerced to integers" do
+      view =
+        category_view(
+          build_category(%{
+            "ecommerce" => %{"parcel_weight_g" => "450", "parcel_length_mm" => "x"}
+          })
+        )
+
+      assert view.metadata == %{"parcel_defaults" => %{"weight_g" => 450}}
+    end
+
+    test "a category without them has empty metadata" do
+      view = category_view(build_category())
+
+      assert view.metadata == %{}
+      assert Category.parcel_defaults(view) == %{dims_mm: nil, weight_g: nil}
     end
   end
 

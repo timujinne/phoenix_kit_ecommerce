@@ -21,8 +21,13 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.PriceDisplay
+  alias PhoenixKitEcommerce.Shipping.CartQuote
+  alias PhoenixKitEcommerce.ShippingMethod
+  alias PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker
+  alias PhoenixKitEcommerce.Web.Components.ShippingDisplay
   alias PhoenixKitEcommerce.Web.Components.ShopLayouts
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.ShippingRequote
 
   import PhoenixKitEcommerce.Web.Helpers,
     only: [
@@ -230,6 +235,10 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     |> assign(:needs_profile_selection, assigns.needs_profile_selection)
     |> assign(:needs_billing, assigns.needs_billing)
     |> assign(:countries, CountryData.countries_for_select())
+    |> assign(:locale, Gettext.get_locale(PhoenixKitEcommerce.Gettext))
+    |> assign(:requoting, false)
+    |> assign(:requote_key, nil)
+    |> assign(:requote_streak, 0)
     |> assign(:checkout_shipping_methods, [])
     |> assign(:shipping_fallback, false)
     |> assign(:step, assigns.initial_step)
@@ -237,6 +246,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     |> assign(:error_message, nil)
     |> assign(:email_exists_error, false)
     |> assign_new_billing_details(assigns.user)
+    |> assign_shipping_view()
   end
 
   # A blank billing form: individual, nothing typed, the account email and the
@@ -252,6 +262,47 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     |> assign(:save_profile_hint?, false)
     |> assign_billing_form()
   end
+
+  # The shipping of the cart is worked out HERE, when the cart changes, and
+  # handed to the render: packing, the request hash, the service list and the
+  # provider's check of the destination are too much to redo on every render.
+  # Only the steps that show or approve the shipping work it out; the payment
+  # and billing steps carry an empty snapshot until `advance_after_billing/1`.
+  defp put_cart(socket, cart) do
+    socket |> assign(:cart, cart) |> assign_shipping_view()
+  end
+
+  defp assign_shipping_view(%{assigns: %{step: step}} = socket) when step in [:shipping, :review],
+    do: refresh_shipping(socket)
+
+  defp assign_shipping_view(socket) do
+    socket
+    |> assign(:shipping_snapshot, Shop.shipping_quote_snapshot(socket.assigns.cart, nil))
+    |> assign(:shipping_presented, %{})
+  end
+
+  # Works the shipping out whatever the step: for the moments that decide on
+  # it (the billing is settled, an order is placed), when the time alone can
+  # change the answer (a quote ages out).
+  defp refresh_shipping(socket) do
+    cart = socket.assigns.cart
+    snapshot = Shop.shipping_quote_snapshot(cart)
+
+    presented =
+      Map.new(socket.assigns.checkout_shipping_methods, fn method ->
+        {method.uuid, presented_for(cart, snapshot, method)}
+      end)
+
+    socket
+    |> assign(:shipping_snapshot, snapshot)
+    |> assign(:shipping_presented, presented)
+  end
+
+  defp presented_for(cart, %{presented: %{} = presented}, %{uuid: uuid})
+       when uuid == cart.shipping_method_uuid,
+       do: presented
+
+  defp presented_for(cart, _snapshot, method), do: Shop.present_shipping_method(cart, method)
 
   # Select payment option with smart defaults
   defp select_payment_option([], _cart), do: {nil, false}
@@ -485,7 +536,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
           {:noreply,
            socket
-           |> assign(:cart, updated_cart)
+           |> put_cart(updated_cart)
            |> assign(:selected_payment_option, option)
            |> assign(:needs_billing, needs_billing)}
 
@@ -621,23 +672,43 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
              method,
              socket.assigns.cart.shipping_country
            ) do
-      {:ok, cart} -> {:noreply, assign(socket, :cart, cart)}
+      {:ok, cart} -> {:noreply, put_cart(socket, cart)}
       _ -> {:noreply, socket}
     end
   end
 
   @impl true
   def handle_event("shipping_continue", _params, socket) do
+    socket = refresh_shipping(socket)
     cart = socket.assigns.cart
 
     # A method chosen from the list, or the fallback notice's own
     # "we'll contact you" path - anything else means the shopper has not
-    # actually settled shipping yet, so the step holds.
-    if cart.shipping_method_uuid || socket.assigns.shipping_fallback do
-      {:noreply, enter_review(socket)}
-    else
-      {:noreply, socket}
+    # actually settled shipping yet, so the step holds. So does a calculated
+    # method whose delivery place or price is not settled (the button is
+    # disabled then; this is the same rule for a client that clicks anyway).
+    cond do
+      socket.assigns.shipping_snapshot.blocks? ->
+        {:noreply, socket}
+
+      cart.shipping_method_uuid || socket.assigns.shipping_fallback ->
+        {:noreply, enter_review(socket)}
+
+      true ->
+        {:noreply, socket}
     end
+  end
+
+  # From the review: the delivery place or its price needs another look.
+  @impl true
+  def handle_event("back_to_shipping", _params, socket) do
+    {:noreply, assign_shipping_step(socket)}
+  end
+
+  # The carrier could not be reached for the delivery options: ask again.
+  @impl true
+  def handle_event("recheck_shipping", _params, socket) do
+    {:noreply, socket |> refresh_shipping() |> settle_shipping()}
   end
 
   # §4.4: the shopper's own EXPLICIT choice to accept the current rate -
@@ -659,6 +730,19 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
   @impl true
   def handle_event("confirm_order", _params, socket) do
+    # A carrier-priced method is ordered at a price the carrier just gave. One
+    # that aged out since the review was drawn is renewed first (the button is
+    # off meanwhile); the order is placed on the next click.
+    socket = refresh_shipping(socket)
+
+    if socket.assigns.shipping_snapshot.blocks? do
+      {:noreply, settle_shipping(socket)}
+    else
+      {:noreply, place_order(socket)}
+    end
+  end
+
+  defp place_order(socket) do
     socket = assign(socket, :processing, true)
 
     cart = socket.assigns.cart
@@ -688,13 +772,12 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
          owned_profile_uuid?(socket, socket.assigns.selected_profile_uuid) do
       result = Shop.convert_cart_to_order(cart, convert_opts(socket, user_uuid, save_profile?))
       if save_profile?, do: log_billing_profile_saved(result, socket)
-      {:noreply, handle_order_result(result, socket)}
+      handle_order_result(result, socket)
     else
-      {:noreply,
-       socket
-       |> assign(:processing, false)
-       |> assign(:selected_profile_uuid, nil)
-       |> put_flash(:error, gettext("That billing profile is not available."))}
+      socket
+      |> assign(:processing, false)
+      |> assign(:selected_profile_uuid, nil)
+      |> put_flash(:error, gettext("That billing profile is not available."))
     end
   end
 
@@ -734,28 +817,54 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   # same shipping step when one is due - a shopper who never touched the
   # billing form is not exempt from picking a shipping method.
   defp advance_after_billing(socket) do
+    socket = refresh_shipping(socket)
+
     case next_step_after_billing(socket) do
       :shipping -> assign_shipping_step(socket)
       :review -> enter_review(socket)
     end
   end
 
-  # `:shipping` only when there is something to decide: selection happens at
-  # checkout (not the cart page), skipping isn't unconditional (`:always`
-  # already has nothing to pick), the cart actually ships something, and no
-  # method is selected yet (a tab that already picked one, or came back from
-  # review, has nothing left to do here).
+  # `:shipping` only when there is something to decide: skipping isn't
+  # unconditional (`:always` already has nothing to pick), the cart actually
+  # ships something, and either
+  #
+  #   * selection happens at checkout (not the cart page) and no method is
+  #     selected yet (a tab that already picked one, or came back from
+  #     review, has nothing left to do here), or
+  #   * the selected method is carrier-priced and needs the shopper: the
+  #     delivery place is missing or refused, or the method cannot serve the
+  #     cart - whichever page the method was picked on, the picker of this
+  #     step is where that gets finished.
+  #
+  # A carrier-priced method whose place is known but whose price is missing or
+  # out of date (a new payment option, which can change what the carrier
+  # charges; a quote that aged out) needs no one: the review asks the carrier
+  # itself.
   defp next_step_after_billing(socket) do
     cart = socket.assigns.cart
 
-    if Shop.shipping_selection_position() == :checkout and
-         Shop.shipping_skip_mode() != :always and
-         Shop.cart_requires_shipping?(cart) and
-         is_nil(cart.shipping_method_uuid) do
+    if Shop.shipping_skip_mode() != :always and Shop.cart_requires_shipping?(cart) and
+         (shipping_unselected_here?(cart) or
+            shipping_needs_shopper?(socket.assigns.shipping_snapshot)) do
       :shipping
     else
       :review
     end
+  end
+
+  # What only the shopper can settle: a place that is missing or refused, a
+  # method that cannot serve the cart. A carrier that could not be asked for
+  # its options (a transient failure) is a retry, not a reason to go back.
+  defp shipping_needs_shopper?(%{status: :needs_destination}), do: true
+
+  defp shipping_needs_shopper?(%{status: :unavailable, transient?: transient?}),
+    do: not transient?
+
+  defp shipping_needs_shopper?(_snapshot), do: false
+
+  defp shipping_unselected_here?(cart) do
+    Shop.shipping_selection_position() == :checkout and is_nil(cart.shipping_method_uuid)
   end
 
   # The billing identity just captured, read back as a plain country code -
@@ -784,6 +893,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     |> assign(:checkout_shipping_methods, methods)
     |> assign(:shipping_fallback, methods == [] and Shop.shipping_skip_mode() == :fallback)
     |> assign(:step, :shipping)
+    |> assign_shipping_view()
   end
 
   # A blank country must never overwrite one the cart already carries: the
@@ -821,12 +931,20 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         # ineligible price is zero, so review would show an underpriced
         # total that conversion then rejects. Catch it here, at the moment
         # the number is first shown.
-        if shipping_selection_still_valid?(cart) do
-          assign(socket, :cart, cart)
-        else
-          socket
-          |> assign(:cart, cart)
-          |> reject_invalid_shipping_selection()
+        socket = put_cart(socket, cart)
+
+        cond do
+          not shipping_selection_still_valid?(cart) ->
+            reject_invalid_shipping_selection(socket)
+
+          # The delivery of a calculated method is not settled (the billing
+          # country, a new payment option or the time spent here): the
+          # review never approves it.
+          socket.assigns.shipping_snapshot.blocks? ->
+            settle_shipping(socket)
+
+          true ->
+            assign(socket, :requote_streak, 0)
         end
 
       # Never block review on a pricing refresh; conversion recalculates
@@ -859,7 +977,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
     if Shop.shipping_selection_position() == :checkout do
       socket
-      |> assign(:cart, drop_shipping_selection(socket.assigns.cart))
+      |> put_cart(drop_shipping_selection(socket.assigns.cart))
       |> assign_shipping_step()
       |> put_flash(:error, message)
     else
@@ -880,6 +998,40 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     end
   end
 
+  # A calculated method whose delivery is not settled, met on the review or
+  # when the order is placed. A missing or out-of-date price is asked of the
+  # carrier right here; a place the carrier refuses (or a method that cannot
+  # serve the cart) needs the shopper, who gets the shipping step.
+  defp settle_shipping(socket) do
+    snapshot = socket.assigns.shipping_snapshot
+
+    cond do
+      snapshot.status in [:missing, :stale] -> requote_review(socket)
+      shipping_needs_shopper?(snapshot) -> assign_shipping_step(socket)
+      true -> socket
+    end
+  end
+
+  # Asks the carrier, unless that was just done for this very state of the
+  # cart (see `ShippingRequote`) or an answer is on its way.
+  defp requote_review(%{assigns: %{requoting: true}} = socket), do: socket
+
+  defp requote_review(socket) do
+    %{cart: cart, locale: locale, requote_streak: streak} = socket.assigns
+    status = socket.assigns.shipping_snapshot.status
+
+    if connected?(socket) and
+         ShippingRequote.due?(cart, status, socket.assigns.requote_key, streak) do
+      socket
+      |> assign(:requoting, true)
+      |> assign(:requote_key, ShippingRequote.key(cart, status))
+      |> assign(:requote_streak, streak + 1)
+      |> start_async(:requote, fn -> Shop.quote_cart_shipping(cart, locale: locale) end)
+    else
+      socket
+    end
+  end
+
   # A cart change broadcast from another tab lands here. Blindly assigning
   # it into an open REVIEW showed a total that had lost the billing country
   # (the cart page's select_shipping deliberately clears it), so the
@@ -890,15 +1042,29 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     socket =
       if socket.assigns[:step] == :review do
         case Shop.preview_checkout_totals(cart, checkout_opts(socket)) do
-          {:ok, priced} -> assign(socket, :cart, priced)
-          {:error, _} -> assign(socket, :cart, cart)
+          {:ok, priced} -> put_cart(socket, priced)
+          {:error, _} -> put_cart(socket, cart)
         end
       else
-        assign(socket, :cart, cart)
+        put_cart(socket, cart)
       end
 
-    assign(socket, :fx_drift, Shop.cart_rate_drift(socket.assigns.cart))
+    socket
+    |> assign(:fx_drift, Shop.cart_rate_drift(socket.assigns.cart))
+    |> requote_stale_review()
   end
+
+  # On the review a price that went stale is renewed without the shopper
+  # having to do anything.
+  defp requote_stale_review(%{assigns: %{step: :review}} = socket) do
+    if socket.assigns.shipping_snapshot.status in [:missing, :stale] do
+      requote_review(socket)
+    else
+      assign(socket, :requote_streak, 0)
+    end
+  end
+
+  defp requote_stale_review(socket), do: socket
 
   defp shipping_selection_still_valid?(cart) do
     cond do
@@ -992,6 +1158,23 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
       )
     )
     |> push_navigate(to: Routes.path("/cart"))
+  end
+
+  # A carrier-priced method whose quote is missing, out of date or refused:
+  # the price the shopper saw is not one the order can carry. It is renewed
+  # (or, when it needs the shopper, the shipping step opens) with the cart as
+  # it is now.
+  defp handle_order_result({:error, :shipping_quote_required}, socket) do
+    cart = Shop.get_cart(socket.assigns.cart.uuid) || socket.assigns.cart
+
+    socket
+    |> assign(:processing, false)
+    |> put_cart(cart)
+    |> settle_shipping()
+    |> put_flash(
+      :error,
+      gettext("The delivery price needs to be confirmed - please check your delivery details")
+    )
   end
 
   defp handle_order_result({:error, {:product_not_available, _uuid}}, socket) do
@@ -1161,9 +1344,22 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     {:noreply, assign_cart_repriced(socket, cart)}
   end
 
+  # The picker's saves and quotes, the review's own quote: the cart as it is.
+  # What this page already holds is not worked out again.
   @impl true
   def handle_info({:shipping_selected, cart}, socket) do
-    {:noreply, assign_cart_repriced(socket, cart)}
+    if ShippingRequote.same_cart?(cart, socket.assigns.cart) do
+      {:noreply, socket}
+    else
+      {:noreply, assign_cart_repriced(socket, cart)}
+    end
+  end
+
+  # The picker says the answer may have changed without the cart (the delivery
+  # options were asked for again, the carrier refused the request).
+  @impl true
+  def handle_info(:shipping_recheck, socket) do
+    {:noreply, socket |> refresh_shipping() |> requote_stale_review()}
   end
 
   @impl true
@@ -1173,8 +1369,9 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
     {:noreply,
      socket
-     |> assign(:cart, cart)
-     |> assign(:selected_payment_option, selected)}
+     |> put_cart(cart)
+     |> assign(:selected_payment_option, selected)
+     |> requote_stale_review()}
   end
 
   @impl true
@@ -1202,8 +1399,46 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   @impl true
   def handle_info(_message, socket), do: {:noreply, socket}
 
+  # ============================================
+  # ASYNC: THE CARRIER'S PRICE ON THE REVIEW
+  # ============================================
+
+  @impl true
+  def handle_async(:requote, {:ok, {:ok, cart}}, socket) do
+    {:noreply, socket |> assign(:requoting, false) |> assign_cart_repriced(cart)}
+  end
+
+  # The cart changed while the carrier was asked: read it as it is now.
+  def handle_async(:requote, {:ok, {:error, :stale}}, socket) do
+    socket = assign(socket, :requoting, false)
+
+    case Shop.get_cart(socket.assigns.cart.uuid) do
+      nil -> {:noreply, socket}
+      cart -> {:noreply, assign_cart_repriced(socket, cart)}
+    end
+  end
+
+  # What the shopper has to finish (the place was refused, the method cannot
+  # serve this cart) is finished on the shipping step.
+  def handle_async(:requote, {:ok, {:error, reason}}, socket)
+      when reason == :needs_destination or (is_tuple(reason) and elem(reason, 0) == :unavailable) do
+    socket = socket |> assign(:requoting, false) |> refresh_shipping()
+
+    {:noreply,
+     if(shipping_needs_shopper?(socket.assigns.shipping_snapshot),
+       do: assign_shipping_step(socket),
+       else: socket
+     )}
+  end
+
+  def handle_async(:requote, _failed, socket) do
+    {:noreply, assign(socket, :requoting, false)}
+  end
+
   @impl true
   def render(assigns) do
+    assigns = assign(assigns, :shipping_blocked, shipping_blocked?(assigns))
+
     ~H"""
     <ShopLayouts.shop_layout {assigns}>
       <div class="p-6 max-w-6xl mx-auto">
@@ -1311,7 +1546,11 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
                   fallback={@shipping_fallback}
                   cart={@cart}
                   currency={@currency}
+                  locale={@locale}
                   needs_billing={@needs_billing}
+                  shipping_blocked={@shipping_blocked}
+                  snapshot={@shipping_snapshot}
+                  presented={@shipping_presented}
                 />
               <% :review -> %>
                 <.review_step
@@ -1328,19 +1567,36 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
                   selected_payment_option={@selected_payment_option}
                   needs_billing={@needs_billing}
                   payment_options={@payment_options}
+                  shipping_blocked={@shipping_blocked}
+                  snapshot={@shipping_snapshot}
+                  requoting={@requoting}
                 />
             <% end %>
           </div>
 
           <%!-- Order Summary Sidebar --%>
           <div class="lg:col-span-1">
-            <.order_summary cart={@cart} currency={@currency} />
+            <.order_summary
+              cart={@cart}
+              currency={@currency}
+              shipping_blocked={@shipping_blocked}
+              snapshot={@shipping_snapshot}
+            />
           </div>
         </div>
       </div>
     </ShopLayouts.shop_layout>
     """
   end
+
+  # Whether a carrier-priced method still lacks its delivery place or price.
+  # Only the steps that show or approve the shipping ask: the question can
+  # reach the carrier's service list, which the earlier steps never need.
+  defp shipping_blocked?(%{step: step, shipping_snapshot: snapshot})
+       when step in [:shipping, :review],
+       do: snapshot.blocks?
+
+  defp shipping_blocked?(_assigns), do: false
 
   # Components
 
@@ -1587,54 +1843,77 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         <%= cond do %>
           <% @methods != [] -> %>
             <div class="space-y-3">
-              <label
-                :for={method <- @methods}
-                id={"checkout-shipping-method-#{method.uuid}"}
-                class={[
-                  "flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-colors",
-                  if(@cart.shipping_method_uuid == method.uuid,
-                    do: "border-primary bg-primary/5",
-                    else: "border-base-300 hover:border-primary/50"
-                  )
-                ]}
-              >
-                <input
-                  type="radio"
-                  name="checkout_shipping"
-                  class="radio radio-primary"
-                  checked={@cart.shipping_method_uuid == method.uuid}
-                  phx-click="select_checkout_shipping"
-                  phx-value-method_uuid={method.uuid}
+              <div :for={method <- @methods} class="space-y-2">
+                <label
+                  id={"checkout-shipping-method-#{method.uuid}"}
+                  class={[
+                    "flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-colors",
+                    if(@cart.shipping_method_uuid == method.uuid,
+                      do: "border-primary bg-primary/5",
+                      else: "border-base-300 hover:border-primary/50"
+                    )
+                  ]}
+                >
+                  <input
+                    type="radio"
+                    name="checkout_shipping"
+                    class="radio radio-primary"
+                    checked={@cart.shipping_method_uuid == method.uuid}
+                    phx-click="select_checkout_shipping"
+                    phx-value-method_uuid={method.uuid}
+                  />
+                  <div class="flex-1">
+                    <div class="font-medium">{method.name}</div>
+                    <%= if method.description do %>
+                      <div class="text-sm text-base-content/60">{method.description}</div>
+                    <% end %>
+                  </div>
+                  <%!-- `method.price` is a BASE amount; the cart is in its own
+                       currency, so present it through the cart's frozen rate. --%>
+                  <% presented = @presented[method.uuid] %>
+                  <div id={"checkout-shipping-price-#{method.uuid}"} class="font-semibold text-right">
+                    <%= cond do %>
+                      <% presented.pay_on_delivery? -> %>
+                        <span class="badge badge-info badge-soft whitespace-nowrap">
+                          {gettext("Paid on delivery")}
+                        </span>
+                      <% presented.free? -> %>
+                        <span class="badge badge-success">{gettext("FREE")}</span>
+                      <% presented.quote_status in [:needs_destination, :missing, :stale] -> %>
+                        <span class="text-sm font-normal text-base-content/60">
+                          {gettext("Calculated for your address")}
+                        </span>
+                      <% presented.quote_status == :unavailable -> %>
+                        <span class="badge badge-error badge-soft whitespace-nowrap">
+                          {gettext("Not available")}
+                        </span>
+                      <% true -> %>
+                        {format_price(presented.price, @currency)}
+                    <% end %>
+                  </div>
+                </label>
+
+                <%!-- Where a carrier-priced method delivers, and what it charges. --%>
+                <.live_component
+                  :if={@cart.shipping_method_uuid == method.uuid and ShippingMethod.calculated?(method)}
+                  module={ShippingDestinationPicker}
+                  id={"shipping-picker-#{method.uuid}"}
+                  cart={@cart}
+                  method={method}
+                  snapshot={@snapshot}
+                  locale={@locale}
+                  currency={@currency}
                 />
-                <div class="flex-1">
-                  <div class="font-medium">{method.name}</div>
-                  <%= if method.description do %>
-                    <div class="text-sm text-base-content/60">{method.description}</div>
-                  <% end %>
-                </div>
-                <%!-- `method.price` is a BASE amount; the cart is in its own
-                     currency, so present it through the cart's frozen rate. --%>
-                <% presented = Shop.present_shipping_method(@cart, method) %>
-                <div class="font-semibold">
-                  <%= cond do %>
-                    <% presented.pay_on_delivery? -> %>
-                      <span class="badge badge-info badge-soft whitespace-nowrap">
-                        {gettext("Paid on delivery")}
-                      </span>
-                    <% presented.free? -> %>
-                      <span class="badge badge-success">{gettext("FREE")}</span>
-                    <% true -> %>
-                      {format_price(presented.price, @currency)}
-                  <% end %>
-                </div>
-              </label>
+              </div>
             </div>
             <div class="flex items-center gap-3 mt-6">
               <button
                 id="checkout-shipping-continue"
                 class="btn btn-primary"
                 phx-click="shipping_continue"
-                disabled={not Enum.any?(@methods, &(&1.uuid == @cart.shipping_method_uuid))}
+                disabled={
+                  @shipping_blocked or not Enum.any?(@methods, &(&1.uuid == @cart.shipping_method_uuid))
+                }
               >
                 {gettext("Continue")} <.icon name="hero-arrow-right" class="w-4 h-4 ml-2" />
               </button>
@@ -1698,7 +1977,10 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         )
       end
 
-    assigns = assign(assigns, :selected_profile, selected_profile)
+    assigns =
+      assigns
+      |> assign(:selected_profile, selected_profile)
+      |> assign(:shipping_details, review_shipping_details(assigns.cart, assigns.snapshot))
 
     ~H"""
     <div class="space-y-6">
@@ -1801,6 +2083,34 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
                     {format_price(@cart.shipping_amount, @currency)}
                 <% end %>
               </div>
+            </div>
+
+            <%!-- A carrier-priced method: where it delivers, when, and the
+                 notes that belong to the carrier's quote. --%>
+            <div :if={@shipping_details} class="mt-3 space-y-1.5">
+              <p
+                :if={@shipping_details.label}
+                id="checkout-review-shipping-destination"
+                class="flex items-start gap-1.5 text-sm"
+              >
+                <.icon name="hero-map-pin" class="w-4 h-4 mt-0.5 shrink-0 text-base-content/60" />
+                <span class="break-words">{@shipping_details.label}</span>
+              </p>
+              <ShippingDisplay.quote_details
+                id="checkout-review-shipping"
+                eta={@shipping_details.eta}
+                cod_fee={@shipping_details.cod_fee}
+                currency={@shipping_details.currency}
+                fallback={@shipping_details.fallback?}
+              />
+              <button
+                id="checkout-review-change-shipping"
+                type="button"
+                class="btn btn-ghost btn-xs"
+                phx-click="back_to_shipping"
+              >
+                <.icon name="hero-pencil" class="w-3.5 h-3.5" /> {gettext("Change delivery details")}
+              </button>
             </div>
           <% end %>
         </div>
@@ -1916,6 +2226,47 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         </div>
       <% end %>
 
+      <%!-- The delivery price went stale (the cart or the payment changed, or
+           the carrier's answer aged out): it is settled on the shipping step. --%>
+      <div :if={@requoting} id="checkout-review-shipping-requoting" class="alert alert-info">
+        <span class="loading loading-spinner loading-sm"></span>
+        <span>{gettext("Updating the delivery price...")}</span>
+      </div>
+      <div
+        :if={@shipping_blocked and not @requoting}
+        id="checkout-review-shipping-blocked"
+        class="alert alert-warning"
+      >
+        <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
+        <%= if @snapshot.transient? do %>
+          <span class="flex-1">
+            {gettext("Delivery options are temporarily unavailable. Please try again in a moment.")}
+          </span>
+          <button
+            id="checkout-review-retry-shipping"
+            type="button"
+            class="btn btn-sm"
+            phx-click="recheck_shipping"
+          >
+            {gettext("Try again")}
+          </button>
+        <% else %>
+          <span class="flex-1">
+            {gettext(
+              "The delivery price needs to be confirmed - please check your delivery details"
+            )}
+          </span>
+          <button
+            id="checkout-review-recheck-shipping"
+            type="button"
+            class="btn btn-sm"
+            phx-click="back_to_shipping"
+          >
+            {gettext("Check delivery details")}
+          </button>
+        <% end %>
+      </div>
+
       <%!-- Confirm Button --%>
       <div class="flex justify-between items-center">
         <%= cond do %>
@@ -1931,9 +2282,10 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
             <div></div>
         <% end %>
         <button
+          id="checkout-confirm-order"
           phx-click="confirm_order"
           class={["btn btn-primary btn-lg"]}
-          disabled={@processing}
+          disabled={@processing or @shipping_blocked or @requoting}
         >
           <%= if @processing do %>
             <span class="loading loading-spinner loading-sm"></span> {gettext("Processing...")}
@@ -1946,9 +2298,40 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     """
   end
 
+  # What the review shows of a carrier-priced method: `nil` for an ordinary one.
+  defp review_shipping_details(
+         %{shipping_method: %ShippingMethod{} = method} = cart,
+         %{presented: %{} = presented, entry: entry}
+       ) do
+    if ShippingMethod.calculated?(method) do
+      estimate = presented.estimate
+
+      %{
+        label: cart |> Shop.cart_shipping_destination() |> CartQuote.destination_label(),
+        eta: (estimate && estimate.eta) || (entry && entry.quote && entry.quote.eta),
+        cod_fee: estimate && estimate.cod_fee,
+        currency: (estimate && estimate.currency) || cart.currency,
+        fallback?: presented.quote_status == :fallback
+      }
+    end
+  end
+
+  defp review_shipping_details(_cart, _snapshot), do: nil
+
+  # Carrier-priced delivery that has no price yet; a pay-on-delivery method
+  # charges the shop nothing either way.
+  defp shipping_unsettled?(%{cart: cart, snapshot: %{blocks?: true}}) do
+    not is_nil(cart.shipping_method_uuid) and
+      not ShippingMethod.pay_on_delivery?(cart.shipping_method)
+  end
+
+  defp shipping_unsettled?(_assigns), do: false
+
   defp order_summary(assigns) do
     assigns =
-      assign_new(assigns, :requires_shipping, fn -> Shop.cart_requires_shipping?(assigns.cart) end)
+      assigns
+      |> assign_new(:requires_shipping, fn -> Shop.cart_requires_shipping?(assigns.cart) end)
+      |> assign(:shipping_unsettled, shipping_unsettled?(assigns))
 
     ~H"""
     <div class="card bg-base-100 shadow-lg sticky top-6">
@@ -1976,6 +2359,10 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
             <%= cond do %>
               <% is_nil(@cart.shipping_method_uuid) -> %>
                 <span class="text-base-content/50">{gettext("Select method")}</span>
+              <% @shipping_unsettled and @snapshot.status == :unavailable -> %>
+                <span class="text-error">{gettext("Not available")}</span>
+              <% @shipping_unsettled -> %>
+                <span class="text-base-content/50">{gettext("To be calculated")}</span>
               <% PriceDisplay.cart_shipping_pay_on_delivery?(@cart) -> %>
                 <span>{gettext("Paid on delivery")}</span>
               <% Decimal.compare(@cart.shipping_amount || Decimal.new("0"), Decimal.new("0")) == :eq -> %>
@@ -2004,8 +2391,21 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
           <div id="checkout-summary-total" class="flex justify-between text-lg font-bold">
             <span>{gettext("Total")}</span>
-            <span>{format_price(@cart.total, @currency)}</span>
+            <span>
+              <span :if={@shipping_unsettled}>≈</span>
+              {format_price(@cart.total, @currency)}
+            </span>
           </div>
+
+          <%!-- The total of a cart whose carrier-priced delivery is not settled
+                carries the price of the method as a placeholder: said so. --%>
+          <p
+            :if={@shipping_unsettled and @snapshot.status != :unavailable}
+            id="checkout-summary-total-estimate"
+            class="text-xs text-base-content/60"
+          >
+            {gettext("The delivery cost is still to be calculated: the total will change.")}
+          </p>
 
           <%!-- Same disclosure as the cart page, and it matters more here: this
                 is the figure the shopper confirms. --%>

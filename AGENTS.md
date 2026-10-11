@@ -17,9 +17,9 @@ pages.
   `ImageFingerprint` runs ImageMagick through, above 2.38.0's
   `PhoenixKitWeb.Actor` and `Activity.log/3`; the compound form
   keeps the ceiling open across later 2.x minors), `phoenix_kit_billing`
-  `~> 0.13` (hard; checkout also requires a `phoenix_kit_billing` that ships
-  `BillingProfileFields` and `BillingProfile.fields_changeset/3`, i.e. the
-  next release after 0.19.1 - the floor is raised when that is published),
+  `~> 0.20` (hard; 0.20 is the first release that ships
+  `BillingProfileFields` and `BillingProfile.fields_changeset/3`, which
+  checkout renders and validates over),
   `phoenix_kit_ai` `~> 0.24` (optional — the
   AI-translate UI, both translation adapters, the sweep worker and the
   translations page use it, and all of them compile out when it is absent;
@@ -518,6 +518,37 @@ All stored via `PhoenixKit.Settings`. Keys are **`shop_`-prefixed**.
   page renders **no** shipping section at all, so nothing may redirect a
   shopper there to "pick another method"; `CheckoutPage` re-enters its own
   `:shipping` step instead.
+- `shop_shipping_parcel_defaults` — JSON `%{"length_mm", "width_mm",
+  "height_mm", "weight_g"}`: the standard box and the weight assumed for a
+  line without one. Read via `shipping_parcel_defaults/0`, written via
+  `update_shipping_parcel_defaults/1` (validates; the settings LiveView
+  logs `shop.shipping_parcel_defaults_changed`).
+- Packing data has no columns: a product's size lives in
+  `metadata["dimensions_mm"]` (virtual `length_mm`/`width_mm`/`height_mm`,
+  `Product.dimensions_mm/1`; catalogue items keep it in
+  `data["ecommerce"]`), a category's in `metadata["parcel_defaults"]`
+  (`Category.parcel_defaults/1`; catalogue: `CategoryCommerce.parcel_*`,
+  exposed by `View.category_view/2` through the same metadata key). Adding a
+  line freezes `metadata["shipping_profile"]` on it (`Shipping.CartPacking`);
+  `cart_parcels/1` packs from those snapshots, never from the live product.
+- A shipping method's `metadata["shipping_provider"]` is set through the
+  top-level `shipping_provider` param of `ShippingMethod.changeset/2`
+  (validated by `Shipping.MethodParams`), never as `metadata` itself, which
+  `cast/3` would replace whole. The `"fixed"` provider is the not-calculated
+  path: it has no settings or service and never asks for a destination, and a
+  stored fixed block is read as no block. Price rounding is off unless
+  `pricing.round_to` is a positive step.
+- The limits of a chosen pickup point (weight, size, value) are re-checked
+  against the cart whenever its shipping status is worked out
+  (`check_destination`): a point that no longer takes the parcels makes the
+  status `:needs_destination` with snapshot `reason: "point_limits"`, which
+  blocks checkout like any other missing destination.
+- Locality search and pickup point listing are rate limited per provider
+  (`Shipping.RateLimit`, `:shipping_lookup_rate`, default 20/s; `{:error,
+  :rate_limited}` is transient and never cached) and their cache entries are
+  bounded apart (`:shipping_cache_max_lookup_entries`,
+  `:shipping_cache_max_list_size`). Both need `Shipping.Cache` running (it
+  owns the tables).
 
 **Storefront notifications**
 
@@ -686,6 +717,7 @@ and `schema_prefix_conformance_test.exs` (every table-backed schema uses
 |---|---|---|
 | Price display and storefront i18n | "Price on request" is snapshotted onto the cart line and the order line, never read live; every public LiveView calls `put_content_locale/1` in `mount/3`; `push_event` names, paths, route segments and setting keys are never wrapped in `gettext` | `dev_docs/guides/storefront.md` |
 | AI translation control | Fingerprints are hashed identically in Elixir and SQL (`sql_trim_chars/0`); the sweep never auto-queues `unknown`; a write whose field fingerprint still matches is narrowed away; nothing enqueues under the catalogue product source. The sweep's chain, gates and budget are `PhoenixKitAI.TranslationSweep`'s — the worker supplies only the shop's gates, settings, candidates and prompts, and answers `:ai_unavailable` when the installed `phoenix_kit_ai` has no engine | `TranslationFingerprint`, `Workers.TranslationSweepWorker`, `Web.Translations` moduledocs |
+| Shipping destination picker | `Web.Components.ShippingDestinationPicker` (the one LiveComponent, justified in its moduledoc) is embedded by `CartPage` and `CheckoutPage` under the selected calculated method. Shipping is worked out ONCE per cart change by the parent (`Shop.shipping_quote_snapshot/2`: status, entry, presented, `blocks?`, service) and passed down — never recompute it in `render/1` or per component (packing, hashing, the service list and the provider's destination check are not free). The picker keeps no cart of its own: it saves, the shipping broadcast reaches the parent, the parent passes the new cart down; `:shipping_recheck` asks the parent to recompute when only the answer changed. Anything that calls the carrier on behalf of an anonymous shopper is bounded (one lookup in flight, `:shipping_lookup_interval`, capped texts, `Web.ShippingRequote` for automatic quotes: once per cart state, at most 3 in a row). A transient service failure is a retry, never "not available for this order". The shared display lines (ETA, COD fee, estimate note, reasons) are `Web.Components.ShippingDisplay`; DOM ids inside the picker derive from its `id` | `Web.Components.ShippingDestinationPicker`, `Web.ShippingRequote`, `PhoenixKitEcommerce.shipping_quote_snapshot/2` |
 | Agentic Commerce / ACP | Assessed and deliberately not built: a bridge plugin, not code in this module, is the shape if it is ever built | `dev_docs/agentic_commerce_acp_research.md` |
 
 ## Versioning & releases

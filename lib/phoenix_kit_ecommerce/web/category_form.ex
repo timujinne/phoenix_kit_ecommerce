@@ -87,7 +87,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
-    category = Shop.get_category!(id)
+    category = id |> Shop.get_category!() |> Category.with_parcel_defaults()
     changeset = Shop.change_category(category)
     category_options = Options.get_category_options(category)
     global_options = Options.get_enabled_global_options()
@@ -360,6 +360,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
         <%!-- Form --%>
         <.form
           for={@form}
+          id="category-form"
           phx-change="validate"
           phx-submit="save"
           class="space-y-6"
@@ -540,6 +541,60 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                     </label>
                   </div>
                 <% end %>
+              </div>
+            </div>
+          </div>
+
+          <%!-- Card: Default parcel for the products of this category --%>
+          <div class="card bg-base-100 shadow-xl" id="category-parcel-defaults">
+            <div class="card-body">
+              <h2 class="card-title text-xl mb-2">{gettext("Default parcel")}</h2>
+              <p class="text-sm text-base-content/60 mb-4">
+                {gettext(
+                  "Size and weight assumed for products of this category that have none of their own. Leave empty to use the shop's defaults."
+                )}
+              </p>
+
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-4">
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:parcel_length_mm]}
+                    id="category-parcel-length-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Length (mm)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:parcel_width_mm]}
+                    id="category-parcel-width-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Width (mm)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:parcel_height_mm]}
+                    id="category-parcel-height-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Height (mm)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:parcel_weight_g]}
+                    id="category-parcel-weight-g"
+                    type="number"
+                    min="0"
+                    label={gettext("Weight (g)")}
+                  />
+                </div>
               </div>
             </div>
           </div>

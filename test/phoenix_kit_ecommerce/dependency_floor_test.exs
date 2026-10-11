@@ -80,6 +80,15 @@ defmodule PhoenixKitEcommerce.DependencyFloorTest do
     assert function_exported?(Currency, :effective_rate, 2)
   end
 
+  test "the phoenix_kit_billing floor ships the shared billing profile form" do
+    # Checkout renders the component and validates over `fields_changeset/3`;
+    # both arrived in billing 0.20. Below it the page fails at runtime.
+    assert Code.ensure_loaded?(PhoenixKitBilling.Web.Components.BillingProfileFields)
+    assert function_exported?(PhoenixKitBilling.BillingProfile, :fields_changeset, 3)
+    assert function_exported?(PhoenixKitBilling.BillingProfile, :form_fields, 0)
+    assert Code.ensure_loaded?(PhoenixKitBilling.Gettext)
+  end
+
   test "the phoenix_kit floor ships V186's cart/order freeze columns" do
     # Cart/CartItem cast base_currency/exchange_rate/base_unit_price —
     # real table columns core's V186 adds (first released in 2.16.0), not

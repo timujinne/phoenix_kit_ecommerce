@@ -34,7 +34,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPayOnDeliveryTest do
 
     test "a cart still charging a method that became pay-on-delivery is re-priced on mount",
          %{conn: conn, cart: cart} do
-      method = method!("Nova Poshta", price: "5.00")
+      method = method!("Acme Post", price: "5.00")
       {:ok, cart} = Shop.set_cart_shipping(cart, method, nil)
       assert Decimal.equal?(cart.total, Decimal.new("30.00"))
 
@@ -104,7 +104,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPayOnDeliveryTest do
 
     test "a cart still charging a method that became pay-on-delivery is re-priced on mount",
          %{conn: conn, cart: cart} do
-      method = method!("Nova Poshta", price: "5.00")
+      method = method!("Acme Post", price: "5.00")
       {:ok, _cart} = Shop.set_cart_shipping(cart, method, nil)
 
       {:ok, _} = Shop.update_shipping_method(method, %{"pay_on_delivery" => "true"})
@@ -202,14 +202,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingPayOnDeliveryTest do
       view
       |> form("form", %{
         "shipping_method" => %{
-          "name" => "Nova Poshta",
+          "name" => "Acme Post",
           "price" => "3.00",
           "pay_on_delivery" => "true"
         }
       })
       |> render_submit()
 
-      method = Enum.find(Shop.list_shipping_methods(), &(&1.name == "Nova Poshta"))
+      method = Enum.find(Shop.list_shipping_methods(), &(&1.name == "Acme Post"))
 
       assert ShippingMethod.pay_on_delivery?(method)
       assert Decimal.equal?(method.price, Decimal.new("0"))
@@ -227,7 +227,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPayOnDeliveryTest do
       view
       |> form("form", %{
         "shipping_method" => %{
-          "name" => "Nova Poshta",
+          "name" => "Acme Post",
           "price" => "3.00",
           "pay_on_delivery" => "true"
         }

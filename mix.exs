@@ -138,7 +138,13 @@ defmodule PhoenixKitEcommerce.MixProject do
       # `effective_rate/2`; 0.5.2's `payment_option_uuid` on
       # `PhoenixKitBilling.Order` also still required — both now subsumed
       # by the higher floor.
-      pk_dep(:phoenix_kit_billing, "~> 0.13"),
+      #
+      # 0.20 raised it again: checkout renders `BillingProfileFields` and
+      # builds its form over `BillingProfile.fields_changeset/3` /
+      # `form_fields/0`, none of which exist in 0.19.x - there the checkout
+      # page is an `UndefinedFunctionError` the moment a shopper opens it,
+      # not a compile error.
+      pk_dep(:phoenix_kit_billing, "~> 0.20"),
       # Optional: only the AI-translate UI/adapter use it, and both compile out
       # when it's absent (see ProductForm's @ai_translate? flag). Version tracks
       # the actual API used (Translatable behaviour, AITranslate components).
