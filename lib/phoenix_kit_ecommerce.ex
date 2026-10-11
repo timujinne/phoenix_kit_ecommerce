@@ -124,7 +124,7 @@ defmodule PhoenixKitEcommerce do
   """
   @spec shopify_enabled?() :: boolean()
   def shopify_enabled? do
-    Settings.get_setting_cached("shop_shopify_enabled", "false") == "true"
+    read_shopify_setting() == "true"
   rescue
     _ -> false
   catch
@@ -145,6 +145,16 @@ defmodule PhoenixKitEcommerce do
   """
   @spec warehouse_status() :: PhoenixKitEcommerce.StockTracking.warehouse_status()
   defdelegate warehouse_status, to: PhoenixKitEcommerce.StockTracking
+
+  # Test seam: `:shopify_setting_reader` is an `{module, function}` called
+  # as `module.function(key, default)`, so a test can make the read raise or
+  # exit and reach the fail-closed clauses above.
+  defp read_shopify_setting do
+    case Application.get_env(:phoenix_kit_ecommerce, :shopify_setting_reader) do
+      {mod, fun} -> apply(mod, fun, ["shop_shopify_enabled", "false"])
+      _ -> Settings.get_setting_cached("shop_shopify_enabled", "false")
+    end
+  end
 
   @impl PhoenixKit.Module
   @doc """

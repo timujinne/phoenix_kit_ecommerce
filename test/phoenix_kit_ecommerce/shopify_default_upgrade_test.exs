@@ -116,6 +116,7 @@ defmodule PhoenixKitEcommerce.ShopifyDefaultUpgradeTest do
 
   test "legacy products without a Shopify link do not count" do
     insert_legacy_product(%{"note" => "hand made"})
+    insert_legacy_product(%{"_shopify" => %{"product_id" => ""}})
 
     run_step()
 

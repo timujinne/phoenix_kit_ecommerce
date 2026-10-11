@@ -29,11 +29,6 @@ defmodule PhoenixKitEcommerce.ShopifyToggleTest do
     end)
   end
 
-  defp enable_shopify do
-    Settings.update_boolean_setting_with_module("shop_shopify_enabled", true, "shop")
-    Providers.clear_cache()
-  end
-
   defp shopify_tab do
     Enum.find(PhoenixKitEcommerce.admin_tabs(), &(&1.id == :admin_shop_shopify_sync))
   end
@@ -44,7 +39,7 @@ defmodule PhoenixKitEcommerce.ShopifyToggleTest do
     end
 
     test "reflects a stored true" do
-      enable_shopify()
+      enable_shopify!()
       assert PhoenixKitEcommerce.shopify_enabled?()
     end
 
@@ -55,7 +50,7 @@ defmodule PhoenixKitEcommerce.ShopifyToggleTest do
 
     test "reflects a stored true after having been turned off" do
       Settings.update_boolean_setting_with_module("shop_shopify_enabled", false, "shop")
-      enable_shopify()
+      enable_shopify!()
       assert PhoenixKitEcommerce.shopify_enabled?()
     end
   end
@@ -66,12 +61,12 @@ defmodule PhoenixKitEcommerce.ShopifyToggleTest do
     end
 
     test "names shopify once the toggle is on" do
-      enable_shopify()
+      enable_shopify!()
       assert PhoenixKitEcommerce.required_integrations() == ["shopify"]
     end
 
     test "is empty once the toggle is turned off again" do
-      enable_shopify()
+      enable_shopify!()
       Settings.update_boolean_setting_with_module("shop_shopify_enabled", false, "shop")
       assert PhoenixKitEcommerce.required_integrations() == []
     end
@@ -83,7 +78,7 @@ defmodule PhoenixKitEcommerce.ShopifyToggleTest do
     end
 
     test "registers the Shopify provider with credentials auth once the toggle is on" do
-      enable_shopify()
+      enable_shopify!()
       assert [provider] = PhoenixKitEcommerce.integration_providers()
 
       assert provider.key == "shopify"
@@ -99,7 +94,7 @@ defmodule PhoenixKitEcommerce.ShopifyToggleTest do
     end
 
     test "is empty once the toggle is turned off again, so Shopify drops out of the integrations page" do
-      enable_shopify()
+      enable_shopify!()
       Settings.update_boolean_setting_with_module("shop_shopify_enabled", false, "shop")
       assert PhoenixKitEcommerce.integration_providers() == []
     end
@@ -111,12 +106,12 @@ defmodule PhoenixKitEcommerce.ShopifyToggleTest do
     end
 
     test "shows once the toggle is on" do
-      enable_shopify()
+      enable_shopify!()
       assert Tab.visible?(shopify_tab(), %{})
     end
 
     test "hides again once turned off" do
-      enable_shopify()
+      enable_shopify!()
       Settings.update_boolean_setting_with_module("shop_shopify_enabled", false, "shop")
       refute Tab.visible?(shopify_tab(), %{})
     end
