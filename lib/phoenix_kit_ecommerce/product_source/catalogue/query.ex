@@ -615,18 +615,37 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
     category_uuids = Enum.map(categories, & &1.uuid)
 
     # Only the image is projected, never the item's whole `data`: a
-    # catalogue item carries every translation in there (~12 KB of JSONB),
-    # and shipping that for every active item just to pick one image per
-    # category dominated the storefront's category query. The inner query
-    # computes the image with the same rule as `item_image/1` (below), the
-    # outer `DISTINCT ON` keeps the first image-bearing item per category
-    # (position, then name) so one row per category comes back.
+    # catalogue item carries every translation in there (~20 KB of JSONB,
+    # about 12 KB of it the imported `html_source`), and shipping that for
+    # every active item just to pick one image per category dominated the
+    # storefront's category query. The inner query computes the image with
+    # the same rule as `item_image/1` (below), the outer `DISTINCT ON` keeps
+    # the first image-bearing item per category (position, then name) so one
+    # row per category comes back.
+    #
+    # The two sub-values are pulled out of `data` once per row, in a
+    # `LATERAL` with `OFFSET 0` (without it the planner inlines the
+    # expressions back into the `CASE`). Postgres detoasts the whole
+    # document on every `data->...` read, and a `CASE` that reads `data`
+    # itself did that two to five times per item (plus once for the
+    # visibility filter): more Postgres time than shipping `data` (~100 vs
+    # ~50 ms for 700 items), though about equal in wall time.
     items =
       CatItem
       |> where([i], i.catalogue_uuid == ^catalogue_uuid)
       |> where([i], i.category_uuid in ^category_uuids)
       |> active_visibility()
-      |> select([i], %{
+      |> join(
+        :cross_lateral,
+        [i],
+        x in fragment(
+          "(SELECT ?->'featured_image_uuid' AS f, ?->'media_order' AS m OFFSET 0)",
+          i.data,
+          i.data
+        ),
+        on: true
+      )
+      |> select([i, x], %{
         category_uuid: i.category_uuid,
         position: i.position,
         name: i.name,
@@ -634,22 +653,21 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
           fragment(
             """
             CASE
-              WHEN jsonb_typeof(?->'featured_image_uuid') = 'string'
-                   AND ?->>'featured_image_uuid' <> ''
-                THEN ?->>'featured_image_uuid'
-              WHEN jsonb_typeof(?->'media_order') = 'array'
-                   AND jsonb_typeof(?->'media_order'->0) = 'string'
-                   AND ?->'media_order'->>0 <> ''
-                THEN ?->'media_order'->>0
+              WHEN jsonb_typeof(?) = 'string' AND ? #>> '{}' <> ''
+                THEN ? #>> '{}'
+              WHEN jsonb_typeof(?) = 'array'
+                   AND jsonb_typeof(?->0) = 'string'
+                   AND ?->>0 <> ''
+                THEN ?->>0
             END
             """,
-            i.data,
-            i.data,
-            i.data,
-            i.data,
-            i.data,
-            i.data,
-            i.data
+            x.f,
+            x.f,
+            x.f,
+            x.m,
+            x.m,
+            x.m,
+            x.m
           )
       })
 

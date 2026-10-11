@@ -107,6 +107,7 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
   alias PhoenixKitEcommerce.Shopify.Source
   alias PhoenixKitEcommerce.Shopify.SyncScope
+  alias PhoenixKitEcommerce.StorefrontCache
   alias PhoenixKitEcommerce.Translations
 
   @localized_fields [:title, :body_html, :description]
@@ -416,18 +417,37 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   caller already computed — skips that lookup entirely and uses it
   as-is instead; see this module's moduledoc ("Precomputed currency
   verdict") for why and when a caller would pass it.
+
+  A successful write clears the node-wide storefront cache
+  (`PhoenixKitEcommerce.StorefrontCache`).
   """
   @spec apply_change(Change.t(), :all | [atom()], keyword()) ::
           {:ok, PhoenixKitEcommerce.Product.t()} | {:error, Ecto.Changeset.t() | term()}
   def apply_change(change, fields \\ :all, opts \\ [])
 
   def apply_change(%Change{create?: true} = change, _fields, opts) do
-    create_change(change, resolve_verdict(opts))
+    change
+    |> create_change(resolve_verdict(opts))
+    |> clear_storefront_cache()
   end
 
   def apply_change(%Change{} = change, fields, opts) do
-    do_apply_change(change, fields, resolve_verdict(opts))
+    change
+    |> do_apply_change(fields, resolve_verdict(opts))
+    |> clear_storefront_cache()
   end
+
+  # The storefront caches its category list and facets for about a minute
+  # (`StorefrontCache`); a successful write must show on the next page view.
+  # `apply_changes/3` clears once for the whole batch instead (under the
+  # legacy source `Shop.update_product/2` also clears per product, through
+  # `Events`).
+  defp clear_storefront_cache({:ok, _product} = result) do
+    StorefrontCache.clear()
+    result
+  end
+
+  defp clear_storefront_cache(result), do: result
 
   # `opts[:currency_verdict]`, when given, IS the answer
   # `currency_verdict/1` would otherwise compute — used as-is, with no
@@ -537,6 +557,10 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   the same escape hatch — when given, this skips the lookup entirely
   (still once, not per-change either way) and uses it as-is, same as
   `apply_change/3`.
+
+  A run that wrote at least one change clears the node-wide storefront
+  cache (`PhoenixKitEcommerce.StorefrontCache`) when it ends, also when a
+  later change raises.
   """
   @spec apply_changes([Change.t()], :all | [atom()], keyword()) :: %{
           succeeded: [Change.t()],
@@ -544,16 +568,31 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
         }
   def apply_changes(changes, fields \\ :all, opts \\ []) do
     verdict = resolve_verdict(opts)
+    # The reduce's accumulator is lost if a change raises, but the changes
+    # written before it must still show: the flag lives outside it.
+    written = :atomics.new(1, [])
 
-    %{succeeded: succeeded, failed: failed} =
-      Enum.reduce(changes, %{succeeded: [], failed: []}, fn change, acc ->
-        case apply_change_with_verdict(change, fields, verdict) do
-          {:ok, _product} -> %{acc | succeeded: [change | acc.succeeded]}
-          {:error, _changeset} -> %{acc | failed: [change | acc.failed]}
-        end
-      end)
+    try do
+      %{succeeded: succeeded, failed: failed} =
+        Enum.reduce(changes, %{succeeded: [], failed: []}, fn change, acc ->
+          case apply_change_with_verdict(change, fields, verdict) do
+            {:ok, _product} ->
+              :atomics.put(written, 1, 1)
+              %{acc | succeeded: [change | acc.succeeded]}
 
-    %{succeeded: Enum.reverse(succeeded), failed: Enum.reverse(failed)}
+            {:error, _changeset} ->
+              %{acc | failed: [change | acc.failed]}
+          end
+        end)
+
+      %{succeeded: Enum.reverse(succeeded), failed: Enum.reverse(failed)}
+    after
+      # Once per run, not per change (under the catalogue source; the legacy
+      # source's `Shop.update_product/2` also clears per product through
+      # `Events`): a long sync would otherwise keep the storefront cache
+      # switched off for its whole duration.
+      if :atomics.get(written, 1) == 1, do: StorefrontCache.clear()
+    end
   end
 
   defp apply_change_with_verdict(%Change{create?: true} = change, _fields, verdict),

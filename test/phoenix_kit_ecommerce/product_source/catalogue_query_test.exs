@@ -839,6 +839,46 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.QueryTest do
       assert query_count <= 3
     end
 
+    test "auto-detect reads the item's data once per field, behind an OFFSET 0 fence",
+         %{catalogue: catalogue} do
+      {:ok, category} =
+        Catalogue.create_category(%{name: "Fenced", catalogue_uuid: catalogue.uuid})
+
+      create_item(catalogue, %{
+        name: "Item",
+        base_price: Decimal.new("1.00"),
+        category_uuid: category.uuid,
+        data: %{"featured_image_uuid" => "img-fenced"}
+      })
+
+      handler_id = {:resolve_category_images_sql, self()}
+      test_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:phoenix_kit_ecommerce, :test, :repo, :query],
+        fn _event, _measurements, metadata, _config ->
+          if metadata.query =~ "DISTINCT ON", do: send(test_pid, {:sql, metadata.query})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      assert Query.resolve_category_images([category]) == %{category.uuid => "img-fenced"}
+
+      assert_received {:sql, sql}
+
+      # `data` is a large TOASTed document and Postgres detokenizes it on
+      # every `data->...` read. The two sub-values are pulled out once in a
+      # LATERAL; `OFFSET 0` keeps the planner from inlining the reads back
+      # into the CASE, which would read `data` six times per item.
+      assert sql =~ "LATERAL"
+      assert sql =~ "OFFSET 0"
+      assert length(String.split(sql, ~s("data"->'featured_image_uuid'))) == 2
+      assert length(String.split(sql, ~s("data"->'media_order'))) == 2
+    end
+
     defp count_received(message, acc \\ 0) do
       receive do
         ^message -> count_received(message, acc + 1)

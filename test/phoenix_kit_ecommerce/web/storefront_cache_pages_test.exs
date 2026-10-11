@@ -220,60 +220,113 @@ defmodule PhoenixKitEcommerce.Web.StorefrontCachePagesTest do
     end
   end
 
-  describe "list_active_categories_cached/2" do
+  describe "list_active_categories_cached/1" do
     test "serves the cached list until a category write clears it" do
       bypass_create_category!("First Cat")
 
-      assert [%{uuid: _}] = Helpers.list_active_categories_cached("en")
+      assert [%{uuid: _}] = Helpers.list_active_categories_cached()
 
       bypass_create_category!("Second Cat")
-      assert [_] = Helpers.list_active_categories_cached("en")
+      assert [_] = Helpers.list_active_categories_cached()
 
       # A write through the package announces itself and drops the cache.
       {:ok, _} = Shop.create_category(%{"name" => %{"en" => "Third Cat"}, "status" => "active"})
-      assert length(Helpers.list_active_categories_cached("en")) == 3
+      assert length(Helpers.list_active_categories_cached()) == 3
     end
 
-    test "keeps one entry per language and per options" do
+    test "keeps one entry per options" do
       bypass_create_category!("First Cat")
-      assert [_] = Helpers.list_active_categories_cached("en")
-      assert [_] = Helpers.list_active_categories_cached("en", preload: [:featured_product])
+      assert [_] = Helpers.list_active_categories_cached()
+      assert [_] = Helpers.list_active_categories_cached(preload: [:featured_product])
 
       bypass_create_category!("Second Cat")
 
-      assert [_] = Helpers.list_active_categories_cached("en")
-      assert [_] = Helpers.list_active_categories_cached("en", preload: [:featured_product])
-      assert length(Helpers.list_active_categories_cached("de")) == 2
-      assert length(Helpers.list_active_categories_cached("en", preload: [:parent])) == 2
+      assert [_] = Helpers.list_active_categories_cached()
+      assert [_] = Helpers.list_active_categories_cached(preload: [:featured_product])
+      assert length(Helpers.list_active_categories_cached(preload: [:parent])) == 2
     end
   end
 
-  describe "list_active_categories_cached/2 keys" do
-    test "does not cache a language the shop has not enabled" do
-      bypass_create_category!("First Cat")
-      before = puts()
-
-      assert [_] = Helpers.list_active_categories_cached("junk0")
-      bypass_create_category!("Second Cat")
-      assert length(Helpers.list_active_categories_cached("junk0")) == 2
-
-      for n <- 1..50, do: Helpers.list_active_categories_cached("junk#{n}")
-
-      assert puts() == before
-    end
-
+  describe "list_active_categories_cached/1 keys" do
     @tag :catalogue
     test "keeps one entry per product source" do
       bypass_create_category!("Legacy Cat")
 
       assert ProductSource.current() == ProductSource.Legacy
-      assert [%{name: _}] = Helpers.list_active_categories_cached("en")
+      assert [%{name: _}] = Helpers.list_active_categories_cached()
 
       Repo.insert!(%ShopConfig{key: "shop_product_source", value: %{"value" => "catalogue"}})
       assert ProductSource.current() == ProductSource.Catalogue
 
       # Not the legacy list that is still cached under the other source.
-      assert Helpers.list_active_categories_cached("en") == Shop.list_active_categories([])
+      assert Helpers.list_active_categories_cached() == Shop.list_active_categories([])
+
+      Repo.delete!(Repo.get!(ShopConfig, "shop_product_source"))
+    end
+  end
+
+  # `PhoenixKitEcommerce.bulk_update_product_category/2` and
+  # `bulk_delete_products/1` never broadcast, so `Events` does not see them:
+  # the clear is in the functions themselves.
+  describe "bulk writes that do not broadcast" do
+    setup do
+      {:ok, product} =
+        Shop.create_product(%{"title" => %{"en" => "Plain Vase"}, "price" => "10.00"})
+
+      category = bypass_create_category!("Target Cat")
+      %{product: product, category: category}
+    end
+
+    # Fetched after the setup writes, which clear the cache themselves.
+    defp prefill_probe, do: :stale = StorefrontCache.fetch(:probe, fn -> :stale end)
+    defp probe_cleared?, do: StorefrontCache.fetch(:probe, fn -> :fresh end) == :fresh
+
+    test "bulk_update_product_category/2 clears the cache once it has written", ctx do
+      prefill_probe()
+
+      assert Shop.bulk_update_product_category([ctx.product.uuid], ctx.category.uuid) == 1
+
+      assert probe_cleared?()
+    end
+
+    test "bulk_update_product_category/2 leaves the cache alone when it writes nothing", ctx do
+      prefill_probe()
+
+      # No product matches, or the requested category does not exist:
+      # nothing is written either way.
+      assert Shop.bulk_update_product_category([Ecto.UUID.generate()], ctx.category.uuid) == 0
+      assert Shop.bulk_update_product_category([ctx.product.uuid], Ecto.UUID.generate()) == 0
+
+      refute probe_cleared?()
+    end
+
+    test "bulk_delete_products/1 clears the cache once it has deleted", ctx do
+      prefill_probe()
+
+      assert Shop.bulk_delete_products([ctx.product.uuid]) == 1
+
+      assert probe_cleared?()
+    end
+
+    test "bulk_delete_products/1 leaves the cache alone when nothing matches" do
+      prefill_probe()
+
+      assert Shop.bulk_delete_products([Ecto.UUID.generate()]) == 0
+
+      refute probe_cleared?()
+    end
+
+    # The catalogue source refuses both (`0`, no write), so there is nothing
+    # to refresh.
+    @tag :catalogue
+    test "the catalogue source's early return leaves the cache alone", ctx do
+      Repo.insert!(%ShopConfig{key: "shop_product_source", value: %{"value" => "catalogue"}})
+      prefill_probe()
+
+      assert Shop.bulk_update_product_category([ctx.product.uuid], ctx.category.uuid) == 0
+      assert Shop.bulk_delete_products([ctx.product.uuid]) == 0
+
+      refute probe_cleared?()
 
       Repo.delete!(Repo.get!(ShopConfig, "shop_product_source"))
     end
@@ -284,9 +337,9 @@ defmodule PhoenixKitEcommerce.Web.StorefrontCachePagesTest do
       assert PhoenixKitEcommerce.children() == StorefrontCache.children()
     end
 
-    # In catalogue mode (the live source) edits and the Shopify sync do not
-    # pass through `Events`, so the TTL is the only freshness mechanism: an
-    # entry that never expires would freeze the storefront until a restart.
+    # Catalogue-side edits and the background Shopify jobs do not clear the
+    # cache, so the TTL is the only freshness mechanism for them: an entry
+    # that never expires would freeze the storefront until a restart.
     # `max_size` is the backstop for the key space. The spec is what the
     # host starts, so it is the place to pin both.
     test "the cache process is started with a 60 second TTL and a size bound" do
@@ -369,12 +422,33 @@ defmodule PhoenixKitEcommerce.Web.StorefrontCachePagesTest do
       assert has_element?(view, "summary", "Zebra Brands")
     end
 
-    test "an unknown locale in the path costs no cache entries", %{conn: conn} do
+    # The category list is language-independent: its one entry is shared by
+    # every language, so a language that is not enabled adds nothing to it
+    # and the filter data of such a language is never stored.
+    test "an unknown locale in the path costs no cache entries beyond the shared list",
+         %{conn: conn} do
       before = puts()
+
+      assert {:ok, _view, _html} = live(conn, "/junk0/shop")
+      assert puts() - before == 1
 
       for n <- 1..5, do: assert({:ok, _view, _html} = live(conn, "/junk#{n}/shop"))
 
-      assert puts() == before
+      assert puts() - before == 1
+    end
+
+    test "serves one category list to every language", %{conn: conn} do
+      bypass_create_category!("Alpha Garden")
+
+      {:ok, _view, html} = live(conn, "/shop")
+      assert html =~ "Alpha Garden"
+
+      bypass_create_category!("Beta Terrace")
+
+      # A per-language entry would be a cold miss here and show Beta.
+      {:ok, _view, html} = live(conn, "/de/shop")
+      assert html =~ "Alpha Garden"
+      refute html =~ "Beta Terrace"
     end
   end
 

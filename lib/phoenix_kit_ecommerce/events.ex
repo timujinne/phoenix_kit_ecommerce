@@ -409,10 +409,12 @@ defmodule PhoenixKitEcommerce.Events do
   # not touch the cached values. The clear is node-local; other nodes rely on
   # the TTL.
   #
-  # Not covered, so TTL-only: `bulk_update_product_category/2` and
-  # `bulk_delete_products/1` (they never broadcast), and the catalogue
-  # source's writers (`Catalogue.Writer`, the Shopify sync) which write
-  # catalogue items without going through here. See `StorefrontCache`.
+  # Not covered here, but cleared at the write itself:
+  # `bulk_update_product_category/2` and `bulk_delete_products/1` (they never
+  # broadcast) and the Shopify sync's catalogue writes (`Shopify.Sync`).
+  # TTL-only: edits made in `phoenix_kit_catalogue`, the background Shopify
+  # jobs (media/variants and collection sync) and a change of the enabled
+  # languages (not a write of this package). See `StorefrontCache`.
   defp broadcast(topic, message) when topic in [@products_topic, @categories_topic] do
     StorefrontCache.clear()
     Manager.broadcast(topic, message)

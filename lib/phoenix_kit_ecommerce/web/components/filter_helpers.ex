@@ -40,7 +40,7 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpers do
 
   @doc """
   `load_filter_data/1` through `PhoenixKitEcommerce.StorefrontCache`: the
-  result is shared by every visitor for up to a minute instead of
+  result is shared by every visitor for about a minute (up to ~66 s) instead of
   recomputing the facet aggregates (a sequential scan each) on every mount.
 
   Takes the same options. The cached value is viewer-independent: the price

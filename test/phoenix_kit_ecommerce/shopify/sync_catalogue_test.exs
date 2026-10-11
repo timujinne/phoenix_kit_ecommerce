@@ -38,6 +38,7 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCatalogueTest do
   alias PhoenixKitEcommerce.Shopify.ProductDiff
   alias PhoenixKitEcommerce.Shopify.Sync
   alias PhoenixKitEcommerce.Shopify.SyncScope
+  alias PhoenixKitEcommerce.StorefrontCache
   alias PhoenixKitEcommerce.Test.Repo
 
   setup do
@@ -195,6 +196,133 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCatalogueTest do
       assert Decimal.equal?(updated_item.base_price, Decimal.new("30.00"))
       assert updated_item.name == "Ceramic Vase"
       assert updated_item.data["ecommerce"]["compare_at_price"] == nil
+    end
+  end
+
+  # The storefront caches its category list and facets for about a minute
+  # (`StorefrontCache`); the catalogue writes of a sync must clear it. The
+  # cache's generation counts the clears, which tells "once per run" from
+  # "once per change".
+  describe "the storefront cache" do
+    setup %{item: item} do
+      start_supervised!(PhoenixKit.Cache.Registry)
+      [spec] = StorefrontCache.children()
+      start_supervised!(spec)
+
+      product = CatalogueSource.get_product(item.uuid, [])
+
+      assert [change] =
+               ProductDiff.diff([product], [shopify_payload(%{})], "en", only: [:title])
+
+      %{change: change}
+    end
+
+    defp generation do
+      {_value, generation} =
+        PhoenixKit.Cache.get_with_generation(:ecommerce_storefront, :generation_probe)
+
+      generation
+    end
+
+    defp prefill_probe, do: :stale = StorefrontCache.fetch(:probe, fn -> :stale end)
+    defp probe_cleared?, do: StorefrontCache.fetch(:probe, fn -> :fresh end) == :fresh
+
+    test "apply_change/3 clears it after an update", %{change: change} do
+      prefill_probe()
+      before = generation()
+
+      assert {:ok, _view} = Sync.apply_change(change)
+
+      assert probe_cleared?()
+      assert generation() == before + 1
+    end
+
+    test "apply_change/3 clears it after a create" do
+      create = %ProductDiff.Change{
+        create?: true,
+        product_uuid: nil,
+        handle: "brand-new-mug",
+        title: "Brand New Mug",
+        base_locale: "en",
+        shopify_product: %{"handle" => "brand-new-mug", "title" => "Brand New Mug", "id" => 42}
+      }
+
+      prefill_probe()
+      before = generation()
+
+      assert {:ok, _view} = Sync.apply_change(create)
+
+      assert probe_cleared?()
+      assert generation() == before + 1
+    end
+
+    test "apply_change/3 leaves it alone when the write is refused", %{change: change} do
+      prefill_probe()
+      before = generation()
+
+      # A currency mismatch refuses the price field, and nothing else is
+      # asked for.
+      priced = %{change | changes: %{price: %{current: "25.00", incoming: "30.00"}}}
+
+      assert {:error, {:currency_mismatch, "USD", "EUR"}} =
+               Sync.apply_change(priced, [:price], currency_verdict: {:mismatch, "USD", "EUR"})
+
+      refute probe_cleared?()
+      assert generation() == before
+    end
+
+    test "apply_changes/3 clears it once for the whole run, not once per change", %{
+      change: change
+    } do
+      prefill_probe()
+      before = generation()
+
+      assert %{succeeded: [_, _, _], failed: []} = Sync.apply_changes([change, change, change])
+
+      assert probe_cleared?()
+      assert generation() == before + 1
+    end
+
+    # The reduce's accumulator is lost when a change raises (here: its item
+    # was deleted since the diff), but the change written before it must show.
+    test "apply_changes/3 still clears it when a later change raises", %{
+      change: change,
+      item: item
+    } do
+      ghost = %{change | product_uuid: Ecto.UUID.generate()}
+      prefill_probe()
+      before = generation()
+
+      assert_raise Ecto.NoResultsError, fn -> Sync.apply_changes([change, ghost]) end
+
+      assert Catalogue.get_item!(item.uuid).name == "Ceramic Vase Deluxe"
+      assert probe_cleared?()
+      assert generation() == before + 1
+    end
+
+    test "apply_changes/3 leaves it alone when the first change raises and nothing was written",
+         %{change: change} do
+      ghost = %{change | product_uuid: Ecto.UUID.generate()}
+      prefill_probe()
+      before = generation()
+
+      assert_raise Ecto.NoResultsError, fn -> Sync.apply_changes([ghost, change]) end
+
+      refute probe_cleared?()
+      assert generation() == before
+    end
+
+    test "apply_changes/3 leaves it alone when no change was written", %{change: change} do
+      prefill_probe()
+      before = generation()
+
+      priced = %{change | changes: %{price: %{current: "25.00", incoming: "30.00"}}}
+
+      assert %{succeeded: [], failed: [_]} =
+               Sync.apply_changes([priced], [:price], currency_verdict: {:mismatch, "USD", "EUR"})
+
+      refute probe_cleared?()
+      assert generation() == before
     end
   end
 

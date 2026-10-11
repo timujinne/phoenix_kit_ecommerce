@@ -45,13 +45,11 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
     current_language =
       params |> Helpers.get_language_from_params_or_default() |> Helpers.put_content_locale()
 
-    # Shared across visitors for up to a minute (`StorefrontCache`); the
-    # products list, cart count and the other per-viewer assigns below are
-    # deliberately not.
+    # Shared across visitors for about a minute, up to ~66 s
+    # (`StorefrontCache`); the products list, cart count and the other
+    # per-viewer assigns below are deliberately not.
     categories =
-      Helpers.list_active_categories_cached(current_language,
-        preload: [:parent, :featured_product]
-      )
+      Helpers.list_active_categories_cached(preload: [:parent, :featured_product])
 
     per_page = 24
     page = Helpers.parse_page(params["page"])

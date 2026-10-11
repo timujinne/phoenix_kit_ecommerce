@@ -91,8 +91,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
 
         currency = Shop.get_display_currency_code()
 
-        all_categories =
-          Helpers.list_active_categories_cached(current_language, preload: [:featured_product])
+        all_categories = Helpers.list_active_categories_cached(preload: [:featured_product])
 
         # Check if user is authenticated
         authenticated = not is_nil(socket.assigns[:phoenix_kit_current_user])

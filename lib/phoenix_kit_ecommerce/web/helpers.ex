@@ -252,21 +252,19 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   @doc """
   `PhoenixKitEcommerce.list_active_categories/1` through
   `PhoenixKitEcommerce.StorefrontCache`, for the storefront's category
-  navigation: one list shared by every visitor for up to a minute.
+  navigation: one list shared by every visitor for about a minute (up to
+  ~66 s).
 
-  The key carries the product source (switchable at runtime), the language
-  and the options. The language does not reach the query today - category
-  views hold every translation - but it is part of what a storefront list is
-  "for", so it stays in the key rather than silently pinning a future
-  per-language list to whichever visitor came first. The list holds nothing
-  viewer-specific. A `language` the shop has not enabled (it comes from the
-  URL) is computed directly, never cached - see
-  `StorefrontCache.fetch_in_language/3`.
+  The key carries the product source (switchable at runtime) and the
+  options. The list is language-independent - category views hold every
+  translation and the query takes no language - so the language, which comes
+  from the URL, is deliberately not part of the key: a client cannot mint
+  entries for this list at all, and each language does not pay its own cold
+  miss. The list holds nothing viewer-specific.
   """
-  def list_active_categories_cached(language, opts \\ []) do
-    StorefrontCache.fetch_in_language(
-      language,
-      {:categories, ProductSource.current(), language, opts},
+  def list_active_categories_cached(opts \\ []) do
+    StorefrontCache.fetch(
+      {:categories, ProductSource.current(), opts},
       fn -> PhoenixKitEcommerce.list_active_categories(opts) end
     )
   end

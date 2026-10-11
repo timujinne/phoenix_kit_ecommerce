@@ -1,14 +1,16 @@
 defmodule PhoenixKitEcommerce.StorefrontCache do
   @moduledoc """
-  A node-wide, 60-second cache for the viewer-independent parts of the
-  storefront pages: the active category list and the filter sidebar's
-  data (enabled filters plus facet aggregates).
+  A node-wide cache of about a minute (up to ~66 s: the TTL is 60 s and
+  core adds up to 10% forward jitter to every entry) for the
+  viewer-independent parts of the storefront pages: the active category
+  list and the filter sidebar's data (enabled filters plus facet
+  aggregates).
 
-  Both depend only on the product source, the language and the page scope,
-  never on who is looking, yet every `/shop` mount (two per real visitor:
-  the HTTP render and the WebSocket mount) recomputed them. The facet
-  aggregates are the expensive part - each one is a sequential scan of the
-  catalogue items table.
+  Both depend only on the product source, the page scope and (for the
+  filter data) the language, never on who is looking, yet every `/shop`
+  mount (two per real visitor: the HTTP render and the WebSocket mount)
+  recomputed them. The facet aggregates are the expensive part - each one is
+  a sequential scan of the catalogue items table.
 
   Backed by `PhoenixKit.Cache`; the process is contributed to the host's
   supervision tree by `PhoenixKitEcommerce.children/0`.
@@ -25,32 +27,42 @@ defmodule PhoenixKitEcommerce.StorefrontCache do
   (`?locale=`, `/xx/shop`). `fetch_in_language/3` therefore caches only
   languages the shop actually has enabled; any other value is computed
   directly and never stored, so a client cannot mint cache entries by
-  inventing locales. `max_size` is the backstop for the legitimate key
-  space (categories x languages x options).
+  inventing locales. The category list is language-independent and its key
+  carries no language at all. `max_size` is the backstop for the legitimate
+  key space (filter data: languages x category scopes, plus the category
+  list in a few option shapes).
 
   ## Freshness
 
   The TTL is the safety net. On top of it this package clears the cache
   itself when it writes something the cached values depend on: the
-  storefront filter settings (`PhoenixKitEcommerce.update_storefront_filters/1`)
-  and the legacy-source product and category writes that announce
-  themselves through `PhoenixKitEcommerce.Events` (the single and bulk
-  status writes; see the note there for what does not). The clear is
-  node-local: another node of a cluster serves its entries until they
-  expire.
+  storefront filter settings (`PhoenixKitEcommerce.update_storefront_filters/1`),
+  the legacy-source product and category writes that announce themselves
+  through `PhoenixKitEcommerce.Events` (single create/update/delete, bulk
+  product status, bulk category status, parent and delete), the legacy bulk
+  category change and bulk product delete (which do not broadcast), and the
+  Shopify sync (`Shopify.Sync`: under the catalogue source once per
+  `apply_changes/3` run and once per standalone `apply_change/3`; under the
+  legacy source `Shop.update_product/2` also clears per product through
+  `Events`). The clear is node-local: another node of a cluster serves its
+  entries until they expire.
 
   Everything else is visible within the TTL only:
 
-    * edits made on the catalogue side (`phoenix_kit_catalogue`), and this
-      package's own catalogue-mode writers (`Catalogue.Writer`, the Shopify
-      sync) - none of them pass through `Events`;
-    * the legacy bulk category change and bulk product delete;
+    * edits made on the catalogue side (`phoenix_kit_catalogue`);
+    * this package's background Shopify jobs: the media/variants sync
+      (`Workers.ShopifyMediaSyncWorker`, through `Catalogue.Writer`) and the
+      collection sync (`Shopify.CollectionSync`), which write catalogue
+      items and categories without clearing;
+    * enabling or disabling a language, which is not a write of this package:
+      the category list is built from `Translations.enabled_languages/0`,
+      so a changed language set reaches it within the TTL only;
     * the catalogue the shop reads (`shop_catalogue`), which is not part of
       any key: it is written out-of-band, not through a supported runtime
-      flow, so switching it needs a `clear/0` (or a minute);
+      flow, so switching it needs a `clear/0` (or about a minute);
     * a transient database error: the facet queries turn errors into empty
       results, and the cache cannot tell those from a legitimately empty
-      shop, so the sidebar can show no facets for up to the TTL after one
+      shop, so the sidebar can show no facets for up to ~66 s after one
       failed query (the page itself stays up).
   """
 
