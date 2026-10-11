@@ -733,7 +733,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
 
                   <div id="cart-summary-total" class="flex justify-between text-lg font-bold">
                     <span>{gettext("Total")}</span>
-                    <span id="cart-summary-total">
+                    <span>
                       <span :if={@shipping_pending}>≈</span>
                       {format_price(@cart.total, @currency)}
                     </span>

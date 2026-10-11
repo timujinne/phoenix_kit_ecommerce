@@ -2391,7 +2391,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
           <div id="checkout-summary-total" class="flex justify-between text-lg font-bold">
             <span>{gettext("Total")}</span>
-            <span id="checkout-summary-total">
+            <span>
               <span :if={@shipping_unsettled}>≈</span>
               {format_price(@cart.total, @currency)}
             </span>
