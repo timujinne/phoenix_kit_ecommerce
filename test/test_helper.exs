@@ -155,9 +155,10 @@ Application.put_env(:phoenix_kit_ecommerce, :test_repo_available, repo_available
 # catalogue mutation) needs a `Phoenix.PubSub` server registered as
 # `PhoenixKit.PubSub` — the host app provides this in production, and
 # `phoenix_kit_catalogue`'s own test suite starts it the same way. Only
-# relevant when the optional test-only `phoenix_kit_catalogue` path dep
-# (see mix.exs's `catalogue_test_deps/0`) is actually resolved, so the
-# common (`:catalogue` excluded) run starts no extra process.
+# relevant when `phoenix_kit_catalogue` is actually resolved (the test-only
+# path bridge in mix.exs's `catalogue_test_deps/0`, or transitively through
+# the optional `phoenix_kit_warehouse`), so a run without it starts no extra
+# process.
 if Code.ensure_loaded?(PhoenixKitCatalogue) do
   case Phoenix.PubSub.Supervisor.start_link(name: PhoenixKit.PubSub) do
     {:ok, _} -> :ok
@@ -248,7 +249,9 @@ transliteration_exclude =
 # `ProductSource.Catalogue` adapter's own tests need it loaded (a real
 # `PhoenixKitCatalogue.Schemas.Item`/`Category` struct for the pure view
 # tests, a live catalogue DB for the query tests) and are tagged
-# `:catalogue` so they run automatically once a host declares the dep.
+# `:catalogue` so they run automatically once the package is loaded, whether
+# a host declares the dep, the path bridge is set, or the optional
+# `phoenix_kit_warehouse` dependency brings it in transitively.
 catalogue_exclude =
   if Code.ensure_loaded?(PhoenixKitCatalogue) do
     []

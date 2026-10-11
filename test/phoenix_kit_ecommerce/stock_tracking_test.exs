@@ -114,6 +114,19 @@ defmodule PhoenixKitEcommerce.StockTrackingTest do
     end
   end
 
+  describe "enabled?/1" do
+    test "uses the given status instead of probing Warehouse again" do
+      FakeWarehouse.put_state(enabled: true, default_location: "loc-1")
+      assert {:ok, true} = StockTracking.set_enabled(true)
+
+      FakeWarehouse.put_not_installed()
+      assert StockTracking.enabled?(:ready)
+      assert StockTracking.enabled?(:no_default_location)
+      refute StockTracking.enabled?(:disabled)
+      refute StockTracking.enabled?(:not_installed)
+    end
+  end
+
   describe "set_enabled/1" do
     test "refuses to turn on while Warehouse is not installed" do
       FakeWarehouse.put_not_installed()
@@ -134,6 +147,57 @@ defmodule PhoenixKitEcommerce.StockTrackingTest do
       FakeWarehouse.put_not_installed()
       assert {:ok, false} = StockTracking.set_enabled(false)
       refute StockTracking.setting_enabled?()
+    end
+  end
+
+  # The rest of this file points StockTracking at a stub, so the shipped
+  # defaults (the real Warehouse module names) never run there. This block
+  # clears the override and talks to the real package, which is only in the
+  # build when the optional dependency is resolved.
+  if Code.ensure_loaded?(PhoenixKitWarehouse) do
+    describe "real Warehouse wiring (no stub)" do
+      test "the Warehouse API the shop calls exists" do
+        # function_exported?/3 is false for a module that is not loaded yet.
+        assert Code.ensure_loaded?(PhoenixKitWarehouse)
+        assert Code.ensure_loaded?(PhoenixKitWarehouse.StockLedger)
+        assert function_exported?(PhoenixKitWarehouse, :enabled?, 0)
+        assert function_exported?(PhoenixKitWarehouse.StockLedger, :default_location_uuid, 0)
+      end
+
+      test "status and effective state follow the real module, which is off in the test DB" do
+        FakeWarehouse.reset()
+        refute PhoenixKitWarehouse.enabled?()
+
+        assert StockTracking.warehouse_status() == :disabled
+        refute StockTracking.enabled?()
+        refute Shop.stock_tracking_enabled?()
+      end
+
+      test "an enabled real Warehouse reports its default location" do
+        FakeWarehouse.reset()
+
+        on_exit(fn ->
+          Settings.update_boolean_setting_with_module("warehouse_enabled", false, "warehouse")
+          PhoenixKitWarehouse.StockLedger.set_default_location_uuid(nil)
+        end)
+
+        Settings.update_boolean_setting_with_module("warehouse_enabled", true, "warehouse")
+        PhoenixKitWarehouse.StockLedger.set_default_location_uuid(nil)
+        assert StockTracking.warehouse_status() == :no_default_location
+
+        PhoenixKitWarehouse.StockLedger.set_default_location_uuid(Ecto.UUID.generate())
+        assert StockTracking.warehouse_status() == :ready
+
+        assert {:ok, true} = StockTracking.set_enabled(true)
+        assert StockTracking.enabled?()
+      end
+
+      test "turning it on is refused while the real Warehouse module is disabled" do
+        FakeWarehouse.reset()
+
+        assert {:error, :warehouse_disabled} = StockTracking.set_enabled(true)
+        refute StockTracking.setting_enabled?()
+      end
     end
   end
 end

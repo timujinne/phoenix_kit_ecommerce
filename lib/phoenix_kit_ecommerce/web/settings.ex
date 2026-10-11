@@ -717,8 +717,9 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
         <%!-- Stock tracking switch (spec 8.1). Stock itself lives in the optional
              Warehouse module; the hint tells the operator what is missing and
-             links to where to fix it. The server refuses turning it on while
-             Warehouse is missing or off (see `StockTracking.set_enabled/1`). --%>
+             the button below it leads to where to fix it. The server refuses
+             turning it on while Warehouse is missing or off (see
+             `StockTracking.set_enabled/1`). --%>
         <div class="card bg-base-100 shadow-xl mb-6" id="shop-stock-tracking-card">
           <div class="card-body">
             <h2 class="card-title text-xl mb-2">
@@ -737,21 +738,25 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                   class="toggle toggle-secondary"
                   checked={@stock_tracking_enabled}
                   disabled={@warehouse_status in [:not_installed, :disabled]}
+                  aria-describedby="shop-stock-tracking-hint"
                   phx-click="toggle_shop_stock_tracking"
                 />
               </label>
             </div>
 
-            <% {hint, hint_path} = stock_tracking_hint(@warehouse_status) %>
             <p id="shop-stock-tracking-hint" class="text-sm text-base-content/70">
-              <.link
-                id="shop-stock-tracking-hint-link"
-                navigate={hint_path}
-                class="link link-primary"
-              >
-                {hint}
-              </.link>
+              {@stock_tracking_hint.text}
             </p>
+
+            <div class="mt-2">
+              <.link
+                id="stock-tracking-action"
+                navigate={@stock_tracking_hint.href}
+                class={["btn btn-sm", @stock_tracking_hint.button_class]}
+              >
+                {@stock_tracking_hint.label}
+              </.link>
+            </div>
           </div>
         </div>
 
@@ -1831,9 +1836,12 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   end
 
   defp assign_stock_tracking(socket) do
+    status = StockTracking.warehouse_status()
+
     socket
-    |> assign(:warehouse_status, StockTracking.warehouse_status())
-    |> assign(:stock_tracking_enabled, StockTracking.enabled?())
+    |> assign(:warehouse_status, status)
+    |> assign(:stock_tracking_enabled, StockTracking.enabled?(status))
+    |> assign(:stock_tracking_hint, stock_tracking_hint(status))
   end
 
   defp stock_tracking_error(:warehouse_not_installed),
@@ -1845,28 +1853,51 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   defp stock_tracking_error(:update_failed),
     do: gettext("Failed to update stock tracking")
 
-  # Hint text and link under the Stock tracking switch, one row per Warehouse
-  # state (spec 8.1). The links go through `Routes.path/1`, so they follow the
-  # configured URL prefix.
+  # Hint text and action button under the Stock tracking switch, one row per
+  # Warehouse state (spec 8.1). The hrefs go through `Routes.path/1`, so they
+  # follow the configured URL prefix. The button is primary while the operator
+  # has something to do, outline when it is only a pointer to the stock page.
   defp stock_tracking_hint(:not_installed) do
-    {gettext(
-       "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
-     ), Routes.path("/admin/modules?tab=not_installed")}
+    %{
+      text:
+        gettext(
+          "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
+        ),
+      label: gettext("Open Modules"),
+      href: Routes.path("/admin/modules?tab=not_installed"),
+      button_class: "btn-primary"
+    }
   end
 
   defp stock_tracking_hint(:disabled) do
-    {gettext("Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."),
-     Routes.path("/admin/modules?tab=disabled")}
+    %{
+      text:
+        gettext("Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."),
+      label: gettext("Enable Warehouse"),
+      href: Routes.path("/admin/modules?tab=disabled"),
+      button_class: "btn-primary"
+    }
   end
 
   defp stock_tracking_hint(:no_default_location) do
-    {gettext(
-       "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
-     ), Routes.path("/admin/settings/warehouse")}
+    %{
+      text:
+        gettext(
+          "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
+        ),
+      label: gettext("Set up Warehouse"),
+      href: Routes.path("/admin/settings/warehouse"),
+      button_class: "btn-primary"
+    }
   end
 
   defp stock_tracking_hint(:ready) do
-    {gettext("Stock is kept by the Warehouse module."), Routes.path("/admin/warehouse")}
+    %{
+      text: gettext("Stock is kept by the Warehouse module."),
+      label: gettext("Open stock"),
+      href: Routes.path("/admin/warehouse"),
+      button_class: "btn-outline"
+    }
   end
 
   defp do_toggle_shop_shopify_enabled(new_value, socket) do

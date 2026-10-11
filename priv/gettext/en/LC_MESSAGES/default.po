@@ -5111,50 +5111,70 @@ msgstr ""
 msgid "Stock tracking"
 msgstr ""
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1820
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1523
 #, elixir-autogen, elixir-format
 msgid "Stock tracking enabled"
 msgstr ""
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1821
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1524
 #, elixir-autogen, elixir-format
 msgid "Stock tracking disabled"
 msgstr ""
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1840
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1843
 #, elixir-autogen, elixir-format
 msgid "Stock tracking was not turned on: the Warehouse module is not installed."
 msgstr ""
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1843
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1846
 #, elixir-autogen, elixir-format
 msgid "Stock tracking was not turned on: the Warehouse module is disabled."
 msgstr ""
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1846
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1849
 #, elixir-autogen, elixir-format
 msgid "Failed to update stock tracking"
 msgstr ""
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1853
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1863
 #, elixir-autogen, elixir-format
 msgid "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
 msgstr ""
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1858
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1875
 #, elixir-autogen, elixir-format
 msgid "Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."
 msgstr ""
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1864
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1884
 #, elixir-autogen, elixir-format
 msgid "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
 msgstr ""
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1869
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1896
 #, elixir-autogen, elixir-format
 msgid "Stock is kept by the Warehouse module."
 msgstr ""
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1866
+#, elixir-autogen, elixir-format
+msgid "Open Modules"
+msgstr "Open Modules"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1876
+#, elixir-autogen, elixir-format
+msgid "Enable Warehouse"
+msgstr "Enable Warehouse"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1888
+#, elixir-autogen, elixir-format
+msgid "Set up Warehouse"
+msgstr "Set up Warehouse"
+
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1897
+#, elixir-autogen, elixir-format
+msgid "Open stock"
+msgstr "Open stock"
 
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1729
 #, elixir-autogen, elixir-format

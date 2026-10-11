@@ -56,8 +56,12 @@ defmodule PhoenixKitEcommerce.StockTracking do
 
   @doc "Effective state: the setting is on and Warehouse is installed and enabled."
   @spec enabled?() :: boolean()
-  def enabled? do
-    setting_enabled?() and warehouse_status() in [:no_default_location, :ready]
+  def enabled?, do: enabled?(warehouse_status())
+
+  @doc "Effective state for a `warehouse_status/0` the caller already has."
+  @spec enabled?(warehouse_status()) :: boolean()
+  def enabled?(status) do
+    setting_enabled?() and status in [:no_default_location, :ready]
   end
 
   @doc """

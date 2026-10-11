@@ -207,10 +207,13 @@ defmodule PhoenixKitEcommerce.MixProject do
       # can actually execute against a real local checkout instead of
       # staying excluded forever — set `PHOENIX_KIT_CATALOGUE_PATH` and
       # `PHOENIX_KIT_ENTITIES_PATH` (matching branches the host app
-      # itself pins) and run `mix test`; leave them unset and `mix test`
-      # behaves exactly as before (no dependency added, `test_helper.exs`
-      # excludes `:catalogue`). Never resolves via Hex, so the "no
-      # released version" rationale above is untouched.
+      # itself pins) and run `mix test`; leave them unset and no dependency
+      # is added by the bridge. The bridge itself never resolves via Hex,
+      # so the "no released version" rationale above is untouched. Note
+      # that the optional `phoenix_kit_warehouse` dependency above pulls
+      # `phoenix_kit_catalogue` (and `phoenix_kit_entities`) in from Hex
+      # transitively; with it resolved `test_helper.exs` no longer excludes
+      # `:catalogue` and those tests run by default.
 
       # LiveView is needed for the admin and storefront pages.
       {:phoenix_live_view, "~> 1.1"},

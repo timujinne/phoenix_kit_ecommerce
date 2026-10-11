@@ -18,6 +18,8 @@ defmodule PhoenixKitEcommerce.Test.FakeWarehouse do
     use_fake()
   end
 
+  # `WarehouseNotInstalled` is deliberately never defined: pointing
+  # StockTracking at a module that does not exist is what "not installed" is.
   @doc "Simulates a host where the warehouse package is not installed."
   def put_not_installed do
     Application.put_env(:phoenix_kit_ecommerce, @env_key,

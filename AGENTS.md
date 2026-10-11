@@ -24,7 +24,10 @@ pages.
   AI-translate UI, both translation adapters, the sweep worker and the
   translations page use it, and all of them compile out when it is absent;
   0.20 is the first engine that binds `{{SourceFields}}` and forwards
-  `opts[:source_fields]`, `test/ai_pin_conformance_test.exs` guards it).
+  `opts[:source_fields]`, `test/ai_pin_conformance_test.exs` guards it),
+  `phoenix_kit_warehouse` `~> 0.5` (optional — only the Stock tracking
+  switch uses it, through `StockTracking`, which calls `enabled?/0` and
+  `StockLedger.default_location_uuid/0`).
   Also `phoenix`, `phoenix_live_view ~> 1.1`, `ecto_sql ~> 3.12`,
   `oban ~> 2.20`, `uuidv7`, `nimble_csv`, `req`, `jason`, `mdex`,
   `gettext ~> 1.0`. There is deliberately **no** dep on
@@ -34,7 +37,9 @@ pages.
   variants/collections/media sync) only runs behind `Code.ensure_loaded?/1`
   once a host declares the dep, with `@compile {:no_warn_undefined, …}` and
   matching `.dialyzer_ignore.exs` entries. Its `:catalogue`-tagged tests
-  need the test-only path bridge in `mix.exs` (`catalogue_test_deps/0`).
+  need the test-only path bridge in `mix.exs` (`catalogue_test_deps/0`), or
+  they run by themselves when `phoenix_kit_warehouse` is resolved, which
+  brings `phoenix_kit_catalogue` in transitively.
 - **Consumed by:** no sibling declares a dependency on this module. Core
   reaches the old `PhoenixKit.Modules.Shop.*` namespace through the
   transitional shims in `lib/phoenix_kit_ecommerce/compat/`, and
@@ -342,6 +347,7 @@ lib/phoenix_kit_ecommerce/
 ├── category_ai_translatable.ex # the same for categories
 ├── translation_fingerprint.ex  # staleness: hash, four states, write-narrowing, candidate SQL
 ├── translation_sweep_settings.ex # settings reader for translations + the sweep
+├── stock_tracking.ex # Stock tracking switch + optional phoenix_kit_warehouse probe
 ├── prompt_rollout.ex # content-sha rollout of the code-managed AI prompts
 ├── gettext.ex        # PhoenixKitEcommerce.Gettext backend
 └── migrations.ex     # module-owned migration chain
@@ -567,6 +573,20 @@ settings-layer error.
   token are never touched. Installs that used Shopify under the old default of
   `true` get the row written by the chain's V3 step (below).
 
+**Stock tracking — read through `PhoenixKitEcommerce.StockTracking`**
+
+- `shop_stock_tracking_enabled` — default `false`. The effective state is
+  this setting AND `phoenix_kit_warehouse` installed AND enabled, so
+  disabling or removing Warehouse switches tracking off without touching the
+  key. `StockTracking.set_enabled(true)` is refused (`:warehouse_not_installed`
+  / `:warehouse_disabled`) in the context, not only greyed out on the settings
+  page; turning it off always works. `warehouse_status/0` is
+  `:not_installed | :disabled | :no_default_location | :ready`. The Warehouse
+  modules are reached by variable-module calls behind `Code.ensure_loaded?/1`
+  (no compile-time reference, so a host without the package compiles
+  unchanged) and a failing probe counts as `:disabled`; tests swap them via
+  the `:stock_tracking_modules` app env (`test/support/fake_warehouse.ex`).
+
 **AI translations — read through `PhoenixKitEcommerce.TranslationSweepSettings`**
 
 - `shop_translations_enabled` — default `false`. The feature exists at all:
@@ -664,8 +684,9 @@ test-helper time, so a new support file must be added to that list:
 - `PhoenixKitEcommerce.LiveCase` — LiveView tests: the test endpoint/router
   and conn helpers on top of `DataCase`.
 - `ActivityLogAssertions`, `NotificationAssertions`, `CheckoutFixtures`,
-  `TestLayouts` (a host-consumer layout fixture), `Hooks`, `TestRepo`,
-  `TestRouter`, `TestEndpoint`.
+  `TestLayouts` (a host-consumer layout fixture), `FakeWarehouse` (stand-in
+  for the optional Warehouse package), `Hooks`, `TestRepo`, `TestRouter`,
+  `TestEndpoint`.
 
 Postgres connection settings come from `PGUSER` (default `postgres`),
 `PGPASSWORD`, `PGHOST`, `PGDATABASE`, `PGPOOL` and `MIX_TEST_PARTITION`. On a
