@@ -63,6 +63,9 @@ defmodule PhoenixKitEcommerce.Shipping.CredentialsTest do
   end
 
   setup do
+    # The connections borrow the Shopify integration, which is off by default.
+    enable_shopify!()
+
     previous = Application.get_env(:phoenix_kit_ecommerce, :shipping_providers)
 
     Application.put_env(:phoenix_kit_ecommerce, :shipping_providers, [

@@ -37,6 +37,12 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
     def integration, do: raise("integration blew up")
   end
 
+  defmodule ExitingIntegration do
+    @moduledoc false
+    def key, do: "exiting_integration"
+    def integration, do: exit(:integration_process_is_gone)
+  end
+
   defp with_providers(providers) do
     previous = Application.get_env(:phoenix_kit_ecommerce, :shipping_providers)
     Application.put_env(:phoenix_kit_ecommerce, :shipping_providers, providers)
@@ -434,6 +440,17 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
         end)
 
       assert log =~ "integration blew up"
+    end
+
+    test "a provider whose integration/0 exits is skipped too" do
+      with_providers([ExitingIntegration, StubProvider])
+
+      log =
+        capture_log(fn ->
+          assert Enum.map(Shop.integration_providers(), & &1.key) == ["shopify", "stub"]
+        end)
+
+      assert log =~ "integration_process_is_gone"
     end
 
     test "Shopify off leaves only the shipping integrations" do

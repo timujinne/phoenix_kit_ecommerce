@@ -6432,7 +6432,7 @@ msgstr "Нічого не знайдено. Перевірте написанн�
 #: lib/phoenix_kit_ecommerce/shipping/providers/table.ex:60
 #, elixir-autogen, elixir-format
 msgid "One band per line: up to kg, price. For example: 0,5 90"
-msgstr "Одна сходинка на рядок: до скількох кг, ціна. Наприклад: 0,5 90"
+msgstr "Один діапазон на рядок: до скількох кг, ціна. Наприклад: 0,5 90"
 
 #: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1155
 #, elixir-autogen, elixir-format
@@ -6752,7 +6752,7 @@ msgstr "Ширина (мм)"
 #: lib/phoenix_kit_ecommerce.ex:404
 #, elixir-autogen, elixir-format
 msgid "is required when the other sides are set"
-msgstr "обов'язкове, якщо задано решту сторін"
+msgstr "потрібно вказати, якщо задано решту сторін"
 
 #: lib/phoenix_kit_ecommerce.ex:399
 #, elixir-autogen, elixir-format

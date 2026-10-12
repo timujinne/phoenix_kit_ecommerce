@@ -143,6 +143,14 @@ defmodule PhoenixKitEcommerce do
       )
 
       nil
+  catch
+    :exit, reason ->
+      Logger.warning(
+        "[PhoenixKitEcommerce] shipping provider #{inspect(provider)} integration/0 exited: " <>
+          inspect(reason, limit: 5)
+      )
+
+      nil
   end
 
   defp integration_key(%{key: key}), do: to_string(key)
@@ -4050,6 +4058,7 @@ defmodule PhoenixKitEcommerce do
     do: map |> Destination.from_map() |> CartQuote.sanitize_destination()
 
   defp cast_shipping_destination(nil), do: {:ok, nil}
+  defp cast_shipping_destination(_other), do: :error
 
   @doc """
   The request that prices the shipping of this cart:
@@ -4196,6 +4205,10 @@ defmodule PhoenixKitEcommerce do
   The stored quote of the cart, `%{status: :ok | :fallback | :unavailable,
   quote: Quote.t() | nil, reason: String.t() | nil}`, or `nil` when there is
   none or it no longer matches the cart (see `shipping_quote_status/1`).
+
+  An `:unavailable` entry is worked out, not stored, when the method cannot
+  serve the cart at all (the provider or its service is gone, the provider
+  does not deliver to the country of the cart): it has no quote and a reason.
   """
   @spec cart_shipping_quote(Cart.t()) ::
           %{

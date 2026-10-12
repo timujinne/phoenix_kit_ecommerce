@@ -401,7 +401,7 @@ defmodule PhoenixKitEcommerce.Shipping do
   """
   @spec quote(Context.t(), RateRequest.t()) :: result(Quote.t())
   def quote(%Context{} = ctx, %RateRequest{} = request) do
-    country = request.country || ctx.country
+    country = Codec.country(request.country) || ctx.country
 
     request = %{
       request

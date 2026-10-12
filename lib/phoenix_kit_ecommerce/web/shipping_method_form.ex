@@ -597,7 +597,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     Shipping.context(nil,
       provider: state.provider,
       settings: state.settings,
-      service: if(state.service == "", do: nil),
+      service: if(state.service == "", do: nil, else: state.service),
       timeout: @lookup_timeout
     )
   end
@@ -754,10 +754,16 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     end
   end
 
+  # A search that crashed. One the admin has moved on from (another provider,
+  # a pick) is no longer loading, and has nothing to report.
   defp finish_locality_search(socket, key, {:exit, _reason}) do
-    socket
-    |> update(:locality_results, &Map.put(&1, key, :error))
-    |> update(:locality_loading, &Map.delete(&1, key))
+    if Map.has_key?(socket.assigns.locality_loading, key) do
+      socket
+      |> update(:locality_results, &Map.put(&1, key, :error))
+      |> update(:locality_loading, &Map.delete(&1, key))
+    else
+      socket
+    end
   end
 
   defp put_locality(socket, key, value) do

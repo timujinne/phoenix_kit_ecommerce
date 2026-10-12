@@ -705,7 +705,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                         <span class="text-error">{gettext("Not available")}</span>
                       <% @shipping_pending -> %>
                         <span class="text-base-content/50">{gettext("To be calculated")}</span>
-                                      <% PriceDisplay.cart_shipping_pay_on_delivery?(@cart) -> %>
+                      <% PriceDisplay.cart_shipping_pay_on_delivery?(@cart) -> %>
                         <span>{gettext("Paid on delivery")}</span>
                       <% Decimal.compare(@cart.shipping_amount || Decimal.new("0"), Decimal.new("0")) == :eq -> %>
                         <span class="text-success">{gettext("FREE")}</span>

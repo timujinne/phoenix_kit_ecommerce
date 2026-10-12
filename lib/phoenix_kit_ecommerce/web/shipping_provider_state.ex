@@ -57,7 +57,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
   provider in the select (the `_target` of the change event). Then the new
   provider starts from scratch: no service (the form picks the first one it
   offers) and the default value of each of its settings; what was typed for
-  the previous provider means nothing to it.
+  the previous provider means nothing to it. The pricing (markup, rounding) is
+  not the provider's, so it stays.
 
   Any other post is taken as it stands, provider included: it is also what
   LiveView sends to recover a form after a reconnect, when the provider, the

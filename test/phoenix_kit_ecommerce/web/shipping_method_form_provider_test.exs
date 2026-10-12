@@ -284,6 +284,32 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
   end
 
   describe "locality autocomplete" do
+    test "the lookups are made for the service the admin has chosen", %{conn: conn} do
+      me = self()
+
+      stub(%{
+        localities: fn query, ctx ->
+          send(me, {:searched_for, ctx.service})
+          city_search(query)
+        end
+      })
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view, "stub")
+      # The form picks the first service the provider offers.
+      search_locality(view, "sender_city", "Spr")
+      assert_received {:searched_for, "branch"}
+
+      view
+      |> form(@form, %{
+        "shipping_method" => %{"shipping_provider" => %{"service" => "courier"}}
+      })
+      |> render_change()
+
+      search_locality(view, "sender_city", "Spru")
+      assert_received {:searched_for, "courier"}
+    end
+
     test "search, pick and save stores the provider block", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
       choose_provider(view, "stub")

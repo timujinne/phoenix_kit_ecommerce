@@ -1172,6 +1172,14 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuoteTest do
       assert {:ok, _cart} = Shop.set_cart_shipping_destination(cart, ok)
     end
 
+    test "something that is neither a destination nor a map is refused" do
+      {cart, _method} = ready_cart!()
+
+      for other <- ["Kyiv", ["Kyiv"], 42, :kyiv] do
+        assert {:error, :invalid_destination} = Shop.set_cart_shipping_destination(cart, other)
+      end
+    end
+
     test "an extra of more than 20 keys, or with nested values, is refused" do
       {cart, _method} = ready_cart!()
       many = Map.new(1..21, &{"k#{&1}", "v"})

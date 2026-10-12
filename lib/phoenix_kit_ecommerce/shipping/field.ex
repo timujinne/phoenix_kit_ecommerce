@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.Shipping.Field do
   @moduledoc """
   Description of one provider setting, used to render the shipping method
-  admin form and to validate its input.
+  admin form and to check that the required ones are filled.
 
     * `key` - the key under `settings` in the method configuration
     * `type` - `:string | :integer | :decimal | :boolean | :select | :textarea |

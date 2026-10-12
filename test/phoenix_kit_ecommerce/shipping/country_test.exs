@@ -212,6 +212,19 @@ defmodule PhoenixKitEcommerce.Shipping.CountryTest do
       assert_received {:stub_called, :quote, _}
     end
 
+    test "a country written by hand is normalised before the provider sees it" do
+      quote_fun = fn _request, ctx ->
+        {:ok, %Quote{amount: Decimal.new(1), currency: "EUR", note: ctx.country}}
+      end
+
+      assert {:ok, %Quote{note: "PL"}} =
+               Shipping.quote(ctx(%{quote: quote_fun}), request(country: " pl "))
+
+      # And a garbage one is no country at all, as everywhere else.
+      assert {:ok, %Quote{note: nil}} =
+               Shipping.quote(ctx(%{quote: quote_fun}), request(country: "Poland"))
+    end
+
     test "a country that is not known yet is not refused" do
       assert {:ok, [_ | _]} = Shipping.services(ctx())
       assert {:ok, %Quote{}} = Shipping.quote(ctx(), request())
