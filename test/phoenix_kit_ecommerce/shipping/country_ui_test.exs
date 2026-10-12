@@ -223,6 +223,22 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
       refute has_element?(view, "#shipping_method_countries input[type=checkbox][value='DE']")
     end
 
+    test "says which countries are ticked, whatever the scroll of the list", %{conn: conn} do
+      method = method!(%{"countries" => ["UA", "PL"], "excluded_countries" => ["RU"]})
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+
+      assert has_element?(view, "#shipping_method_countries-selected", "UA, PL")
+      assert has_element?(view, "#shipping_method_excluded_countries-selected", "RU")
+
+      view
+      |> form(@form, shipping_method: %{countries: [""], excluded_countries: [""]})
+      |> render_change()
+
+      refute has_element?(view, "#shipping_method_countries-selected")
+      refute has_element?(view, "#shipping_method_excluded_countries-selected")
+    end
+
     test "opens at once when the method already has countries", %{conn: conn} do
       method = method!(%{"countries" => ["UA"], "excluded_countries" => ["RU"]})
 
