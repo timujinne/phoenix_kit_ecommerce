@@ -754,8 +754,10 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     end
   end
 
-  # A search that crashed. One the admin has moved on from (another provider,
-  # a pick) is no longer loading, and has nothing to report.
+  # A search that crashed. LiveView already drops the result of a task that
+  # was cancelled or replaced, so this is only a safeguard: a search the admin
+  # has moved on from (another provider, a pick) is no longer loading, and has
+  # nothing to report.
   defp finish_locality_search(socket, key, {:exit, _reason}) do
     if Map.has_key?(socket.assigns.locality_loading, key) do
       socket

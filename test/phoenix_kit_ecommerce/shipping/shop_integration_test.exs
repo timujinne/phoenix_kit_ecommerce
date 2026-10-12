@@ -37,6 +37,12 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
     def integration, do: raise("integration blew up")
   end
 
+  defmodule ThrowingIntegration do
+    @moduledoc false
+    def key, do: "throwing_integration"
+    def integration, do: throw(:integration_threw)
+  end
+
   defmodule ExitingIntegration do
     @moduledoc false
     def key, do: "exiting_integration"
@@ -442,8 +448,8 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
       assert log =~ "integration blew up"
     end
 
-    test "a provider whose integration/0 exits is skipped too" do
-      with_providers([ExitingIntegration, StubProvider])
+    test "a provider whose integration/0 exits or throws is skipped too" do
+      with_providers([ExitingIntegration, ThrowingIntegration, StubProvider])
 
       log =
         capture_log(fn ->
@@ -451,6 +457,7 @@ defmodule PhoenixKitEcommerce.Shipping.ShopIntegrationTest do
         end)
 
       assert log =~ "integration_process_is_gone"
+      assert log =~ "integration_threw"
     end
 
     test "Shopify off leaves only the shipping integrations" do

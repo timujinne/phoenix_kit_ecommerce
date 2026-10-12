@@ -144,9 +144,9 @@ defmodule PhoenixKitEcommerce do
 
       nil
   catch
-    :exit, reason ->
+    kind, reason ->
       Logger.warning(
-        "[PhoenixKitEcommerce] shipping provider #{inspect(provider)} integration/0 exited: " <>
+        "[PhoenixKitEcommerce] shipping provider #{inspect(provider)} integration/0 #{kind}: " <>
           inspect(reason, limit: 5)
       )
 
