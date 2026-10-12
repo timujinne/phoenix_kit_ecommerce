@@ -200,7 +200,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   # box ticked the form posts nothing, which would leave the old list in
   # place: the blank entry makes "none" a value.
   defp country_list(assigns) do
-    assigns = assign(assigns, :selected, List.wrap(assigns.field.value))
+    selected = assigns.field.value |> List.wrap() |> Enum.reject(&(&1 in [nil, ""]))
+    assigns = assign(assigns, :selected, selected)
 
     ~H"""
     <div class="fieldset w-full">
@@ -225,6 +226,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           <span class="text-xs text-base-content/50">{code}</span>
         </label>
       </div>
+      <p
+        :if={@selected != []}
+        id={@field.id <> "-selected"}
+        class="text-xs font-medium mt-1"
+      >
+        {gettext("Selected: %{countries}", countries: Enum.join(@selected, ", "))}
+      </p>
       <p class="label text-xs text-base-content/60">{@hint}</p>
     </div>
     """
