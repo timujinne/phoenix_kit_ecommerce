@@ -9,8 +9,8 @@ defmodule PhoenixKitEcommerce.Shipping.QuoteSnapshotTest do
   use PhoenixKitEcommerce.DataCase, async: false
 
   alias PhoenixKitEcommerce, as: Shop
-  alias PhoenixKitEcommerce.Shipping.{Destination, Locality, PickupPoint, Service}
-  alias PhoenixKitEcommerce.Test.Shipping.StubProvider
+  alias PhoenixKitEcommerce.Shipping.{Destination, Locality, PickupPoint, Quote, Service}
+  alias PhoenixKitEcommerce.Test.Shipping.{CountryProvider, StubProvider}
 
   @destination %Destination{
     locality: %Locality{id: "L1", name: "Kyiv"},
@@ -53,7 +53,7 @@ defmodule PhoenixKitEcommerce.Shipping.QuoteSnapshotTest do
     method
   end
 
-  defp cart!(method) do
+  defp cart!(method, country \\ "US") do
     {:ok, product} =
       Shop.create_product(%{
         "title" => %{"en" => "Widget #{System.unique_integer([:positive])}"},
@@ -67,8 +67,29 @@ defmodule PhoenixKitEcommerce.Shipping.QuoteSnapshotTest do
 
     {:ok, cart} = Shop.create_cart(session_id: "snap-#{System.unique_integer([:positive])}")
     {:ok, cart} = Shop.add_to_cart(cart, product, 1)
-    {:ok, cart} = Shop.set_cart_shipping(cart, method, "US")
+    {:ok, cart} = Shop.set_cart_shipping(cart, method, country)
     cart
+  end
+
+  defp country_method! do
+    method!(%{
+      "shipping_provider" => %{
+        "provider" => "country_stub",
+        "service" => "branch",
+        "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Springfield"}},
+        "pricing" => %{"markup_percent" => "0", "markup_fixed" => "0", "round_to" => "1"}
+      }
+    })
+  end
+
+  defp deliver_to(countries) do
+    Application.put_env(:phoenix_kit_ecommerce, :shipping_providers, [
+      CountryProvider,
+      StubProvider
+    ])
+
+    Application.put_env(:phoenix_kit_ecommerce, :shipping_country_provider, countries)
+    on_exit(fn -> Application.delete_env(:phoenix_kit_ecommerce, :shipping_country_provider) end)
   end
 
   test "without a method there is nothing to wait for" do
@@ -166,5 +187,58 @@ defmodule PhoenixKitEcommerce.Shipping.QuoteSnapshotTest do
     assert snapshot.status == :unavailable
     assert snapshot.service_error == :unknown_provider
     refute snapshot.transient?
+  end
+
+  describe "the country of the cart" do
+    test "a provider that does not deliver there makes the method unavailable for good" do
+      deliver_to(["UA"])
+      cart = cart!(country_method!(), "PL")
+
+      snapshot = Shop.shipping_quote_snapshot(cart)
+
+      assert snapshot.status == :unavailable
+      assert snapshot.blocks?
+      assert snapshot.service == nil
+      assert snapshot.service_error == :unsupported_destination
+      refute snapshot.transient?
+    end
+
+    test "a provider that delivers there is asked with the country" do
+      deliver_to(["PL"])
+      me = self()
+
+      StubProvider.put(%{
+        quote: fn request, ctx ->
+          send(me, {:asked, request.country, ctx.country})
+          {:ok, %Quote{amount: Decimal.new(10), currency: ctx.currency, source: :api}}
+        end
+      })
+
+      cart = cart!(country_method!(), "PL")
+      {:ok, cart} = Shop.set_cart_shipping_destination(cart, @destination)
+      {:ok, cart} = Shop.quote_cart_shipping(cart)
+
+      assert_received {:asked, "PL", "PL"}
+      assert Shop.shipping_quote_snapshot(cart).status == :ok
+    end
+
+    test "a quote for one country does not stand for another" do
+      deliver_to(["PL", "UA"])
+      cart = cart!(country_method!(), "PL")
+      {:ok, cart} = Shop.set_cart_shipping_destination(cart, @destination)
+      {:ok, cart} = Shop.quote_cart_shipping(cart)
+      assert Shop.shipping_quote_status(cart) == :ok
+
+      {:ok, cart} = Shop.set_cart_shipping_country(cart, "UA")
+
+      assert Shop.shipping_quote_status(cart) == :stale
+    end
+
+    test "a cart without a country is not refused" do
+      deliver_to(["UA"])
+      cart = cart!(country_method!(), nil)
+
+      refute Shop.shipping_quote_snapshot(cart).service_error
+    end
   end
 end

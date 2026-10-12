@@ -588,6 +588,34 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
     end
   end
 
+  describe "the country of the cart" do
+    test "the city and point lookups are made for it", %{conn: conn} do
+      me = self()
+
+      stub!(%{
+        localities: fn _query, ctx ->
+          send(me, {:searched, ctx.country})
+          {:ok, [@springfield]}
+        end,
+        points: fn locality, service, query, ctx ->
+          send(me, {:listed, ctx.country})
+          points(locality, service, query)
+        end
+      })
+
+      {conn, _cart, _method} = cart_session(conn)
+      {:ok, view, _html} = live(conn, "/cart")
+
+      view |> form(ps("locality-form"), %{"q" => "Spr"}) |> render_change()
+      settle(view)
+      assert_received {:searched, "US"}
+
+      view |> element(ps("locality-option-L1")) |> render_click()
+      settle(view)
+      assert_received {:listed, "US"}
+    end
+  end
+
   describe "the carrier is not for a client to spam" do
     test "searches are coalesced: one in flight, the latest text wins", %{conn: conn} do
       Application.put_env(:phoenix_kit_ecommerce, :shipping_lookup_interval, 200)

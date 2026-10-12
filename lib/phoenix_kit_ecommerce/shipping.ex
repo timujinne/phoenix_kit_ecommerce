@@ -19,6 +19,9 @@ defmodule PhoenixKitEcommerce.Shipping do
     * `:not_supported` - the provider does not implement the optional callback
     * `:unsupported_currency` - the provider declares `currencies/0` and the
       request currency is not among them
+    * `:unsupported_destination` - the provider declares `countries/0` and the
+      context (or the request) names a country that is not among them, or no
+      service of the provider serves that country
     * `:rate_limited` - `search_localities/2` and `list_pickup_points/4` have
       reached the calls per second one provider may get (see `RateLimit`);
       transient, never cached
@@ -67,7 +70,15 @@ defmodule PhoenixKitEcommerce.Shipping do
   @default_timeout 15_000
   @validation_timeout 2_000
   @min_query_length 2
-  @context_option_keys [:provider, :settings, :service, :locale, :currency, :credentials]
+  @context_option_keys [
+    :provider,
+    :settings,
+    :service,
+    :locale,
+    :currency,
+    :country,
+    :credentials
+  ]
   @max_query_length 64
   @shopper_lookup [group: :query, list?: true]
   @list_lookup [list?: true]
@@ -111,6 +122,42 @@ defmodule PhoenixKitEcommerce.Shipping do
 
   def provider(_other), do: :error
 
+  @doc """
+  The countries (ISO 3166-1 alpha-2) a provider delivers to, from its optional
+  `countries/0`. `[]` means "any": a provider that does not declare them, an
+  unknown provider, or one whose declaration raises.
+  """
+  @spec provider_countries(module() | nil) :: [String.t()]
+  def provider_countries(provider) do
+    if provider_module?(provider) and function_exported?(provider, :countries, 0),
+      do: Codec.countries(provider.countries()),
+      else: []
+  rescue
+    _error -> []
+  catch
+    _kind, _reason -> []
+  end
+
+  @doc """
+  Whether `provider` delivers to `country`. A `nil` country (not known yet) and
+  a provider that declares no countries are never refused.
+  """
+  @spec serves_country?(module() | nil, term()) :: boolean()
+  def serves_country?(provider, country) do
+    case {provider_countries(provider), Codec.country(country)} do
+      {[], _country} -> true
+      {_countries, nil} -> true
+      {countries, code} -> code in countries
+    end
+  end
+
+  @doc """
+  The registered providers that deliver to `country`; all of them for `nil`.
+  """
+  @spec providers_for_country(term()) :: [module()]
+  def providers_for_country(country),
+    do: Enum.filter(providers(), &serves_country?(&1, country))
+
   # -- context ----------------------------------------------------------
 
   @doc """
@@ -126,6 +173,8 @@ defmodule PhoenixKitEcommerce.Shipping do
     * `:provider` (key or module), `:service`, `:settings` - override the method
     * `:locale` - defaults to the process Gettext locale
     * `:currency` - defaults to the currency of the method
+    * `:country` - ISO 3166-1 alpha-2 code of the destination country, `nil`
+      when it is not known
     * `:credentials` - use these instead of looking them up in Integrations
     * everything else is passed through as `ctx.opts` (`:timeout`, `:req_options`...)
 
@@ -150,6 +199,7 @@ defmodule PhoenixKitEcommerce.Shipping do
       credentials: credentials(provider, settings, opts),
       locale: Keyword.get_lazy(opts, :locale, &current_locale/0),
       currency: Keyword.get(opts, :currency) || method_currency(method),
+      country: opts |> Keyword.get(:country) |> Codec.country(),
       opts: Keyword.drop(opts, @context_option_keys)
     }
   end
@@ -246,11 +296,42 @@ defmodule PhoenixKitEcommerce.Shipping do
 
   # -- provider calls ---------------------------------------------------
 
-  @doc "The services the provider offers in this context (cached)."
+  @doc """
+  The services the provider offers in this context (cached). When the context
+  names a country, only the services that serve it are listed, and
+  `{:error, :unsupported_destination}` answers when there are none.
+  """
   @spec services(Context.t()) :: result([Service.t()])
   def services(%Context{} = ctx) do
-    call(ctx, :services, {:lookups, []}, fn -> normalize(:list, ctx.provider.services(ctx)) end)
+    if refused_country?(ctx),
+      do: {:error, :unsupported_destination},
+      else: list_services(ctx)
   end
+
+  defp list_services(ctx) do
+    call(ctx, :services, {:lookups, []}, fn ->
+      result = normalize(:list, ctx.provider.services(ctx))
+      serving_country(result, ctx.country)
+    end)
+  end
+
+  defp serving_country({:ok, [_ | _] = services}, country) do
+    case Enum.filter(services, &service_serves?(&1, country)) do
+      [] -> {:error, :unsupported_destination}
+      served -> {:ok, served}
+    end
+  end
+
+  defp serving_country(other, _country), do: other
+
+  defp service_serves?(%Service{countries: [_ | _] = countries}, country) when is_binary(country),
+    do: country in countries
+
+  defp service_serves?(_service, _country), do: true
+
+  # A provider that declares its countries is not asked about another one.
+  defp refused_country?(%Context{provider: provider, country: country}),
+    do: not serves_country?(provider, country)
 
   @doc """
   Locality autocomplete. A query shorter than #{@min_query_length} characters
@@ -266,6 +347,9 @@ defmodule PhoenixKitEcommerce.Shipping do
 
       not exports?(ctx, :search_localities, 2) ->
         unsupported(ctx)
+
+      refused_country?(ctx) ->
+        {:error, :unsupported_destination}
 
       true ->
         call(ctx, :search_localities, {:lookups, [String.downcase(query)], @shopper_lookup}, fn ->
@@ -286,33 +370,54 @@ defmodule PhoenixKitEcommerce.Shipping do
   def list_pickup_points(%Context{} = ctx, %Locality{} = locality, query \\ nil, opts \\ []) do
     query = normalize_query(query)
 
-    if exports?(ctx, :list_pickup_points, 4) do
-      ctx
-      |> call(
-        :list_pickup_points,
-        {:lookups, [locality.id, query && String.downcase(query)], lookup_cache_opts(query)},
-        fn ->
-          normalize(:ok_list, ctx.provider.list_pickup_points(locality, ctx.service, query, ctx))
-        end
-      )
-      |> filter_points(opts)
-    else
-      unsupported(ctx)
+    cond do
+      not exports?(ctx, :list_pickup_points, 4) ->
+        unsupported(ctx)
+
+      refused_country?(ctx) ->
+        {:error, :unsupported_destination}
+
+      true ->
+        ctx
+        |> call(
+          :list_pickup_points,
+          {:lookups, [locality.id, query && String.downcase(query)], lookup_cache_opts(query)},
+          fn ->
+            normalize(
+              :ok_list,
+              ctx.provider.list_pickup_points(locality, ctx.service, query, ctx)
+            )
+          end
+        )
+        |> filter_points(opts)
     end
   end
 
   @doc """
-  Prices a request (cached by `request_hash/1`). A missing `service` and
-  `currency` of the request are taken from the context.
+  Prices a request (cached by `request_hash/1`). A missing `service`,
+  `currency` and `country` of the request are taken from the context, and the
+  country of the request, once known, is the one the provider sees in
+  `ctx.country`.
   """
   @spec quote(Context.t(), RateRequest.t()) :: result(Quote.t())
   def quote(%Context{} = ctx, %RateRequest{} = request) do
+    country = request.country || ctx.country
+
     request = %{
       request
       | service: request.service || ctx.service,
-        currency: request.currency || ctx.currency
+        currency: request.currency || ctx.currency,
+        country: country
     }
 
+    ctx = %{ctx | country: country}
+
+    if refused_country?(ctx),
+      do: {:error, :unsupported_destination},
+      else: price(ctx, request)
+  end
+
+  defp price(ctx, request) do
     call(ctx, :quote, {:quotes, [request_hash(request)]}, fn ->
       if currency_supported?(ctx.provider, request.currency),
         do: normalize(:quote, ctx.provider.quote(request, ctx)),
@@ -484,7 +589,8 @@ defmodule PhoenixKitEcommerce.Shipping do
     :crypto.hash(
       :sha256,
       :erlang.term_to_binary(
-        {ctx.settings, ctx.credentials, ctx.service, ctx.locale, ctx.currency, method},
+        {ctx.settings, ctx.credentials, ctx.service, ctx.locale, ctx.currency, ctx.country,
+         method},
         [:deterministic]
       )
     )
@@ -630,9 +736,10 @@ defmodule PhoenixKitEcommerce.Shipping do
   @doc """
   Stable fingerprint of a request: SHA-256 of its canonical JSON (keys sorted
   recursively; service, origin, destination by id, parcels, declared value,
-  COD amount, currency), the first 16 bytes as lowercase hex. Equal amounts
-  hash equally whatever their Decimal scale. The format is part of the
-  contract: hashes are stored with carts.
+  COD amount, currency, and the country when there is one), the first 16 bytes
+  as lowercase hex. Equal amounts hash equally whatever their Decimal scale.
+  The format is part of the contract: hashes are stored with carts, so a
+  request without a country keeps the hash it had before countries existed.
   """
   @spec request_hash(RateRequest.t()) :: String.t()
   def request_hash(%RateRequest{} = request) do
@@ -645,6 +752,7 @@ defmodule PhoenixKitEcommerce.Shipping do
       "cod_amount" => request.cod_amount,
       "currency" => request.currency
     }
+    |> put_country(request.country)
     |> canonical()
     |> Jason.encode!()
     |> digest()
@@ -652,6 +760,9 @@ defmodule PhoenixKitEcommerce.Shipping do
     # Never raises: a request nothing can encode still gets a stable hash.
     _error -> request |> :erlang.term_to_binary([:deterministic]) |> digest()
   end
+
+  defp put_country(map, country) when is_binary(country), do: Map.put(map, "country", country)
+  defp put_country(map, _country), do: map
 
   defp digest(binary) do
     :sha256

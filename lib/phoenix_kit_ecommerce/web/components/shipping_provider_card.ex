@@ -32,6 +32,11 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
   attr :state, :map, required: true, doc: "`ShippingProviderState.t/0`"
   attr :provider_options, :list, required: true, doc: "`[{label, key}]`"
   attr :provider_known?, :boolean, default: true, doc: "whether the host still registers it"
+
+  attr :countries, :list,
+    default: [],
+    doc: "ISO 3166-1 alpha-2 codes of the countries the provider delivers to; `[]` for any"
+
   attr :service_options, :list, default: [], doc: "`[{label, key}]`"
 
   attr :services_status, :atom,
@@ -74,6 +79,13 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
               label={gettext("Provider")}
               options={@provider_options}
             />
+            <p
+              :if={@countries != []}
+              id="shipping-provider-countries"
+              class="text-sm text-base-content/60 mt-1"
+            >
+              {gettext("Delivers to: %{countries}", countries: Enum.join(@countries, ", "))}
+            </p>
           </div>
 
           <div :if={@calculated? and @provider_known?} class="fieldset w-full">

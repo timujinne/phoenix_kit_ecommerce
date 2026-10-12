@@ -113,6 +113,23 @@ defmodule PhoenixKitEcommerce.Shipping.Codec do
   def string(value) when is_atom(value), do: Atom.to_string(value)
   def string(_other), do: nil
 
+  @doc "Normalises an ISO 3166-1 alpha-2 country code: two letters in upper case, else `nil`."
+  @spec country(term()) :: String.t() | nil
+  def country(value) when is_binary(value) do
+    code = value |> String.trim() |> String.upcase()
+    if Regex.match?(~r/\A[A-Z]{2}\z/, code), do: code
+  end
+
+  def country(_other), do: nil
+
+  @doc "A list of country codes: normalised, without duplicates; anything else is dropped."
+  @spec countries(term()) :: [String.t()]
+  def countries(value) when is_list(value) do
+    value |> Enum.map(&country/1) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+  end
+
+  def countries(_other), do: []
+
   @doc "Maps an atom or its string form onto one of the `allowed` atoms."
   @spec atom(term(), [atom()]) :: atom() | nil
   def atom(value, allowed) when is_atom(value) and not is_nil(value) do

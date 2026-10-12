@@ -8,6 +8,9 @@ defmodule PhoenixKitEcommerce.Shipping.Context do
     * `settings` - the provider settings of the method (string keys)
     * `credentials` - the Integrations data of the provider, or `nil`
     * `locale` / `currency` - the shopper locale and the currency of the order
+    * `country` - ISO 3166-1 alpha-2 code of the destination country, or `nil`
+      while it is not known (the cart page, the admin form); lookups should
+      search that country
     * `opts` - pass-through options (for example `:req_options` in tests)
 
   `to_map/1` is deliberately lossy: credentials, the method struct and `opts`
@@ -27,6 +30,7 @@ defmodule PhoenixKitEcommerce.Shipping.Context do
             credentials: nil,
             locale: nil,
             currency: nil,
+            country: nil,
             opts: []
 
   @type t :: %__MODULE__{
@@ -37,6 +41,7 @@ defmodule PhoenixKitEcommerce.Shipping.Context do
           credentials: map() | nil,
           locale: String.t() | nil,
           currency: String.t() | nil,
+          country: String.t() | nil,
           opts: keyword()
         }
 
@@ -49,7 +54,8 @@ defmodule PhoenixKitEcommerce.Shipping.Context do
       "service" => context.service,
       "settings" => Codec.dump(context.settings),
       "locale" => context.locale,
-      "currency" => context.currency
+      "currency" => context.currency,
+      "country" => context.country
     }
   end
 
@@ -63,7 +69,8 @@ defmodule PhoenixKitEcommerce.Shipping.Context do
       service: map |> Codec.get(:service) |> Codec.string(),
       settings: map |> Codec.get(:settings) |> Codec.string_map(),
       locale: map |> Codec.get(:locale) |> Codec.string(),
-      currency: map |> Codec.get(:currency) |> Codec.string()
+      currency: map |> Codec.get(:currency) |> Codec.string(),
+      country: map |> Codec.get(:country) |> Codec.country()
     }
   end
 

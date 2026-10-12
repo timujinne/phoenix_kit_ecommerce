@@ -43,6 +43,14 @@ defmodule PhoenixKitEcommerce.Shipping.Provider do
       `Shipping.quote/2` answers `{:error, :unsupported_currency}` for any
       other `RateRequest.currency` without calling the provider
 
+    * `countries/0` - ISO 3166-1 alpha-2 codes of the destination countries the
+      provider delivers to. Absent or `[]` means any. When the context (or the
+      request) names another country, the `Shipping` facade answers
+      `{:error, :unsupported_destination}` without calling the provider, and
+      the shop shows the method as unavailable. A `Service` narrows this
+      further with `Service.countries`. `Shipping.providers_for_country/1`
+      lists the providers that serve a country
+
   `create_shipment/2`, `cancel_shipment/2`, `track/2` and `label/2` are
   reserved for waybills, tracking and printing. Nothing calls them yet.
 
@@ -57,6 +65,13 @@ defmodule PhoenixKitEcommerce.Shipping.Provider do
     * **Settings.** `RateRequest.origin` is filled by core from `ctx.settings`
       (the provider settings of the method), which stays the single source of
       truth; adapters read `ctx.settings`.
+    * **Country.** `ctx.country` and `RateRequest.country` are the destination
+      country; they are `nil` while the shopper has not given one, and then
+      nothing is refused. `search_localities/2` and `list_pickup_points/4`
+      should search that country only, and a provider that serves several sets
+      `Locality.country`. A restriction of the carrier that depends on the
+      country (no cash on delivery to Poland, say) is a business error:
+      `{:error, :unsupported_destination}` or `{:error, :service_unavailable}`.
     * **Money.** `RateRequest.declared_value` and `cod_amount` are in
       `RateRequest.currency`; `Quote.amount` must be a non-negative `Decimal`
       or the answer is rejected as `{:bad_return, _}`.
@@ -141,6 +156,7 @@ defmodule PhoenixKitEcommerce.Shipping.Provider do
               :ok | {:error, String.t()}
   @callback integration() :: map() | nil
   @callback currencies() :: [String.t()]
+  @callback countries() :: [String.t()]
 
   # Reserved for the next stage (waybills, tracking, printing); not called yet.
   @callback create_shipment(map(), Context.t()) :: {:ok, map()} | {:error, term()}
@@ -153,6 +169,7 @@ defmodule PhoenixKitEcommerce.Shipping.Provider do
                       validate_destination: 3,
                       integration: 0,
                       currencies: 0,
+                      countries: 0,
                       create_shipment: 2,
                       cancel_shipment: 2,
                       track: 2,

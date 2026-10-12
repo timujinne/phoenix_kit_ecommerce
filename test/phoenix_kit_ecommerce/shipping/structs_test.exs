@@ -35,6 +35,7 @@ defmodule PhoenixKitEcommerce.Shipping.StructsTest do
       name: "Springfield",
       region: "Poltavska",
       postcode: "36000",
+      country: "UA",
       extra: %{"settlement_ref" => "abc"}
     }
 
@@ -78,7 +79,13 @@ defmodule PhoenixKitEcommerce.Shipping.StructsTest do
         point_code_label: "Branch number",
         point_code_format: "^\\d{1,5}$"
       },
-      %Service{key: "courier", label: "Courier", destination: :address, postcode_required: true},
+      %Service{
+        key: "courier",
+        label: "Courier",
+        destination: :address,
+        postcode_required: true,
+        countries: ["PL", "UA"]
+      },
       %Field{
         key: "mode",
         label: "Mode",
@@ -100,7 +107,8 @@ defmodule PhoenixKitEcommerce.Shipping.StructsTest do
         parcels: [parcel(), %Parcel{weight_g: 200}],
         declared_value: Decimal.new("1200.00"),
         cod_amount: Decimal.new("1200.00"),
-        currency: "UAH"
+        currency: "UAH",
+        country: "UA"
       },
       %Quote{
         amount: Decimal.new("85.50"),
@@ -117,7 +125,8 @@ defmodule PhoenixKitEcommerce.Shipping.StructsTest do
         service: "branch",
         settings: %{"sender_city" => %{"id" => "c1"}},
         locale: "uk",
-        currency: "UAH"
+        currency: "UAH",
+        country: "UA"
       }
     ]
   end

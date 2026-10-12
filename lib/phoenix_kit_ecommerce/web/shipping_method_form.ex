@@ -319,6 +319,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
             state={@sp}
             provider_options={provider_select_options(@provider_options, @sp.provider)}
             provider_known?={@provider_known?}
+            countries={@provider_countries}
             service_options={service_select_options(@services, @sp.service, @services_status)}
             services_status={@services_status}
             pay_on_delivery={@pay_on_delivery}
@@ -527,6 +528,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> assign(:loaded_provider, nil)
     |> assign(:provider_known?, true)
     |> assign(:provider_fields, [])
+    |> assign(:provider_countries, [])
     |> assign(:services, [])
     |> assign(:services_status, :idle)
     |> assign(:integration, nil)
@@ -584,6 +586,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     Map.put(params, "shipping_provider", ProviderState.to_param(socket.assigns.sp))
   end
 
+  defp provider_countries(key) do
+    case Shipping.provider(key) do
+      {:ok, module} -> Shipping.provider_countries(module)
+      :error -> []
+    end
+  end
+
   defp provider_context(state) do
     Shipping.context(nil,
       provider: state.provider,
@@ -611,6 +620,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
       |> assign(:loaded_provider, provider)
       |> assign(:provider_fields, ProviderState.fields(provider))
       |> assign(:provider_known?, match?({:ok, _}, Shipping.provider(provider)))
+      |> assign(:provider_countries, provider_countries(provider))
       |> assign(:services, [])
       |> assign(:services_status, :idle)
       |> assign(:integration, nil)

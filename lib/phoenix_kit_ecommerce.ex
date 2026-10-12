@@ -4126,12 +4126,15 @@ defmodule PhoenixKitEcommerce do
     end
   end
 
-  defp shipping_context_options(%RateRequest{currency: currency}, opts) do
+  defp shipping_context_options(%RateRequest{currency: currency, country: country}, opts) do
     locale = if opts[:locale], do: [locale: opts[:locale]], else: []
-    context_opts = opts |> Keyword.get(:context_opts, []) |> Keyword.delete(:currency)
 
-    # The currency of the request always wins: the quote is read in it.
-    [currency: currency] ++ context_opts ++ locale
+    context_opts =
+      opts |> Keyword.get(:context_opts, []) |> Keyword.drop([:currency, :country])
+
+    # The currency and the country of the request always win: the quote is
+    # read in the one and asked for the other.
+    [currency: currency, country: country] ++ context_opts ++ locale
   end
 
   defp persist_cart_quote(cart_uuid, request_hash, answer) do
@@ -4221,9 +4224,10 @@ defmodule PhoenixKitEcommerce do
   # `{status, stored, reason}`; `stored` is the stored entry only when it is
   # current, `reason` says why a `:needs_destination` is one (`"point_limits"`:
   # the chosen pickup point cannot take the parcels) and is `nil` otherwise.
-  defp cart_quote_state(cart, method, items, service_lookup \\ &shipping_service/1) do
+  defp cart_quote_state(cart, method, items, service_lookup \\ nil) do
     with {:ok, request} <- shipping_rate_request(cart, method, items),
-         :ok <- check_destination(service_lookup.(method), request) do
+         :ok <-
+           check_destination(lookup_shipping_service(service_lookup, method, request), request) do
       {status, stored} = stored_quote_state(CartQuote.stored(cart.metadata), request)
       {status, stored, nil}
     else
@@ -4276,7 +4280,8 @@ defmodule PhoenixKitEcommerce do
       parcels: pack_parcels(items),
       declared_value: declared_value,
       cod_amount: if(cart_cash_on_delivery?(cart), do: declared_value),
-      currency: cart_base_currency(cart)
+      currency: cart_base_currency(cart),
+      country: ShippingCodec.country(cart.shipping_country)
     }
   end
 
@@ -4337,7 +4342,14 @@ defmodule PhoenixKitEcommerce do
   # declares (weight, size, declared value) hold now, not only when the
   # points were listed. The cart may have grown since.
   defp check_shipping_destination(method, request),
-    do: check_destination(shipping_service(method), request)
+    do: check_destination(lookup_shipping_service(nil, method, request), request)
+
+  # The services are looked up for the country of the request: a provider that
+  # does not deliver there has none, and the cart is `:unavailable`.
+  defp lookup_shipping_service(nil, method, request),
+    do: shipping_service(method, request.country)
+
+  defp lookup_shipping_service(lookup, method, _request), do: lookup.(method)
 
   defp check_destination(service_result, %RateRequest{} = request) do
     case service_result do
@@ -4379,13 +4391,18 @@ defmodule PhoenixKitEcommerce do
 
   # `{:ok, service | nil, context}` (`nil`: the provider has no services to
   # choose from) or `{:error, reason}`.
-  defp shipping_service(method) do
-    context = Shipping.context(method, credentials: nil, timeout: @shipping_lookup_timeout)
+  defp shipping_service(method, country) do
+    context =
+      Shipping.context(method,
+        credentials: nil,
+        country: country,
+        timeout: @shipping_lookup_timeout
+      )
 
     case find_shipping_service(context) do
       {:error, :unknown_service} = error ->
         if function_exported?(context.provider, :integration, 0) do
-          context = Shipping.context(method, timeout: @shipping_lookup_timeout)
+          context = Shipping.context(method, country: country, timeout: @shipping_lookup_timeout)
           find_shipping_service(context)
         else
           error
@@ -6757,7 +6774,8 @@ defmodule PhoenixKitEcommerce do
     * `service_error` - why the services cannot be listed (`nil` when they can)
     * `transient?` - the service listing failed in a way that may pass (a
       timeout, a crash) rather than for good (the provider or the service is
-      gone); the buyer is offered a retry
+      gone, or it does not deliver to the country of the cart); the buyer is
+      offered a retry
 
   Without a method argument it describes the cart's selected one. A calculated
   method that is not the selected one has no quote (`:missing`).
@@ -6810,7 +6828,9 @@ defmodule PhoenixKitEcommerce do
       blocks?: status in @blocking_shipping_statuses,
       service: service,
       service_error: service_error,
-      transient?: service_error not in [nil, :unknown_provider, :unknown_service]
+      transient?:
+        service_error not in [nil, :unknown_provider, :unknown_service] and
+          not Shipping.business_error?(service_error)
     }
   end
 
@@ -6829,7 +6849,7 @@ defmodule PhoenixKitEcommerce do
         {{:missing, nil, nil}, nil}
 
       true ->
-        result = shipping_service(method)
+        result = shipping_service(method, cart.shipping_country)
         {cart_quote_state(cart, method, items, fn _method -> result end), result}
     end
   end

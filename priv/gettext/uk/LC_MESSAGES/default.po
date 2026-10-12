@@ -27,7 +27,7 @@ msgstr "Панель"
 #: lib/phoenix_kit_ecommerce/web/dashboard.ex:150
 #: lib/phoenix_kit_ecommerce/web/products.ex:57
 #: lib/phoenix_kit_ecommerce/web/products.ex:292
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1917
+#: lib/phoenix_kit_ecommerce/web/settings.ex:2067
 #: lib/phoenix_kit_ecommerce/web/trail.ex:45
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1827
 #, elixir-autogen
@@ -40,7 +40,7 @@ msgstr "Товари"
 #: lib/phoenix_kit_ecommerce/web/components/catalog_sidebar.ex:167
 #: lib/phoenix_kit_ecommerce/web/dashboard.ex:105
 #: lib/phoenix_kit_ecommerce/web/dashboard.ex:157
-#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:406
+#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:410
 #: lib/phoenix_kit_ecommerce/web/trail.ex:46
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1828
 #, elixir-autogen
@@ -73,10 +73,10 @@ msgstr "Імпорт CSV"
 
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:78
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:369
-#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:373
+#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:374
 #: lib/phoenix_kit_ecommerce/web/catalog_product.ex:782
-#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:91
-#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:301
+#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:95
+#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:305
 #, elixir-autogen
 msgid "Shop"
 msgstr "Магазин"
@@ -194,7 +194,7 @@ msgstr "Дії"
 #: lib/phoenix_kit_ecommerce/web/categories.ex:311
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:918
 #: lib/phoenix_kit_ecommerce/web/products.ex:322
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:432
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:433
 #: lib/phoenix_kit_ecommerce/web/translations.ex:812
 #, elixir-autogen, elixir-format
 msgid "Active"
@@ -213,7 +213,7 @@ msgstr "Активна — категорія й товари видимі"
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:821
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:872
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1429
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1024
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1078
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2436
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2454
 #, elixir-autogen, elixir-format
@@ -365,7 +365,7 @@ msgstr "Генерується з назви"
 msgid "Available Options"
 msgstr "Доступні опції"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:984
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1038
 #, elixir-autogen, elixir-format
 msgid "Available Product Options"
 msgstr "Доступні опції товарів"
@@ -407,7 +407,7 @@ msgstr "Платіжна інформація"
 msgid "Billing module is not enabled"
 msgstr "Модуль «Білінг» не ввімкнено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:823
+#: lib/phoenix_kit_ecommerce/web/settings.ex:877
 #, elixir-autogen, elixir-format
 msgid "Billing module settings"
 msgstr "Налаштування модуля «Білінг»"
@@ -434,7 +434,7 @@ msgstr "Переглянути товари"
 msgid "Browse Shop"
 msgstr "Переглянути магазин"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:858
+#: lib/phoenix_kit_ecommerce/web/settings.ex:912
 #, elixir-autogen, elixir-format
 msgid "CSV Import Filters"
 msgstr "Фільтри імпорту CSV"
@@ -444,14 +444,14 @@ msgstr "Фільтри імпорту CSV"
 #: lib/phoenix_kit_ecommerce/web/categories.ex:636
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:757
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:869
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:908
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:910
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:641
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1962
 #: lib/phoenix_kit_ecommerce/web/products.ex:678
 #: lib/phoenix_kit_ecommerce/web/products.ex:716
 #: lib/phoenix_kit_ecommerce/web/products.ex:744
 #: lib/phoenix_kit_ecommerce/web/products.ex:770
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:453
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:454
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr "Скасувати"
@@ -481,12 +481,12 @@ msgstr "Неможливо повторити: файл більше не існ
 msgid "Carts will appear here when customers add items"
 msgstr "Кошики з'являться тут, коли покупці додадуть товари"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1639
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1724
 #, elixir-autogen, elixir-format
 msgid "Categories in shop disabled"
 msgstr "Категорії в магазині вимкнено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1638
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1723
 #, elixir-autogen, elixir-format
 msgid "Categories in shop enabled"
 msgstr "Категорії в магазині ввімкнено"
@@ -501,7 +501,7 @@ msgstr "Категорії в магазині ввімкнено"
 msgid "Category"
 msgstr "Категорія"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1175
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1229
 #, elixir-autogen, elixir-format
 msgid "Category Icons"
 msgstr "Піктограми категорій"
@@ -511,7 +511,7 @@ msgstr "Піктограми категорій"
 msgid "Category Image"
 msgstr "Зображення категорії"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1063
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1117
 #, elixir-autogen, elixir-format
 msgid "Category Name Display"
 msgstr "Відображення назв категорій"
@@ -536,17 +536,17 @@ msgstr "Категорію видалено"
 msgid "Category description"
 msgstr "Опис категорії"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1614
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1699
 #, elixir-autogen, elixir-format
 msgid "Category display setting updated"
 msgstr "Налаштування відображення категорій оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1679
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1764
 #, elixir-autogen, elixir-format
 msgid "Category icon setting updated"
 msgstr "Налаштування піктограм категорій оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1214
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1268
 #, elixir-autogen, elixir-format
 msgid "Category image"
 msgstr "Зображення категорії"
@@ -609,8 +609,8 @@ msgid "Completed At"
 msgstr "Завершено"
 
 #: lib/phoenix_kit_ecommerce/web/imports.ex:844
-#: lib/phoenix_kit_ecommerce/web/settings.ex:844
-#: lib/phoenix_kit_ecommerce/web/settings.ex:867
+#: lib/phoenix_kit_ecommerce/web/settings.ex:898
+#: lib/phoenix_kit_ecommerce/web/settings.ex:921
 #, elixir-autogen, elixir-format
 msgid "Configure"
 msgstr "Налаштувати"
@@ -620,7 +620,7 @@ msgstr "Налаштувати"
 msgid "Configure Option Mappings"
 msgstr "Налаштувати відповідність опцій"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:860
+#: lib/phoenix_kit_ecommerce/web/settings.ex:914
 #, elixir-autogen, elixir-format
 msgid "Configure keyword filters and category rules for CSV product imports"
 msgstr "Налаштуйте фільтри за ключовими словами та правила категорій для імпорту товарів із CSV"
@@ -630,7 +630,7 @@ msgstr "Налаштуйте фільтри за ключовими словам
 msgid "Configure shipping method details"
 msgstr "Налаштуйте параметри способу доставки"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:393
+#: lib/phoenix_kit_ecommerce/web/settings.ex:402
 #, elixir-autogen, elixir-format
 msgid "Configure your e-commerce store"
 msgstr "Налаштуйте свій інтернет-магазин"
@@ -645,7 +645,7 @@ msgstr "Підтвердити"
 msgid "Confirm Import"
 msgstr "Підтвердити імпорт"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:336
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:337
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:119
 #, elixir-autogen, elixir-format
 msgid "Constraints"
@@ -678,7 +678,7 @@ msgstr "Собівартість за одиницю"
 msgid "Create Category"
 msgstr "Створити категорію"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:457
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:458
 #, elixir-autogen, elixir-format
 msgid "Create Method"
 msgstr "Створити спосіб"
@@ -719,12 +719,12 @@ msgstr "Створено:"
 msgid "Currency"
 msgstr "Валюта"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:819
+#: lib/phoenix_kit_ecommerce/web/settings.ex:873
 #, elixir-autogen, elixir-format
 msgid "Currency & Tax Settings"
 msgstr "Налаштування валюти й податків"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:821
+#: lib/phoenix_kit_ecommerce/web/settings.ex:875
 #, elixir-autogen, elixir-format
 msgid "Currency and tax configuration is managed in the"
 msgstr "Валюта й податки налаштовуються в розділі"
@@ -769,7 +769,7 @@ msgstr "Ціна за замовчуванням"
 msgid "Define options specific to this category. These override global options with the same key."
 msgstr "Визначте опції, властиві лише цій категорії. Вони перевизначають глобальні опції з тим самим ключем."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:839
+#: lib/phoenix_kit_ecommerce/web/settings.ex:893
 #, elixir-autogen, elixir-format
 msgid "Define options that apply to all products (size, color, material, etc.)"
 msgstr "Визначте опції, що застосовуються до всіх товарів (розмір, колір, матеріал тощо)"
@@ -831,13 +831,13 @@ msgstr "Доставлено"
 
 #: lib/phoenix_kit_ecommerce/shipping/providers/fixed.ex:25
 #: lib/phoenix_kit_ecommerce/shipping/providers/table.ex:44
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1342
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1344
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:120
 #, elixir-autogen, elixir-format
 msgid "Delivery"
 msgstr "Доставка"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:387
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:388
 #, elixir-autogen, elixir-format
 msgid "Delivery & Status"
 msgstr "Доставка й статус"
@@ -889,7 +889,7 @@ msgstr "Цифрові товари"
 msgid "Discount"
 msgstr "Знижка"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1040
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1094
 #, elixir-autogen, elixir-format
 msgid "Display category cards above products in the main shop page"
 msgstr "Показувати картки категорій над товарами на головній сторінці магазину"
@@ -928,7 +928,7 @@ msgstr "Чернетки товарів"
 msgid "Drag CSV file here or click to browse"
 msgstr "Перетягніть файл CSV сюди або натисніть, щоб вибрати"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:392
+#: lib/phoenix_kit_ecommerce/web/settings.ex:401
 #, elixir-autogen, elixir-format
 msgid "E-Commerce Settings"
 msgstr "Налаштування магазину"
@@ -975,7 +975,7 @@ msgstr "Редагувати дані товару"
 msgid "Editable"
 msgstr "Можна змінювати"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:931
+#: lib/phoenix_kit_ecommerce/web/settings.ex:985
 #, elixir-autogen, elixir-format
 msgid "Enabled"
 msgstr "Увімкнено"
@@ -1002,12 +1002,12 @@ msgstr "Помилка: %{reason}"
 msgid "Errors"
 msgstr "Помилки"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:404
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:405
 #, elixir-autogen, elixir-format
 msgid "Est. days (max)"
 msgstr "Орієнтовно днів (макс.)"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:394
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:395
 #, elixir-autogen, elixir-format
 msgid "Est. days (min)"
 msgstr "Орієнтовно днів (мін.)"
@@ -1032,8 +1032,8 @@ msgstr "Термін дії:"
 msgid "Failed"
 msgstr "Невдалі"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1749
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1786
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1834
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1871
 #, elixir-autogen, elixir-format
 msgid "Failed to add filter"
 msgstr "Не вдалося додати фільтр"
@@ -1070,40 +1070,40 @@ msgstr "Не вдалося видалити спосіб доставки"
 msgid "Failed to read CSV file headers"
 msgstr "Не вдалося прочитати заголовки файлу CSV"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1802
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1887
 #, elixir-autogen, elixir-format
 msgid "Failed to remove filter"
 msgstr "Не вдалося видалити фільтр"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1817
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1902
 #, elixir-autogen, elixir-format
 msgid "Failed to reset filters"
 msgstr "Не вдалося скинути фільтри"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1618
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1703
 #, elixir-autogen, elixir-format
 msgid "Failed to update category display setting"
 msgstr "Не вдалося оновити налаштування відображення категорій"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1682
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1767
 #, elixir-autogen, elixir-format
 msgid "Failed to update category icon setting"
 msgstr "Не вдалося оновити налаштування піктограм категорій"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1704
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1789
 #, elixir-autogen, elixir-format
 msgid "Failed to update filter"
 msgstr "Не вдалося оновити фільтр"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1719
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1804
 #, elixir-autogen, elixir-format
 msgid "Failed to update filter label"
 msgstr "Не вдалося оновити назву фільтра"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:382
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1327
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1644
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1666
+#: lib/phoenix_kit_ecommerce/web/settings.ex:391
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1381
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1729
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1751
 #, elixir-autogen, elixir-format
 msgid "Failed to update setting"
 msgstr "Не вдалося оновити налаштування"
@@ -1133,29 +1133,29 @@ msgstr "Файл:"
 msgid "Filename"
 msgstr "Ім'я файлу"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:928
+#: lib/phoenix_kit_ecommerce/web/settings.ex:982
 #, elixir-autogen, elixir-format
 msgid "Filter"
 msgstr "Фільтр"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1746
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1783
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1831
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1868
 #, elixir-autogen, elixir-format
 msgid "Filter '%{key}' added"
 msgstr "Фільтр «%{key}» додано"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1728
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1764
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1813
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1849
 #, elixir-autogen, elixir-format
 msgid "Filter for '%{key}' already exists"
 msgstr "Фільтр для «%{key}» уже існує"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1799
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1884
 #, elixir-autogen, elixir-format
 msgid "Filter removed"
 msgstr "Фільтр видалено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1814
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1899
 #, elixir-autogen, elixir-format
 msgid "Filters reset to defaults"
 msgstr "Фільтри скинуто до типових"
@@ -1165,7 +1165,7 @@ msgstr "Фільтри скинуто до типових"
 msgid "Final Price"
 msgstr "Кінцева ціна"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1202
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1256
 #, elixir-autogen, elixir-format
 msgid "Folder icon"
 msgstr "Піктограма папки"
@@ -1185,7 +1185,7 @@ msgstr "З імпорту"
 msgid "Full Description:"
 msgstr "Повний опис:"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:837
+#: lib/phoenix_kit_ecommerce/web/settings.ex:891
 #, elixir-autogen, elixir-format
 msgid "Global Product Options"
 msgstr "Глобальні опції товарів"
@@ -1218,7 +1218,7 @@ msgstr "Прихований"
 msgid "Hidden — Category and products hidden"
 msgstr "Прихована — категорія й товари приховані"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1065
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1119
 #, elixir-autogen, elixir-format
 msgid "How category names should be displayed in the sidebar"
 msgstr "Як відображати назви категорій у бічній панелі"
@@ -1249,7 +1249,7 @@ msgstr "Зображення будуть завантажені з URL-адре
 msgid "Import"
 msgstr "Імпорт"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:854
+#: lib/phoenix_kit_ecommerce/web/settings.ex:908
 #, elixir-autogen, elixir-format
 msgid "Import Configurations"
 msgstr "Конфігурації імпорту"
@@ -1369,7 +1369,7 @@ msgid "Key"
 msgstr "Ключ"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:782
-#: lib/phoenix_kit_ecommerce/web/settings.ex:930
+#: lib/phoenix_kit_ecommerce/web/settings.ex:984
 #, elixir-autogen, elixir-format
 msgid "Label"
 msgstr "Підпис"
@@ -1394,12 +1394,12 @@ msgstr "Зробити кореневою (без батьківської)"
 msgid "Manage your e-commerce store"
 msgstr "Керуйте своїм інтернет-магазином"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:374
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:375
 #, elixir-autogen, elixir-format
 msgid "Max order"
 msgstr "Макс. замовлення"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:353
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:354
 #, elixir-autogen, elixir-format
 msgid "Max weight (g)"
 msgstr "Макс. вага (г)"
@@ -1429,12 +1429,12 @@ msgstr "Перенесіть зображення товарів із зовні
 msgid "Migrated"
 msgstr "Перенесено"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:363
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:364
 #, elixir-autogen, elixir-format
 msgid "Min order"
 msgstr "Мін. замовлення"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:343
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:344
 #, elixir-autogen, elixir-format
 msgid "Min weight (g)"
 msgstr "Мін. вага (г)"
@@ -1526,7 +1526,7 @@ msgstr "Немає опцій для категорії"
 msgid "No filter (import all products)"
 msgstr "Без фільтра (імпортувати всі товари)"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1190
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1244
 #, elixir-autogen, elixir-format
 msgid "No icons"
 msgstr "Без піктограм"
@@ -1542,7 +1542,7 @@ msgstr "Немає зображення"
 msgid "No imports yet"
 msgstr "Імпортів ще немає"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:355
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:356
 #, elixir-autogen, elixir-format
 msgid "No limit"
 msgstr "Без обмежень"
@@ -1552,12 +1552,12 @@ msgstr "Без обмежень"
 msgid "No limits"
 msgstr "Без обмежень"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:377
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:378
 #, elixir-autogen, elixir-format
 msgid "No max"
 msgstr "Без максимуму"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:366
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:367
 #, elixir-autogen, elixir-format
 msgid "No min"
 msgstr "Без мінімуму"
@@ -1765,7 +1765,7 @@ msgstr "Спочатку виберіть файл CSV"
 #: lib/phoenix_kit_ecommerce/web/categories.ex:402
 #: lib/phoenix_kit_ecommerce/web/categories.ex:442
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:433
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:414
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:415
 #, elixir-autogen, elixir-format
 msgid "Position"
 msgstr "Позиція"
@@ -1812,7 +1812,7 @@ msgstr "Розрахунок ціни"
 msgid "Price Range"
 msgstr "Діапазон цін"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:841
+#: lib/phoenix_kit_ecommerce/web/settings.ex:895
 #, elixir-autogen, elixir-format
 msgid "Price override is configured per-option in the options settings."
 msgstr "Перевизначення ціни налаштовується для кожної опції в налаштуваннях опцій."
@@ -1847,7 +1847,7 @@ msgstr "Відомості про товар"
 msgid "Product Images"
 msgstr "Зображення товару"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:833
+#: lib/phoenix_kit_ecommerce/web/settings.ex:887
 #, elixir-autogen, elixir-format
 msgid "Product Options"
 msgstr "Опції товару"
@@ -1916,8 +1916,8 @@ msgstr "Швидкі дії"
 msgid "Refresh stats"
 msgstr "Оновити статистику"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:968
-#: lib/phoenix_kit_ecommerce/web/settings.ex:972
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1022
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1026
 #, elixir-autogen, elixir-format
 msgid "Remove"
 msgstr "Прибрати"
@@ -1927,7 +1927,7 @@ msgstr "Прибрати"
 msgid "Remove auto-created categories that have no products after import"
 msgstr "Видалити автоматично створені категорії без товарів після імпорту"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:969
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1023
 #, elixir-autogen, elixir-format
 msgid "Remove this filter?"
 msgstr "Прибрати цей фільтр?"
@@ -1952,7 +1952,7 @@ msgstr "Обов'язкове поле"
 msgid "Requires Shipping:"
 msgstr "Потребує доставки:"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:913
+#: lib/phoenix_kit_ecommerce/web/settings.ex:967
 #, elixir-autogen, elixir-format
 msgid "Reset to defaults"
 msgstr "Скинути до типових"
@@ -2055,7 +2055,7 @@ msgid "Set prices for each option value. Enter the final price (base price + mod
 msgstr "Вкажіть ціни для кожного значення опції. Введіть остаточну ціну (базова ціна + модифікатор)."
 
 #: lib/phoenix_kit_ecommerce/web/dashboard.ex:178
-#: lib/phoenix_kit_ecommerce/web/settings.ex:43
+#: lib/phoenix_kit_ecommerce/web/settings.ex:44
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1982
 #: lib/phoenix_kit_ecommerce/web/trail.ex:49
 #, elixir-autogen, elixir-format
@@ -2102,17 +2102,17 @@ msgstr "Кошики"
 msgid "Short product description"
 msgstr "Короткий опис товару"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1039
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1093
 #, elixir-autogen, elixir-format
 msgid "Show Categories in Shop"
 msgstr "Показувати категорії в магазині"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1177
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1231
 #, elixir-autogen, elixir-format
 msgid "Show icons next to category names in sidebar"
 msgstr "Показувати піктограми поруч із назвами категорій у бічній панелі"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1034
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1088
 #, elixir-autogen, elixir-format
 msgid "Sidebar Display"
 msgstr "Відображення бічної панелі"
@@ -2203,7 +2203,7 @@ msgstr "Розпочато перенесення зображень для то
 #: lib/phoenix_kit_ecommerce/web/products.ex:318
 #: lib/phoenix_kit_ecommerce/web/products.ex:428
 #: lib/phoenix_kit_ecommerce/web/products.ex:496
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:421
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:422
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:121
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1506
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2416
@@ -2217,12 +2217,12 @@ msgstr "Статус"
 msgid "Storage image has priority"
 msgstr "Зображення зі сховища має пріоритет"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:910
+#: lib/phoenix_kit_ecommerce/web/settings.ex:964
 #, elixir-autogen, elixir-format
 msgid "Storefront Filters"
 msgstr "Фільтри вітрини"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1701
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1786
 #, elixir-autogen, elixir-format
 msgid "Storefront filter updated"
 msgstr "Фільтр вітрини оновлено"
@@ -2266,7 +2266,7 @@ msgstr "Оподатковується:"
 msgid "Text fields will be imported to this language"
 msgstr "Текстові поля буде імпортовано для цієї мови"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:986
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1040
 #, elixir-autogen, elixir-format
 msgid "These option keys were found in product metadata. Click to add as a filter."
 msgstr "Ці ключі опцій знайдено в метаданих товарів. Натисніть, щоб додати як фільтр."
@@ -2318,7 +2318,7 @@ msgstr "Разом"
 msgid "Total Products"
 msgstr "Усього товарів"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:444
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:445
 #, elixir-autogen, elixir-format
 msgid "Tracking supported"
 msgstr "Відстеження підтримується"
@@ -2345,7 +2345,7 @@ msgstr "Перекладений опис"
 msgid "Translations"
 msgstr "Переклади"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1078
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1132
 #, elixir-autogen, elixir-format
 msgid "Truncate (single line)"
 msgstr "Обрізати (один рядок)"
@@ -2355,7 +2355,7 @@ msgstr "Обрізати (один рядок)"
 #: lib/phoenix_kit_ecommerce/web/products.ex:331
 #: lib/phoenix_kit_ecommerce/web/products.ex:429
 #: lib/phoenix_kit_ecommerce/web/products.ex:497
-#: lib/phoenix_kit_ecommerce/web/settings.ex:929
+#: lib/phoenix_kit_ecommerce/web/settings.ex:983
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1824
 #, elixir-autogen, elixir-format
 msgid "Type"
@@ -2408,7 +2408,7 @@ msgstr "Оновити"
 msgid "Update Category"
 msgstr "Оновити категорію"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:457
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:458
 #, elixir-autogen, elixir-format
 msgid "Update Method"
 msgstr "Оновити спосіб"
@@ -2524,7 +2524,7 @@ msgstr "Перегляньте історію своїх замовлень"
 msgid "Weight:"
 msgstr "Вага:"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1090
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1144
 #, elixir-autogen, elixir-format
 msgid "Wrap (multi-line)"
 msgstr "Переносити (кілька рядків)"
@@ -2643,7 +2643,7 @@ msgstr "Потрібна назва."
 msgid "An account with this email address already exists."
 msgstr "Обліковий запис із цією адресою email уже існує."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:918
+#: lib/phoenix_kit_ecommerce/web/settings.ex:972
 #, elixir-autogen, elixir-format
 msgid "Configure product filters shown on the storefront sidebar. Customers can search by name, SKU, or tags, and filter by price, vendor, and product options."
 msgstr "Налаштуйте фільтри товарів, що відображаються в бічній панелі вітрини. Покупці можуть шукати за назвою, артикулом (SKU) або тегами та фільтрувати за ціною, виробником і опціями товару."
@@ -2968,132 +2968,132 @@ msgstr "Переклад вмісту товару для різних мов. �
 msgid "Translated product title"
 msgstr "Перекладена назва товару"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:635
+#: lib/phoenix_kit_ecommerce/web/settings.ex:644
 #, elixir-autogen, elixir-format
 msgid "Allow SVG images from import"
 msgstr "Дозволити SVG-зображення з імпорту"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:623
+#: lib/phoenix_kit_ecommerce/web/settings.ex:632
 #, elixir-autogen, elixir-format
 msgid "Allow raw HTML in product descriptions"
 msgstr "Дозволити необроблений HTML в описах товарів"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:669
+#: lib/phoenix_kit_ecommerce/web/settings.ex:678
 #, elixir-autogen, elixir-format
 msgid "Cleanup removes only categories the import created"
 msgstr "Очищення видаляє лише категорії, створені імпортом"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1297
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1351
 #, elixir-autogen, elixir-format
 msgid "Enter a two-letter country code, or leave it blank."
 msgstr "Введіть двобуквений код країни або залиште поле порожнім."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1268
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1322
 #, elixir-autogen, elixir-format
 msgid "Image import network policy updated"
 msgstr "Мережеву політику імпорту зображень оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:665
+#: lib/phoenix_kit_ecommerce/web/settings.ex:674
 #, elixir-autogen, elixir-format
 msgid "Import Behaviour"
 msgstr "Поведінка імпорту"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1279
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1333
 #, elixir-autogen, elixir-format
 msgid "Import cleanup scope updated"
 msgstr "Область очищення після імпорту оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:647
+#: lib/phoenix_kit_ecommerce/web/settings.ex:656
 #, elixir-autogen, elixir-format
 msgid "Let image import reach internal addresses"
 msgstr "Дозволити імпорту зображень доступ до внутрішніх адрес"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:637
+#: lib/phoenix_kit_ecommerce/web/settings.ex:646
 #, elixir-autogen, elixir-format
 msgid "Off (recommended): SVG files are rejected by the image importer. SVG can carry scripts and stored images are served inline."
 msgstr "Вимкнено (рекомендовано): імпортер зображень відхиляє файли SVG. SVG може містити скрипти, а збережені зображення віддаються як вбудований вміст (inline)."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:625
+#: lib/phoenix_kit_ecommerce/web/settings.ex:634
 #, elixir-autogen, elixir-format
 msgid "Off (recommended): descriptions are sanitized before display. On: descriptions render as-is, which trusts everyone who can edit a product — or supply a CSV import — with running scripts in every shopper's browser."
 msgstr "Вимкнено (рекомендовано): описи очищуються перед показом. Увімкнено: описи відображаються як є, що передбачає довіру до всіх, хто може редагувати товар або надати імпорт CSV, — скрипти виконуватимуться в браузері кожного покупця."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:649
+#: lib/phoenix_kit_ecommerce/web/settings.ex:658
 #, elixir-autogen, elixir-format
 msgid "Off (recommended): the importer refuses private and loopback addresses. Turn on only when importing from an image host inside your own network."
 msgstr "Вимкнено (рекомендовано): імпортер відмовляється працювати з приватними та loopback-адресами. Вмикайте лише для імпорту з хоста зображень у вашій власній мережі."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:671
+#: lib/phoenix_kit_ecommerce/web/settings.ex:680
 #, elixir-autogen, elixir-format
 msgid "On (recommended): the post-import cleanup only deletes empty categories that the import itself created. Off: it deletes every empty category in your catalog, including ones you left empty on purpose."
 msgstr "Увімкнено (рекомендовано): очищення після імпорту видаляє лише порожні категорії, створені самим імпортом. Вимкнено: видаляються всі порожні категорії каталогу, зокрема ті, які ви залишили порожніми навмисно."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:613
+#: lib/phoenix_kit_ecommerce/web/settings.ex:622
 #, elixir-autogen, elixir-format
 msgid "On: an order confirmation page opens only for the person who placed the order. Off: anyone with the order link can read its name, address, phone and email — turn this off only if you deliberately mail shareable order links."
 msgstr "Увімкнено: сторінка підтвердження замовлення відкривається лише тому, хто його оформив. Вимкнено: будь-хто з посиланням на замовлення може прочитати ім'я, адресу, телефон і email — вимикайте, лише якщо ви навмисно надсилаєте поштою посилання на замовлення для спільного доступу."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:797
+#: lib/phoenix_kit_ecommerce/web/settings.ex:851
 #, elixir-autogen, elixir-format
 msgid "Optional. Tax is normally calculated from the address collected at checkout. Set a two-letter country code here if your shop is single-jurisdiction and should charge tax even before an address is supplied. Leave blank to charge tax only against a real address."
 msgstr "Необов'язково. Податок зазвичай розраховується за адресою, указаною під час оформлення замовлення. Укажіть тут двобуквений код країни, якщо ваш магазин працює в одній юрисдикції й має нараховувати податок ще до введення адреси. Залиште порожнім, щоб нараховувати податок лише за реальною адресою."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1241
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1295
 #, elixir-autogen, elixir-format
 msgid "Order access policy updated"
 msgstr "Політику доступу до замовлень оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:611
+#: lib/phoenix_kit_ecommerce/web/settings.ex:620
 #, elixir-autogen, elixir-format
 msgid "Order pages need the buyer's session"
 msgstr "Сторінкам замовлення потрібен сеанс покупця"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1250
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1304
 #, elixir-autogen, elixir-format
 msgid "Product description rendering updated"
 msgstr "Відображення опису товару оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1259
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1313
 #, elixir-autogen, elixir-format
 msgid "SVG import policy updated"
 msgstr "Політику імпорту SVG оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:525
-#: lib/phoenix_kit_ecommerce/web/settings.ex:810
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1116
+#: lib/phoenix_kit_ecommerce/web/settings.ex:534
+#: lib/phoenix_kit_ecommerce/web/settings.ex:864
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1170
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2674
 #, elixir-autogen, elixir-format
 msgid "Save"
 msgstr "Зберегти"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:602
+#: lib/phoenix_kit_ecommerce/web/settings.ex:611
 #, elixir-autogen, elixir-format
 msgid "Security & Privacy"
 msgstr "Безпека й приватність"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:794
+#: lib/phoenix_kit_ecommerce/web/settings.ex:848
 #, elixir-autogen, elixir-format
 msgid "Tax Fallback Country"
 msgstr "Країна для розрахунку податку за замовчуванням"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1293
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1347
 #, elixir-autogen, elixir-format
 msgid "Tax fallback country updated"
 msgstr "Країну для розрахунку податку за замовчуванням оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:591
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:780
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:598
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:787
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1225
 #, elixir-autogen, elixir-format
 msgid "That billing profile is not available."
 msgstr "Цей платіжний профіль недоступний."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:605
+#: lib/phoenix_kit_ecommerce/web/settings.ex:614
 #, elixir-autogen, elixir-format
 msgid "These default to the safe option. Change one only if you understand what it opens up — each is explained below."
 msgstr "Типово вибрано безпечний варіант. Змінюйте лише тоді, коли розумієте, що це відкриває, — кожен пункт пояснено нижче."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:807
+#: lib/phoenix_kit_ecommerce/web/settings.ex:861
 #, elixir-autogen, elixir-format
 msgid "e.g. EE"
 msgstr "напр. EE"
@@ -3136,8 +3136,7 @@ msgstr "Показується після ціни (%{lang}). Залиште п�
 msgid "The selected payment method is no longer available - please pick another"
 msgstr "Вибраний спосіб оплати більше недоступний — виберіть інший"
 
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:974
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1156
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:981
 #, elixir-autogen, elixir-format
 msgid "The selected shipping method is not available for your address - please pick another"
 msgstr "Вибраний спосіб доставки недоступний для вашої адреси — виберіть інший"
@@ -3166,7 +3165,7 @@ msgstr "напр. за годину, за м², за літр"
 msgid "From"
 msgstr "Від"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1051
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1105
 #, elixir-autogen, elixir-format
 msgid "A compact Shop / Cart bar on catalog pages. Turn it off if your own site header already links to the cart."
 msgstr "Компактна панель «Магазин / Кошик» на сторінках каталогу. Вимкніть, якщо в шапці вашого сайту вже є посилання на кошик."
@@ -3176,17 +3175,17 @@ msgstr "Компактна панель «Магазин / Кошик» на с�
 msgid "Cart"
 msgstr "Кошик"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1049
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1103
 #, elixir-autogen, elixir-format
 msgid "Show the storefront cart bar"
 msgstr "Показувати панель кошика у вітрині"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1661
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1746
 #, elixir-autogen, elixir-format
 msgid "Storefront cart bar disabled"
 msgstr "Панель кошика вітрини вимкнено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1660
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1745
 #, elixir-autogen, elixir-format
 msgid "Storefront cart bar enabled"
 msgstr "Панель кошика вітрини увімкнено"
@@ -3217,8 +3216,8 @@ msgid "Already in cart:"
 msgstr "Уже в кошику:"
 
 #: lib/phoenix_kit_ecommerce/web/components/catalog_sidebar.ex:277
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1209
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1302
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1211
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1304
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1934
 #, elixir-autogen, elixir-format
 msgid "Apply"
@@ -3235,9 +3234,9 @@ msgid "Browse our collection of products across various categories"
 msgstr "Наші товари в різних категоріях"
 
 #: lib/phoenix_kit_ecommerce/web/catalog_category.ex:58
-#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:210
-#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:217
-#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:226
+#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:211
+#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:218
+#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:227
 #, elixir-autogen, elixir-format
 msgid "Category not found"
 msgstr "Категорію не знайдено"
@@ -3247,12 +3246,12 @@ msgstr "Категорію не знайдено"
 msgid "Category:"
 msgstr "Категорія:"
 
-#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:461
+#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:465
 #, elixir-autogen, elixir-format
 msgid "Check back soon for new arrivals"
 msgstr "Зазирніть згодом — скоро з'являться новинки"
 
-#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:557
+#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:558
 #, elixir-autogen, elixir-format
 msgid "Check back soon or browse other categories"
 msgstr "Зазирніть згодом або перегляньте інші категорії"
@@ -3272,9 +3271,9 @@ msgstr "Виберіть опції"
 msgid "Clear all filters"
 msgstr "Скинути всі фільтри"
 
-#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:549
+#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:550
 #: lib/phoenix_kit_ecommerce/web/components/catalog_sidebar.ex:427
-#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:458
+#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:462
 #, elixir-autogen, elixir-format
 msgid "Clear filters"
 msgstr "Скинути фільтри"
@@ -3299,7 +3298,7 @@ msgstr "Не бачите листа? Перевірте папку «Спам»
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1881
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:2081
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:2369
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1352
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1354
 #, elixir-autogen, elixir-format
 msgid "FREE"
 msgstr "Безкоштовно"
@@ -3397,7 +3396,7 @@ msgstr "Статус замовлення"
 
 #: lib/phoenix_kit_ecommerce/web/cart_page.ex:180
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:94
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1137
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1144
 #, elixir-autogen, elixir-format
 msgid "Please select a shipping method"
 msgstr "Виберіть спосіб доставки"
@@ -3457,7 +3456,7 @@ msgid "Thank you for your order. We've received your order and will process it s
 msgstr "Дякуємо за замовлення. Ми отримали його й невдовзі обробимо."
 
 #: lib/phoenix_kit_ecommerce/web/cart_page.ex:296
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:100
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:103
 #, elixir-autogen, elixir-format
 msgid "The selected shipping method is no longer available for this cart - please pick another"
 msgstr "Вибраний спосіб доставки більше недоступний для цього кошика — виберіть інший"
@@ -3477,7 +3476,7 @@ msgstr "Цей товар більше недоступний"
 msgid "Unable to add this product to cart. Please refresh the page and try again."
 msgstr "Не вдалося додати товар у кошик. Оновіть сторінку та спробуйте ще раз."
 
-#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:318
+#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:322
 #, elixir-autogen, elixir-format
 msgid "Welcome to Our Shop"
 msgstr "Ласкаво просимо до нашого магазину"
@@ -3544,8 +3543,8 @@ msgstr "Ціна за запитом (приховати суму)"
 msgid "Adding..."
 msgstr "Додавання..."
 
-#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:416
-#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:351
+#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:417
+#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:355
 #, elixir-autogen, elixir-format
 msgid "Filters"
 msgstr "Фільтри"
@@ -3580,7 +3579,7 @@ msgstr "Додайте щось, щоб почати"
 msgid "All Services"
 msgstr "Усі послуги"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1916
+#: lib/phoenix_kit_ecommerce/web/settings.ex:2066
 #, elixir-autogen, elixir-format
 msgid "Both (neutral wording)"
 msgstr "Обидва (нейтральні формулювання)"
@@ -3620,12 +3619,12 @@ msgstr "Наші послуги в різних категоріях"
 msgid "Catalogue"
 msgstr "Каталог"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1143
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1197
 #, elixir-autogen, elixir-format
 msgid "Catalogue vocabulary"
 msgstr "Термінологія каталогу"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1591
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1676
 #, elixir-autogen, elixir-format
 msgid "Catalogue vocabulary updated"
 msgstr "Термінологію каталогу оновлено"
@@ -3635,8 +3634,8 @@ msgstr "Термінологію каталогу оновлено"
 msgid "Everything"
 msgstr "Усе"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1594
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1599
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1679
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1684
 #, elixir-autogen, elixir-format
 msgid "Failed to update catalogue vocabulary"
 msgstr "Не вдалося оновити термінологію каталогу"
@@ -3682,7 +3681,7 @@ msgid "Nothing matches your filters"
 msgstr "Нічого не відповідає фільтрам"
 
 #: lib/phoenix_kit_ecommerce/vocabulary.ex:95
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:84
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:96
 #, elixir-autogen, elixir-format
 msgid "Service"
 msgstr "Послуга"
@@ -3693,7 +3692,7 @@ msgid "Service not found"
 msgstr "Послугу не знайдено"
 
 #: lib/phoenix_kit_ecommerce/vocabulary.ex:63
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1915
+#: lib/phoenix_kit_ecommerce/web/settings.ex:2065
 #, elixir-autogen, elixir-format
 msgid "Services"
 msgstr "Послуги"
@@ -3728,7 +3727,7 @@ msgstr "Не вдалося додати цю позицію в кошик. Он
 msgid "Unable to add this service to cart. Please refresh the page and try again."
 msgstr "Не вдалося додати цю послугу в кошик. Оновіть сторінку та спробуйте ще раз."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1145
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1199
 #, elixir-autogen, elixir-format
 msgid "What the storefront calls what you sell. Each option is separately translated, not a swapped word, so it reads correctly in every language."
 msgstr "Як вітрина називає те, що ви продаєте. Кожен варіант перекладено окремо, а не підстановкою слова, тож він звучить правильно будь-якою мовою."
@@ -3768,7 +3767,7 @@ msgstr "Оплата"
 msgid "Select Billing Profile"
 msgstr "Виберіть платіжний профіль"
 
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:220
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:224
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1446
 #, elixir-autogen, elixir-format
 msgid "Checkout"
@@ -3779,17 +3778,17 @@ msgstr "Оформлення замовлення"
 msgid "Failed to create order"
 msgstr "Не вдалося створити замовлення"
 
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:544
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:551
 #, elixir-autogen, elixir-format
 msgid "Failed to set payment option"
 msgstr "Не вдалося вибрати спосіб оплати"
 
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:418
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:422
 #, elixir-autogen, elixir-format
 msgid "Please fill in all required fields"
 msgstr "Заповніть усі обов'язкові поля"
 
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:653
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:660
 #, elixir-autogen, elixir-format
 msgid "Please select a billing profile"
 msgstr "Виберіть платіжний профіль"
@@ -3801,22 +3800,22 @@ msgstr "Виберіть платіжний профіль"
 msgid "%{price} each"
 msgstr "%{price} за одиницю"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1523
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1577
 #, elixir-autogen, elixir-format
 msgid "Failed to update price format"
 msgstr "Не вдалося оновити формат ціни"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1136
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1190
 #, elixir-autogen, elixir-format
 msgid "Hide .00 on whole prices (40 instead of 40.00)"
 msgstr "Приховувати .00 у цілих цін (40 замість 40.00)"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1123
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1177
 #, elixir-autogen, elixir-format
 msgid "Price format"
 msgstr "Формат ціни"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1520
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1574
 #, elixir-autogen, elixir-format
 msgid "Price format updated"
 msgstr "Формат ціни оновлено"
@@ -3834,7 +3833,7 @@ msgstr[0] "Показано %{shown} із %{total} позиції"
 msgstr[1] "Показано %{shown} із %{total} позицій"
 msgstr[2] "Показано %{shown} із %{total} позицій"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1125
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1179
 #, elixir-autogen, elixir-format
 msgid "Storefront only. Invoices and receipts always keep two decimals."
 msgstr "Лише вітрина. У рахунках і квитанціях завжди два знаки після коми."
@@ -3876,13 +3875,13 @@ msgstr "Платіжні дані"
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1994
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:2029
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:2064
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:981
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:983
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2290
 #, elixir-autogen, elixir-format
 msgid "Change"
 msgstr "Змінити"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:269
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:281
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2274
 #: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:48
 #, elixir-autogen, elixir-format
@@ -3920,7 +3919,7 @@ msgstr "За замовчуванням"
 msgid "Edit Cart"
 msgstr "Змінити кошик"
 
-#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:151
+#: lib/phoenix_kit_ecommerce/web/catalog_category.ex:152
 #, elixir-autogen, elixir-format
 msgid "Edit Category"
 msgstr "Редагувати категорію"
@@ -4061,7 +4060,7 @@ msgstr "обов'язкова опція"
 msgid "set a default in your account settings"
 msgstr "задайте профіль за замовчуванням у налаштуваннях облікового запису"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:560
+#: lib/phoenix_kit_ecommerce/web/settings.ex:569
 #, elixir-autogen, elixir-format
 msgid "Buyer proceeded to checkout"
 msgstr "Покупець перейшов до оформлення замовлення"
@@ -4072,24 +4071,24 @@ msgstr "Покупець перейшов до оформлення замовл
 msgid "Continue"
 msgstr "Продовжити"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:552
+#: lib/phoenix_kit_ecommerce/web/settings.ex:561
 #, elixir-autogen, elixir-format
 msgid "Every item added to a cart"
 msgstr "Кожен товар, доданий у кошик"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1348
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1364
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1380
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1402
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1418
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1434
 #, elixir-autogen, elixir-format
 msgid "Failed to update notification setting"
 msgstr "Не вдалося оновити налаштування сповіщень"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1406
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1460
 #, elixir-autogen, elixir-format
 msgid "Failed to update recipients"
 msgstr "Не вдалося оновити отримувачів"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:544
+#: lib/phoenix_kit_ecommerce/web/settings.ex:553
 #, elixir-autogen, elixir-format
 msgid "First item added to a cart"
 msgstr "Перший товар, доданий у кошик"
@@ -4099,29 +4098,29 @@ msgstr "Перший товар, доданий у кошик"
 msgid "No shipping methods are available for your country."
 msgstr "Для вашої країни немає доступних способів доставки."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1403
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1457
 #, elixir-autogen, elixir-format
 msgid "Notification recipients updated"
 msgstr "Отримувачів сповіщень оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1345
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1361
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1377
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1399
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1415
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1431
 #, elixir-autogen, elixir-format
 msgid "Notification setting updated"
 msgstr "Налаштування сповіщень оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:537
+#: lib/phoenix_kit_ecommerce/web/settings.ex:546
 #, elixir-autogen, elixir-format
 msgid "Notify shop operators about cart activity. Delivery uses each recipient's own notification channels (email, Telegram, in-app)."
 msgstr "Сповіщати операторів магазину про активність у кошиках. Сповіщення надходять через власні канали кожного отримувача (email, Telegram, у застосунку)."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:572
+#: lib/phoenix_kit_ecommerce/web/settings.ex:581
 #, elixir-autogen, elixir-format
 msgid "Recipients"
 msgstr "Отримувачі"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:591
+#: lib/phoenix_kit_ecommerce/web/settings.ex:600
 #, elixir-autogen, elixir-format
 msgid "Save recipients"
 msgstr "Зберегти отримувачів"
@@ -4131,7 +4130,7 @@ msgstr "Зберегти отримувачів"
 msgid "Shipping to your country will be arranged individually - we will contact you to confirm delivery and details after you place the order."
 msgstr "Доставку до вашої країни буде погоджено індивідуально — після оформлення замовлення ми зв'яжемося з вами, щоб уточнити доставку та деталі."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:535
+#: lib/phoenix_kit_ecommerce/web/settings.ex:544
 #, elixir-autogen, elixir-format
 msgid "Storefront notifications"
 msgstr "Сповіщення вітрини"
@@ -4151,7 +4150,7 @@ msgstr "Скористайтеся «Перекласти за допомого�
 msgid "We will contact you to arrange shipping and confirm your order details."
 msgstr "Ми зв'яжемося з вами, щоб погодити доставку та уточнити деталі замовлення."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:574
+#: lib/phoenix_kit_ecommerce/web/settings.ex:583
 #, elixir-autogen, elixir-format
 msgid "Applies to the cart-activity notifications above. Leave all unchecked to notify every shop administrator."
 msgstr "Стосується сповіщень про активність у кошиках вище. Не вибирайте жодного, щоб сповіщати всіх адміністраторів магазину."
@@ -4161,7 +4160,7 @@ msgstr "Стосується сповіщень про активність у �
 msgid "You don't have access to this order"
 msgstr "У вас немає доступу до цього замовлення"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:416
+#: lib/phoenix_kit_ecommerce/web/settings.ex:425
 #, elixir-autogen, elixir-format
 msgid "Allow the order through when nothing covers the country - contact the buyer afterwards"
 msgstr "Дозволити оформлення замовлення, якщо жоден спосіб не охоплює країну — зв'язатися з покупцем пізніше"
@@ -4171,64 +4170,64 @@ msgstr "Дозволити оформлення замовлення, якщо �
 msgid "Back"
 msgstr "Назад"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:452
+#: lib/phoenix_kit_ecommerce/web/settings.ex:461
 #, elixir-autogen, elixir-format
 msgid "Cart page (default)"
 msgstr "Сторінка кошика (за замовчуванням)"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:453
+#: lib/phoenix_kit_ecommerce/web/settings.ex:462
 #, elixir-autogen, elixir-format
 msgid "Checkout step, after billing"
 msgstr "Крок оформлення, після платіжних даних"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1438
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1443
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1492
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1497
 #, elixir-autogen, elixir-format
 msgid "Failed to update shipping requirement"
 msgstr "Не вдалося оновити вимогу до доставки"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1460
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1465
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1514
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1519
 #, elixir-autogen, elixir-format
 msgid "Failed to update shipping selection step"
 msgstr "Не вдалося оновити крок вибору доставки"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:419
+#: lib/phoenix_kit_ecommerce/web/settings.ex:428
 #, elixir-autogen, elixir-format
 msgid "Never ask for a shipping method"
 msgstr "Ніколи не запитувати спосіб доставки"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:444
+#: lib/phoenix_kit_ecommerce/web/settings.ex:453
 #, elixir-autogen, elixir-format
 msgid "On the cart page the destination country is not known yet, so every method is listed. As a checkout step after billing, methods are filtered by the real country."
 msgstr "На сторінці кошика країна призначення ще невідома, тому показано всі способи. На кроці оформлення після платіжних даних способи фільтруються за реальною країною."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:414
+#: lib/phoenix_kit_ecommerce/web/settings.ex:423
 #, elixir-autogen, elixir-format
 msgid "Require a shipping method (default)"
 msgstr "Вимагати спосіб доставки (за замовчуванням)"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:402
+#: lib/phoenix_kit_ecommerce/web/settings.ex:411
 #, elixir-autogen, elixir-format
 msgid "Shipping requirement"
 msgstr "Вимога до доставки"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1435
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1489
 #, elixir-autogen, elixir-format
 msgid "Shipping requirement updated"
 msgstr "Вимогу до доставки оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1457
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1511
 #, elixir-autogen, elixir-format
 msgid "Shipping selection step updated"
 msgstr "Крок вибору доставки оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:406
+#: lib/phoenix_kit_ecommerce/web/settings.ex:415
 #, elixir-autogen, elixir-format
 msgid "What happens when no active shipping method covers the buyer's country."
 msgstr "Що відбувається, коли жоден активний спосіб доставки не охоплює країну покупця."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:442
+#: lib/phoenix_kit_ecommerce/web/settings.ex:451
 #, elixir-autogen, elixir-format
 msgid "Where the buyer picks a shipping method"
 msgstr "Де покупець вибирає спосіб доставки"
@@ -4361,12 +4360,12 @@ msgstr "Натисніть **Save**"
 msgid "Configure Admin API scopes"
 msgstr "Налаштуйте області доступу Admin API"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:896
+#: lib/phoenix_kit_ecommerce/web/settings.ex:950
 #, elixir-autogen, elixir-format
 msgid "Connect"
 msgstr "Підключити"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:887
+#: lib/phoenix_kit_ecommerce/web/settings.ex:941
 #, elixir-autogen, elixir-format
 msgid "Connect a Shopify Admin API token in Integrations settings, then review and apply catalog changes from the Shopify Sync page."
 msgstr "Підключіть токен Shopify Admin API в налаштуваннях інтеграцій, потім переглядайте й застосовуйте зміни каталогу на сторінці Shopify Sync."
@@ -4472,12 +4471,12 @@ msgstr "Змін немає — магазин збігається з Shopify."
 msgid "No price differences found. Other fields were not compared — see the notice above."
 msgstr "Відмінностей у цінах не знайдено. Інші поля не порівнювалися — див. повідомлення вище."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:885
+#: lib/phoenix_kit_ecommerce/web/settings.ex:939
 #, elixir-autogen, elixir-format
 msgid "One-way sync from Shopify"
 msgstr "Одностороння синхронізація з Shopify"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:899
+#: lib/phoenix_kit_ecommerce/web/settings.ex:953
 #, elixir-autogen, elixir-format
 msgid "Open Sync"
 msgstr "Відкрити синхронізацію"
@@ -4527,8 +4526,8 @@ msgstr "Домен магазину не знайдено — перевірте
 msgid "Shopify"
 msgstr "Shopify"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:756
-#: lib/phoenix_kit_ecommerce/web/settings.ex:881
+#: lib/phoenix_kit_ecommerce/web/settings.ex:765
+#: lib/phoenix_kit_ecommerce/web/settings.ex:935
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:145
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1990
 #, elixir-autogen, elixir-format
@@ -4685,7 +4684,7 @@ msgstr "Цей товар має ціну в іншій валюті, тому �
 msgid "Reprice at the current rate"
 msgstr "Перерахувати ціни за поточним курсом"
 
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:727
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:734
 #, elixir-autogen, elixir-format
 msgid "The cart could not be repriced — please try again"
 msgstr "Не вдалося перерахувати ціни в кошику — спробуйте ще раз"
@@ -4695,7 +4694,7 @@ msgstr "Не вдалося перерахувати ціни в кошику �
 msgid "The exchange rate has changed since you started this cart"
 msgstr "Курс змінився відтоді, як ви почали наповнювати кошик"
 
-#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:723
+#: lib/phoenix_kit_ecommerce/web/checkout_page.ex:730
 #, elixir-autogen, elixir-format
 msgid "Your cart has been repriced at the current exchange rate"
 msgstr "Ціни у вашому кошику перераховано за поточним курсом"
@@ -4773,22 +4772,22 @@ msgstr "Вага (грами)"
 msgid "comma, separated, tags"
 msgstr "теги, через, кому"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1010
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1064
 #, elixir-autogen, elixir-format
 msgid "Add a storefront filter backed by a catalogue attribute set, by its slug."
 msgstr "Додайте фільтр вітрини на основі набору атрибутів каталогу за його slug."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1008
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1062
 #, elixir-autogen, elixir-format
 msgid "Attribute Set Filter"
 msgstr "Фільтр за набором атрибутів"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1760
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1845
 #, elixir-autogen, elixir-format
 msgid "Set slug can't be blank"
 msgstr "Slug набору не може бути порожнім"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1019
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1073
 #, elixir-autogen, elixir-format
 msgid "Set slug, e.g. size"
 msgstr "Slug набору, напр. size"
@@ -4857,7 +4856,7 @@ msgstr "Синхронізацію поставлено в чергу — вон
 msgid "Sync variants & prices"
 msgstr "Синхронізувати варіанти та ціни"
 
-#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:124
+#: lib/phoenix_kit_ecommerce/web/shop_catalog.ex:128
 #, elixir-autogen, elixir-format
 msgid "Manage Shop"
 msgstr "Керувати магазином"
@@ -4910,17 +4909,17 @@ msgstr "Невідомо"
 msgid "default"
 msgstr "типово"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1100
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1154
 #, elixir-autogen, elixir-format
 msgid "Comma-separated prefixes to strip from product and category names on public pages only — e.g. \"3D Printed\" turns \"3D Printed Costume Masks\" into \"Costume Masks\". Stored names, admin pages and Shopify sync are never affected. Leave blank to keep every name exactly as stored (default)."
 msgstr "Префікси через кому, які слід прибирати з назв товарів і категорій лише на публічних сторінках — напр. «3D Printed» перетворює «3D Printed Costume Masks» на «Costume Masks». Збережені назви, адмінсторінки та синхронізація Shopify не змінюються. Залиште порожнім, щоб усі назви лишалися такими, як збережено (типово)."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1098
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1152
 #, elixir-autogen, elixir-format
 msgid "Hide name prefixes on the storefront"
 msgstr "Приховувати префікси назв на вітрині"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1324
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1378
 #, elixir-autogen, elixir-format
 msgid "Storefront name prefixes updated"
 msgstr "Префікси назв на вітрині оновлено"
@@ -4930,7 +4929,7 @@ msgstr "Префікси назв на вітрині оновлено"
 msgid "changes"
 msgstr "змін"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1113
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1167
 #, elixir-autogen, elixir-format
 msgid "e.g. 3D Printed"
 msgstr "напр. 3D Printed"
@@ -4962,9 +4961,9 @@ msgstr "Базову валюту магазину змінено, тому це
 msgid "This cart's currency is not available right now."
 msgstr "Валюта цього кошика зараз недоступна."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1333
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1623
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1687
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1387
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1708
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1772
 #, elixir-autogen, elixir-format
 msgid "Invalid value"
 msgstr "Недійсне значення"
@@ -5027,7 +5026,7 @@ msgstr "Переклад, оригінал якого відтоді зміни�
 msgid "A translation whose source has changed since (\"stale\") is accepted as up to date — the sweep will stop picking it up until its reference is reset."
 msgstr "Переклад, оригінал якого відтоді змінився («застарілий»), вважається актуальним — обхід більше не братиме його, доки не буде скинуто еталон."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:692
+#: lib/phoenix_kit_ecommerce/web/settings.ex:701
 #, elixir-autogen, elixir-format
 msgid "AI Translations"
 msgstr "ШІ-переклади"
@@ -5121,12 +5120,12 @@ msgstr[0] "Очистити збережений еталон для %{count} р
 msgstr[1] "Очистити збережений еталон для %{count} ресурсів, що відповідають фільтрам вище, — на всіх сторінках, а не лише на показаній. Наявний переклад залишається як є; пара матиме стан «невідомо», доки її знову не позначать еталоном або не перекладуть."
 msgstr[2] "Очистити збережений еталон для %{count} ресурсів, що відповідають фільтрам вище, — на всіх сторінках, а не лише на показаній. Наявний переклад залишається як є; пара матиме стан «невідомо», доки її знову не позначать еталоном або не перекладуть."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1556
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1610
 #, elixir-autogen, elixir-format
 msgid "Configure an enabled AI endpoint in the AI section before enabling this."
 msgstr "Перш ніж увімкнути це, налаштуйте увімкнену кінцеву точку ШІ в розділі ШІ."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:713
+#: lib/phoenix_kit_ecommerce/web/settings.ex:722
 #, elixir-autogen, elixir-format
 msgid "Configure an enabled AI endpoint in the AI section first — this stays off until one exists."
 msgstr "Спершу налаштуйте увімкнену кінцеву точку ШІ в розділі ШІ — доти це лишається вимкненим."
@@ -5141,82 +5140,82 @@ msgstr "Не вдалося зупинити чергу перекладів —
 msgid "Diagnostics — recent AI request log entries"
 msgstr "Діагностика — останні записи журналу запитів до ШІ"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:767
+#: lib/phoenix_kit_ecommerce/web/settings.ex:776
 #, elixir-autogen, elixir-format
 msgid "Enable Shopify sync"
 msgstr "Увімкнути синхронізацію Shopify"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:726
+#: lib/phoenix_kit_ecommerce/web/settings.ex:807
 #, elixir-autogen, elixir-format
 msgid "Stock"
 msgstr "Залишки"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:732
+#: lib/phoenix_kit_ecommerce/web/settings.ex:813
 #, elixir-autogen, elixir-format
 msgid "Stock tracking"
 msgstr "Облік залишків"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1523
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1645
 #, elixir-autogen, elixir-format
 msgid "Stock tracking enabled"
 msgstr "Облік залишків увімкнено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1524
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1646
 #, elixir-autogen, elixir-format
 msgid "Stock tracking disabled"
 msgstr "Облік залишків вимкнено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1843
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1965
 #, elixir-autogen, elixir-format
 msgid "Stock tracking was not turned on: the Warehouse module is not installed."
 msgstr "Облік залишків не ввімкнено: модуль Warehouse не встановлено."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1846
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1968
 #, elixir-autogen, elixir-format
 msgid "Stock tracking was not turned on: the Warehouse module is disabled."
 msgstr "Облік залишків не ввімкнено: модуль Warehouse вимкнено."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1849
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1971
 #, elixir-autogen, elixir-format
 msgid "Failed to update stock tracking"
 msgstr "Не вдалося оновити облік залишків"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1863
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1980
 #, elixir-autogen, elixir-format
 msgid "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
 msgstr "Для обліку залишків потрібен модуль Warehouse. Встановіть його в розділі Модулі → Не встановлені."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1875
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1992
 #, elixir-autogen, elixir-format
 msgid "Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."
 msgstr "Для обліку залишків потрібен модуль Warehouse. Увімкніть його в розділі Модулі → Вимкнені."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1884
+#: lib/phoenix_kit_ecommerce/web/settings.ex:2002
 #, elixir-autogen, elixir-format
 msgid "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
 msgstr "Залишками керує модуль Warehouse. Спершу виберіть склад за замовчуванням у налаштуваннях Warehouse."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1896
+#: lib/phoenix_kit_ecommerce/web/settings.ex:2013
 #, elixir-autogen, elixir-format
 msgid "Stock is kept by the Warehouse module."
 msgstr "Залишками керує модуль Warehouse."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1866
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1983
 #, elixir-autogen, elixir-format
 msgid "Open Modules"
 msgstr "Відкрити модулі"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1876
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1993
 #, elixir-autogen, elixir-format
 msgid "Enable Warehouse"
 msgstr "Увімкнути Warehouse"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1888
+#: lib/phoenix_kit_ecommerce/web/settings.ex:2005
 #, elixir-autogen, elixir-format
 msgid "Set up Warehouse"
 msgstr "Налаштувати Warehouse"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1897
+#: lib/phoenix_kit_ecommerce/web/settings.ex:2014
 #, elixir-autogen, elixir-format
 msgid "Open stock"
 msgstr "Відкрити залишки"
@@ -5226,17 +5225,17 @@ msgstr "Відкрити залишки"
 msgid "Enable automatic sweep"
 msgstr "Увімкнути автоматичний обхід"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:703
+#: lib/phoenix_kit_ecommerce/web/settings.ex:712
 #, elixir-autogen, elixir-format
 msgid "Enable shop translations"
 msgstr "Увімкнути переклади магазину"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1898
+#: lib/phoenix_kit_ecommerce/web/settings.ex:2048
 #, elixir-autogen, elixir-format
 msgid "Failed to update Shopify sync"
 msgstr "Не вдалося оновити синхронізацію Shopify"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1849
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1934
 #, elixir-autogen, elixir-format
 msgid "Failed to update shop translations"
 msgstr "Не вдалося оновити переклади магазину"
@@ -5334,12 +5333,12 @@ msgstr "Немає оригіналу"
 msgid "Only successful model calls are attributed to a resource here — a transport failure (e.g. a timeout) never carries attribution, so it won't appear even though it may have been a retryable failure. See the design notes for why."
 msgstr "Тут до ресурсу прив'язуються лише успішні виклики моделі — транспортна помилка (напр. тайм-аут) ніколи не містить прив'язки, тож не відображатиметься, навіть якщо це могла бути помилка, яку можна повторити. Причини — у проєктних нотатках."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:784
+#: lib/phoenix_kit_ecommerce/web/settings.ex:793
 #, elixir-autogen, elixir-format
 msgid "Open the Shopify sync page →"
 msgstr "Відкрити сторінку синхронізації Shopify →"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:737
+#: lib/phoenix_kit_ecommerce/web/settings.ex:746
 #, elixir-autogen, elixir-format
 msgid "Open the translations page →"
 msgstr "Відкрити сторінку перекладів →"
@@ -5453,22 +5452,22 @@ msgstr "Переклади магазину"
 msgid "Shop translations aren't enabled. Turn them on in E-Commerce settings first."
 msgstr "Переклади магазину не ввімкнено. Спершу увімкніть їх у налаштуваннях магазину."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1844
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1929
 #, elixir-autogen, elixir-format
 msgid "Shop translations disabled"
 msgstr "Переклади магазину вимкнено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1843
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1928
 #, elixir-autogen, elixir-format
 msgid "Shop translations enabled"
 msgstr "Переклади магазину ввімкнено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1893
+#: lib/phoenix_kit_ecommerce/web/settings.ex:2043
 #, elixir-autogen, elixir-format
 msgid "Shopify sync disabled"
 msgstr "Синхронізацію Shopify вимкнено"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1892
+#: lib/phoenix_kit_ecommerce/web/settings.ex:2042
 #, elixir-autogen, elixir-format
 msgid "Shopify sync enabled"
 msgstr "Синхронізацію Shopify ввімкнено"
@@ -5626,12 +5625,12 @@ msgstr "Перекласти знову?"
 msgid "Translate?"
 msgstr "Перекласти?"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:759
+#: lib/phoenix_kit_ecommerce/web/settings.ex:768
 #, elixir-autogen, elixir-format
 msgid "Turns off the Shopify sync page, its sidebar entry, and the Shopify option on the integrations page. A saved connection and its access token are kept — turning this back on restores them exactly as they were."
 msgstr "Вимикає сторінку синхронізації Shopify, її пункт у бічному меню та опцію Shopify на сторінці інтеграцій. Збережене підключення та його токен доступу залишаються — після повторного ввімкнення все відновиться як було."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:695
+#: lib/phoenix_kit_ecommerce/web/settings.ex:704
 #, elixir-autogen, elixir-format
 msgid "Turns on AI-powered translation of products and categories: the management page, its sidebar entry, and manual translate/stamp/reset actions. Requires a configured AI endpoint."
 msgstr "Вмикає ШІ-переклад товарів і категорій: сторінку керування, її пункт у бічному меню та ручні дії перекладу, позначення й скидання. Потрібна налаштована кінцева точка ШІ."
@@ -5697,8 +5696,8 @@ msgstr "Категоріями тепер керують у модулі «Ка�
 msgid "Products are managed in the Catalogues module now."
 msgstr "Товарами тепер керують у модулі «Каталоги»."
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:705
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1546
+#: lib/phoenix_kit_ecommerce/web/settings.ex:714
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1600
 #, elixir-autogen, elixir-format
 msgid "Not available while the shop reads products from the Catalogues module — the translation adapters only cover the shop's own product and category tables."
 msgstr "Недоступно, поки магазин читає товари з модуля «Каталоги» — адаптери перекладу охоплюють лише власні таблиці товарів і категорій магазину."
@@ -6093,7 +6092,7 @@ msgstr "За тарифами перевізника, оплата при отр
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:1878
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:2079
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:2367
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1350
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1352
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:76
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:154
 #: lib/phoenix_kit_ecommerce/web/user_order_details.html.heex:70
@@ -6144,22 +6143,22 @@ msgstr "Ввести нові дані"
 msgid "This profile could not be saved. Untick \"Save as a billing profile\" to place the order without saving it."
 msgstr "Не вдалося зберегти цей профіль. Зніміть позначку «Зберегти як платіжний профіль», щоб оформити замовлення без збереження."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:140
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:152
 #, elixir-autogen, elixir-format
 msgid "%{name}: connected"
 msgstr "%{name}: підключено"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:142
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:154
 #, elixir-autogen, elixir-format
 msgid "%{name}: not connected"
 msgstr "%{name}: не підключено"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:549
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:551
 #, elixir-autogen, elixir-format
 msgid "%{provider} (not installed)"
 msgstr "%{provider} (не встановлена)"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:566
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:568
 #, elixir-autogen, elixir-format
 msgid "%{service} (unavailable)"
 msgstr "%{service} (недоступна)"
@@ -6179,12 +6178,12 @@ msgstr "0 вимикає об'ємну вагу."
 msgid "Address"
 msgstr "Адреса"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1275
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1277
 #, elixir-autogen, elixir-format
 msgid "Apartment"
 msgstr "Квартира"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1386
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1388
 #, elixir-autogen, elixir-format
 msgid "Calculate the delivery price"
 msgstr "Розрахувати вартість доставки"
@@ -6195,7 +6194,7 @@ msgstr "Розрахувати вартість доставки"
 msgid "Calculated for your address"
 msgstr "Розраховується для вашої адреси"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1326
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1328
 #, elixir-autogen, elixir-format
 msgid "Calculating the delivery price..."
 msgstr "Розраховуємо вартість доставки..."
@@ -6205,7 +6204,7 @@ msgstr "Розраховуємо вартість доставки..."
 msgid "Cash-on-delivery fee %{fee}, paid by the recipient to the carrier"
 msgstr "Комісія за післяплату %{fee} — сплачує отримувач перевізнику"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1069
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1071
 #, elixir-autogen, elixir-format
 msgid "Change city"
 msgstr "Змінити місто"
@@ -6220,7 +6219,7 @@ msgstr "Змінити дані доставки"
 msgid "Check delivery details"
 msgstr "Перевірити дані доставки"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1494
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1548
 #, elixir-autogen, elixir-format
 msgid "Check the default parcel values"
 msgstr "Перевірте значення посилки за замовчуванням"
@@ -6230,9 +6229,9 @@ msgstr "Перевірте значення посилки за замовчув
 msgid "Choose a service"
 msgstr "Виберіть послугу"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1004
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1178
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1232
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1006
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1180
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1234
 #, elixir-autogen, elixir-format
 msgid "City"
 msgstr "Місто"
@@ -6244,17 +6243,17 @@ msgstr "Вказує покупець"
 
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:474
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:551
-#: lib/phoenix_kit_ecommerce/web/settings.ex:479
+#: lib/phoenix_kit_ecommerce/web/settings.ex:488
 #, elixir-autogen, elixir-format
 msgid "Default parcel"
 msgstr "Посилка за замовчуванням"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1488
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1542
 #, elixir-autogen, elixir-format
 msgid "Default parcel updated"
 msgstr "Посилку за замовчуванням оновлено"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:971
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:973
 #, elixir-autogen, elixir-format
 msgid "Deliver to"
 msgstr "Доставити до"
@@ -6286,13 +6285,13 @@ msgstr[1] "Доставка за %{min}–%{max} дні"
 msgstr[2] "Доставка за %{min}–%{max} днів"
 
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:2243
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:943
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:945
 #, elixir-autogen, elixir-format
 msgid "Delivery options are temporarily unavailable. Please try again in a moment."
 msgstr "Варіанти доставки тимчасово недоступні. Спробуйте ще раз за хвилину."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1093
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1193
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1095
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1195
 #, elixir-autogen, elixir-format
 msgid "Delivery point"
 msgstr "Пункт видачі"
@@ -6307,8 +6306,8 @@ msgstr "Доставка до (днів)"
 msgid "Estimated price: the carrier did not respond"
 msgstr "Орієнтовна ціна: перевізник не відповів"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1497
-#: lib/phoenix_kit_ecommerce/web/settings.ex:1502
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1551
+#: lib/phoenix_kit_ecommerce/web/settings.ex:1556
 #, elixir-autogen, elixir-format
 msgid "Failed to update the default parcel"
 msgstr "Не вдалося оновити посилку за замовчуванням"
@@ -6327,17 +6326,17 @@ msgstr "Фіксована ціна"
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:505
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:585
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1144
-#: lib/phoenix_kit_ecommerce/web/settings.ex:512
+#: lib/phoenix_kit_ecommerce/web/settings.ex:521
 #, elixir-autogen, elixir-format
 msgid "Height (mm)"
 msgstr "Висота (мм)"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1261
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1263
 #, elixir-autogen, elixir-format
 msgid "House"
 msgstr "Будинок"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:187
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:199
 #, elixir-autogen, elixir-format
 msgid "Leave the rounding empty for no rounding."
 msgstr "Залиште поле порожнім, щоб не округлювати."
@@ -6346,27 +6345,27 @@ msgstr "Залиште поле порожнім, щоб не округлюва
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:487
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:565
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1124
-#: lib/phoenix_kit_ecommerce/web/settings.ex:498
+#: lib/phoenix_kit_ecommerce/web/settings.ex:507
 #, elixir-autogen, elixir-format
 msgid "Length (mm)"
 msgstr "Довжина (мм)"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:96
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:108
 #, elixir-autogen, elixir-format
 msgid "Loading the carrier's services"
 msgstr "Завантажуємо послуги перевізника"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1110
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1112
 #, elixir-autogen, elixir-format
 msgid "Loading the list..."
 msgstr "Завантажуємо список..."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:151
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:163
 #, elixir-autogen, elixir-format
 msgid "Manage integrations"
 msgstr "Керування інтеграціями"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:174
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:186
 #, elixir-autogen, elixir-format
 msgid "Markup on the carrier's price"
 msgstr "Націнка на ціну перевізника"
@@ -6391,18 +6390,18 @@ msgstr "Має бути числом"
 msgid "Must be at most %{max}"
 msgstr "Має бути не більше %{max}"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1125
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1127
 #, elixir-autogen, elixir-format
 msgid "No delivery points found for this search."
 msgstr "За цим запитом пунктів видачі не знайдено."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:182
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:194
 #, elixir-autogen, elixir-format
 msgid "No rounding"
 msgstr "Без округлення"
 
 #: lib/phoenix_kit_ecommerce/shipping/cart_quote.ex:321
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1409
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1411
 #, elixir-autogen, elixir-format
 msgid "No. %{number}"
 msgstr "№ %{number}"
@@ -6420,12 +6419,12 @@ msgstr "Недоступно"
 msgid "Nothing"
 msgstr "Нічого"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:308
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:320
 #, elixir-autogen, elixir-format
 msgid "Nothing found."
 msgstr "Нічого не знайдено."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1025
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1027
 #, elixir-autogen, elixir-format
 msgid "Nothing found. Check the spelling and try again."
 msgstr "Нічого не знайдено. Перевірте написання та спробуйте ще раз."
@@ -6435,12 +6434,12 @@ msgstr "Нічого не знайдено. Перевірте написанн�
 msgid "One band per line: up to kg, price. For example: 0,5 90"
 msgstr "Одна сходинка на рядок: до скількох кг, ціна. Наприклад: 0,5 90"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1153
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1155
 #, elixir-autogen, elixir-format
 msgid "Only the first %{count} points are shown. Narrow the search to see others."
 msgstr "Показано лише перші %{count} пунктів. Уточніть пошук, щоб побачити решту."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1346
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1348
 #, elixir-autogen, elixir-format
 msgid "Paid to the carrier on delivery ≈ %{amount}"
 msgstr "Оплата перевізнику при отриманні ≈ %{amount}"
@@ -6451,38 +6450,38 @@ msgstr "Оплата перевізнику при отриманні ≈ %{amou
 msgid "Pickup point"
 msgstr "Пункт видачі"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:602
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:630
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:604
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:632
 #, elixir-autogen, elixir-format
 msgid "Please enter the city"
 msgstr "Вкажіть місто"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:769
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:771
 #, elixir-autogen, elixir-format
 msgid "Please enter the code of the delivery point"
 msgstr "Вкажіть код пункту видачі"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:625
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:627
 #, elixir-autogen, elixir-format
 msgid "Please enter the house number"
 msgstr "Вкажіть номер будинку"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:636
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:638
 #, elixir-autogen, elixir-format
 msgid "Please enter the postcode"
 msgstr "Вкажіть поштовий індекс"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:624
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:626
 #, elixir-autogen, elixir-format
 msgid "Please enter the street"
 msgstr "Вкажіть вулицю"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1287
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1289
 #, elixir-autogen, elixir-format
 msgid "Postcode"
 msgstr "Поштовий індекс"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:74
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:79
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:85
 #, elixir-autogen, elixir-format
 msgid "Provider"
@@ -6503,27 +6502,27 @@ msgstr "Тарифи"
 msgid "Round up to a multiple of"
 msgstr "Округлювати вгору до кратного"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1100
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1102
 #, elixir-autogen, elixir-format
 msgid "Search by number, name or address"
 msgstr "Пошук за номером, назвою або адресою"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:302
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:314
 #, elixir-autogen, elixir-format
 msgid "Searching"
 msgstr "Триває пошук"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1021
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1023
 #, elixir-autogen, elixir-format
 msgid "Searching..."
 msgstr "Триває пошук..."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:85
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:97
 #, elixir-autogen, elixir-format
 msgid "Select a service"
 msgstr "Виберіть послугу"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:63
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:68
 #, elixir-autogen, elixir-format
 msgid "Shipping cost calculation"
 msgstr "Розрахунок вартості доставки"
@@ -6543,27 +6542,27 @@ msgstr "Розмір і вага, які приймаються для пози�
 msgid "Size and weight assumed for products of this category that have none of their own. Leave empty to use the shop's defaults."
 msgstr "Розмір і вага, які приймаються для товарів цієї категорії, якщо у них немає власних. Залиште порожнім, щоб використовувати значення магазину за замовчуванням."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:293
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:305
 #, elixir-autogen, elixir-format
 msgid "Start typing a city"
 msgstr "Почніть вводити місто"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1011
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1013
 #, elixir-autogen, elixir-format
 msgid "Start typing the name of your city"
 msgstr "Почніть вводити назву свого міста"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1247
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1249
 #, elixir-autogen, elixir-format
 msgid "Street"
 msgstr "Вулиця"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:514
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:516
 #, elixir-autogen, elixir-format
 msgid "The carrier did not answer in time. Please try again."
 msgstr "Перевізник не відповів вчасно. Спробуйте ще раз."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:834
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:836
 #, elixir-autogen, elixir-format
 msgid "The carrier does not accept this delivery place. Please choose another one."
 msgstr "Перевізник не приймає це місце доставки. Виберіть інше."
@@ -6573,12 +6572,12 @@ msgstr "Перевізник не приймає це місце доставк�
 msgid "The carrier rate is unavailable at the moment, the standard price applies."
 msgstr "Тариф перевізника зараз недоступний, діє стандартна ціна."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:104
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:116
 #, elixir-autogen, elixir-format
 msgid "The carrier's services could not be loaded. Reload the page to try again; the saved service is kept."
 msgstr "Не вдалося завантажити послуги перевізника. Перезавантажте сторінку та спробуйте ще раз; збережена послуга залишається."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:840
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:842
 #, elixir-autogen, elixir-format
 msgid "The chosen point can't take this parcel (weight/size/value). Please choose another one."
 msgstr "Вибраний пункт не може прийняти цю посилку (вага/розмір/вартість). Будь ласка, виберіть інший."
@@ -6594,12 +6593,12 @@ msgstr "Вартість доставки ще не розрахована: пі
 msgid "The delivery details are not valid."
 msgstr "Дані доставки недійсні."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:798
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:800
 #, elixir-autogen, elixir-format
 msgid "The delivery details could not be saved. Please try again."
 msgstr "Не вдалося зберегти дані доставки. Спробуйте ще раз."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1331
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1333
 #, elixir-autogen, elixir-format
 msgid "The delivery price could not be calculated. Please try again."
 msgstr "Не вдалося розрахувати вартість доставки. Спробуйте ще раз."
@@ -6615,12 +6614,12 @@ msgstr "Перед оформленням замовлення потрібно 
 msgid "The delivery price needs to be confirmed - please check your delivery details"
 msgstr "Вартість доставки потрібно підтвердити — перевірте дані доставки"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:520
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:522
 #, elixir-autogen, elixir-format
 msgid "The list could not be loaded right now. Please try again."
 msgstr "Не вдалося завантажити список. Спробуйте ще раз."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:197
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:209
 #, elixir-autogen, elixir-format
 msgid "The price in the Pricing card is the fallback price: the customer pays it when the carrier does not answer."
 msgstr "Ціна в картці «Ціни» — запасна: покупець сплачує її, якщо перевізник не відповідає."
@@ -6635,12 +6634,12 @@ msgstr "Службу доставки %{provider} не встановлено"
 msgid "The provider does not offer the service %{service}"
 msgstr "Служба доставки не надає послугу %{service}"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:305
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:317
 #, elixir-autogen, elixir-format
 msgid "The search is unavailable right now."
 msgstr "Пошук зараз недоступний."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:517
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:519
 #, elixir-autogen, elixir-format
 msgid "The service is busy right now. Please try again in a moment."
 msgstr "Служба доставки зараз перевантажена. Будь ласка, повторіть спробу трохи пізніше."
@@ -6650,22 +6649,22 @@ msgstr "Служба доставки зараз перевантажена. Б�
 msgid "The shipping provider settings are not valid"
 msgstr "Налаштування служби доставки некоректні"
 
-#: lib/phoenix_kit_ecommerce/web/settings.ex:481
+#: lib/phoenix_kit_ecommerce/web/settings.ex:490
 #, elixir-autogen, elixir-format
 msgid "The size every parcel is at least as big as, and the weight assumed for a product that has none. Carriers price the parcel by them. A product's own values and its category's defaults come first. Leave empty to set nothing."
 msgstr "Мінімальний розмір кожної посилки та вага для товару, у якого її не вказано. Перевізники рахують вартість посилки за цими значеннями. Власні значення товару та значення його категорії мають пріоритет. Залиште порожнім, щоб нічого не задавати."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:795
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:797
 #, elixir-autogen, elixir-format
 msgid "These delivery details are too long or not valid. Please shorten them."
 msgstr "Дані доставки задовгі або некоректні. Скоротіть їх."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:775
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:777
 #, elixir-autogen, elixir-format
 msgid "This code does not look right. Please check it."
 msgstr "Код виглядає невірно. Перевірте його."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:772
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:774
 #, elixir-autogen, elixir-format
 msgid "This code is too long. Please check it."
 msgstr "Код задовгий. Перевірте його."
@@ -6695,7 +6694,7 @@ msgstr "Цей спосіб доставки недоступний: замов�
 msgid "This delivery service is not available right now."
 msgstr "Ця служба доставки зараз недоступна."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:119
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:131
 #, elixir-autogen, elixir-format
 msgid "This provider is no longer installed. Choose another one; until then the method keeps its fixed price."
 msgstr "Ця служба доставки більше не встановлена. Виберіть іншу; доти спосіб зберігає фіксовану ціну."
@@ -6707,8 +6706,8 @@ msgid "To be calculated"
 msgstr "Буде розраховано"
 
 #: lib/phoenix_kit_ecommerce/web/checkout_page.ex:2251
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:952
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1121
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:954
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1123
 #, elixir-autogen, elixir-format
 msgid "Try again"
 msgstr "Спробувати знову"
@@ -6726,7 +6725,7 @@ msgstr "Об'ємний дільник (см³ на кг)"
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:514
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:595
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1114
-#: lib/phoenix_kit_ecommerce/web/settings.ex:519
+#: lib/phoenix_kit_ecommerce/web/settings.ex:528
 #, elixir-autogen, elixir-format
 msgid "Weight (g)"
 msgstr "Вага (г)"
@@ -6736,7 +6735,7 @@ msgstr "Вага (г)"
 msgid "Weight and size of one unit. Carriers price the parcel by them; leave empty to use the category's or the shop's defaults."
 msgstr "Вага та розмір однієї одиниці. Перевізники рахують вартість посилки за ними; залиште порожнім, щоб використовувати значення категорії або магазину за замовчуванням."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:65
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:70
 #, elixir-autogen, elixir-format
 msgid "Where the price of this method comes from."
 msgstr "Звідки береться ціна цього способу."
@@ -6745,17 +6744,22 @@ msgstr "Звідки береться ціна цього способу."
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:496
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:575
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1134
-#: lib/phoenix_kit_ecommerce/web/settings.ex:505
+#: lib/phoenix_kit_ecommerce/web/settings.ex:514
 #, elixir-autogen, elixir-format
 msgid "Width (mm)"
 msgstr "Ширина (мм)"
 
-#: lib/phoenix_kit_ecommerce.ex:393
+#: lib/phoenix_kit_ecommerce.ex:404
 #, elixir-autogen, elixir-format
 msgid "is required when the other sides are set"
 msgstr "обов'язкове, якщо задано решту сторін"
 
-#: lib/phoenix_kit_ecommerce.ex:388
+#: lib/phoenix_kit_ecommerce.ex:399
 #, elixir-autogen, elixir-format
 msgid "must be a whole number from 0 to %{max}"
 msgstr "має бути цілим числом від 0 до %{max}"
+
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:87
+#, elixir-autogen, elixir-format
+msgid "Delivers to: %{countries}"
+msgstr "Країни доставки: %{countries}"

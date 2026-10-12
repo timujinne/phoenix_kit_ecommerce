@@ -9,6 +9,9 @@ defmodule PhoenixKitEcommerce.Shipping.RateRequest do
     * `declared_value` - declared (insured) value, a `Decimal`
     * `cod_amount` - cash-on-delivery amount, or `nil`
     * `currency` - ISO 4217 code of `declared_value` and `cod_amount`
+    * `country` - ISO 3166-1 alpha-2 code of the destination country, or `nil`
+      while the shopper has not given one (the cart page); it is part of
+      `Shipping.request_hash/1` only when present
   """
 
   alias PhoenixKitEcommerce.Shipping.{Codec, Destination, Parcel}
@@ -19,7 +22,8 @@ defmodule PhoenixKitEcommerce.Shipping.RateRequest do
             parcels: [],
             declared_value: Decimal.new(0),
             cod_amount: nil,
-            currency: nil
+            currency: nil,
+            country: nil
 
   @type t :: %__MODULE__{
           service: String.t() | nil,
@@ -28,7 +32,8 @@ defmodule PhoenixKitEcommerce.Shipping.RateRequest do
           parcels: [Parcel.t()],
           declared_value: Decimal.t(),
           cod_amount: Decimal.t() | nil,
-          currency: String.t() | nil
+          currency: String.t() | nil,
+          country: String.t() | nil
         }
 
   @doc "Serialises the request into a JSON-safe map."
@@ -48,7 +53,8 @@ defmodule PhoenixKitEcommerce.Shipping.RateRequest do
       parcels: map |> Codec.get(:parcels) |> Codec.list(&Codec.struct_from(&1, Parcel)),
       declared_value: map |> Codec.get(:declared_value) |> Codec.decimal() || Decimal.new(0),
       cod_amount: map |> Codec.get(:cod_amount) |> Codec.decimal(),
-      currency: map |> Codec.get(:currency) |> Codec.string()
+      currency: map |> Codec.get(:currency) |> Codec.string(),
+      country: map |> Codec.get(:country) |> Codec.country()
     }
   end
 

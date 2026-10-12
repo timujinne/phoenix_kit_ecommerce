@@ -333,14 +333,16 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
   defp query_long_enough?(assigns), do: String.length(String.trim(assigns.locality_query)) >= 2
 
   defp run_lookup(socket, :localities) do
-    %{method: method, locale: locale, locality_query: text} = socket.assigns
+    %{method: method, locale: locale, locality_query: text, cart: cart} = socket.assigns
     query = String.trim(text)
 
     socket
     |> put_lookup(:localities, at: System.monotonic_time(:millisecond), pending: false)
     |> assign(localities_state: :loading, localities_error: nil)
     |> start_async(:localities, fn ->
-      method |> Shipping.context(locale: locale) |> Shipping.search_localities(query)
+      method
+      |> Shipping.context(locale: locale, country: cart.shipping_country)
+      |> Shipping.search_localities(query)
     end)
   end
 
@@ -355,7 +357,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
     |> assign(points_state: :loading, points_error: nil)
     |> start_async(:points, fn ->
       method
-      |> Shipping.context(locale: locale)
+      |> Shipping.context(locale: locale, country: cart.shipping_country)
       |> Shipping.list_pickup_points(locality, query,
         parcels: Shop.cart_parcels(cart),
         declared_value: Shop.cart_declared_value(cart)

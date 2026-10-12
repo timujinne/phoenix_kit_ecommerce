@@ -11,7 +11,9 @@ defmodule PhoenixKitEcommerce.Test.Shipping.StubProvider do
 
     * `:services` - list of `Service`
     * `:localities` - list, `{:error, reason}` or `fn query -> ... end`
+      (`fn query, ctx -> ... end` to see the context)
     * `:points` - list, `{:error, reason}` or `fn locality, service, query -> ... end`
+      (`fn locality, service, query, ctx -> ... end` to see the context)
     * `:quote` - `Quote`, `{:error, reason}` or `fn request, ctx -> ... end`
     * `:mode` - `:ok` (default), `:crash`, `:hang` or `:bad_return`, for every
       operation; `:modes` is a `%{operation => mode}` override
@@ -80,6 +82,7 @@ defmodule PhoenixKitEcommerce.Test.Shipping.StubProvider do
   def search_localities(query, %Context{} = ctx) do
     run(:search_localities, ctx, [query], fn
       %{localities: fun} when is_function(fun, 1) -> fun.(query)
+      %{localities: fun} when is_function(fun, 2) -> fun.(query, ctx)
       %{localities: {:error, _} = error} -> error
       %{localities: list} -> {:ok, list}
     end)
@@ -89,6 +92,7 @@ defmodule PhoenixKitEcommerce.Test.Shipping.StubProvider do
   def list_pickup_points(%Locality{} = locality, service, query, %Context{} = ctx) do
     run(:list_pickup_points, ctx, [locality, service, query], fn
       %{points: fun} when is_function(fun, 3) -> fun.(locality, service, query)
+      %{points: fun} when is_function(fun, 4) -> fun.(locality, service, query, ctx)
       %{points: {:error, _} = error} -> error
       %{points: list} -> {:ok, list}
     end)

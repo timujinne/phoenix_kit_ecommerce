@@ -16,6 +16,10 @@ defmodule PhoenixKitEcommerce.Shipping.Service do
       without one); `false` by default, since many carriers price and deliver
       by city and street alone. The city is always required when the customer
       types the address in.
+    * `countries` - ISO 3166-1 alpha-2 codes of the destination countries the
+      service delivers to; `[]` (the default) means every country the provider
+      delivers to. When the context names a country, `Shipping.services/1`
+      lists only the services that serve it.
   """
 
   alias PhoenixKitEcommerce.Shipping.Codec
@@ -29,7 +33,8 @@ defmodule PhoenixKitEcommerce.Shipping.Service do
             lookup: :manual,
             point_code_label: nil,
             point_code_format: nil,
-            postcode_required: false
+            postcode_required: false,
+            countries: []
 
   @type destination :: :pickup_point | :address | :none
   @type lookup :: :search | :manual
@@ -41,7 +46,8 @@ defmodule PhoenixKitEcommerce.Shipping.Service do
           lookup: lookup(),
           point_code_label: String.t() | nil,
           point_code_format: String.t() | nil,
-          postcode_required: boolean()
+          postcode_required: boolean(),
+          countries: [String.t()]
         }
 
   @doc "Serialises the service into a JSON-safe map."
@@ -60,7 +66,8 @@ defmodule PhoenixKitEcommerce.Shipping.Service do
       lookup: map |> Codec.get(:lookup) |> Codec.atom(@lookups) || :manual,
       point_code_label: map |> Codec.get(:point_code_label) |> Codec.string(),
       point_code_format: map |> Codec.get(:point_code_format) |> Codec.string(),
-      postcode_required: map |> Codec.get(:postcode_required) |> true?()
+      postcode_required: map |> Codec.get(:postcode_required) |> true?(),
+      countries: map |> Codec.get(:countries) |> Codec.countries()
     }
   end
 

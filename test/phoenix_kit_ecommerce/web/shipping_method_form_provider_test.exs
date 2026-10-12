@@ -12,7 +12,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Shipping.Locality
   alias PhoenixKitEcommerce.ShippingMethod
-  alias PhoenixKitEcommerce.Test.Shipping.StubProvider
+  alias PhoenixKitEcommerce.Test.Shipping.{CountryProvider, StubProvider}
 
   @form "#shipping-method-form"
   @provider_target ["shipping_method", "shipping_provider", "provider"]
@@ -54,6 +54,28 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       refute has_element?(view, "#shipping-provider-setting-destination")
       refute has_element?(view, "#shipping-provider-settings")
       refute_received {:stub_called, :services, _}
+    end
+
+    test "a provider that declares its countries says which", %{conn: conn} do
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_providers, [
+        StubProvider,
+        CountryProvider
+      ])
+
+      Application.put_env(:phoenix_kit_ecommerce, :shipping_country_provider, ["UA", "PL"])
+
+      on_exit(fn ->
+        Application.delete_env(:phoenix_kit_ecommerce, :shipping_country_provider)
+      end)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      refute has_element?(view, "#shipping-provider-countries")
+
+      choose_provider(view, "country_stub")
+      assert has_element?(view, "#shipping-provider-countries", "Delivers to: UA, PL")
+
+      choose_provider(view, "stub")
+      refute has_element?(view, "#shipping-provider-countries")
     end
 
     test "choosing a provider shows its services, settings, markup and fallback hint",
