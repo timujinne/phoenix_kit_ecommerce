@@ -171,11 +171,11 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
     _error -> []
   end
 
-  defp present?(:locality, %{} = value) do
+  defp present?(type, %{} = value) when type in [:locality, :pickup_point] do
     filled?(Codec.get(value, :id)) and filled?(Codec.get(value, :name))
   end
 
-  defp present?(:locality, _other), do: false
+  defp present?(type, _other) when type in [:locality, :pickup_point], do: false
   defp present?(:boolean, value), do: is_boolean(value) or value in ["true", "false"]
   defp present?(_type, value), do: filled?(value)
 
