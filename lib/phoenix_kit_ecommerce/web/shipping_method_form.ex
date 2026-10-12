@@ -198,22 +198,36 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   attr :label, :string, required: true
   attr :hint, :string, required: true
 
-  # A multiple select posts nothing when no option is chosen, which would
-  # leave the old list in place: the blank entry makes "none" a value.
+  # Checkboxes in a box that scrolls: a native multiple select is drawn by the
+  # admin theme as one horizontal strip, and needs Ctrl to pick several. With no
+  # box ticked the form posts nothing, which would leave the old list in
+  # place: the blank entry makes "none" a value.
   defp country_list(assigns) do
+    assigns = assign(assigns, :selected, List.wrap(assigns.field.value))
+
     ~H"""
     <div class="fieldset w-full">
-      <label class="label" for={@field.id}>{@label}</label>
+      <span class="label">{@label}</span>
       <input type="hidden" name={@field.name <> "[]"} value="" />
-      <select
+      <div
         id={@field.id}
-        name={@field.name <> "[]"}
-        multiple
-        size="6"
-        class="select w-full h-auto py-2"
+        class="max-h-60 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-2"
       >
-        {Phoenix.HTML.Form.options_for_select(@options, List.wrap(@field.value))}
-      </select>
+        <label
+          :for={{name, code} <- @options}
+          class="flex items-center gap-3 rounded px-2 py-1 cursor-pointer hover:bg-base-200"
+        >
+          <input
+            type="checkbox"
+            name={@field.name <> "[]"}
+            value={code}
+            checked={code in @selected}
+            class="checkbox checkbox-sm"
+          />
+          <span class="flex-1 text-sm">{name}</span>
+          <span class="text-xs text-base-content/50">{code}</span>
+        </label>
+      </div>
       <p class="label text-xs text-base-content/60">{@hint}</p>
     </div>
     """
@@ -469,11 +483,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                   field={@form[:countries]}
                   options={@country_choices}
                   label={gettext("Deliver only to")}
-                  hint={
-                    gettext(
-                      "Leave empty for every country the provider serves. Hold Ctrl (⌘ on a Mac) to pick several."
-                    )
-                  }
+                  hint={gettext("Leave empty for every country the provider serves.")}
                 />
 
                 <.country_list
