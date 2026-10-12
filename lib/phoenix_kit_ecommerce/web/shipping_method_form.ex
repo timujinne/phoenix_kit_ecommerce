@@ -5,6 +5,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   use PhoenixKitEcommerce.Web, :live_view
 
+  alias PhoenixKit.Utils.CountryData
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitEcommerce, as: Shop
@@ -27,7 +28,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket}
+    {:ok, assign(socket, :country_options, CountryData.countries_for_select())}
   end
 
   @impl true
@@ -55,6 +56,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> assign_shop_trail(gettext("New shipping method"), [shipping_crumb()])
     |> assign(:heading, gettext("New shipping method"))
     |> assign(:method, method)
+    |> assign(:countries_open, countries_set?(method))
     |> assign(:currencies, currencies)
     |> assign(:default_currency, default_currency)
     |> assign_form(changeset)
@@ -71,6 +73,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> assign_shop_trail(gettext("Edit"), [shipping_crumb(), crumb(method.name)])
     |> assign(:heading, gettext("Edit %{name}", name: method.name))
     |> assign(:method, method)
+    |> assign(:countries_open, countries_set?(method))
     |> assign(:currencies, currencies)
     |> assign(:default_currency, default_currency)
     |> assign_form(changeset)
@@ -96,6 +99,10 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
      socket
      |> assign(:form_params, params)
      |> assign_form_errors(changeset)}
+  end
+
+  def handle_event("toggle_countries", _params, socket) do
+    {:noreply, assign(socket, :countries_open, not socket.assigns.countries_open)}
   end
 
   def handle_event("search_locality", params, socket) do
@@ -186,8 +193,70 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     end
   end
 
+  attr :field, Phoenix.HTML.FormField, required: true
+  attr :options, :list, required: true
+  attr :label, :string, required: true
+  attr :hint, :string, required: true
+
+  # A multiple select posts nothing when no option is chosen, which would
+  # leave the old list in place: the blank entry makes "none" a value.
+  defp country_list(assigns) do
+    ~H"""
+    <div class="fieldset w-full">
+      <label class="label" for={@field.id}>{@label}</label>
+      <input type="hidden" name={@field.name <> "[]"} value="" />
+      <select
+        id={@field.id}
+        name={@field.name <> "[]"}
+        multiple
+        size="6"
+        class="select w-full h-auto py-2"
+      >
+        {Phoenix.HTML.Form.options_for_select(@options, List.wrap(@field.value))}
+      </select>
+      <p class="label text-xs text-base-content/60">{@hint}</p>
+    </div>
+    """
+  end
+
+  # Where the country lists are shown. A provider that delivers to a single
+  # country leaves nothing to choose, so they are out of the way; a provider
+  # that serves several countries has them open, limited to its countries;
+  # for a fixed price or a table (any country) they are one click away. Lists
+  # already filled in are always shown, so that stored values stay visible.
+  defp countries_mode(assigns) do
+    chosen = chosen_countries(assigns.form)
+
+    cond do
+      chosen == [] and match?([_], assigns.provider_countries) -> :hidden
+      chosen != [] or assigns.countries_open or length(assigns.provider_countries) > 1 -> :open
+      true -> :collapsed
+    end
+  end
+
+  # What the lists offer: every country, or those the provider delivers to
+  # (and whatever is already chosen, so that a stale value can be removed).
+  defp country_choices(%{provider_countries: []} = assigns), do: assigns.country_options
+
+  defp country_choices(assigns) do
+    keep = assigns.provider_countries ++ chosen_countries(assigns.form)
+    Enum.filter(assigns.country_options, fn {_label, code} -> code in keep end)
+  end
+
+  defp chosen_countries(form) do
+    (List.wrap(form[:countries].value) ++ List.wrap(form[:excluded_countries].value))
+    |> Enum.reject(&(&1 in [nil, ""]))
+  end
+
+  defp countries_set?(method), do: method.countries != [] or method.excluded_countries != []
+
   @impl true
   def render(assigns) do
+    assigns =
+      assigns
+      |> assign(:countries_mode, countries_mode(assigns))
+      |> assign(:country_choices, country_choices(assigns))
+
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
         <.admin_page_header
@@ -378,6 +447,41 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                     placeholder={gettext("No max")}
                   />
                 </div>
+              </div>
+
+              <div :if={@countries_mode == :collapsed} class="mt-6">
+                <button
+                  type="button"
+                  id="shipping-method-countries-toggle"
+                  phx-click="toggle_countries"
+                  class="btn btn-ghost btn-sm"
+                >
+                  <.icon name="hero-globe-alt" class="w-4 h-4" /> {gettext("Limit by country")}
+                </button>
+              </div>
+
+              <div
+                :if={@countries_mode == :open}
+                id="shipping-method-countries"
+                class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6"
+              >
+                <.country_list
+                  field={@form[:countries]}
+                  options={@country_choices}
+                  label={gettext("Deliver only to")}
+                  hint={
+                    gettext(
+                      "Leave empty for every country the provider serves. Hold Ctrl (⌘ on a Mac) to pick several."
+                    )
+                  }
+                />
+
+                <.country_list
+                  field={@form[:excluded_countries]}
+                  options={@country_choices}
+                  label={gettext("Never deliver to")}
+                  hint={gettext("A country in both lists is not delivered to.")}
+                />
               </div>
             </div>
           </div>
