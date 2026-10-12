@@ -5,14 +5,19 @@ defmodule PhoenixKitEcommerce.Shipping.Field do
 
     * `key` - the key under `settings` in the method configuration
     * `type` - `:string | :integer | :decimal | :boolean | :select | :textarea |
-      :locality` (`:locality` is an autocomplete over `search_localities/2`)
+      :locality | :pickup_point` (`:locality` is an autocomplete over
+      `search_localities/2`; `:pickup_point` is a branch or a locker chosen from
+      `list_pickup_points/4` for the city picked in the `:locality` field named
+      by `locality_key`. Both are stored as `%{"id" => ..., "name" => ...}`)
+    * `locality_key` - for `:pickup_point`: the `key` of the `:locality` field
+      whose city the points are listed for
     * `options` - `[{label, value}]`, for `:select`
     * `required`, `default`, `help` - as the names say
   """
 
   alias PhoenixKitEcommerce.Shipping.Codec
 
-  @types [:string, :integer, :decimal, :boolean, :select, :textarea, :locality]
+  @types [:string, :integer, :decimal, :boolean, :select, :textarea, :locality, :pickup_point]
 
   defstruct key: nil,
             label: nil,
@@ -20,9 +25,18 @@ defmodule PhoenixKitEcommerce.Shipping.Field do
             options: [],
             required: false,
             default: nil,
-            help: nil
+            help: nil,
+            locality_key: nil
 
-  @type type :: :string | :integer | :decimal | :boolean | :select | :textarea | :locality
+  @type type ::
+          :string
+          | :integer
+          | :decimal
+          | :boolean
+          | :select
+          | :textarea
+          | :locality
+          | :pickup_point
 
   @type t :: %__MODULE__{
           key: String.t() | nil,
@@ -31,7 +45,8 @@ defmodule PhoenixKitEcommerce.Shipping.Field do
           options: [{String.t(), term()}],
           required: boolean(),
           default: term(),
-          help: String.t() | nil
+          help: String.t() | nil,
+          locality_key: String.t() | nil
         }
 
   @doc "Serialises the field into a JSON-safe map (options become `[label, value]` pairs)."
@@ -50,7 +65,8 @@ defmodule PhoenixKitEcommerce.Shipping.Field do
       options: map |> Codec.get(:options) |> Codec.list(&option/1),
       required: Codec.get(map, :required) == true,
       default: Codec.get(map, :default),
-      help: map |> Codec.get(:help) |> Codec.string()
+      help: map |> Codec.get(:help) |> Codec.string(),
+      locality_key: map |> Codec.get(:locality_key) |> Codec.string()
     }
   end
 

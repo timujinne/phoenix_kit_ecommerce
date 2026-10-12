@@ -261,13 +261,15 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
 
   defp cast_setting(:boolean, value, _current), do: value in [true, "true", "on", "1"]
 
-  defp cast_setting(:locality, %{} = value, _current) do
+  defp cast_setting(type, %{} = value, _current) when type in [:locality, :pickup_point] do
     id = value |> Map.get("id") |> Codec.string() |> trim()
     name = value |> Map.get("name") |> Codec.string() |> trim()
     if id == "" or name == "", do: :skip, else: %{"id" => id, "name" => name}
   end
 
-  defp cast_setting(:locality, _other, current), do: current || :skip
+  defp cast_setting(type, _other, current) when type in [:locality, :pickup_point],
+    do: current || :skip
+
   defp cast_setting(_type, value, _current), do: Codec.string(value) || ""
 
   defp posted_pricing(raw, current) do
