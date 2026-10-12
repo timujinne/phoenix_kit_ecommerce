@@ -32,7 +32,7 @@ against a deliberately broken file to confirm it catches each defect class.
 - **Glossary:** кошик, оформлення замовлення, спосіб доставки, проміжна сума, разом, стара ціна, виробник and
   артикул (SKU) are used consistently. The checkout step "Billing" is «Платіжні дані» and «Далі: платіжні
   дані», where the glossary says «оплата». That deviation is documented in the PR and works.
-- **Tests:** `MIX_ENV=test PGDATABASE=pkecom_test_domovych_uk PGPOOL=10 mix test
+- **Tests:** `MIX_ENV=test PGDATABASE=pkecom_test_uk PGPOOL=10 mix test
   test/phoenix_kit_ecommerce/i18n_test.exs` → 17 tests, 0 failures.
 
 ## Findings
@@ -141,7 +141,7 @@ guest-checkout account notices are all right.
   unchanged" and produces a byte-identical file.
 - **Full checker re-run.** 1,097/1,097 entries, 0 errors. Every form of all 55 plural entries carries the
   `msgid_plural` bindings. The language heuristics show no new hits.
-- **Tests.** `MIX_ENV=test PGDATABASE=pkecom_test_domovych_uk PGPOOL=10 mix test
+- **Tests.** `MIX_ENV=test PGDATABASE=pkecom_test_uk PGPOOL=10 mix test
   test/phoenix_kit_ecommerce/i18n_test.exs` → 18 tests, 0 failures.
 - **The new test catches the real bug.** I extracted its logic and ran it against the round-1 catalogue
   (`eca408c`). It reports exactly `[{"1 category", "msgstr[0]"}, {"1 day", "msgstr[0]"}, {"1 product",
@@ -180,5 +180,5 @@ Move the new test (with its own comment) below the fuzzy test, or move the fuzzy
 - **Diff against `main` (`1a168f1`):** the declared files plus the review file (byte-identical to rounds 1–2).
   GitHub reports `MERGEABLE`.
 - **Re-checked:** the catalogue is byte-identical to `mix gettext.merge` output (1097 unchanged); checker 0
-  errors; `MIX_ENV=test PGDATABASE=pkecom_test_domovych_uk PGPOOL=10 mix test
+  errors; `MIX_ENV=test PGDATABASE=pkecom_test_uk PGPOOL=10 mix test
   test/phoenix_kit_ecommerce/i18n_test.exs` → 18 tests, 0 failures.

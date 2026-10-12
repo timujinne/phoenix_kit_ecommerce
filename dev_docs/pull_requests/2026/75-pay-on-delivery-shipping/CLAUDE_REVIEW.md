@@ -307,7 +307,7 @@ prefix. Mention only.
 
 ## Validation
 
-All runs used `MIX_ENV=test PGDATABASE=pkecom_test_domovych_pod PGPOOL=10`,
+All runs used `MIX_ENV=test PGDATABASE=pkecom_test_pod PGPOOL=10`,
 except the gates that need no database.
 
 - The PR's three test files: 32 tests, 0 failures.
@@ -463,7 +463,7 @@ options:
 
 ### Validation (round 2)
 
-All runs used `MIX_ENV=test PGDATABASE=pkecom_test_domovych_pod PGPOOL=10`,
+All runs used `MIX_ENV=test PGDATABASE=pkecom_test_pod PGPOOL=10`,
 except the gates that need no database.
 
 - The PR's three test files: 42 tests, 0 failures.
@@ -546,7 +546,7 @@ merge.
 
 ### Validation (round 3)
 
-All runs used `MIX_ENV=test PGDATABASE=pkecom_test_domovych_pod PGPOOL=10`,
+All runs used `MIX_ENV=test PGDATABASE=pkecom_test_pod PGPOOL=10`,
 except the gates that need no database.
 
 - The PR's three test files: 44 tests, 0 failures.
