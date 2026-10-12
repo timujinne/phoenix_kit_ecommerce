@@ -13,8 +13,9 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
   - `free_above_amount` - Free shipping threshold
   - `min_weight_grams`, `max_weight_grams` - Weight limits
   - `min_order_amount`, `max_order_amount` - Order amount limits
-  - `countries` - Allowed countries (empty = all)
-  - `excluded_countries` - Excluded countries
+  - `countries` - Allowed countries, ISO 3166-1 alpha-2 (empty = all)
+  - `excluded_countries` - Excluded countries; a country in both lists is
+    excluded
   - `active` - Enabled/disabled
   - `position` - Sort order
   - `estimated_days_min`, `estimated_days_max` - Delivery estimate
@@ -35,7 +36,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
 
   alias PhoenixKit.Utils.Slug
   alias PhoenixKitEcommerce.LocalizedSlug
-  alias PhoenixKitEcommerce.Shipping.{MethodConfig, MethodParams}
+  alias PhoenixKitEcommerce.Shipping.{Codec, MethodConfig, MethodParams}
 
   @primary_key {:uuid, UUIDv7, autogenerate: true}
 
@@ -110,6 +111,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
 
     method
     |> cast(attrs, @required_fields ++ @optional_fields)
+    |> normalize_countries()
     |> put_pay_on_delivery(pay_on_delivery)
     |> put_shipping_provider(shipping_provider, opts)
     |> zero_pay_on_delivery_price()
@@ -265,6 +267,15 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     min_ok = is_nil(min) or Decimal.compare(amount, min) != :lt
     max_ok = is_nil(max) or Decimal.compare(amount, max) != :gt
     min_ok and max_ok
+  end
+
+  # Each code is stored upcased and once; what is not an ISO 3166-1 alpha-2
+  # code is dropped. The admin form submits a blank entry with the lists, so
+  # that a list can be emptied: that blank is dropped here as well.
+  defp normalize_countries(changeset) do
+    Enum.reduce([:countries, :excluded_countries], changeset, fn field, acc ->
+      update_change(acc, field, &Codec.countries/1)
+    end)
   end
 
   defp country_ok?(%{countries: [], excluded_countries: []}, _country), do: true

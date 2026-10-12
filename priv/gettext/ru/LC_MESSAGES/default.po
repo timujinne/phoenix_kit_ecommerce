@@ -192,7 +192,7 @@ msgstr "Действия"
 #: lib/phoenix_kit_ecommerce/web/categories.ex:311
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:918
 #: lib/phoenix_kit_ecommerce/web/products.ex:322
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:433
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:537
 #: lib/phoenix_kit_ecommerce/web/translations.ex:812
 #, elixir-autogen, elixir-format
 msgid "Active"
@@ -385,7 +385,7 @@ msgid "Base price:"
 msgstr "Базовая цена:"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:370
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:209
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:278
 #, elixir-autogen, elixir-format
 msgid "Basic Information"
 msgstr "Основная информация"
@@ -449,7 +449,7 @@ msgstr "Фильтры CSV-импорта"
 #: lib/phoenix_kit_ecommerce/web/products.ex:716
 #: lib/phoenix_kit_ecommerce/web/products.ex:744
 #: lib/phoenix_kit_ecommerce/web/products.ex:770
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:454
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:558
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr "Отмена"
@@ -623,7 +623,7 @@ msgstr "Настроить сопоставление опций"
 msgid "Configure keyword filters and category rules for CSV product imports"
 msgstr "Настройте ключевые слова и правила категоризации для CSV-импорта товаров"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:196
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:265
 #, elixir-autogen, elixir-format
 msgid "Configure shipping method details"
 msgstr "Настроить параметры метода доставки"
@@ -643,7 +643,7 @@ msgstr "Подтвердить"
 msgid "Confirm Import"
 msgstr "Подтвердить импорт"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:337
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:406
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:119
 #, elixir-autogen, elixir-format
 msgid "Constraints"
@@ -676,7 +676,7 @@ msgstr "Себестоимость товара"
 msgid "Create Category"
 msgstr "Создать категорию"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:458
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:562
 #, elixir-autogen, elixir-format
 msgid "Create Method"
 msgstr "Создать метод"
@@ -712,7 +712,7 @@ msgid "Created:"
 msgstr "Создано:"
 
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:159
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:264
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:333
 #, elixir-autogen, elixir-format
 msgid "Currency"
 msgstr "Валюта"
@@ -780,7 +780,7 @@ msgstr "Задайте параметры для всех товаров (раз
 #: lib/phoenix_kit_ecommerce/web/products.ex:414
 #: lib/phoenix_kit_ecommerce/web/products.ex:771
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:109
-#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:211
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:217
 #, elixir-autogen, elixir-format
 msgid "Delete"
 msgstr "Удалить"
@@ -817,7 +817,7 @@ msgid "Delete this category?"
 msgstr "Удалить эту категорию?"
 
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:107
-#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:209
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:215
 #, elixir-autogen, elixir-format
 msgid "Delete this shipping method?"
 msgstr "Удалить этот метод доставки?"
@@ -835,12 +835,12 @@ msgstr "Доставлен"
 msgid "Delivery"
 msgstr "Доставка"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:388
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:492
 #, elixir-autogen, elixir-format
 msgid "Delivery & Status"
 msgstr "Доставка и статус"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:235
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:304
 #, elixir-autogen, elixir-format
 msgid "Delivery in 3-5 business days"
 msgstr "Доставка за 3–5 рабочих дней"
@@ -850,7 +850,7 @@ msgstr "Доставка за 3–5 рабочих дней"
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:643
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:973
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1204
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:234
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:303
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1503
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1436
 #, elixir-autogen, elixir-format
@@ -935,15 +935,15 @@ msgstr "Настройки электронной коммерции"
 #: lib/phoenix_kit_ecommerce/web/components/shop_cards.ex:211
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:229
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:149
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:71
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:73
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:101
-#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:203
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:209
 #, elixir-autogen, elixir-format
 msgid "Edit"
 msgstr "Изменить"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:107
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:72
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:74
 #, elixir-autogen, elixir-format
 msgid "Edit %{name}"
 msgstr "Редактировать %{name}"
@@ -1000,12 +1000,12 @@ msgstr "Ошибка: %{reason}"
 msgid "Errors"
 msgstr "Ошибки"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:405
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:509
 #, elixir-autogen, elixir-format
 msgid "Est. days (max)"
 msgstr "Срок (макс., дней)"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:395
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:499
 #, elixir-autogen, elixir-format
 msgid "Est. days (min)"
 msgstr "Срок (мин., дней)"
@@ -1058,7 +1058,7 @@ msgstr "Не удалось удалить журнал импорта"
 msgid "Failed to delete product"
 msgstr "Не удалось удалить товар"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:281
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:295
 #, elixir-autogen, elixir-format
 msgid "Failed to delete shipping method"
 msgstr "Не удалось удалить способ доставки"
@@ -1168,7 +1168,7 @@ msgstr "Итоговая цена"
 msgid "Folder icon"
 msgstr "Иконка папки"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:289
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:358
 #, elixir-autogen, elixir-format
 msgid "Free above"
 msgstr "Бесплатно от"
@@ -1392,12 +1392,12 @@ msgstr "Сделать корневой (без родительской)"
 msgid "Manage your e-commerce store"
 msgstr "Управляйте своим интернет-магазином"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:375
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:444
 #, elixir-autogen, elixir-format
 msgid "Max order"
 msgstr "Макс. заказ"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:354
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:423
 #, elixir-autogen, elixir-format
 msgid "Max weight (g)"
 msgstr "Макс. вес (г)"
@@ -1427,12 +1427,12 @@ msgstr "Перенесите изображения товаров с внешн
 msgid "Migrated"
 msgstr "Перенесено"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:364
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:433
 #, elixir-autogen, elixir-format
 msgid "Min order"
 msgstr "Мин. заказ"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:344
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:413
 #, elixir-autogen, elixir-format
 msgid "Min weight (g)"
 msgstr "Мин. вес (г)"
@@ -1463,7 +1463,7 @@ msgstr "Мои заказы"
 #: lib/phoenix_kit_ecommerce/web/categories.ex:438
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:375
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:630
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:216
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:285
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1440
 #, elixir-autogen, elixir-format
 msgid "Name"
@@ -1540,22 +1540,22 @@ msgstr "Нет изображения"
 msgid "No imports yet"
 msgstr "Импортов ещё нет"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:356
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:425
 #, elixir-autogen, elixir-format
 msgid "No limit"
 msgstr "Без ограничений"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:177
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:183
 #, elixir-autogen, elixir-format
 msgid "No limits"
 msgstr "Без ограничений"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:378
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:447
 #, elixir-autogen, elixir-format
 msgid "No max"
 msgstr "Без макс."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:367
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:436
 #, elixir-autogen, elixir-format
 msgid "No min"
 msgstr "Без мин."
@@ -1591,7 +1591,7 @@ msgstr "В этой категории нет товаров с изображе
 msgid "No shipping methods"
 msgstr "Методы доставки не настроены"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:292
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:361
 #, elixir-autogen, elixir-format
 msgid "No threshold"
 msgstr "Без порога"
@@ -1763,7 +1763,7 @@ msgstr "Сначала выберите CSV-файл"
 #: lib/phoenix_kit_ecommerce/web/categories.ex:402
 #: lib/phoenix_kit_ecommerce/web/categories.ex:442
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:433
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:415
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:519
 #, elixir-autogen, elixir-format
 msgid "Position"
 msgstr "Позиция"
@@ -1793,7 +1793,7 @@ msgstr "Предыдущая"
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:429
 #: lib/phoenix_kit_ecommerce/web/products.ex:438
 #: lib/phoenix_kit_ecommerce/web/products.ex:499
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:253
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:322
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:118
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1507
 #, elixir-autogen, elixir-format
@@ -1817,7 +1817,7 @@ msgstr "Переопределение цены настраивается дл�
 
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:423
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:993
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:246
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:315
 #, elixir-autogen, elixir-format
 msgid "Pricing"
 msgstr "Цены"
@@ -2070,17 +2070,17 @@ msgstr "Отправлен"
 msgid "Shipping Methods"
 msgstr "Способы доставки"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:155
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:162
 #, elixir-autogen, elixir-format
 msgid "Shipping method created"
 msgstr "Метод доставки создан"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:278
+#: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:292
 #, elixir-autogen, elixir-format
 msgid "Shipping method deleted"
 msgstr "Метод доставки удалён"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:181
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:188
 #, elixir-autogen, elixir-format
 msgid "Shipping method updated"
 msgstr "Метод доставки обновлён"
@@ -2144,7 +2144,7 @@ msgstr "Ключ слота"
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:404
 #: lib/phoenix_kit_ecommerce/web/import_show.ex:166
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:927
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:226
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:295
 #, elixir-autogen, elixir-format
 msgid "Slug"
 msgstr "Slug"
@@ -2162,7 +2162,7 @@ msgstr "Что-то пошло не так. Попробуйте снова."
 msgid "Specifications"
 msgstr "Характеристики"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:217
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:286
 #, elixir-autogen, elixir-format
 msgid "Standard Shipping"
 msgstr "Стандартная доставка"
@@ -2201,7 +2201,7 @@ msgstr "Запущена миграция для %{count} товаров"
 #: lib/phoenix_kit_ecommerce/web/products.ex:318
 #: lib/phoenix_kit_ecommerce/web/products.ex:428
 #: lib/phoenix_kit_ecommerce/web/products.ex:496
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:422
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:526
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:121
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1506
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2416
@@ -2316,7 +2316,7 @@ msgstr "Итого"
 msgid "Total Products"
 msgstr "Всего товаров"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:445
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:549
 #, elixir-autogen, elixir-format
 msgid "Tracking supported"
 msgstr "Поддерживается отслеживание"
@@ -2406,7 +2406,7 @@ msgstr "Обновить"
 msgid "Update Category"
 msgstr "Обновить категорию"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:458
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:562
 #, elixir-autogen, elixir-format
 msgid "Update Method"
 msgstr "Обновить метод"
@@ -2552,7 +2552,7 @@ msgstr "Ваш заказ доставлен."
 msgid "Your order is on its way!"
 msgstr "Ваш заказ в пути!"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:227
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:296
 #, elixir-autogen, elixir-format
 msgid "auto-generated if empty"
 msgstr "генерируется автоматически, если пусто"
@@ -4667,7 +4667,7 @@ msgstr "Названия"
 msgid "Vendors"
 msgstr "Поставщики"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:270
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:339
 #, elixir-autogen, elixir-format
 msgid "No default currency configured"
 msgstr "Валюта по умолчанию не настроена"
@@ -6068,8 +6068,8 @@ msgstr "Новая категория"
 msgid "New product"
 msgstr "Новый товар"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:55
 #: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:56
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:57
 #, elixir-autogen, elixir-format
 msgid "New shipping method"
 msgstr "Новый способ доставки"
@@ -6098,7 +6098,7 @@ msgstr "По тарифам перевозчика, оплата при полу
 msgid "Paid on delivery"
 msgstr "Оплата при получении"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:306
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:375
 #, elixir-autogen, elixir-format
 msgid "Paid on delivery at carrier rates"
 msgstr "Оплата при получении по тарифам перевозчика"
@@ -6111,7 +6111,7 @@ msgstr "Оплата при получении по тарифам перево�
 msgid "Shipping is not included in this total: you pay the carrier at their rates on delivery."
 msgstr "Доставка не входит в эту сумму: вы оплачиваете её перевозчику по его тарифам при получении."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:309
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:378
 #, elixir-autogen, elixir-format
 msgid "The customer pays the carrier at their rates on delivery. The shop charges nothing for shipping: the price is saved as 0 and the free-shipping threshold is cleared."
 msgstr "Покупатель оплачивает доставку перевозчику по его тарифам при получении. Магазин ничего не берёт за доставку: цена сохраняется как 0, а порог бесплатной доставки сбрасывается."
@@ -6151,17 +6151,17 @@ msgstr "%{name}: подключено"
 msgid "%{name}: not connected"
 msgstr "%{name}: не подключено"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:551
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:655
 #, elixir-autogen, elixir-format
 msgid "%{provider} (not installed)"
 msgstr "%{provider} (не установлена)"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:568
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:672
 #, elixir-autogen, elixir-format
 msgid "%{service} (unavailable)"
 msgstr "%{service} (недоступна)"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:196
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:197
 #, elixir-autogen, elixir-format
 msgid "%{setting} is required"
 msgstr "Поле «%{setting}» обязательно"
@@ -6222,7 +6222,7 @@ msgstr "Проверить данные доставки"
 msgid "Check the default parcel values"
 msgstr "Проверьте значения посылки по умолчанию"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:183
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:184
 #, elixir-autogen, elixir-format
 msgid "Choose a service"
 msgstr "Выберите услугу"
@@ -6310,7 +6310,7 @@ msgstr "Ориентировочная цена: перевозчик не от�
 msgid "Failed to update the default parcel"
 msgstr "Не удалось обновить посылку по умолчанию"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:157
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:158
 #, elixir-autogen, elixir-format
 msgid "Fixed markup"
 msgstr "Фиксированная наценка"
@@ -6368,22 +6368,22 @@ msgstr "Управление интеграциями"
 msgid "Markup on the carrier's price"
 msgstr "Наценка на цену перевозчика"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:156
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:157
 #, elixir-autogen, elixir-format
 msgid "Markup, %"
 msgstr "Наценка, %"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:221
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:222
 #, elixir-autogen, elixir-format
 msgid "Must be 0 or greater"
 msgstr "Должно быть не меньше 0"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:218
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:219
 #, elixir-autogen, elixir-format
 msgid "Must be a number"
 msgstr "Должно быть числом"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:224
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:225
 #, elixir-autogen, elixir-format
 msgid "Must be at most %{max}"
 msgstr "Должно быть не больше %{max}"
@@ -6495,7 +6495,7 @@ msgstr "Тарифная таблица по весу"
 msgid "Rates"
 msgstr "Тарифы"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:158
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:159
 #, elixir-autogen, elixir-format
 msgid "Round up to a multiple of"
 msgstr "Округлять вверх до кратного"
@@ -6622,12 +6622,12 @@ msgstr "Не удалось загрузить список. Попробуйт�
 msgid "The price in the Pricing card is the fallback price: the customer pays it when the carrier does not answer."
 msgstr "Цена в карточке «Цены» — запасная: покупатель платит её, если перевозчик не отвечает."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:211
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:212
 #, elixir-autogen, elixir-format
 msgid "The provider %{provider} is not installed"
 msgstr "Служба доставки %{provider} не установлена"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:189
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:190
 #, elixir-autogen, elixir-format
 msgid "The provider does not offer the service %{service}"
 msgstr "Служба доставки не предоставляет услугу %{service}"
@@ -6642,7 +6642,7 @@ msgstr "Поиск сейчас недоступен."
 msgid "The service is busy right now. Please try again in a moment."
 msgstr "Служба доставки сейчас перегружена. Пожалуйста, повторите попытку чуть позже."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:216
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:217
 #, elixir-autogen, elixir-format
 msgid "The shipping provider settings are not valid"
 msgstr "Настройки службы доставки некорректны"
@@ -6747,12 +6747,12 @@ msgstr "Откуда берётся цена этого способа."
 msgid "Width (mm)"
 msgstr "Ширина (мм)"
 
-#: lib/phoenix_kit_ecommerce.ex:404
+#: lib/phoenix_kit_ecommerce.ex:435
 #, elixir-autogen, elixir-format
 msgid "is required when the other sides are set"
 msgstr "обязательно, если заданы остальные стороны"
 
-#: lib/phoenix_kit_ecommerce.ex:399
+#: lib/phoenix_kit_ecommerce.ex:430
 #, elixir-autogen, elixir-format
 msgid "must be a whole number from 0 to %{max}"
 msgstr "должно быть целым числом от 0 до %{max}"
@@ -6761,3 +6761,28 @@ msgstr "должно быть целым числом от 0 до %{max}"
 #, elixir-autogen, elixir-format
 msgid "Delivers to: %{countries}"
 msgstr "Страны доставки: %{countries}"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:483
+#, elixir-autogen, elixir-format
+msgid "A country in both lists is not delivered to."
+msgstr "В страну, указанную в обоих списках, доставка не выполняется."
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:471
+#, elixir-autogen, elixir-format
+msgid "Deliver only to"
+msgstr "Доставлять только в"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:473
+#, elixir-autogen, elixir-format
+msgid "Leave empty for every country the provider serves. Hold Ctrl (⌘ on a Mac) to pick several."
+msgstr "Оставьте пустым, чтобы доставлять в любую страну, которую обслуживает служба доставки. Удерживайте Ctrl (⌘ на Mac), чтобы выбрать несколько."
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:482
+#, elixir-autogen, elixir-format
+msgid "Never deliver to"
+msgstr "Никогда не доставлять в"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:459
+#, elixir-autogen, elixir-format
+msgid "Limit by country"
+msgstr "Ограничить по стране"
