@@ -48,6 +48,7 @@ defmodule PhoenixKitEcommerce do
   @blocking_shipping_statuses [:needs_destination, :missing, :stale, :unavailable]
 
   alias PhoenixKit.Dashboard.Tab
+  alias PhoenixKit.Integrations.Providers, as: IntegrationProviders
   alias PhoenixKit.Migrations.Postgres, as: PostgresMigrations
   alias PhoenixKit.Modules.Languages
   alias PhoenixKit.Modules.Languages.DialectMapper
@@ -123,7 +124,10 @@ defmodule PhoenixKitEcommerce do
   @impl PhoenixKit.Module
   # Shopify (while its toggle is on) followed by the Integrations definition of
   # every registered shipping provider that has one, so a carrier's API key
-  # is entered where every other credential is.
+  # is entered where every other credential is. The carriers are offered only
+  # while the shop is on: a site without the shop has no use for them
+  # (`enable_system/0` and `disable_system/0` clear the provider cache, so the
+  # integrations page follows the toggle). Connections already saved are kept.
   def integration_providers do
     shopify = if shopify_enabled?(), do: [ShopifyProvider.definition()], else: []
 
@@ -131,10 +135,24 @@ defmodule PhoenixKitEcommerce do
   end
 
   defp shipping_integrations do
-    for provider <- Shipping.providers(),
-        function_exported?(provider, :integration, 0),
-        %{} = definition <- [safe_integration(provider)],
-        do: definition
+    if shop_switched_off?() do
+      []
+    else
+      for provider <- Shipping.providers(),
+          function_exported?(provider, :integration, 0),
+          %{} = definition <- [safe_integration(provider)],
+          do: definition
+    end
+  end
+
+  # Only an explicit "off" hides the carriers. The provider list is cached, so
+  # a setting that cannot be read right now must not hide them until a restart.
+  defp shop_switched_off? do
+    Settings.get_setting_cached("shop_enabled", nil) == "false"
+  rescue
+    _ -> false
+  catch
+    :exit, _ -> false
   end
 
   defp safe_integration(provider) do
@@ -204,6 +222,7 @@ defmodule PhoenixKitEcommerce do
   def enable_system do
     result = Settings.update_boolean_setting_with_module("shop_enabled", true, "shop")
     refresh_dashboard_tabs()
+    refresh_integration_providers()
     recover_translation_sweep()
     # The search index drops every product event while the shop is off, so what
     # changed in the meantime (or a fresh install's empty table) is rebuilt now,
@@ -250,8 +269,13 @@ defmodule PhoenixKitEcommerce do
   def disable_system do
     result = Settings.update_boolean_setting_with_module("shop_enabled", false, "shop")
     refresh_dashboard_tabs()
+    refresh_integration_providers()
     result
   end
+
+  # The list of integration providers is cached in `:persistent_term`; what
+  # `integration_providers/0` answers depends on `shop_enabled`.
+  defp refresh_integration_providers, do: IntegrationProviders.clear_cache()
 
   defp refresh_dashboard_tabs do
     if Code.ensure_loaded?(PhoenixKit.Dashboard.Registry) and
@@ -526,15 +550,65 @@ defmodule PhoenixKitEcommerce do
   end
 
   defp shipping_methods_country do
-    case [active: true]
-         |> list_shipping_methods()
-         |> Enum.map(&method_country_codes/1)
-         |> Enum.uniq() do
-      [[country]] -> country
+    case checkout_countries() do
+      [country] -> country
       _ -> nil
     end
   rescue
     error -> checkout_country_source_failed(:shipping_methods, error)
+  end
+
+  @doc """
+  The countries the shop delivers to: `:all` while any active shipping method
+  is not limited to certain countries, else the countries of the active
+  methods put together.
+
+  A method serves the countries it lists (`countries`, empty = every one)
+  that its shipping provider also serves (`Shipping.provider_countries/1`,
+  empty = every one), less `excluded_countries`. When it comes down to a
+  single country, that is the one a checkout starts with
+  (`default_checkout_country/0`).
+  """
+  @spec checkout_countries() :: :all | [String.t()]
+  def checkout_countries do
+    [active: true]
+    |> list_shipping_methods()
+    |> Enum.map(&method_served_countries/1)
+    |> union_served_countries()
+  end
+
+  defp union_served_countries([]), do: :all
+
+  defp union_served_countries(served) do
+    if :all in served, do: :all, else: served |> List.flatten() |> Enum.uniq() |> Enum.sort()
+  end
+
+  defp method_served_countries(method) do
+    allowed = if List.wrap(method.countries) == [], do: :all, else: method_country_codes(method)
+
+    served =
+      case {allowed, method_provider_countries(method)} do
+        {:all, []} -> :all
+        {:all, provider} -> provider
+        {allowed, []} -> allowed
+        {allowed, provider} -> Enum.filter(allowed, &(&1 in provider))
+      end
+
+    case served do
+      :all -> :all
+      codes -> codes -- ShippingCodec.countries(method.excluded_countries)
+    end
+  end
+
+  # What the method's shipping provider delivers to; [] says "no limit" (a
+  # method with a fixed price, a provider that does not say, one not installed).
+  defp method_provider_countries(method) do
+    with %{provider: key} when is_binary(key) <- ShippingMethod.shipping_config(method),
+         {:ok, module} <- Shipping.provider(key) do
+      Shipping.provider_countries(module)
+    else
+      _ -> []
+    end
   end
 
   defp priority_country do
