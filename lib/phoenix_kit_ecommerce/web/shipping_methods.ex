@@ -173,10 +173,16 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
                       <% end %>
                       <%= if method.countries != [] do %>
                         <span class="badge badge-outline badge-sm">
-                          {length(method.countries)} countries
+                          {country_codes(method.countries)}
                         </span>
                       <% end %>
-                      <%= if method.countries == [] && is_nil(method.max_weight_grams) do %>
+                      <%= if method.excluded_countries != [] do %>
+                        <span class="badge badge-outline badge-sm">
+                          &minus; {country_codes(method.excluded_countries)}
+                        </span>
+                      <% end %>
+                      <%= if method.countries == [] && method.excluded_countries == [] &&
+                               is_nil(method.max_weight_grams) do %>
                         <span class="text-base-content/50 text-sm">{gettext("No limits")}</span>
                       <% end %>
                     </div>
@@ -235,6 +241,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
     case Shipping.provider(key) do
       {:ok, module} -> module.label()
       :error -> key
+    end
+  end
+
+  # The codes of a country list, a few of them in full: "UA, PL, DE +2".
+  defp country_codes(codes) do
+    case Enum.split(codes, 3) do
+      {shown, []} -> Enum.join(shown, ", ")
+      {shown, rest} -> Enum.join(shown, ", ") <> " +#{length(rest)}"
     end
   end
 
