@@ -167,10 +167,14 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
       view |> element("#shipping-method-countries-toggle") |> render_click()
 
       refute has_element?(view, "#shipping-method-countries-toggle")
-      assert has_element?(view, "select#shipping_method_countries[multiple]")
-      assert has_element?(view, "select#shipping_method_excluded_countries[multiple]")
-      assert has_element?(view, "select#shipping_method_countries option[value='DE']")
-      refute has_element?(view, "select#shipping_method_countries option[selected]")
+      assert has_element?(view, "#shipping_method_countries input[type=checkbox]")
+      assert has_element?(view, "#shipping_method_excluded_countries input[type=checkbox]")
+
+      # The admin theme draws a native multiple select as one strip of overlapping
+      # labels: the lists are checkboxes in a box that scrolls.
+      refute has_element?(view, "#shipping-method-countries select")
+      assert has_element?(view, "#shipping_method_countries input[type=checkbox][value='DE']")
+      refute has_element?(view, "#shipping_method_countries input[type=checkbox][checked]")
     end
 
     test "leaves them out for a provider that delivers to one country", %{conn: conn} do
@@ -191,10 +195,14 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
       choose_provider(view, "country_stub")
 
       assert has_element?(view, "#shipping-method-countries")
-      assert has_element?(view, "select#shipping_method_countries option[value='UA']")
-      assert has_element?(view, "select#shipping_method_countries option[value='PL']")
-      refute has_element?(view, "select#shipping_method_countries option[value='DE']")
-      refute has_element?(view, "select#shipping_method_excluded_countries option[value='DE']")
+      assert has_element?(view, "#shipping_method_countries input[type=checkbox][value='UA']")
+      assert has_element?(view, "#shipping_method_countries input[type=checkbox][value='PL']")
+      refute has_element?(view, "#shipping_method_countries input[type=checkbox][value='DE']")
+
+      refute has_element?(
+               view,
+               "#shipping_method_excluded_countries input[type=checkbox][value='DE']"
+             )
     end
 
     test "shows what is saved, even for a provider that has one country", %{conn: conn} do
@@ -205,9 +213,14 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
 
       # PL is not the provider's, but it is stored: it stays visible to be removed.
       assert has_element?(view, "#shipping-method-countries")
-      assert has_element?(view, "select#shipping_method_countries option[value='PL'][selected]")
-      assert has_element?(view, "select#shipping_method_countries option[value='UA']")
-      refute has_element?(view, "select#shipping_method_countries option[value='DE']")
+
+      assert has_element?(
+               view,
+               "#shipping_method_countries input[type=checkbox][value='PL'][checked]"
+             )
+
+      assert has_element?(view, "#shipping_method_countries input[type=checkbox][value='UA']")
+      refute has_element?(view, "#shipping_method_countries input[type=checkbox][value='DE']")
     end
 
     test "opens at once when the method already has countries", %{conn: conn} do
@@ -216,11 +229,15 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
 
       refute has_element?(view, "#shipping-method-countries-toggle")
-      assert has_element?(view, "select#shipping_method_countries option[value='UA'][selected]")
 
       assert has_element?(
                view,
-               "select#shipping_method_excluded_countries option[value='RU'][selected]"
+               "#shipping_method_countries input[type=checkbox][value='UA'][checked]"
+             )
+
+      assert has_element?(
+               view,
+               "#shipping_method_excluded_countries input[type=checkbox][value='RU'][checked]"
              )
     end
 

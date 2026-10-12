@@ -11,7 +11,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Shipping
-  alias PhoenixKitEcommerce.Shipping.MethodParams
+  alias PhoenixKitEcommerce.Shipping.{Locality, MethodParams}
   alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.ShippingProviderState, as: ProviderState
@@ -198,22 +198,36 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   attr :label, :string, required: true
   attr :hint, :string, required: true
 
-  # A multiple select posts nothing when no option is chosen, which would
-  # leave the old list in place: the blank entry makes "none" a value.
+  # Checkboxes in a box that scrolls: a native multiple select is drawn by the
+  # admin theme as one horizontal strip, and needs Ctrl to pick several. With no
+  # box ticked the form posts nothing, which would leave the old list in
+  # place: the blank entry makes "none" a value.
   defp country_list(assigns) do
+    assigns = assign(assigns, :selected, List.wrap(assigns.field.value))
+
     ~H"""
     <div class="fieldset w-full">
-      <label class="label" for={@field.id}>{@label}</label>
+      <span class="label">{@label}</span>
       <input type="hidden" name={@field.name <> "[]"} value="" />
-      <select
+      <div
         id={@field.id}
-        name={@field.name <> "[]"}
-        multiple
-        size="6"
-        class="select w-full h-auto py-2"
+        class="max-h-60 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-2"
       >
-        {Phoenix.HTML.Form.options_for_select(@options, List.wrap(@field.value))}
-      </select>
+        <label
+          :for={{name, code} <- @options}
+          class="flex items-center gap-3 rounded px-2 py-1 cursor-pointer hover:bg-base-200"
+        >
+          <input
+            type="checkbox"
+            name={@field.name <> "[]"}
+            value={code}
+            checked={code in @selected}
+            class="checkbox checkbox-sm"
+          />
+          <span class="flex-1 text-sm">{name}</span>
+          <span class="text-xs text-base-content/50">{code}</span>
+        </label>
+      </div>
       <p class="label text-xs text-base-content/60">{@hint}</p>
     </div>
     """
@@ -469,11 +483,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                   field={@form[:countries]}
                   options={@country_choices}
                   label={gettext("Deliver only to")}
-                  hint={
-                    gettext(
-                      "Leave empty for every country the provider serves. Hold Ctrl (⌘ on a Mac) to pick several."
-                    )
-                  }
+                  hint={gettext("Leave empty for every country the provider serves.")}
                 />
 
                 <.country_list
@@ -697,11 +707,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     end
   end
 
-  defp provider_context(state) do
+  defp provider_context(state, service \\ nil) do
+    service = service || state.service
+
     Shipping.context(nil,
       provider: state.provider,
       settings: state.settings,
-      service: if(state.service == "", do: nil, else: state.service),
+      service: if(service == "", do: nil, else: service),
       timeout: @lookup_timeout
     )
   end
@@ -767,6 +779,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           |> assign(:services, services)
           |> assign(:services_status, :ok)
           |> update(:sp, &pick_service(&1, services))
+          |> load_ready_point_lists()
 
         {:error, _reason} ->
           assign(socket, :services_status, :error)
@@ -804,9 +817,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp integration_status(_ctx), do: nil
 
-  defp locality_key?(socket, key) do
-    Enum.any?(socket.assigns.provider_fields, &(&1.type == :locality and &1.key == key))
-  end
+  @lookup_types [:locality, :pickup_point]
+
+  defp lookup_field(socket, key),
+    do: Enum.find(socket.assigns.provider_fields, &(&1.type in @lookup_types and &1.key == key))
+
+  defp locality_key?(socket, key), do: lookup_field(socket, key) != nil
 
   defp search_localities(socket, queries) do
     Enum.reduce(queries, socket, fn {key, query}, acc ->
@@ -820,21 +836,73 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp start_locality_search(socket, key, query) do
     socket = update(socket, :sp, &%{&1 | queries: Map.put(&1.queries, key, query)})
+    field = lookup_field(socket, key)
 
-    if String.length(String.trim(query)) < 2 do
+    if too_short?(field, query) do
       socket
       |> cancel_async({:locality_search, key})
       |> update(:locality_results, &Map.delete(&1, key))
       |> update(:locality_loading, &Map.delete(&1, key))
     else
-      ctx = provider_context(socket.assigns.sp)
       provider = socket.assigns.sp.provider
+      lookup = lookup_fun(socket, field, query)
 
       socket
       |> update(:locality_loading, &Map.put(&1, key, true))
-      |> start_async({:locality_search, key}, fn ->
-        {provider, query, Shipping.search_localities(ctx, query)}
-      end)
+      |> start_async({:locality_search, key}, fn -> {provider, query, lookup.()} end)
+    end
+  end
+
+  # A city is searched from two characters; the points of a city are listed
+  # for any query, an empty one included.
+  defp too_short?(%{type: :pickup_point}, _query), do: false
+  defp too_short?(_field, query), do: String.length(String.trim(query)) < 2
+
+  defp lookup_fun(socket, %{type: :pickup_point, locality_key: city_key}, query) do
+    ctx = provider_context(socket.assigns.sp, point_service(socket.assigns))
+    city = socket.assigns.sp.settings |> Map.get(city_key) |> locality_from_setting()
+    text = if String.trim(query) == "", do: nil, else: String.trim(query)
+
+    fn ->
+      if city && ctx.service,
+        do: Shipping.list_pickup_points(ctx, city, text),
+        else: {:ok, []}
+    end
+  end
+
+  defp lookup_fun(socket, _field, query) do
+    ctx = provider_context(socket.assigns.sp)
+    fn -> Shipping.search_localities(ctx, query) end
+  end
+
+  defp locality_from_setting(%{"id" => id, "name" => name}) when is_binary(id) and id != "",
+    do: %Locality{id: id, name: name}
+
+  defp locality_from_setting(_other), do: nil
+
+  # The branch the sender hands parcels over at is the same whichever service
+  # the shop sells: the chosen one when it ships to points, else the first
+  # service that does.
+  defp point_service(%{sp: sp, services: services}) do
+    pickup = Enum.filter(services, &(&1.destination == :pickup_point))
+
+    cond do
+      Enum.any?(pickup, &(&1.key == sp.service)) -> sp.service
+      pickup != [] -> hd(pickup).key
+      true -> nil
+    end
+  end
+
+  # The lists of the point fields whose city is chosen and which have no point
+  # yet: what the admin sees at once, as at the checkout.
+  defp load_ready_point_lists(socket) do
+    settings = socket.assigns.sp.settings
+
+    for %{type: :pickup_point, key: key, locality_key: city_key} <- socket.assigns.provider_fields,
+        not Map.has_key?(settings, key),
+        Map.has_key?(settings, city_key),
+        reduce: socket do
+      acc -> start_locality_search(acc, key, "")
     end
   end
 
@@ -883,7 +951,33 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> cancel_async({:locality_search, key})
     |> update(:locality_results, &Map.delete(&1, key))
     |> update(:locality_loading, &Map.delete(&1, key))
+    |> reset_dependent_points(key)
     |> recheck_provider_errors(key)
+  end
+
+  # The points belong to the city they were listed for: another city, or none,
+  # leaves them without a point, and the new city's list is loaded. A point
+  # cleared in place is listed again.
+  defp reset_dependent_points(socket, key) do
+    fields = socket.assigns.provider_fields
+
+    socket =
+      for %{type: :pickup_point, key: point_key, locality_key: ^key} <- fields, reduce: socket do
+        acc ->
+          acc
+          |> update(:sp, fn sp ->
+            %{
+              sp
+              | settings: Map.delete(sp.settings, point_key),
+                queries: Map.delete(sp.queries, point_key)
+            }
+          end)
+          |> cancel_async({:locality_search, point_key})
+          |> update(:locality_results, &Map.delete(&1, point_key))
+          |> update(:locality_loading, &Map.delete(&1, point_key))
+      end
+
+    load_ready_point_lists(socket)
   end
 
   # What the pick or the clear changes about the errors on the card, and
