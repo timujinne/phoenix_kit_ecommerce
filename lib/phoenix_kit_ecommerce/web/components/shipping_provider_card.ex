@@ -5,7 +5,9 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
   Integrations connection.
 
   Everything is posted under `shipping_method[shipping_provider]`. The locality
-  search boxes sit in this card but belong to their own sibling forms
+  and pickup point search boxes (the pickup point of a field is listed for the
+  city picked in the locality field it names) sit in this card but belong to
+  their own sibling forms
   (`locality_search_forms/1`, outside the main form, tied to the input by its
   `form` attribute), so typing a query neither validates nor submits the
   method. The events (`search_locality`, `pick_locality`, `clear_locality`) are
@@ -23,7 +25,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
   import PhoenixKitWeb.Components.Core.Textarea
 
   alias PhoenixKit.Utils.Routes
-  alias PhoenixKitEcommerce.Shipping.{Field, Locality}
+  alias PhoenixKitEcommerce.Shipping.{Field, Locality, PickupPoint}
   alias PhoenixKitEcommerce.Web.ShippingProviderState, as: State
 
   @prefix "shipping_method[shipping_provider]"
@@ -227,16 +229,25 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
     """
   end
 
-  attr :fields, :list, required: true, doc: "`Field` structs; one search form per locality field"
+  attr :fields, :list,
+    required: true,
+    doc: "`Field` structs; one search form per locality or pickup point field"
 
   @doc """
-  The sibling forms the locality search inputs belong to. Render them OUTSIDE
-  the main form: forms do not nest.
+  The sibling forms the locality and pickup point search inputs belong to.
+  Render them OUTSIDE the main form: forms do not nest.
   """
   def locality_search_forms(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :lookups,
+        Enum.filter(assigns.fields, &(&1.type in [:locality, :pickup_point]))
+      )
+
     ~H"""
     <.form
-      :for={%Field{type: :locality} = field <- @fields}
+      :for={field <- @lookups}
       for={%{}}
       id={"shipping-locality-search-#{field.key}"}
       phx-change="search_locality"
@@ -252,12 +263,17 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
   attr :loading, :boolean, default: false
   attr :errors, :list, default: []
 
-  def setting_field(%{field: %Field{type: :locality}} = assigns) do
+  # A locality is searched by name; a pickup point is listed for the city picked
+  # in the locality field it names, so it waits for that city.
+  def setting_field(%{field: %Field{type: type}} = assigns)
+      when type in [:locality, :pickup_point] do
     assigns =
       assigns
       |> assign(:selected, State.field_value(assigns.state, assigns.field))
       |> assign(:query, Map.get(assigns.state.queries, assigns.field.key, ""))
       |> assign(:query_length, @query_length)
+      |> assign(:waiting?, waiting_for_city?(assigns.field, assigns.state))
+      |> assign(:placeholder, lookup_placeholder(type))
 
     ~H"""
     <div id={"shipping-provider-setting-#{@field.key}"} class="fieldset w-full">
@@ -271,7 +287,9 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
         id={"shipping-locality-selected-#{@field.key}"}
         class="flex items-center gap-2 mb-2"
       >
-        <span class="badge badge-primary badge-lg">{@selected["name"]}</span>
+        <span class="badge badge-primary badge-lg h-auto whitespace-normal text-left py-1">
+          {@selected["name"]}
+        </span>
         <button
           type="button"
           id={"shipping-locality-clear-#{@field.key}"}
@@ -296,19 +314,33 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
         />
       </div>
 
+      <p
+        :if={@waiting?}
+        id={"shipping-locality-waiting-#{@field.key}"}
+        class="text-sm text-base-content/60"
+      >
+        {gettext("Choose the city first.")}
+      </p>
+
       <.input
+        :if={not @waiting?}
         id={"shipping-locality-query-#{@field.key}"}
         name={"locality_query[#{@field.key}]"}
         form={"shipping-locality-search-#{@field.key}"}
         value={@query}
         type="text"
-        placeholder={gettext("Start typing a city")}
+        placeholder={@placeholder}
         autocomplete="off"
         maxlength={@query_length}
         phx-debounce="300"
       />
 
-      <div id={"shipping-locality-results-#{@field.key}"} class="mt-1" aria-live="polite">
+      <div
+        :if={not @waiting?}
+        id={"shipping-locality-results-#{@field.key}"}
+        class="mt-1"
+        aria-live="polite"
+      >
         <p :if={@loading} role="status" class="text-sm text-base-content/60">
           <span class="loading loading-spinner loading-sm"></span>
           <span class="sr-only">{gettext("Searching")}</span>
@@ -323,7 +355,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
           :if={is_list(@results) and @results != []}
           class="menu menu-sm bg-base-200 rounded-box w-full max-h-64 overflow-y-auto flex-nowrap"
         >
-          <li :for={{locality, index} <- Enum.with_index(locality_list(@results))}>
+          <li :for={{item, index} <- Enum.with_index(locality_list(@results))}>
             <button
               type="button"
               id={"shipping-locality-option-#{@field.key}-#{index}"}
@@ -332,9 +364,9 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
               phx-value-index={index}
               phx-value-provider={@state.provider}
             >
-              <span>{locality.name}</span>
-              <span :if={locality_hint(locality)} class="text-xs text-base-content/60">
-                {locality_hint(locality)}
+              <span>{item.name}</span>
+              <span :if={lookup_hint(item)} class="text-xs text-base-content/60">
+                {lookup_hint(item)}
               </span>
             </button>
           </li>
@@ -456,8 +488,19 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
   defp locality_list(results) when is_list(results), do: results
   defp locality_list(_other), do: []
 
-  defp locality_hint(%Locality{region: region}) when is_binary(region) and region != "",
+  defp lookup_hint(%Locality{region: region}) when is_binary(region) and region != "",
     do: region
 
-  defp locality_hint(_locality), do: nil
+  defp lookup_hint(%PickupPoint{address: address}) when is_binary(address) and address != "",
+    do: address
+
+  defp lookup_hint(_item), do: nil
+
+  defp lookup_placeholder(:pickup_point), do: gettext("Search by number, name or address")
+  defp lookup_placeholder(_type), do: gettext("Start typing a city")
+
+  defp waiting_for_city?(%Field{type: :pickup_point, locality_key: key}, state),
+    do: not selected?(Map.get(state.settings, key))
+
+  defp waiting_for_city?(_field, _state), do: false
 end
