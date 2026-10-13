@@ -45,7 +45,11 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
     current_language =
       params |> Helpers.get_language_from_params_or_default() |> Helpers.put_content_locale()
 
-    categories = Shop.list_active_categories(preload: [:parent, :featured_product])
+    # Shared across visitors for about a minute, up to ~66 s
+    # (`StorefrontCache`); the products list, cart count and the other
+    # per-viewer assigns below are deliberately not.
+    categories =
+      Helpers.list_active_categories_cached(preload: [:parent, :featured_product])
 
     per_page = 24
     page = Helpers.parse_page(params["page"])
@@ -54,7 +58,7 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
     # the listing query just below so a hidden category's items can't
     # inflate a facet count past what the shopper's result list shows.
     {enabled_filters, filter_values} =
-      FilterHelpers.load_filter_data(
+      FilterHelpers.load_filter_data_cached(
         language: current_language,
         exclude_hidden_categories: true
       )
@@ -192,7 +196,7 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
 
   # Catch-all: an unrecognised message must not take the LiveView down.
   @impl true
-  def handle_info(_message, socket), do: {:noreply, socket}
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
 
   defp reload_catalog_products(socket) do
     filter_opts =
@@ -273,6 +277,10 @@ defmodule PhoenixKitEcommerce.Web.ShopCatalog do
     path = build_filter_path(socket.assigns, socket.assigns.active_filters, page: next_page)
     {:noreply, push_patch(socket, to: path)}
   end
+
+  # Last, so it shadows nothing: an event this page does not know, or a
+  # known one whose payload is not the shape its clause takes.
+  def handle_event(event, _params, socket), do: Helpers.ignore_event(event, socket)
 
   @impl true
   def render(assigns) do

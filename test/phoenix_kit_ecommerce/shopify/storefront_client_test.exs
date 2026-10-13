@@ -138,6 +138,18 @@ defmodule PhoenixKitEcommerce.Shopify.StorefrontClientTest do
       assert {:error, _reason} = Task.await(task, 1_000)
     end
 
+    test "reports an unexpected body by its shape, never its content" do
+      Req.Test.stub(@stub, fn conn ->
+        json_response(conn, 200, %{"secret" => "internal-metadata-value"})
+      end)
+
+      assert {:error, {:unexpected_body, summary}} =
+               StorefrontClient.fetch_products("test-shop.myshopify.com", req_options())
+
+      assert summary == {:object, 1}
+      refute inspect(summary) =~ "internal-metadata-value"
+    end
+
     test "returns an error when the \"products\" key is missing entirely" do
       Req.Test.stub(@stub, fn conn -> json_response(conn, 200, %{"unexpected" => "shape"}) end)
 
@@ -469,6 +481,96 @@ defmodule PhoenixKitEcommerce.Shopify.StorefrontClientTest do
 
       assert elapsed_ms >= 400
       assert elapsed_ms < 900
+    end
+  end
+
+  describe "redirects" do
+    defp redirect(conn, location) do
+      conn |> Plug.Conn.put_resp_header("location", location) |> Plug.Conn.send_resp(301, "")
+    end
+
+    defp empty_page(conn), do: json_response(conn, 200, %{"products" => []})
+
+    defp public_only(host) do
+      if host == "shop.example.com", do: {:ok, {93, 184, 216, 34}}, else: :error
+    end
+
+    defp fetch(extra \\ []) do
+      StorefrontClient.fetch_products(
+        "test-shop.myshopify.com",
+        req_options([address_check: &public_only/1] ++ extra)
+      )
+    end
+
+    test "a hop to a custom domain is followed, pinned to the address that was checked" do
+      test_pid = self()
+
+      Req.Test.stub(@stub, fn conn ->
+        send(test_pid, {:request, conn.host, Plug.Conn.get_req_header(conn, "host")})
+
+        if conn.host == "test-shop.myshopify.com" do
+          redirect(conn, "https://shop.example.com/products.json?limit=250&page=1")
+        else
+          empty_page(conn)
+        end
+      end)
+
+      assert {:ok, []} = fetch()
+
+      assert_received {:request, "test-shop.myshopify.com", _}
+      # Connected to the checked IP, still addressed as the domain.
+      assert_received {:request, "93.184.216.34", ["shop.example.com"]}
+    end
+
+    test "a relative Location stays on the shop host" do
+      Req.Test.stub(@stub, fn conn ->
+        if conn.request_path == "/products.json",
+          do: redirect(conn, "/moved/products.json"),
+          else: empty_page(conn)
+      end)
+
+      assert {:ok, []} = fetch()
+    end
+
+    test "plain http, a bare IP and a private resolution are refused before any request" do
+      test_pid = self()
+
+      for target <- [
+            "http://shop.example.com/products.json",
+            "https://127.0.0.1/products.json",
+            "https://internal.example.net/products.json",
+            "https://shop.example.com:8443/products.json",
+            "https://user:pw@shop.example.com/products.json"
+          ] do
+        Req.Test.stub(@stub, fn conn ->
+          send(test_pid, {:request, conn.host})
+
+          if conn.host == "test-shop.myshopify.com",
+            do: redirect(conn, target),
+            else: flunk("#{target} must not be requested")
+        end)
+
+        assert {:error, {:redirect_refused, _}} = fetch()
+        assert_received {:request, "test-shop.myshopify.com"}
+        refute_received {:request, _}
+      end
+    end
+
+    test "a chain longer than three hops stops" do
+      Req.Test.stub(@stub, fn conn ->
+        redirect(conn, "https://test-shop.myshopify.com/products.json?page=1")
+      end)
+
+      assert {:error, :too_many_redirects} = fetch()
+    end
+  end
+
+  test "a shop domain that is not a bare myshopify.com host is refused without a request" do
+    Req.Test.stub(@stub, fn _conn -> flunk("no request should be made") end)
+
+    for domain <- ["internal-host:8443/x#", "shop.example.com", ""] do
+      assert StorefrontClient.fetch_products(domain, req_options()) ==
+               {:error, :invalid_shop_domain}
     end
   end
 end

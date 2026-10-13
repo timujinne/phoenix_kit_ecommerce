@@ -212,7 +212,10 @@ handle/slug); a Shopify product with no local match is skipped. To
 bring a new product in from Shopify, use [CSV Import](#csv-import)
 first, then this to keep it current.
 
-Setup (all through the UI, no environment variables):
+Setup (all through the UI, no environment variables). Shopify sync is
+off by default: first turn on **Enable Shopify sync** in Shop → Settings.
+Until then the Shopify option is not offered under Settings →
+Integrations, and the sync page and its sidebar entry are hidden.
 
 1. **In Shopify admin**: Settings → Apps and sales channels → Develop
    apps → Create an app. Configure Admin API scopes — `read_products`
@@ -371,6 +374,34 @@ Use `Scope.has_module_access?/2` to check permissions in your application.
 ### CSS Requirements
 
 This module implements `css_sources/0` returning `[:phoenix_kit_ecommerce]`, so PhoenixKit's installer automatically adds the correct `@source` directive to your `app.css` for Tailwind scanning. No manual configuration needed.
+
+### SEO tags in the host's root layout
+
+The catalog, category and product pages assign three values for the host's
+root layout to put in `<head>`:
+
+- `og` — `%{type, title, description, image, url, locale}` (keys present when known)
+- `canonical_url` — the page's absolute canonical URL (the same value as `og.url`)
+- `hreflang_links` — `[%{code: "en", url: "https://…"}, …]`, one per language
+  the page exists in; empty when there is only one
+
+PhoenixKit's own root layout reads `og` only: it emits the Open Graph tags and
+a canonical link from `og.url`, and no `hreflang` alternates. A host that
+wants language alternates — or that uses its own root layout — renders them
+itself:
+
+```heex
+<link :if={assigns[:canonical_url]} rel="canonical" href={assigns[:canonical_url]} />
+<link
+  :for={link <- assigns[:hreflang_links] || []}
+  rel="alternate"
+  hreflang={link.code}
+  href={link.url}
+/>
+```
+
+Render the canonical link once: skip the first line under PhoenixKit's root
+layout, which already emits it.
 
 ### Order notifications — two switches, both off by default
 

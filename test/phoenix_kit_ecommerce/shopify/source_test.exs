@@ -99,7 +99,7 @@ defmodule PhoenixKitEcommerce.Shopify.SourceFetchTest do
   excluded, same as any other `DataCase` test in this repo.
   """
 
-  use PhoenixKitEcommerce.DataCase, async: true
+  use PhoenixKitEcommerce.DataCase, async: false
 
   alias PhoenixKit.Integrations
   alias PhoenixKitEcommerce.Shopify.ProductDiff
@@ -109,6 +109,8 @@ defmodule PhoenixKitEcommerce.Shopify.SourceFetchTest do
   @all_fields ProductDiff.comparable_fields()
 
   defp connect_shopify(attrs \\ %{}) do
+    enable_shopify!()
+
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
 
@@ -255,6 +257,7 @@ defmodule PhoenixKitEcommerce.Shopify.SourceFetchTest do
 
   describe "fetch/2 — no usable connection" do
     test "aborts when the connection was never configured" do
+      enable_shopify!()
       {:ok, %{uuid: uuid}} = Integrations.add_connection("shopify", "Unconfigured Shop")
 
       assert {:error, _reason} = Source.fetch(uuid, opts())

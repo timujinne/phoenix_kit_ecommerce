@@ -29,6 +29,7 @@ defmodule PhoenixKitEcommerce.Web.Components.TranslationTabs do
   """
 
   use Phoenix.Component
+  use Gettext, backend: PhoenixKitEcommerce.Gettext
 
   alias PhoenixKit.Modules.Languages
   alias PhoenixKitEcommerce.Translations
@@ -137,7 +138,7 @@ defmodule PhoenixKitEcommerce.Web.Components.TranslationTabs do
             >
             </path>
           </svg>
-          <span>This is the default language. Edit the main fields above for canonical content.</span>
+          <span>{gettext("This is the default language. Edit the main fields above for canonical content.")}</span>
         </div>
       <% else %>
         <%= for field <- @fields do %>
@@ -205,7 +206,7 @@ defmodule PhoenixKitEcommerce.Web.Components.TranslationTabs do
     ~H"""
     <%= cond do %>
       <% @is_default -> %>
-        <span class="badge badge-primary badge-xs">Default</span>
+        <span class="badge badge-primary badge-xs">{gettext("Default")}</span>
       <% @status.percentage == 100 -> %>
         <span class="badge badge-success badge-xs">✓</span>
       <% @status.percentage > 0 -> %>

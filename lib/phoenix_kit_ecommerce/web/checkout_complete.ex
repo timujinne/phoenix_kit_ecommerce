@@ -10,8 +10,10 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.Policy
   alias PhoenixKitEcommerce.PriceDisplay
+  alias PhoenixKitEcommerce.Web.Components.ShippingDisplay
   alias PhoenixKitEcommerce.Web.Components.ShopLayouts
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.StatusLabels
 
   import PhoenixKitEcommerce.Web.Helpers,
     only: [
@@ -23,7 +25,6 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
     ]
 
   alias PhoenixKit.Users.Auth
-  alias PhoenixKit.Utils.Routes
 
   @impl true
   def mount(%{"uuid" => uuid}, session, socket) do
@@ -164,8 +165,12 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
   defp redirect_with_error(socket, message) do
     socket
     |> put_flash(:error, message)
-    |> push_navigate(to: Routes.path("/shop"))
+    |> push_navigate(to: Helpers.page_path(socket.assigns, "/shop"))
   end
+
+  # This page takes no events; one pushed at it anyway is ignored.
+  @impl true
+  def handle_event(event, _params, socket), do: Helpers.ignore_event(event, socket)
 
   @impl true
   def render(assigns) do
@@ -285,12 +290,20 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
               <div class="space-y-3">
                 <%= for item <- @order.line_items || [] do %>
                   <% display_name = NamePrefix.strip(item["name"]) %>
-                  <div class="flex justify-between items-center text-sm">
+                  <div
+                    id={item["type"] == "shipping" && "order-line-shipping"}
+                    class="flex justify-between items-center text-sm"
+                  >
                     <div>
                       <span class="font-medium">{display_name}</span>
                       <%= if item["type"] != "shipping" do %>
                         <span class="text-base-content/60 ml-2">× {item["quantity"]}</span>
                       <% end %>
+                      <ShippingDisplay.order_shipping_details
+                        :if={item["type"] == "shipping"}
+                        item={item}
+                        metadata={@order.metadata}
+                      />
                     </div>
                     <%!-- The unit belongs to the UNIT price, never to the line
                           total: "€40.00 per hour" × 2 hours is a line total of
@@ -299,10 +312,14 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
                           split as the cart page. --%>
                     <% line_por = PriceDisplay.line_on_request?(item) %>
                     <div class="font-medium text-right">
-                      {PriceDisplay.render(nil, @currency, :order,
-                        amount: item["total"],
-                        on_request: line_por
-                      )}
+                      <%= if PriceDisplay.line_pay_on_delivery?(item) do %>
+                        {gettext("Paid on delivery")}
+                      <% else %>
+                        {PriceDisplay.render(nil, @currency, :order,
+                          amount: item["total"],
+                          on_request: line_por
+                        )}
+                      <% end %>
                       <%= if !line_por and item["price_unit"] not in [nil, ""] do %>
                         <div class="text-xs font-normal text-base-content/50">
                           {gettext("%{price} each",
@@ -353,6 +370,14 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
                   {gettext("Items priced on request are not included in this total.")}
                 </p>
               <% end %>
+
+              <%= if PriceDisplay.order_shipping_pay_on_delivery?(@order) do %>
+                <p id="order-shipping-pay-on-delivery-note" class="text-xs text-base-content/60">
+                  {gettext(
+                    "Shipping is not included in this total: you pay the carrier at their rates on delivery."
+                  )}
+                </p>
+              <% end %>
             </div>
           </div>
         </div>
@@ -365,18 +390,18 @@ defmodule PhoenixKitEcommerce.Web.CheckoutComplete do
                 <h3 class="font-medium">{gettext("Order Status")}</h3>
                 <p class="text-sm text-base-content/60">{gettext("Your order is being processed")}</p>
               </div>
-              <div class="badge badge-warning badge-lg capitalize">{@order.status}</div>
+              <div id="order-status-badge" class="badge badge-warning badge-lg capitalize">{StatusLabels.order(@order.status)}</div>
             </div>
           </div>
         </div>
 
         <%!-- Actions --%>
         <div class="flex justify-center gap-4">
-          <.link navigate={Routes.path("/shop")} class="btn btn-primary">
+          <.link navigate={Helpers.page_path(assigns, "/shop")} class="btn btn-primary">
             <.icon name="hero-shopping-bag" class="w-5 h-5 mr-2" /> {gettext("Continue Shopping")}
           </.link>
           <%= if @authenticated do %>
-            <.link navigate={Routes.path("/dashboard/orders")} class="btn btn-outline">
+            <.link navigate={Helpers.page_path(assigns, "/dashboard/orders")} class="btn btn-outline">
               <.icon name="hero-clipboard-document-list" class="w-5 h-5 mr-2" /> {gettext("My Orders")}
             </.link>
           <% end %>

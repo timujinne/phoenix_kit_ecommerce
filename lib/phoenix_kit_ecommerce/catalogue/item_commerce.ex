@@ -35,6 +35,10 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerce do
     field :currency, :string
     field :taxable, :boolean, default: true
     field :weight_grams, :integer, default: 0
+    # Size of one unit, millimetres; nil = unknown (see `Product.dimensions_mm/1`)
+    field :length_mm, :integer
+    field :width_mm, :integer
+    field :height_mm, :integer
     field :requires_shipping, :boolean, default: true
     field :made_to_order, :boolean, default: false
     field :file_uuid, Ecto.UUID
@@ -59,7 +63,8 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerce do
 
   @fields ~w(
     shop_status product_type vendor tags compare_at_price cost_per_item
-    currency taxable weight_grams requires_shipping made_to_order file_uuid
+    currency taxable weight_grams length_mm width_mm height_mm requires_shipping
+    made_to_order file_uuid
     download_limit download_expiry_days price_unit price_from
     price_on_request price_modifiers price_fit_rule shopify legacy_product_uuid
     translation_fingerprints
@@ -78,6 +83,9 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerce do
     |> validate_number(:compare_at_price, greater_than_or_equal_to: 0)
     |> validate_number(:cost_per_item, greater_than_or_equal_to: 0)
     |> validate_number(:weight_grams, greater_than_or_equal_to: 0)
+    |> validate_number(:length_mm, greater_than_or_equal_to: 0)
+    |> validate_number(:width_mm, greater_than_or_equal_to: 0)
+    |> validate_number(:height_mm, greater_than_or_equal_to: 0)
     |> validate_number(:download_limit, greater_than: 0)
     |> validate_number(:download_expiry_days, greater_than: 0)
     |> validate_length(:currency, is: 3)

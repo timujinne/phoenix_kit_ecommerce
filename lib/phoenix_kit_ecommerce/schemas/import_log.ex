@@ -31,6 +31,8 @@ defmodule PhoenixKitEcommerce.ImportLog do
 
   @primary_key {:uuid, UUIDv7, autogenerate: true}
 
+  @type t :: %__MODULE__{}
+
   schema "phoenix_kit_shop_import_logs" do
     field :filename, :string
     field :file_path, :string

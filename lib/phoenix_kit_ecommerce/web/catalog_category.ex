@@ -46,10 +46,14 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
     current_language =
       params |> Helpers.get_language_from_params_or_default() |> Helpers.put_content_locale()
 
-    case Shop.get_category_by_slug_localized(slug, current_language, preload: [:parent]) do
+    case Shop.get_category_by_slug_localized(slug, current_language,
+           # `:featured_product` is the share image's fallback when the
+           # category has no image of its own (`SEOHelpers.category_seo/2`).
+           preload: [:parent, :featured_product]
+         ) do
       {:error, :not_found} ->
         # Slug not found in current language - try cross-language lookup
-        handle_cross_language_redirect(slug, current_language, socket)
+        handle_cross_language_redirect(slug, current_language, params, socket)
 
       # Redirect if category is hidden (products not visible)
       {:ok, %{status: "hidden"}} ->
@@ -59,100 +63,109 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
          |> push_navigate(to: Shop.catalog_url(current_language))}
 
       {:ok, category} ->
-        per_page = 24
-        page = Helpers.parse_page(params["page"])
-
-        # Load storefront filters (category-aware: applies this category's
-        # `storefront_filters` overrides on top of the global config)
-        {enabled_filters, filter_values} =
-          FilterHelpers.load_filter_data(
-            category_uuid: category.uuid,
-            category: category,
-            language: current_language
-          )
-
-        active_filters = FilterHelpers.parse_filter_params(params, enabled_filters)
-        filter_opts = FilterHelpers.build_query_opts(active_filters, enabled_filters)
-
-        {products, total} =
-          Shop.list_products_with_count(
-            [
-              status: "active",
-              category_uuid: category.uuid,
-              page: 1,
-              per_page: page * per_page,
-              preload: [:category],
-              language: current_language
-            ] ++ filter_opts
-          )
-
-        total_pages = max(1, ceil(total / per_page))
-        page = min(page, total_pages)
-
-        currency = Shop.get_display_currency_code()
-        all_categories = Shop.list_active_categories(preload: [:featured_product])
-
-        # Check if user is authenticated
-        authenticated = not is_nil(socket.assigns[:phoenix_kit_current_user])
-
-        # Get localized category content. `get_display/3` (not `get/3`):
-        # this is the storefront page, so the `shop_name_prefixes` setting
-        # applies to the name — description is untouched.
-        localized_name = Translations.get_display(category, :name, current_language)
-        localized_description = Translations.get(category, :description, current_language)
-
-        # Current path for the language switcher. Built here in `mount/3`,
-        # so core's `:url_path` (assigned from its `handle_params` hook) is
-        # not available yet — the canonical path is what this can use, the
-        # same as the product page.
-        current_path = "/shop/category/#{Translations.get(category, :slug, current_language)}"
-
-        seo = SEOHelpers.category_seo(category, current_language)
-
-        socket =
-          socket
-          |> assign(:page_title, localized_name)
-          |> assign(:canonical_url, seo.canonical_url)
-          |> assign(:hreflang_links, seo.hreflang_links)
-          |> assign(:og, seo.og)
-          |> assign(:cart_count, storefront_cart_count(socket))
-          |> assign(:category, category)
-          |> assign(:current_language, current_language)
-          |> assign(:localized_name, localized_name)
-          |> assign(:localized_description, localized_description)
-          |> assign(:products, products)
-          |> assign(:total_products, total)
-          |> assign(:page, page)
-          |> assign(:per_page, per_page)
-          |> assign(:total_pages, total_pages)
-          |> assign(:categories, all_categories)
-          |> assign(:currency, currency)
-          |> assign(:authenticated, authenticated)
-          |> assign(:current_path, current_path)
-          |> assign(:enabled_filters, enabled_filters)
-          |> assign(:filter_values, filter_values)
-          |> assign(:active_filters, active_filters)
-          |> assign(:filter_qs, FilterHelpers.build_query_string(active_filters, enabled_filters))
-          |> assign(:show_mobile_filters, false)
-          |> assign(
-            :category_name_wrap,
-            Settings.get_setting_cached("shop_category_name_display", "truncate") == "wrap"
-          )
-          |> assign(
-            :category_icon_mode,
-            Settings.get_setting_cached("shop_category_icon_mode", "none")
-          )
-          |> Helpers.maybe_assign_admin_edit(
-            Helpers.admin_edit_path(
-              :category,
-              category.uuid,
-              Shop.category_url(category, current_language)
-            ),
-            gettext("Edit Category")
-          )
-
-        {:ok, socket}
+        mount_category(category, params, current_language, socket)
     end
+  end
+
+  # Renders the category page under `current_language`. Shared by the direct
+  # lookup and the cross-language one, so a category found by another
+  # language's slug is shown here rather than redirected to that language.
+  defp mount_category(category, params, current_language, socket) do
+    per_page = 24
+    page = Helpers.parse_page(params["page"])
+
+    # Load storefront filters (category-aware: applies this category's
+    # `storefront_filters` overrides on top of the global config)
+    {enabled_filters, filter_values} =
+      FilterHelpers.load_filter_data_cached(
+        category_uuid: category.uuid,
+        category: category,
+        language: current_language
+      )
+
+    active_filters = FilterHelpers.parse_filter_params(params, enabled_filters)
+    filter_opts = FilterHelpers.build_query_opts(active_filters, enabled_filters)
+
+    {products, total} =
+      Shop.list_products_with_count(
+        [
+          status: "active",
+          category_uuid: category.uuid,
+          page: 1,
+          per_page: page * per_page,
+          preload: [:category],
+          language: current_language
+        ] ++ filter_opts
+      )
+
+    total_pages = max(1, ceil(total / per_page))
+    page = min(page, total_pages)
+
+    currency = Shop.get_display_currency_code()
+
+    all_categories = Helpers.list_active_categories_cached(preload: [:featured_product])
+
+    # Check if user is authenticated
+    authenticated = not is_nil(socket.assigns[:phoenix_kit_current_user])
+
+    # Get localized category content. `get_display/3` (not `get/3`):
+    # this is the storefront page, so the `shop_name_prefixes` setting
+    # applies to the name — description is untouched.
+    localized_name = Translations.get_display(category, :name, current_language)
+    localized_description = Translations.get(category, :description, current_language)
+
+    # Current path for the language switcher. Built here in `mount/3`,
+    # so core's `:url_path` (assigned from its `handle_params` hook) is
+    # not available yet — the canonical path is what this can use, the
+    # same as the product page.
+    current_path = "/shop/category/#{Translations.get(category, :slug, current_language)}"
+
+    seo = SEOHelpers.category_seo(category, current_language)
+
+    socket =
+      socket
+      |> assign(:page_title, localized_name)
+      |> assign(:canonical_url, seo.canonical_url)
+      |> assign(:hreflang_links, seo.hreflang_links)
+      |> assign(:og, seo.og)
+      |> assign(:cart_count, storefront_cart_count(socket))
+      |> assign(:category, category)
+      |> assign(:current_language, current_language)
+      |> assign(:localized_name, localized_name)
+      |> assign(:localized_description, localized_description)
+      |> assign(:products, products)
+      |> assign(:total_products, total)
+      |> assign(:page, page)
+      |> assign(:per_page, per_page)
+      |> assign(:total_pages, total_pages)
+      |> assign(:categories, all_categories)
+      |> assign(:currency, currency)
+      |> assign(:authenticated, authenticated)
+      |> assign(:current_path, current_path)
+      |> assign(:enabled_filters, enabled_filters)
+      |> assign(:filter_values, filter_values)
+      |> assign(:active_filters, active_filters)
+      |> assign(:filter_qs, FilterHelpers.build_query_string(active_filters, enabled_filters))
+      |> assign(:show_mobile_filters, false)
+      |> assign(
+        :category_name_wrap,
+        Settings.get_setting_cached("shop_category_name_display", "truncate") == "wrap"
+      )
+      |> assign(
+        :category_icon_mode,
+        Settings.get_setting_cached("shop_category_icon_mode", "none")
+      )
+      |> Helpers.maybe_assign_admin_edit(
+        Helpers.admin_edit_path(
+          :category,
+          category,
+          Shop.category_url(category, current_language)
+        ),
+        gettext("Edit Category"),
+        permission: Helpers.admin_edit_permissions(category)
+      )
+
+    {:ok, socket}
   end
 
   @impl true
@@ -199,10 +212,12 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
     end
   end
 
-  # Handle cross-language slug redirect
-  # When user visits with a slug from a different language, redirect to correct localized URL
-  defp handle_cross_language_redirect(slug, current_language, socket) do
-    case Shop.get_category_by_any_slug(slug, preload: [:parent]) do
+  # The category was found by a slug that is not the page language's own.
+  # Same policy as the product page: the page keeps its language. The only
+  # redirect is to the SAME language's own slug, when the category has one;
+  # anything else renders here (single-language sites never redirect).
+  defp handle_cross_language_redirect(slug, current_language, params, socket) do
+    case Shop.get_category_by_any_slug(slug, preload: [:parent, :featured_product]) do
       {:error, :not_found} ->
         # Category truly not found
         {:ok,
@@ -218,21 +233,17 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
          |> push_navigate(to: Shop.catalog_url(current_language))}
 
       {:ok, category, _matched_lang} ->
-        # Found category - redirect to best enabled language that has a slug
-        case Helpers.best_redirect_language(category.slug || %{}) do
-          nil ->
-            {:ok,
-             socket
-             |> put_flash(:error, gettext("Category not found"))
-             |> push_navigate(to: Shop.catalog_url(current_language))}
+        lang = Helpers.requested_translation_lang(category, current_language)
 
-          redirect_lang ->
-            slug = SlugResolver.category_slug(category, redirect_lang)
+        if lang && not Helpers.single_language?() do
+          slug = SlugResolver.category_slug(category, lang)
 
-            {:ok,
-             push_navigate(socket,
-               to: Helpers.build_lang_url("/shop/category/#{slug}", redirect_lang)
-             )}
+          {:ok,
+           push_navigate(socket,
+             to: Helpers.build_lang_url("/shop/category/#{slug}", lang)
+           )}
+        else
+          mount_category(category, params, current_language, socket)
         end
     end
   end
@@ -260,7 +271,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
 
   # Catch-all: an unrecognised message must not take the LiveView down.
   @impl true
-  def handle_info(_message, socket), do: {:noreply, socket}
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
 
   defp reload_category_products(socket) do
     filter_opts =
@@ -342,6 +353,10 @@ defmodule PhoenixKitEcommerce.Web.CatalogCategory do
     path = build_filter_path(socket.assigns, socket.assigns.active_filters, page: next_page)
     {:noreply, push_patch(socket, to: path)}
   end
+
+  # Last, so it shadows nothing: an event this page does not know, or a
+  # known one whose payload is not the shape its clause takes.
+  def handle_event(event, _params, socket), do: Helpers.ignore_event(event, socket)
 
   @impl true
   def render(assigns) do

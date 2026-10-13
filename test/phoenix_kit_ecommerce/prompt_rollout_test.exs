@@ -189,6 +189,27 @@ defmodule PhoenixKitEcommerce.PromptRolloutTest do
     assert prompt.content == a.content
   end
 
+  test "a lost create inside a transaction fails cleanly and leaves the transaction usable" do
+    # The sweep tick runs in a transaction. Without a savepoint the failed
+    # INSERT aborts it and the re-read by slug raises in_failed_sql_transaction.
+    name = "PR Test Taken Name #{unique()}"
+    {:ok, taken} = PhoenixKitAI.create_prompt(%{name: name, content: "An operator's prompt."})
+
+    repo().query!("UPDATE phoenix_kit_ai_prompts SET slug = $1 WHERE uuid = $2", [
+      "taken-#{unique()}",
+      Ecto.UUID.dump!(taken.uuid)
+    ])
+
+    {:ok, {result, still_usable?}} =
+      repo().transaction(fn ->
+        result = PromptRollout.ensure(attrs(name, "Hello {{Name}}"))
+        {result, match?(%{rows: [[1]]}, repo().query!("SELECT 1"))}
+      end)
+
+    assert result == {:error, :prompt_create_failed}
+    assert still_usable?
+  end
+
   defp unique, do: System.unique_integer([:positive])
 
   defp repo, do: PhoenixKit.RepoHelper.repo()

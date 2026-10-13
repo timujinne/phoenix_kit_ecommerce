@@ -128,6 +128,52 @@ defmodule PhoenixKitEcommerce.Regression.ImportParsingTest do
     end
   end
 
+  describe "Shopify's placeholder option" do
+    @placeholder [
+      %{
+        "Option1 Name" => "Title",
+        "Option1 Value" => "Default Title",
+        "Variant Price" => "12.00"
+      }
+    ]
+
+    test "a product without variants gets no option at all" do
+      assert %{options: [], base_price: price} = OptionBuilder.build_extended(@placeholder)
+      assert Decimal.equal?(price, Decimal.new("12.00"))
+
+      assert %{option1_name: nil, option1_values: [], option1_modifiers: modifiers} =
+               OptionBuilder.build_from_variants(@placeholder)
+
+      assert modifiers == %{}
+    end
+
+    test "a real option that happens to be called Title is kept" do
+      rows = [
+        %{"Option1 Name" => "Title", "Option1 Value" => "Mr", "Variant Price" => "12.00"},
+        %{"Option1 Name" => "Title", "Option1 Value" => "Dr", "Variant Price" => "12.00"}
+      ]
+
+      assert %{options: [%{name: "Title", values: ["Mr", "Dr"]}]} =
+               OptionBuilder.build_extended(rows)
+
+      assert %{option1_name: "Title"} = OptionBuilder.build_from_variants(rows)
+    end
+
+    test "the placeholder beside a real second option drops only itself" do
+      rows = [
+        %{
+          "Option1 Name" => "Title",
+          "Option1 Value" => "Default Title",
+          "Option2 Name" => "Color",
+          "Option2 Value" => "Red",
+          "Variant Price" => "12.00"
+        }
+      ]
+
+      assert %{options: [%{name: "Color", position: 2}]} = OptionBuilder.build_extended(rows)
+    end
+  end
+
   describe "pricing" do
     test "a variant set with no readable price yields no price at all" do
       variants = [

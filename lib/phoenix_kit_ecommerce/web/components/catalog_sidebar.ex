@@ -4,6 +4,9 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
 
   Renders collapsible filter sections and category tree navigation.
   Uses native HTML `<details>/<summary>` for collapse behavior.
+  Every section renders `open` and then leaves the attribute to the browser
+  (`JS.ignore_attributes`): the page re-renders on each cart or filter change,
+  and a patch would otherwise reopen whatever the shopper had folded shut.
   """
 
   use Phoenix.Component
@@ -82,7 +85,11 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
 
       <%!-- CATEGORY NAVIGATION (separate from filters) --%>
       <%= if @show_categories && @categories != [] do %>
-        <details open={@categories_open} class="group border-t border-base-200 pt-2 mt-2">
+        <details
+          open={@categories_open}
+          phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])}
+          class="group border-t border-base-200 pt-2 mt-2"
+        >
           <summary class="cursor-pointer font-semibold text-sm py-2 select-none flex items-center gap-1">
             <.icon
               name="hero-chevron-right"
@@ -159,7 +166,7 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
 
     ~H"""
     <%= if @categories != [] do %>
-      <details open={@open} class="group">
+      <details open={@open} phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])} class="group">
         <summary class="cursor-pointer font-semibold text-sm py-2 select-none flex items-center gap-1">
           <.icon
             name="hero-chevron-right"
@@ -230,6 +237,7 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
     ~H"""
     <details
       open
+      phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])}
       class="group border-t border-base-200 pt-2 mt-2 first:border-t-0 first:mt-0 first:pt-0"
     >
       <summary class="cursor-pointer font-semibold text-sm py-2 select-none flex items-center gap-1">
@@ -291,6 +299,7 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
     ~H"""
     <details
       open
+      phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])}
       class="group border-t border-base-200 pt-2 mt-2 first:border-t-0 first:mt-0 first:pt-0"
     >
       <summary class="cursor-pointer font-semibold text-sm py-2 select-none flex items-center gap-1">
@@ -352,6 +361,7 @@ defmodule PhoenixKitEcommerce.Web.Components.CatalogSidebar do
     ~H"""
     <details
       open
+      phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])}
       class="group border-t border-base-200 pt-2 mt-2 first:border-t-0 first:mt-0 first:pt-0"
     >
       <summary class="cursor-pointer font-semibold text-sm py-2 select-none flex items-center gap-1">

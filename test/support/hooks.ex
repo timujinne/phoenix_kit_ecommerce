@@ -49,6 +49,17 @@ defmodule PhoenixKitEcommerce.Test.Hooks do
     end
   end
 
+  # `on_mount` callback standing in for core's locale hook: sets
+  # `:current_locale` from `"phoenix_kit_test_locale"` in the session (via
+  # `LiveCase.put_test_locale/2`), the way the real live_session does. No-op
+  # without one.
+  def on_mount(:assign_locale, _params, session, socket) do
+    case Map.get(session, "phoenix_kit_test_locale") do
+      nil -> {:cont, socket}
+      locale -> {:cont, assign(socket, :current_locale, locale)}
+    end
+  end
+
   # `on_mount` callback standing in for the HOST's own domain-currency hook
   # (Э1-A2, e.g. `Decor3dprintWeb.DomainCurrencyHook`) — production sets the
   # request-scoped display currency from the visitor's domain; this test

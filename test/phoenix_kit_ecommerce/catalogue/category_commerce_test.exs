@@ -42,7 +42,11 @@ defmodule PhoenixKitEcommerce.Catalogue.CategoryCommerceTest do
                "shop_status" => "active",
                "option_schema" => [],
                "featured_item_uuid" => nil,
-               "storefront_filters" => %{}
+               "storefront_filters" => %{},
+               "parcel_length_mm" => nil,
+               "parcel_width_mm" => nil,
+               "parcel_height_mm" => nil,
+               "parcel_weight_g" => nil
              }
     end
 
@@ -59,6 +63,48 @@ defmodule PhoenixKitEcommerce.Catalogue.CategoryCommerceTest do
 
       assert map["shop_status"] == "unlisted"
       assert map["storefront_filters"] == %{"a" => 1}
+    end
+  end
+
+  describe "cast/2 parcel defaults" do
+    test "round-trips the box and weight as integers" do
+      params = %{
+        "parcel_length_mm" => "300",
+        "parcel_width_mm" => 200,
+        "parcel_height_mm" => "100",
+        "parcel_weight_g" => "450"
+      }
+
+      assert {:ok, map} = CategoryCommerce.cast(params, %{})
+
+      assert %{
+               "parcel_length_mm" => 300,
+               "parcel_width_mm" => 200,
+               "parcel_height_mm" => 100,
+               "parcel_weight_g" => 450
+             } = map
+    end
+
+    test "merges over the existing namespace and keeps its other keys" do
+      current = %{"parcel_weight_g" => 450, "shop_status" => "hidden", "extra" => 1}
+
+      assert {:ok, map} = CategoryCommerce.cast(%{"parcel_length_mm" => "10"}, current)
+      assert map["parcel_weight_g"] == 450
+      assert map["parcel_length_mm"] == 10
+      assert map["shop_status"] == "hidden"
+      assert map["extra"] == 1
+    end
+
+    test "rejects a negative value on each field" do
+      for field <- ~w(parcel_length_mm parcel_width_mm parcel_height_mm parcel_weight_g) do
+        assert {:error, errors} = CategoryCommerce.cast(%{field => "-1"}, %{})
+        assert Keyword.has_key?(errors, String.to_existing_atom(field))
+      end
+    end
+
+    test "zero is accepted (unset)" do
+      assert {:ok, %{"parcel_weight_g" => 0}} =
+               CategoryCommerce.cast(%{"parcel_weight_g" => "0"}, %{})
     end
   end
 end

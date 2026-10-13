@@ -65,6 +65,14 @@ defmodule PhoenixKitEcommerce.CartFxDriftTest do
     updated
   end
 
+  test "a cart frozen at a zero rate reports no drift instead of dividing by it", ctx do
+    %{cart: cart, eur: eur} = ctx
+    set_rate(eur, "1.0")
+    assert %{} = Shop.cart_rate_drift(cart)
+
+    assert Shop.cart_rate_drift(%{cart | exchange_rate: Decimal.new("0")}) == nil
+  end
+
   test "no drift at or under the threshold, drift above it", %{cart: cart, eur: eur} do
     assert Shop.cart_rate_drift(cart) == nil
     set_rate(eur, "0.95")

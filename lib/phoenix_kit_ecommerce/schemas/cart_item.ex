@@ -23,7 +23,7 @@ defmodule PhoenixKitEcommerce.CartItem do
     same way and at the same rate as `unit_price` (§4.3.1) — never a raw
     base amount alongside an already-converted `unit_price`, or the
     displayed discount misstates itself
-  - `quantity` - Number of items (required, > 0)
+  - `quantity` - Number of items (required, 1..`max_quantity/0`)
   - `line_total` - Calculated: unit_price * quantity
   - `weight_grams` - Weight for shipping calculation
   - `taxable` - Whether item is taxable
@@ -38,7 +38,18 @@ defmodule PhoenixKitEcommerce.CartItem do
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.Product
 
+  # The column is int4 and the value arrives from an anonymous shopper: an
+  # unbounded quantity overflows inside the cart transaction. No product
+  # carries a per-order limit of its own, so one ceiling serves every line.
+  @max_quantity 9_999
+
+  @doc "The largest quantity one cart line may carry."
+  @spec max_quantity() :: pos_integer()
+  def max_quantity, do: @max_quantity
+
   @primary_key {:uuid, UUIDv7, autogenerate: true}
+
+  @type t :: %__MODULE__{}
 
   schema "phoenix_kit_shop_cart_items" do
     belongs_to :cart, Cart, foreign_key: :cart_uuid, references: :uuid, type: UUIDv7
@@ -108,7 +119,7 @@ defmodule PhoenixKitEcommerce.CartItem do
       :metadata
     ])
     |> validate_required([:cart_uuid, :product_title, :unit_price, :quantity, :currency])
-    |> validate_number(:quantity, greater_than: 0)
+    |> validate_number(:quantity, greater_than: 0, less_than_or_equal_to: @max_quantity)
     |> validate_number(:unit_price, greater_than_or_equal_to: 0)
     |> validate_length(:currency, is: 3)
     |> calculate_line_total()

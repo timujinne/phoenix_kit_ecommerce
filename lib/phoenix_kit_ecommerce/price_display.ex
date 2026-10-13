@@ -51,10 +51,15 @@ defmodule PhoenixKitEcommerce.PriceDisplay do
 
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce.Product
+  alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Helpers
 
   @key "_price_display"
+
+  # Between a shipping method's description and the pay-on-delivery note on
+  # a stored order line - see `pay_on_delivery_line_description/1`.
+  @line_description_joiner " — "
 
   @doc """
   The reserved metadata key. Consumers that copy metadata around (the CSV
@@ -126,6 +131,48 @@ defmodule PhoenixKitEcommerce.PriceDisplay do
   """
   def any_line_on_request?(lines) when is_list(lines), do: Enum.any?(lines, &line_on_request?/1)
   def any_line_on_request?(_), do: false
+
+  @doc """
+  Whether a stored order LINE is a shipping line paid to the carrier on
+  delivery (`"pay_on_delivery"`, written by the order conversion). Its 0.00
+  is what the shop charged, not free shipping, so pages render the label
+  instead of the amount.
+  """
+  def line_pay_on_delivery?(line) when is_map(line), do: line["pay_on_delivery"] == true
+  def line_pay_on_delivery?(_), do: false
+
+  @doc """
+  Whether an order's shipping is settled with the carrier on delivery
+  (`metadata["shipping_pay_on_delivery"]`), i.e. not part of its total.
+  """
+  def order_shipping_pay_on_delivery?(%{metadata: metadata}),
+    do: (metadata || %{})["shipping_pay_on_delivery"] == true
+
+  def order_shipping_pay_on_delivery?(_), do: false
+
+  @doc """
+  Whether a cart's summary may say its shipping is "Paid on delivery": the
+  selected method is pay-on-delivery AND the cart's stored
+  `shipping_amount` is 0.
+
+  The second half matters because the label follows the method's LIVE flag
+  while the total beside it is the cart's stored snapshot. A method switched
+  to pay-on-delivery after the cart picked it leaves the old fee in that
+  snapshot until the cart is recalculated
+  (`PhoenixKitEcommerce.refresh_pay_on_delivery_shipping/1`); until then
+  the summary shows the amount it actually charges rather than a label that
+  contradicts the total.
+  """
+  def cart_shipping_pay_on_delivery?(%{
+        shipping_method_uuid: uuid,
+        shipping_method: %ShippingMethod{uuid: uuid} = method,
+        shipping_amount: amount
+      })
+      when is_binary(uuid) do
+    ShippingMethod.pay_on_delivery?(method) and Decimal.eq?(amount || 0, 0)
+  end
+
+  def cart_shipping_pay_on_delivery?(_), do: false
 
   @doc """
   Builds the storable namespace map from admin form input.
@@ -329,6 +376,50 @@ defmodule PhoenixKitEcommerce.PriceDisplay do
         |> Decimal.to_integer()
 
       %{price: Helpers.format_price(Currency.present(compare, code), code), percent: percent}
+    end
+  end
+
+  @doc """
+  The description an order's shipping line carries for a pay-on-delivery
+  method (`ShippingMethod.pay_on_delivery?/1`), so an email or invoice that
+  prints the line's 0.00 also says why it is not free shipping.
+
+  Resolved in the locale of the process converting the cart, i.e. the
+  buyer's, and stored on the line like the rest of its snapshot.
+  """
+  def pay_on_delivery_description, do: gettext("Carrier rates, paid on delivery")
+
+  @doc """
+  The description stored on a pay-on-delivery order shipping line: the
+  method's own description (if any), then `pay_on_delivery_description/0`.
+  `line_description/1` is its inverse - both use the same joiner, so they
+  cannot drift apart.
+  """
+  def pay_on_delivery_line_description(method_description) do
+    [method_description, pay_on_delivery_description()]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join(@line_description_joiner)
+  end
+
+  @doc """
+  An order line's description for a page that also renders the line's
+  amount column. A pay-on-delivery shipping line's stored description ends
+  with `pay_on_delivery_description/0` for billing's sake; a page whose
+  amount column already says "Paid on delivery" drops that suffix rather
+  than say it twice. The suffix was stored in the buyer's locale, so a
+  viewer in another locale still sees it — repeated, but not wrong.
+  """
+  def line_description(line) when is_map(line) do
+    description = line["description"] || ""
+
+    if line_pay_on_delivery?(line) do
+      note = pay_on_delivery_description()
+
+      if description == note,
+        do: "",
+        else: String.replace_suffix(description, @line_description_joiner <> note, "")
+    else
+      description
     end
   end
 

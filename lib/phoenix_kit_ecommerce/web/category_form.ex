@@ -12,6 +12,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Category
+  alias PhoenixKitEcommerce.Errors
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.OptionTypes
   alias PhoenixKitEcommerce.ProductSource
@@ -30,6 +31,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
       |> assign(:supported_types, OptionTypes.supported_types())
       |> assign(:show_media_selector, false)
       |> assign(:image_uuid, nil)
+      |> assign(:return_to, nil)
 
     {:ok, socket}
   end
@@ -43,6 +45,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     if socket.assigns.live_action in [:new, :edit] and catalogue_source_active?() do
       {:noreply, redirect_to_catalogue(socket)}
     else
+      socket = assign(socket, :return_to, Helpers.safe_return_to(params["return_to"]))
       {:noreply, apply_action(socket, socket.assigns.live_action, params)}
     end
   end
@@ -87,7 +90,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
-    category = Shop.get_category!(id)
+    category = id |> Shop.get_category!() |> Category.with_parcel_defaults()
     changeset = Shop.change_category(category)
     category_options = Options.get_category_options(category)
     global_options = Options.get_enabled_global_options()
@@ -294,6 +297,36 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     end
   end
 
+  # `verb` is "saved", "deleted" or "reordered"; an option key is its machine
+  # name.
+  defp log_category_options(socket, verb, metadata) do
+    Activity.log("shop.category_option_" <> verb,
+      actor_uuid: Activity.actor_uuid(socket),
+      actor_role: Activity.actor_role(socket),
+      resource_type: "category",
+      resource_uuid: socket.assigns.category.uuid,
+      metadata: metadata
+    )
+  end
+
+  defp log_category_options_failed(socket, verb, reason) do
+    Activity.log_failed("shop.category_option_" <> verb, reason,
+      actor_uuid: Activity.actor_uuid(socket),
+      actor_role: Activity.actor_role(socket),
+      resource_type: "category",
+      resource_uuid: socket.assigns.category.uuid
+    )
+  end
+
+  # The key never changes on an edit: the form's key input is disabled, so a
+  # browser does not submit it and `build_option/1` would derive a new key
+  # from the label — renaming the option (possibly onto another option's
+  # key) while products keep their selections under the old one.
+  defp keep_editing_key(opt, %{"key" => key}), do: Map.put(opt, "key", key)
+  defp keep_editing_key(opt, _editing), do: opt
+
+  # `current` is the list as stored under the category's lock, so the edit
+  # lands on top of whatever another admin saved since this form loaded.
   defp apply_option_change(current, nil, opt) do
     opt = Map.put(opt, "position", length(current))
     current ++ [opt]
@@ -305,10 +338,17 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
     end)
   end
 
-  defp do_save_category_options(socket, updated_opts, editing) do
-    case Options.update_category_options(socket.assigns.category, updated_opts) do
+  defp do_save_category_options(socket, opt, editing) do
+    result =
+      Options.transform_category_options(socket.assigns.category, fn current ->
+        {:ok, apply_option_change(current, editing, opt)}
+      end)
+
+    case result do
       {:ok, updated_category} ->
+        updated_opts = Options.get_category_options(updated_category)
         merged = Options.merge_schemas(socket.assigns.global_options, updated_opts)
+        log_category_options(socket, "saved", %{"count" => length(updated_opts)})
 
         {:noreply,
          socket
@@ -324,8 +364,8 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          )}
 
       {:error, reason} ->
-        {:noreply,
-         put_flash(socket, :error, gettext("Error: %{reason}", reason: inspect(reason)))}
+        log_category_options_failed(socket, "saved", reason)
+        {:noreply, put_flash(socket, :error, Errors.message(reason))}
     end
   end
 
@@ -347,10 +387,13 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   end
 
   @impl true
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
+
+  @impl true
   def render(assigns) do
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
-        <.admin_page_header back={Routes.path("/admin/shop/categories")}>
+        <.admin_page_header back={@return_to || Routes.path("/admin/shop/categories")}>
           <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{@heading}</h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
             {if @live_action == :new, do: gettext("Create a new category"), else: gettext("Edit category details")}
@@ -360,6 +403,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
         <%!-- Form --%>
         <.form
           for={@form}
+          id="category-form"
           phx-change="validate"
           phx-submit="save"
           class="space-y-6"
@@ -481,7 +525,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                         <img
                           src={get_storage_image_url(@image_uuid, "thumbnail")}
                           class="w-24 h-24 object-cover rounded-lg shadow"
-                          alt="Category image"
+                          alt={gettext("Category image")}
                         />
                         <button
                           type="button"
@@ -540,6 +584,60 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                     </label>
                   </div>
                 <% end %>
+              </div>
+            </div>
+          </div>
+
+          <%!-- Card: Default parcel for the products of this category --%>
+          <div class="card bg-base-100 shadow-xl" id="category-parcel-defaults">
+            <div class="card-body">
+              <h2 class="card-title text-xl mb-2">{gettext("Default parcel")}</h2>
+              <p class="text-sm text-base-content/60 mb-4">
+                {gettext(
+                  "Size and weight assumed for products of this category that have none of their own. Leave empty to use the shop's defaults."
+                )}
+              </p>
+
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-4">
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:parcel_length_mm]}
+                    id="category-parcel-length-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Length (mm)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:parcel_width_mm]}
+                    id="category-parcel-width-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Width (mm)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:parcel_height_mm]}
+                    id="category-parcel-height-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Height (mm)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:parcel_weight_g]}
+                    id="category-parcel-weight-g"
+                    type="number"
+                    min="0"
+                    label={gettext("Weight (g)")}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -650,6 +748,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                           <button
                             type="button"
                             phx-click="delete_category_option"
+                            phx-disable-with="…"
                             phx-value-key={opt["key"]}
                             data-confirm={gettext("Remove this option?")}
                             class="btn btn-ghost btn-xs text-error"
@@ -698,10 +797,10 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
           <%!-- Submit --%>
           <div class="flex justify-end gap-4">
-            <.link navigate={Routes.path("/admin/shop/categories")} class="btn btn-outline">
+            <.link navigate={@return_to || Routes.path("/admin/shop/categories")} class="btn btn-outline">
               {gettext("Cancel")}
             </.link>
-            <button type="submit" class="btn btn-primary">
+            <button type="submit" phx-disable-with={gettext("Saving…")} class="btn btn-primary">
               <.icon name="hero-check" class="w-4 h-4 mr-2" />
               {if @live_action == :new, do: gettext("Create Category"), else: gettext("Update Category")}
             </button>
@@ -813,7 +912,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
                 <button type="button" phx-click="close_opt_modal" class="btn btn-ghost">
                   {gettext("Cancel")}
                 </button>
-                <button type="submit" class="btn btn-primary">
+                <button type="submit" phx-disable-with={gettext("Saving…")} class="btn btn-primary">
                   {if @editing_opt, do: gettext("Update"), else: gettext("Add")}
                 </button>
               </div>
@@ -851,7 +950,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
         {:noreply,
          socket
          |> put_flash(:info, gettext("Category created"))
-         |> push_navigate(to: Routes.path("/admin/shop/categories"))}
+         |> push_navigate(to: socket.assigns.return_to || Routes.path("/admin/shop/categories"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
@@ -875,7 +974,7 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
         {:noreply,
          socket
          |> put_flash(:info, gettext("Category updated"))
-         |> push_navigate(to: Routes.path("/admin/shop/categories"))}
+         |> push_navigate(to: socket.assigns.return_to || Routes.path("/admin/shop/categories"))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
@@ -1030,15 +1129,11 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
 
   defp gated_event("save_category_option", %{"option" => params}, socket) do
     form_data = parse_opt_form_data(params)
-    opt = build_option(form_data)
-
-    current = socket.assigns.category_options
     editing = socket.assigns.editing_opt
-
-    updated_opts = apply_option_change(current, editing, opt)
+    opt = form_data |> build_option() |> keep_editing_key(editing)
 
     try do
-      do_save_category_options(socket, updated_opts, editing)
+      do_save_category_options(socket, opt, editing)
     rescue
       e ->
         require Logger
@@ -1049,11 +1144,11 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
   end
 
   defp gated_event("delete_category_option", %{"key" => key}, socket) do
-    updated_opts = Enum.reject(socket.assigns.category_options, &(&1["key"] == key))
-
-    case Options.update_category_options(socket.assigns.category, updated_opts) do
+    case Options.remove_category_option(socket.assigns.category, key) do
       {:ok, updated_category} ->
+        updated_opts = Options.get_category_options(updated_category)
         merged = Options.merge_schemas(socket.assigns.global_options, updated_opts)
+        log_category_options(socket, "deleted", %{"key" => key})
 
         {:noreply,
          socket
@@ -1063,26 +1158,25 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          |> put_flash(:info, gettext("Option removed"))}
 
       {:error, reason} ->
-        {:noreply,
-         put_flash(socket, :error, gettext("Error: %{reason}", reason: inspect(reason)))}
+        log_category_options_failed(socket, "deleted", reason)
+        {:noreply, put_flash(socket, :error, Errors.message(reason))}
     end
   end
 
-  defp gated_event("reorder_category_options", %{"ordered_ids" => ordered_keys}, socket) do
-    current = socket.assigns.category_options
-
-    reordered =
-      ordered_keys
-      |> Enum.with_index()
-      |> Enum.map(fn {key, idx} ->
-        opt = Enum.find(current, &(&1["key"] == key))
-        if opt, do: Map.put(opt, "position", idx), else: nil
+  # Named keys first in the order given, then any option the dragged list did
+  # not name (one another admin added since this page loaded) after them.
+  defp gated_event("reorder_category_options", %{"ordered_ids" => ordered_keys}, socket)
+       when is_list(ordered_keys) do
+    result =
+      Options.transform_category_options(socket.assigns.category, fn current ->
+        {:ok, reorder_options(current, ordered_keys)}
       end)
-      |> Enum.reject(&is_nil/1)
 
-    case Options.update_category_options(socket.assigns.category, reordered) do
+    case result do
       {:ok, updated_category} ->
+        reordered = Options.get_category_options(updated_category)
         merged = Options.merge_schemas(socket.assigns.global_options, reordered)
+        log_category_options(socket, "reordered", %{"count" => length(reordered)})
 
         {:noreply,
          socket
@@ -1091,12 +1185,20 @@ defmodule PhoenixKitEcommerce.Web.CategoryForm do
          |> assign(:merged_preview, merged)}
 
       {:error, reason} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           gettext("Reorder failed: %{reason}", reason: inspect(reason))
-         )}
+        log_category_options_failed(socket, "reordered", reason)
+        {:noreply, put_flash(socket, :error, Errors.message(reason))}
     end
+  end
+
+  defp reorder_options(current, ordered_keys) do
+    named =
+      Enum.flat_map(ordered_keys, fn key -> List.wrap(Enum.find(current, &(&1["key"] == key))) end)
+
+    named = Enum.uniq_by(named, & &1["key"])
+    unnamed = Enum.reject(current, fn opt -> opt["key"] in ordered_keys end)
+
+    (named ++ unnamed)
+    |> Enum.with_index()
+    |> Enum.map(fn {opt, idx} -> Map.put(opt, "position", idx) end)
   end
 end

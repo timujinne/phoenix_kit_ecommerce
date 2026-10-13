@@ -131,6 +131,36 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
     end
   end
 
+  @doc "Number of items matching `opts` (the filters of `list_items/1`)."
+  @spec count_items(keyword()) :: non_neg_integer()
+  def count_items(opts \\ []) do
+    case resolve_catalogue_uuid(opts) do
+      nil ->
+        0
+
+      uuid ->
+        CatItem
+        |> where([i], i.catalogue_uuid == ^uuid)
+        |> apply_item_filters(opts)
+        |> repo().aggregate(:count)
+    end
+  end
+
+  @doc "Number of the shop catalogue's categories matching `opts`."
+  @spec count_categories(keyword()) :: non_neg_integer()
+  def count_categories(opts \\ []) do
+    case resolve_catalogue_uuid(opts) do
+      nil ->
+        0
+
+      uuid ->
+        CatCategory
+        |> where([c], c.catalogue_uuid == ^uuid)
+        |> apply_category_filters(opts)
+        |> repo().aggregate(:count)
+    end
+  end
+
   @doc "Fetches one item by uuid, scoped to the shop catalogue. `nil` on a miss."
   @spec get_item(String.t(), keyword()) :: CatItem.t() | nil
   def get_item(uuid, opts \\ [])
@@ -271,9 +301,8 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
 
   Options: `:category_uuid` (scope to one category), `:exclude_hidden_categories`
   (drop items whose category's `shop_status` is `"hidden"`), `:language`
-  (prefer `data[language]["_title"]` over the value's bare `title` —
-  the picker/sidebar's fuller per-language resolution is Block 5's
-  remaining work; this covers the plain value label), `:catalogue_uuid`
+  (the value's translated title, resolved with dialect and primary-language
+  fallback by `value_label/2`, before its bare `title`), `:catalogue_uuid`
   and `:sets` (pre-resolved by the caller — see `catalogue_uuid/0` and
   `list_sets/0`).
 
@@ -512,9 +541,8 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
      category (ordered by `position`, then `name`) that carries an image
      by the same rule — exactly the old admin form's "Auto-detect (first
      product with image)" hint. Resolved for every OTHER category in one
-     query fetching all their active items once, then walking the
-     (already category/position-ordered) rows in Elixir to keep the
-     first image-bearing one per category.
+     query that picks the first image-bearing item per category in SQL
+     (`DISTINCT ON`) and returns just the image uuid, not the item data.
 
   A category absent from the result has no image from either step (its
   `image_uuid`, if any — priority 1 — is a category-view concern, not
@@ -615,31 +643,78 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
   defp resolve_auto_images(categories, catalogue_uuid) do
     category_uuids = Enum.map(categories, & &1.uuid)
 
-    CatItem
-    |> where([i], i.catalogue_uuid == ^catalogue_uuid)
-    |> where([i], i.category_uuid in ^category_uuids)
-    |> active_visibility()
-    |> order_by([i], asc: i.category_uuid, asc: i.position, asc: i.name)
-    |> select([i], %{category_uuid: i.category_uuid, data: i.data})
+    # Only the image is projected, never the item's whole `data`: a
+    # catalogue item carries every translation in there (~20 KB of JSONB,
+    # about 12 KB of it the imported `html_source`), and shipping that for
+    # every active item just to pick one image per category dominated the
+    # storefront's category query. The inner query computes the image with
+    # the same rule as `item_image/1` (below), the outer `DISTINCT ON` keeps
+    # the first image-bearing item per category (position, then name) so one
+    # row per category comes back.
+    #
+    # The two sub-values are pulled out of `data` once per row, in a
+    # `LATERAL` with `OFFSET 0` (without it the planner inlines the
+    # expressions back into the `CASE`). Postgres detoasts the whole
+    # document on every `data->...` read, and a `CASE` that reads `data`
+    # itself did that two to five times per item (plus once for the
+    # visibility filter): more Postgres time than shipping `data` (~100 vs
+    # ~50 ms for 700 items), though about equal in wall time.
+    items =
+      CatItem
+      |> where([i], i.catalogue_uuid == ^catalogue_uuid)
+      |> where([i], i.category_uuid in ^category_uuids)
+      |> active_visibility()
+      |> join(
+        :cross_lateral,
+        [i],
+        x in fragment(
+          "(SELECT ?->'featured_image_uuid' AS f, ?->'media_order' AS m OFFSET 0)",
+          i.data,
+          i.data
+        ),
+        on: true
+      )
+      |> select([i, x], %{
+        category_uuid: i.category_uuid,
+        position: i.position,
+        name: i.name,
+        image:
+          fragment(
+            """
+            CASE
+              WHEN jsonb_typeof(?) = 'string' AND ? #>> '{}' <> ''
+                THEN ? #>> '{}'
+              WHEN jsonb_typeof(?) = 'array'
+                   AND jsonb_typeof(?->0) = 'string'
+                   AND ?->>0 <> ''
+                THEN ?->>0
+            END
+            """,
+            x.f,
+            x.f,
+            x.f,
+            x.m,
+            x.m,
+            x.m,
+            x.m
+          )
+      })
+
+    items
+    |> subquery()
+    |> where([s], not is_nil(s.image))
+    |> distinct([s], s.category_uuid)
+    |> order_by([s], asc: s.category_uuid, asc: s.position, asc: s.name)
+    |> select([s], {s.category_uuid, s.image})
     |> repo().all()
-    |> Enum.reduce(%{}, &put_first_image/2)
+    |> Map.new()
   end
 
-  defp put_first_image(%{category_uuid: category_uuid} = row, acc) do
-    if Map.has_key?(acc, category_uuid) do
-      acc
-    else
-      case item_image(row) do
-        image when is_binary(image) and image != "" -> Map.put(acc, category_uuid, image)
-        _ -> acc
-      end
-    end
-  end
-
-  # Shared by `resolve_explicit_images/1`, `resolve_auto_images/1` and
+  # Shared by `resolve_explicit_images/1` and
   # `category_item_image_options/1` — a real `CatItem` struct and the
   # plain `%{data: ...}` maps `select/3` projects above both work, since
-  # this only ever reads `.data`.
+  # this only ever reads `.data`. `resolve_auto_images/2` mirrors this
+  # rule in SQL: keep the two in step.
   defp item_image(%{data: data}) do
     data = data || %{}
 
@@ -768,8 +843,11 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
 
     Enum.reduce(filters, query, fn %{key: key, values: slugs}, q ->
       case set_uuid_for_key(key, sets) do
+        # The filter names a set that no longer exists (deleted or renamed
+        # since the link was made). Its badge still shows as active, so the
+        # honest answer is no items — not every item, as if it were off.
         nil ->
-          q
+          where(q, false)
 
         set_uuid ->
           # `item_attribute_sets` is unique on `(item_uuid, set_uuid)`, so
@@ -804,8 +882,8 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
   defp filter_by_search(query, nil), do: query
   defp filter_by_search(query, ""), do: query
 
-  # Matches the primary `name`/`description` columns, the `tags` list,
-  # and — like `Legacy.filter_by_product_search/2`'s `jsonb_each_text`
+  # Matches the primary `name`/`description` columns, the `sku`, the `tags`
+  # list, and — like `Legacy.filter_by_product_search/2`'s `jsonb_each_text`
   # over every localized field — every language bucket's `_name` and
   # `_description` in `data` (`data["fr-FR"]["_name"]`, …), so a shopper
   # searching in a non-primary language finds the translated title.
@@ -819,10 +897,12 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
       query,
       [i],
       fragment(
-        "(? ILIKE ? OR COALESCE(?, '') ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(?->'ecommerce'->'tags', '[]'::jsonb)) AS tag WHERE tag ILIKE ?) OR EXISTS (SELECT 1 FROM jsonb_each(?) AS lang(key, value) WHERE jsonb_typeof(lang.value) = 'object' AND (COALESCE(lang.value->>'_name', '') ILIKE ? OR COALESCE(lang.value->>'_description', '') ILIKE ?)))",
+        "(? ILIKE ? OR COALESCE(?, '') ILIKE ? OR COALESCE(?, '') ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(?->'ecommerce'->'tags', '[]'::jsonb)) AS tag WHERE tag ILIKE ?) OR EXISTS (SELECT 1 FROM jsonb_each(?) AS lang(key, value) WHERE jsonb_typeof(lang.value) = 'object' AND (COALESCE(lang.value->>'_name', '') ILIKE ? OR COALESCE(lang.value->>'_description', '') ILIKE ?)))",
         i.name,
         ^term,
         i.description,
+        ^term,
+        i.sku,
         ^term,
         i.data,
         ^term,

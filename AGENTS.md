@@ -17,11 +17,17 @@ pages.
   `ImageFingerprint` runs ImageMagick through, above 2.38.0's
   `PhoenixKitWeb.Actor` and `Activity.log/3`; the compound form
   keeps the ceiling open across later 2.x minors), `phoenix_kit_billing`
-  `~> 0.13` (hard), `phoenix_kit_ai` `~> 0.24` (optional — the
+  `~> 0.20` (hard; 0.20 is the first release that ships
+  `BillingProfileFields` and `BillingProfile.fields_changeset/3`, which
+  checkout renders and validates over),
+  `phoenix_kit_ai` `~> 0.24` (optional — the
   AI-translate UI, both translation adapters, the sweep worker and the
   translations page use it, and all of them compile out when it is absent;
   0.20 is the first engine that binds `{{SourceFields}}` and forwards
-  `opts[:source_fields]`, `test/ai_pin_conformance_test.exs` guards it).
+  `opts[:source_fields]`, `test/ai_pin_conformance_test.exs` guards it),
+  `phoenix_kit_warehouse` `~> 0.5` (optional — only the Stock tracking
+  switch uses it, through `StockTracking`, which calls `enabled?/0` and
+  `StockLedger.default_location_uuid/0`).
   Also `phoenix`, `phoenix_live_view ~> 1.1`, `ecto_sql ~> 3.12`,
   `oban ~> 2.20`, `uuidv7`, `nimble_csv`, `req`, `jason`, `mdex`,
   `gettext ~> 1.0`. There is deliberately **no** dep on
@@ -29,9 +35,11 @@ pages.
   the code that does call `PhoenixKitCatalogue.*` directly (the
   `ProductSource.Catalogue` adapter, `Catalogue.Writer`, the Shopify
   variants/collections/media sync) only runs behind `Code.ensure_loaded?/1`
-  once a host declares the dep, with `@compile {:no_warn_undefined, …}` and
-  matching `.dialyzer_ignore.exs` entries. Its `:catalogue`-tagged tests
-  need the test-only path bridge in `mix.exs` (`catalogue_test_deps/0`).
+  once a host declares the dep, with `@compile {:no_warn_undefined, …}`. Its
+  `:catalogue`-tagged tests need the test-only path bridge in `mix.exs`
+  (`catalogue_test_deps/0`), or they run by themselves when
+  `phoenix_kit_warehouse` is resolved, which brings `phoenix_kit_catalogue`
+  in transitively.
 - **Consumed by:** no sibling declares a dependency on this module. Core
   reaches the old `PhoenixKit.Modules.Shop.*` namespace through the
   transitional shims in `lib/phoenix_kit_ecommerce/compat/`, and
@@ -41,7 +49,8 @@ pages.
   while `shop_shopify_enabled` is off) and Translations
   (`/admin/shop/translations`, hidden until `shop_translations_enabled`); a
   settings subtab at `/admin/shop/settings`; user-dashboard tabs Shop
-  (`/shop`) and My Cart (`/cart`). Public storefront routes: `/shop`,
+  (`/shop`) and My Cart (`/cart`, also in the avatar dropdown via the
+  `Tab` option `user_menu: true`). Public storefront routes: `/shop`,
   `/shop/category/:slug`, `/shop/product/:slug`, `/cart`, `/checkout`,
   `/checkout/complete/:uuid`.
 - **Module key** `"shop"`; settings prefix `shop_`.
@@ -124,8 +133,14 @@ Repo-local aliases:
   category/filter sidebar renders in the page templates for everyone. Admin
   LiveViews do not wrap themselves in a layout; core's admin shell supplies
   it.
+- **The storefront's `<head>` tags are the host's to render.** The catalog,
+  category and product pages assign `og`, `canonical_url` and
+  `hreflang_links`; core's root layout reads `og` only (its canonical link
+  comes from `og.url`), so `hreflang` alternates appear only when the host's
+  root layout renders `hreflang_links`. `Test.Layouts.root/1` renders all
+  three so a test can assert a page still supplies them.
 - **Gettext** is this module's own backend (`PhoenixKitEcommerce.Gettext`,
-  catalogues under `priv/gettext/{en,et,ru,de,fr}`). A `gettext("…")` added
+  catalogues under `priv/gettext/{en,et,ru,de,fr,uk}`). A `gettext("…")` added
   anywhere under `web/` lands in THIS catalogue, so it needs
   `mix gettext.extract && mix gettext.merge priv/gettext --no-fuzzy` here,
   not in core. Merge with `--no-fuzzy`: fuzzy entries are live at runtime, so
@@ -137,6 +152,20 @@ Repo-local aliases:
   English beside translated siblings.
 - **Never wrap in `gettext`:** `push_event` names, URL paths, route segments,
   setting keys. Translating one breaks at runtime in every non-English locale.
+- **A stored status is rendered through `Web.StatusLabels`** (`order/1`,
+  `product/1`, `category/1`, `cart/1`, `import/1`, `translation_entry/1`),
+  never as its raw value: the value keys badge classes, filters and audit
+  metadata, the label is what a person reads. A new status value needs its
+  own `gettext` clause there.
+- **A context error is an atom or a tagged tuple with a clause in
+  `Errors.message/1`**, never an English sentence: the reason is matched on
+  and logged, the sentence is translated where it is shown. Each message is
+  pinned in `errors_test.exs`.
+- **Every public LiveView ends its `handle_event/3` clauses with the
+  `Helpers.ignore_event/2` catch-all.** Anyone can push any event at a public
+  page; an unknown name or a payload no clause takes must not crash the view.
+- **Text stored on an order line is resolved in the locale of the process
+  converting the cart** — the buyer's — and never re-translated on read.
 - **JS hooks:** none. If one is ever needed, ship it as a prebuilt bundle
   declared by `js_sources/0` under a namespaced global — never registered from
   an inline `<script>`, which morphdom does not execute on LiveView
@@ -213,6 +242,15 @@ Repo-local aliases:
 
 ### Landmines
 
+- **Code that builds a `Product` or `Category` view-struct must set
+  `origin`.** `origin` (virtual, `:legacy` by default) says where a record
+  comes from and so which editor its admin Edit link opens
+  (`Web.Helpers.admin_edit_path/3`): `ProductSource.Catalogue.View` sets
+  `:catalogue`, and a view-struct built anywhere else without it is sent to
+  the shop form, which has no such record. The link is NOT decided by the
+  global `shop_product_source` switch; a catalogue record also needs the
+  `"catalogue"` module key on top of `shop.manage_catalog`
+  (`Web.Helpers.admin_edit_permissions/1`).
 - **The test harness must apply billing's migration chain, not just core's.**
   This module reads and writes billing's schemas directly, and billing owns
   `phoenix_kit_currencies` from its own V2 on, so a test database built from
@@ -237,6 +275,20 @@ Repo-local aliases:
 - Reading `price_on_request` live from the product instead of the stored line
   turns a committed "price on request" order into a "0.00" order; the product
   row is `ON DELETE SET NULL`, so deleting a product is enough to trigger it.
+- A shipping method flagged `metadata["pay_on_delivery"]` (the buyer pays the
+  carrier's own rates on delivery) is stored with price 0 —
+  `ShippingMethod.changeset/2` forces it and clears `free_above_amount`.
+  Reading that 0 as "FREE" is the bug the flag exists to prevent: ask
+  `ShippingMethod.pay_on_delivery?/1` (or `present_shipping_method/2`'s
+  `pay_on_delivery?`) first. Orders carry it as
+  `metadata["shipping_pay_on_delivery"]` and on the shipping line as
+  `"pay_on_delivery"`; read them through `PriceDisplay`
+  (`line_pay_on_delivery?/1`, `order_shipping_pay_on_delivery?/1`,
+  `cart_shipping_pay_on_delivery?/1`). Billing does not read the flag: its
+  plain-text email prints the line as 0, and its admin order edit drops the
+  key. A cart that picked a method before it was flagged keeps the old fee
+  in its stored totals until `refresh_pay_on_delivery_shipping/1` (the cart
+  and checkout pages call it on mount).
 - `compat/shop.ex` redefines `PhoenixKit.Modules.Shop`, which is why
   `elixirc_options: [ignore_module_conflict: true]` is set. That suppression
   also hides a genuine redefinition warning, and a new public function without
@@ -282,7 +334,7 @@ notification tree, and `migration_module/0` the migration chain. Settings
 persist through `PhoenixKit.Settings` (DB-backed in the host), never
 application env. `required_modules/0` declares `"billing"`;
 `required_integrations/0` and `integration_providers/0` declare the Shopify
-provider.
+provider only while `shop_shopify_enabled` is on (off by default).
 
 ```
 lib/phoenix_kit_ecommerce.ex          # PhoenixKit.Module behaviour + the main context
@@ -325,6 +377,7 @@ lib/phoenix_kit_ecommerce/
 ├── category_ai_translatable.ex # the same for categories
 ├── translation_fingerprint.ex  # staleness: hash, four states, write-narrowing, candidate SQL
 ├── translation_sweep_settings.ex # settings reader for translations + the sweep
+├── stock_tracking.ex # Stock tracking switch + optional phoenix_kit_warehouse probe
 ├── prompt_rollout.ex # content-sha rollout of the code-managed AI prompts
 ├── gettext.ex        # PhoenixKitEcommerce.Gettext backend
 └── migrations.ex     # module-owned migration chain
@@ -366,8 +419,11 @@ Admin and Storefront APIs.
 
 ### PubSub topics
 
-Broadcast through `PhoenixKit.PubSub.Manager` (the HOST's PubSub), from
-`PhoenixKitEcommerce.Events`.
+Broadcast and subscribed through `PhoenixKitEcommerce.Events`, which uses
+`PhoenixKit.PubSub.Manager` — core's own PubSub server, not the one
+`PhoenixKit.PubSubHelper` resolves from the host's config. A publisher on one
+and a subscriber on the other never meet and nothing fails, so a new topic
+gets its topic, subscribe and broadcast functions in `Events`.
 
 | Topic | Carries |
 |---|---|
@@ -375,6 +431,8 @@ Broadcast through `PhoenixKit.PubSub.Manager` (the HOST's PubSub), from
 | `shop:products:<product_uuid>` | one product's changes |
 | `shop:categories` | category created/updated/deleted, bulk status/parent/delete |
 | `shop:inventory` | inventory changes |
+| `shop:imports`, `shop:import:<import_log_uuid>` | CSV import completion, and one import's progress |
+| `shop:image_migration:batch`, `shop:image_migration:<product_uuid>` | image migration start/cancel/per-product completion, and one product's progress |
 | per-user and per-session cart topics | cart sync for real-time storefront updates |
 
 ### Web layer
@@ -442,7 +500,10 @@ All stored via `PhoenixKit.Settings`. Keys are **`shop_`-prefixed**.
 - `shop_product_source` — `"legacy"` (default) or `"catalogue"`; stored in
   `phoenix_kit_shop_config`, not `PhoenixKit.Settings`. Read through
   `PhoenixKitEcommerce.ProductSource.current/0`, which fails closed to
-  Legacy when `phoenix_kit_catalogue` is not loaded.
+  Legacy when `phoenix_kit_catalogue` is not loaded or the read fails. The
+  value is memoized per process for `:product_source_memo_ms` (application
+  env, default 1000, `0` in tests): nothing in this package writes the row,
+  so there is no write to invalidate a shared cache on.
 - `shop_allow_price_override` — allow per-product price overrides (default: `false`)
 - `shop_enforce_product_currency` — refuse, rather than warn, when a product's
   currency does not match the shop's (default: `false`). Read through
@@ -501,6 +562,37 @@ All stored via `PhoenixKit.Settings`. Keys are **`shop_`-prefixed**.
   page renders **no** shipping section at all, so nothing may redirect a
   shopper there to "pick another method"; `CheckoutPage` re-enters its own
   `:shipping` step instead.
+- `shop_shipping_parcel_defaults` — JSON `%{"length_mm", "width_mm",
+  "height_mm", "weight_g"}`: the standard box and the weight assumed for a
+  line without one. Read via `shipping_parcel_defaults/0`, written via
+  `update_shipping_parcel_defaults/1` (validates; the settings LiveView
+  logs `shop.shipping_parcel_defaults_changed`).
+- Packing data has no columns: a product's size lives in
+  `metadata["dimensions_mm"]` (virtual `length_mm`/`width_mm`/`height_mm`,
+  `Product.dimensions_mm/1`; catalogue items keep it in
+  `data["ecommerce"]`), a category's in `metadata["parcel_defaults"]`
+  (`Category.parcel_defaults/1`; catalogue: `CategoryCommerce.parcel_*`,
+  exposed by `View.category_view/2` through the same metadata key). Adding a
+  line freezes `metadata["shipping_profile"]` on it (`Shipping.CartPacking`);
+  `cart_parcels/1` packs from those snapshots, never from the live product.
+- A shipping method's `metadata["shipping_provider"]` is set through the
+  top-level `shipping_provider` param of `ShippingMethod.changeset/2`
+  (validated by `Shipping.MethodParams`), never as `metadata` itself, which
+  `cast/3` would replace whole. The `"fixed"` provider is the not-calculated
+  path: it has no settings or service and never asks for a destination, and a
+  stored fixed block is read as no block. Price rounding is off unless
+  `pricing.round_to` is a positive step.
+- The limits of a chosen pickup point (weight, size, value) are re-checked
+  against the cart whenever its shipping status is worked out
+  (`check_destination`): a point that no longer takes the parcels makes the
+  status `:needs_destination` with snapshot `reason: "point_limits"`, which
+  blocks checkout like any other missing destination.
+- Locality search and pickup point listing are rate limited per provider
+  (`Shipping.RateLimit`, `:shipping_lookup_rate`, default 20/s; `{:error,
+  :rate_limited}` is transient and never cached) and their cache entries are
+  bounded apart (`:shipping_cache_max_lookup_entries`,
+  `:shipping_cache_max_list_size`). Both need `Shipping.Cache` running (it
+  owns the tables).
 
 **Storefront notifications**
 
@@ -543,10 +635,32 @@ settings-layer error.
 
 **Shopify — read through `PhoenixKitEcommerce.shopify_enabled?/0`**
 
-- `shop_shopify_enabled` — default `true`. Off hides the Shopify Sync tab,
-  redirects the sync page, empties `integration_providers/0` and
-  `required_integrations/0` (the provider cache is cleared on toggle). The
-  stored connection and its token are never touched.
+- `shop_shopify_enabled` — default `false`, and a failing settings read also
+  answers `false` (fail closed). Off hides the Shopify Sync tab, redirects the
+  sync page, empties `integration_providers/0` and `required_integrations/0`
+  (the provider cache is cleared on toggle). The stored connection and its
+  token are never touched.
+- The connection's `shop_domain` is accepted only as a bare
+  `<store>.myshopify.com` host (`Shopify.ShopDomain`): it is interpolated
+  into the URL every Admin API request goes to with the access token
+  attached. For the same reason `Shopify.AdminClient` follows no redirect
+  and no next-page link to another host, and bounds a paginated read by
+  page count and wall clock. Installs that used Shopify under the old default of
+  `true` get the row written by the chain's V3 step (below).
+
+**Stock tracking — read through `PhoenixKitEcommerce.StockTracking`**
+
+- `shop_stock_tracking_enabled` — default `false`. The effective state is
+  this setting AND `phoenix_kit_warehouse` installed AND enabled, so
+  disabling or removing Warehouse switches tracking off without touching the
+  key. `StockTracking.set_enabled(true)` is refused (`:warehouse_not_installed`
+  / `:warehouse_disabled`) in the context, not only greyed out on the settings
+  page; turning it off always works. `warehouse_status/0` is
+  `:not_installed | :disabled | :no_default_location | :ready`. The Warehouse
+  modules are reached by variable-module calls behind `Code.ensure_loaded?/1`
+  (no compile-time reference, so a host without the package compiles
+  unchanged) and a failing probe counts as `:disabled`; tests swap them via
+  the `:stock_tracking_modules` app env (`test/support/fake_warehouse.ex`).
 
 **AI translations — read through `PhoenixKitEcommerce.TranslationSweepSettings`**
 
@@ -576,7 +690,7 @@ settings-layer error.
 
 Owns a versioned chain: `PhoenixKitEcommerce.Migrations` via
 `migration_module/0`, marker `pke_schema:<N>` as a COMMENT ON
-`phoenix_kit_shop_config`, currently V2. `mix phoenix_kit.update` applies it
+`phoenix_kit_shop_config`, currently V3. `mix phoenix_kit.update` applies it
 in hosts (and `mix phoenix_kit.status` reports it); tests apply it by running
 `up_statements/1` directly. A marker-less or foreign-comment table reads as
 version 0 — the core-baseline shape from before the chain existed.
@@ -587,7 +701,11 @@ ownership. V2 is the chain's first deliberate divergence: it drops the
 `DEFAULT 'USD'` core declares on the `currency` column of
 `phoenix_kit_shop_carts`, `…_cart_items`, `…_products` and
 `…_shipping_methods`, so an insert that names no currency stores NULL.
-Existing rows are untouched.
+Existing rows are untouched. V3 writes `shop_shopify_enabled = "true"` for an
+install that already uses Shopify (a Shopify integration connection, or
+catalogue items / legacy products carrying a Shopify product id) and has no
+such row yet, so flipping the default to off does not switch its sync off on
+upgrade. It never overwrites an existing row; `down/1` leaves the row alone.
 
 Rules for the chain, all of which have been broken at least once:
 
@@ -629,8 +747,12 @@ makes in production), then executes this module's own chain on top via
 `PhoenixKit.PubSub.Manager`, `PhoenixKit.ModuleRegistry` (registered with this
 module — without it every `Scope.can?/2` answers false and the authorization
 tests would pass for the wrong reason), `PhoenixKit.Users.RateLimiter.Backend`,
-and the test Endpoint. It forces core's URL prefix to `/`, so admin paths in
-tests carry the default-locale prefix (`/en/admin/shop`).
+and the test Endpoint. It forces core's URL prefix to `/`. Admin paths in
+tests carry the default-locale prefix (`/en/admin/shop`) on a core that always
+emits one; a core with the URL language policy drops the segment on a
+single-language site (`/admin/shop`). The test router serves BOTH shapes inside
+one `live_session`, because a `push_patch` may not cross sessions — so build an
+expected admin href with `Routes.path/1`, never as a literal.
 
 Support modules under `test/support/` are loaded with explicit
 `Code.require_file/2` — Elixir 1.19's `mix test` no longer auto-loads them at
@@ -641,19 +763,28 @@ test-helper time, so a new support file must be added to that list:
 - `PhoenixKitEcommerce.LiveCase` — LiveView tests: the test endpoint/router
   and conn helpers on top of `DataCase`.
 - `ActivityLogAssertions`, `NotificationAssertions`, `CheckoutFixtures`,
-  `TestLayouts` (a host-consumer layout fixture), `Hooks`, `TestRepo`,
-  `TestRouter`, `TestEndpoint`.
+  `TestLayouts` (a host-consumer layout fixture), `FakeWarehouse` (stand-in
+  for the optional Warehouse package), `Hooks`, `TestRepo`, `TestRouter`,
+  `TestEndpoint`.
 
 Postgres connection settings come from `PGUSER` (default `postgres`),
 `PGPASSWORD`, `PGHOST`, `PGDATABASE`, `PGPOOL` and `MIX_TEST_PARTITION`. On a
 machine whose Postgres has no `postgres` role, export `PGUSER` or integration
 tests fail as pool timeouts that look like flakiness.
 
-Three tag families are excluded when their prerequisite is missing, and start
+Six tag families are excluded when their prerequisite is missing, and start
 running by themselves once the dep is upgraded: `:integration` (no database),
 `:requires_phoenix_kit_i18n_api` (core without
 `Dashboard.Tab.localized_label/1`), `:requires_core_transliteration` (core
-without `Utils.Slug` transliteration).
+without `Utils.Slug` transliteration), `:requires_core_user_menu` (core
+without `Dashboard.Tab.user_menu?/2`, the avatar-dropdown flag),
+`:requires_billing_user_menu` (billing without `user_menu_with_shop?/1`, the
+gate on its own avatar-dropdown tabs) and `:requires_core_single_language`
+(core without `Languages.set_primary_language/1`, i.e. before the URL
+language policy: a switched-off multi-language site's primary language is
+then `"en"`, not the stored default). The single-language link tests
+(`single_language_links_test.exs`) are written to pass on both kinds of core;
+run them against a core with the policy too (`PHOENIX_KIT_PATH=…`).
 
 Three conformance tests run without a database and guard cross-repo contracts:
 `core_pin_conformance_test.exs` (the two-segment core floor),
@@ -669,6 +800,7 @@ and `schema_prefix_conformance_test.exs` (every table-backed schema uses
 |---|---|---|
 | Price display and storefront i18n | "Price on request" is snapshotted onto the cart line and the order line, never read live; every public LiveView calls `put_content_locale/1` in `mount/3`; `push_event` names, paths, route segments and setting keys are never wrapped in `gettext` | `dev_docs/guides/storefront.md` |
 | AI translation control | Fingerprints are hashed identically in Elixir and SQL (`sql_trim_chars/0`); the sweep never auto-queues `unknown`; a write whose field fingerprint still matches is narrowed away; nothing enqueues under the catalogue product source. The sweep's chain, gates and budget are `PhoenixKitAI.TranslationSweep`'s — the worker supplies only the shop's gates, settings, candidates and prompts, and answers `:ai_unavailable` when the installed `phoenix_kit_ai` has no engine | `TranslationFingerprint`, `Workers.TranslationSweepWorker`, `Web.Translations` moduledocs |
+| Shipping destination picker | `Web.Components.ShippingDestinationPicker` (the one LiveComponent, justified in its moduledoc) is embedded by `CartPage` and `CheckoutPage` under the selected calculated method. Shipping is worked out ONCE per cart change by the parent (`Shop.shipping_quote_snapshot/2`: status, entry, presented, `blocks?`, service) and passed down — never recompute it in `render/1` or per component (packing, hashing, the service list and the provider's destination check are not free). The picker keeps no cart of its own: it saves, the shipping broadcast reaches the parent, the parent passes the new cart down; `:shipping_recheck` asks the parent to recompute when only the answer changed. Anything that calls the carrier on behalf of an anonymous shopper is bounded (one lookup in flight, `:shipping_lookup_interval`, capped texts, `Web.ShippingRequote` for automatic quotes: once per cart state, at most 3 in a row). A transient service failure is a retry, never "not available for this order". The shared display lines (ETA, COD fee, estimate note, reasons) are `Web.Components.ShippingDisplay`; DOM ids inside the picker derive from its `id` | `Web.Components.ShippingDestinationPicker`, `Web.ShippingRequote`, `PhoenixKitEcommerce.shipping_quote_snapshot/2` |
 | Agentic Commerce / ACP | Assessed and deliberately not built: a bridge plugin, not code in this module, is the shape if it is ever built | `dev_docs/agentic_commerce_acp_research.md` |
 
 ## Versioning & releases

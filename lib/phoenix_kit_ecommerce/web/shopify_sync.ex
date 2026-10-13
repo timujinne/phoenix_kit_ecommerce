@@ -65,6 +65,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   import PhoenixKitWeb.Components.Core.EmptyState
   import PhoenixKitWeb.Components.Core.NavTabs
 
+  require Logger
+
   alias PhoenixKit.Integrations
   alias PhoenixKit.PubSub.Manager
   alias PhoenixKit.Users.Auth.Scope
@@ -73,10 +75,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
+  alias PhoenixKitEcommerce.Shopify.ShopDomain
   alias PhoenixKitEcommerce.Shopify.Sync
   alias PhoenixKitEcommerce.Shopify.SyncScope
   alias PhoenixKitEcommerce.Shopify.TextDiff
   alias PhoenixKitEcommerce.Web.Authz
+  alias PhoenixKitEcommerce.Web.Helpers
   alias PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker
 
   # Section order — price first, per spec. Order only: the plural section
@@ -139,17 +143,19 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     # `Web.Translations`' own guard for `shop_translations_enabled`.
     if Shop.shopify_enabled?() do
       if connected?(socket), do: Manager.subscribe(ShopifyMediaSyncWorker.topic())
+      connection = shopify_connection()
 
       {:ok,
        socket
        |> assign_shop_trail(gettext("Shopify Sync"))
-       |> assign(:connection, shopify_connection())
+       |> assign(:connection, connection)
+       |> assign(:shop_domain_invalid?, shop_domain_invalid?(connection))
        |> assign(
          :can_manage_integrations?,
          can_manage_integrations?(socket.assigns[:phoenix_kit_current_scope])
        )
        |> assign(:catalogue_source_active?, catalogue_source_active?())
-       |> assign(:media_sync_progress, ShopifyMediaSyncWorker.get_progress())
+       |> assign(:media_sync_progress, load_media_sync_progress())
        |> assign(
          :collections_filter,
          PhoenixKitEcommerce.get_config("shopify_collections_filter")
@@ -315,7 +321,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   def handle_event("run_media_sync", %{"kind" => kind}, socket)
       when kind in ~w(images variants collections) do
     Authz.authorize(socket, :run_imports, fn ->
-      if media_sync_in_flight?(socket.assigns.media_sync_progress, kind) do
+      # Read again rather than trusted from assigns: a page open since before
+      # the job died would otherwise refuse to start another for as long as
+      # it stays open.
+      progress = load_media_sync_progress()
+      socket = assign(socket, :media_sync_progress, progress)
+
+      if media_sync_in_flight?(progress, kind) do
         {:noreply, socket}
       else
         actor_uuid = Activity.actor_uuid(socket)
@@ -777,6 +789,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
      )}
   end
 
+  # The page is subscribed to a PubSub topic: a message it has no clause for
+  # must not take down a mounted admin session.
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
+
   @impl true
   def handle_async(
         :check_diff,
@@ -821,6 +837,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   end
 
   def handle_async(:check_diff, {:exit, reason}, socket) do
+    Logger.error("[Shop] Shopify check task exited: #{Exception.format_exit(reason)}")
+
     {:noreply,
      assign(socket,
        checking: false,
@@ -828,7 +846,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
        new_products: nil,
        new_products_out_of_scope: 0,
        diffs: %{},
-       error: inspect(reason)
+       error: format_error({:check_crashed, reason})
      )}
   end
 
@@ -1138,6 +1156,26 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   defp can_manage_integrations?(scope),
     do: Scope.has_module_access?(scope, "integrations_system")
 
+  defp invalid_shop_domain_message do
+    gettext(
+      "The connection's shop domain must be the store's own address, like my-store.myshopify.com — no https://, path or custom domain."
+    )
+  end
+
+  # The domain is typed on core's integration form, which cannot validate it;
+  # this page is where the operator finds out before a sync fails on it.
+  defp shop_domain_invalid?(nil), do: false
+
+  defp shop_domain_invalid?(%{uuid: uuid}) do
+    case Integrations.get_credentials(uuid) do
+      {:ok, %{"shop_domain" => domain}} when is_binary(domain) and domain != "" ->
+        ShopDomain.validate(domain) == {:error, :invalid_shop_domain}
+
+      _ ->
+        false
+    end
+  end
+
   defp shopify_connection do
     case Integrations.list_connections("shopify", owner: :system) do
       [connection | _rest] -> connection
@@ -1168,7 +1206,31 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   # against the button's kind, the way the old single-record storage
   # required.
   defp media_sync_in_flight?(progress_map, kind) do
-    match?(%{"finished_at" => nil}, Map.get(progress_map, kind))
+    case Map.get(progress_map, kind) do
+      %{"finished_at" => nil} = progress -> progress["interrupted"] != true
+      _ -> false
+    end
+  end
+
+  # The stored records, with every unfinished one whose job is gone marked
+  # `"interrupted"`: a job killed mid-run never writes its `"finished_at"`,
+  # and without the mark its button would stay disabled forever.
+  defp load_media_sync_progress do
+    progress = ShopifyMediaSyncWorker.get_progress()
+
+    if Enum.any?(progress, &match?({_kind, %{"finished_at" => nil}}, &1)) do
+      alive = ShopifyMediaSyncWorker.incomplete_kinds()
+
+      Map.new(progress, fn
+        {kind, %{"finished_at" => nil} = record} ->
+          {kind, Map.put(record, "interrupted", not MapSet.member?(alive, kind))}
+
+        other ->
+          other
+      end)
+    else
+      progress
+    end
   end
 
   # `Oban.insert/1`'s result, not just its call, decides the flash: on a
@@ -1202,6 +1264,9 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   # plus `"images"`'s own downloaded/reused line) / a failed whole-run
   # (`fail_progress/2`'s `"_run"` error entry, `"total" => 0`).
   defp media_sync_status(nil), do: %{state: :never_run}
+
+  defp media_sync_status(%{"finished_at" => nil, "interrupted" => true}),
+    do: %{state: :interrupted}
 
   defp media_sync_status(%{"finished_at" => nil, "total" => total, "done" => done}) do
     %{state: :running, done: done, total: total}
@@ -1724,6 +1789,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     gettext("Shopify rate-limited this request — try again shortly.")
   end
 
+  defp format_error(:invalid_shop_domain), do: invalid_shop_domain_message()
+
   defp format_error(:missing_credentials) do
     gettext("The Shopify connection is missing its shop domain or access token.")
   end
@@ -1741,6 +1808,34 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       credential_error: format_error(reason),
       storefront_error: inspect(storefront_reason)
     )
+  end
+
+  defp format_error(:too_many_pages) do
+    gettext("Shopify kept returning more pages than any store has — the sync was stopped.")
+  end
+
+  defp format_error(:deadline_exceeded) do
+    gettext("Shopify took too long to answer — try again shortly.")
+  end
+
+  defp format_error({:redirect_refused, _reason}) do
+    gettext(
+      "Shopify's storefront redirected to an address that is not allowed — the sync was stopped."
+    )
+  end
+
+  defp format_error(:too_many_redirects) do
+    gettext("Shopify's storefront redirected too many times — the sync was stopped.")
+  end
+
+  defp format_error(:unexpected_next_page_host) do
+    gettext("Shopify's answer pointed at another host — the sync was stopped.")
+  end
+
+  # The background check itself went down; its exit reason is a stack of
+  # internals that says nothing to an operator.
+  defp format_error({:check_crashed, _reason}) do
+    gettext("The check stopped unexpectedly — try again.")
   end
 
   defp format_error(reason) do
@@ -1993,6 +2088,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             :if={@connection}
             class="btn btn-primary"
             phx-click="check"
+            phx-disable-with={gettext("Checking…")}
             disabled={@checking}
             id="check-shopify-changes"
           >
@@ -2014,6 +2110,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
               {gettext("Connect it in Integrations settings.")}
             </.link>
           </span>
+        </div>
+
+        <div :if={@shop_domain_invalid?} id="shopify-domain-invalid" class="alert alert-error">
+          <span>{invalid_shop_domain_message()}</span>
         </div>
 
         <div :if={@connection} class="text-sm text-base-content/70">
@@ -2503,6 +2603,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             id={"sync-media-#{kind}"}
             class="btn btn-sm"
             phx-click="run_media_sync"
+            phx-disable-with={gettext("Starting…")}
             phx-value-kind={kind}
             disabled={media_sync_in_flight?(@media_sync_progress, kind)}
           >
@@ -2519,6 +2620,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             <span :if={status.state == :running} class="flex items-center gap-2">
               <progress class="progress progress-primary w-32" value={status.done} max={max(status.total, 1)} />
               {gettext("%{done} / %{total}", done: status.done, total: status.total)}
+            </span>
+
+            <span :if={status.state == :interrupted} class="text-warning">
+              {gettext("Interrupted before it finished — run it again.")}
             </span>
 
             <span :if={status.state == :failed} class="text-error">
@@ -2555,6 +2660,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         <details
           :if={status.state == :finished and status.error_count > 0}
           id={"media-sync-errors-#{kind}"}
+          phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])}
           class="mt-1 text-sm"
         >
           <summary class="cursor-pointer text-error">
@@ -2577,6 +2683,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         <details
           :if={status.state == :finished and status.warning_count > 0}
           id={"media-sync-warnings-#{kind}"}
+          phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])}
           class="mt-1 text-sm"
         >
           <summary class="cursor-pointer text-warning">
@@ -2670,7 +2777,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             />
           </div>
 
-          <button type="submit" id="save-sync-scope" class="btn btn-sm btn-primary">
+          <button type="submit" phx-disable-with={gettext("Saving…")} id="save-sync-scope" class="btn btn-sm btn-primary">
             {gettext("Save")}
           </button>
         </.form>

@@ -103,6 +103,39 @@ defmodule PhoenixKitEcommerce.Web.AuthzTest do
     end
   end
 
+  describe "stock tracking switch" do
+    alias PhoenixKitEcommerce.Test.FakeWarehouse
+
+    setup do
+      on_exit(fn ->
+        PhoenixKit.Settings.update_boolean_setting_with_module(
+          "shop_stock_tracking_enabled",
+          false,
+          "shop"
+        )
+
+        FakeWarehouse.reset()
+      end)
+
+      # Warehouse is ready, so the only thing that can refuse the toggle is
+      # the permission check.
+      FakeWarehouse.put_state(enabled: true, default_location: "loc-1")
+    end
+
+    @tag :integration
+    test "manage_catalog does not unlock turning stock tracking on", %{conn: conn} do
+      conn = put_test_scope(conn, scope_with(["shop", "shop.manage_catalog"]))
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+
+      html = render_hook(view, "toggle_shop_stock_tracking", %{})
+
+      assert html =~ "permission"
+      refute PhoenixKitEcommerce.StockTracking.setting_enabled?()
+      refute_activity_logged("shop.stock_tracking_changed")
+    end
+  end
+
   describe "granted mutations still work" do
     @tag :integration
     test "manage_catalog can delete a product", %{conn: conn} do

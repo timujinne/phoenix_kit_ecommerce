@@ -224,14 +224,13 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
     def fetch_collection_product_ids(2, _opts), do: {:ok, [333]}
   end
 
-  # Only a catalogue that refuses trashed categories on `update_item/3` can
-  # produce the refusal (it shipped with `permanent_delete_scope/1`).
+  # The trashed-category tests trash a category mid-run and expect
+  # `update_item/3` to refuse it. The gate probes exactly the two functions
+  # they call: the sync itself calls `update_item`, so a rename there fails
+  # the ungated tests loudly instead of skipping these.
   @catalogue_refuses_trashed_categories Code.ensure_loaded?(Catalogue) and
-                                          function_exported?(
-                                            Catalogue,
-                                            :permanent_delete_scope,
-                                            1
-                                          )
+                                          function_exported?(Catalogue, :update_item, 3) and
+                                          function_exported?(Catalogue, :trash_category, 2)
 
   describe "run/1 — legacy source" do
     test "is a no-op returning :catalogue_source_inactive" do

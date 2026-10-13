@@ -72,6 +72,7 @@ defmodule PhoenixKitEcommerce.Events do
 
   alias PhoenixKit.PubSub.Manager
   alias PhoenixKitEcommerce.Cart
+  alias PhoenixKitEcommerce.StorefrontCache
 
   # ============================================
   # TOPIC CONSTANTS
@@ -194,6 +195,52 @@ defmodule PhoenixKitEcommerce.Events do
     PhoenixKitBilling.Events.subscribe_currencies()
   end
 
+  # ============================================
+  # IMPORTS AND IMAGE MIGRATION
+  # ============================================
+  #
+  # Publisher (the Oban workers, `Services.ImageMigration`) and subscriber
+  # (the admin pages) both go through the functions below, so they cannot end
+  # up on two different PubSub servers.
+
+  @doc "Topic carrying every CSV import's completion and failure."
+  def imports_topic, do: "shop:imports"
+
+  @doc "Topic carrying one CSV import's progress."
+  def import_topic(import_log_uuid) when not is_nil(import_log_uuid),
+    do: "shop:import:#{import_log_uuid}"
+
+  @doc "Topic carrying the image migration's start, cancel and per-product completion."
+  def image_migration_batch_topic, do: "shop:image_migration:batch"
+
+  @doc "Topic carrying one product's image migration progress."
+  def image_migration_topic(product_uuid) when not is_nil(product_uuid),
+    do: "shop:image_migration:#{product_uuid}"
+
+  @doc "Subscribes to `imports_topic/0`."
+  def subscribe_imports, do: Manager.subscribe(imports_topic())
+
+  @doc "Subscribes to `import_topic/1`."
+  def subscribe_import(import_log_uuid), do: Manager.subscribe(import_topic(import_log_uuid))
+
+  @doc "Subscribes to `image_migration_batch_topic/0`."
+  def subscribe_image_migration, do: Manager.subscribe(image_migration_batch_topic())
+
+  @doc "Broadcasts `message` on `imports_topic/0`."
+  def broadcast_imports(message), do: broadcast(imports_topic(), message)
+
+  @doc "Broadcasts `message` on `import_topic/1`."
+  def broadcast_import(import_log_uuid, message),
+    do: broadcast(import_topic(import_log_uuid), message)
+
+  @doc "Broadcasts `message` on `image_migration_batch_topic/0`."
+  def broadcast_image_migration_batch(message),
+    do: broadcast(image_migration_batch_topic(), message)
+
+  @doc "Broadcasts `message` on `image_migration_topic/1`."
+  def broadcast_image_migration(product_uuid, message),
+    do: broadcast(image_migration_topic(product_uuid), message)
+
   @doc """
   Subscribes to cart events for a specific cart.
   Subscribes to all relevant topics (user and/or session).
@@ -202,6 +249,19 @@ defmodule PhoenixKitEcommerce.Events do
     cart
     |> cart_topics()
     |> Enum.each(&Manager.subscribe/1)
+  end
+
+  @doc """
+  Subscribes to the cart topics of a visitor, known by `user_uuid` and/or
+  `session_id` before any cart has been read.
+
+  A page that reads the cart first and subscribes afterwards loses an update
+  that lands in between; the identity is all the topics need.
+  """
+  def subscribe_to_cart_of(user_uuid, session_id) do
+    if user_uuid, do: subscribe_to_user_cart(user_uuid)
+    if session_id, do: subscribe_to_session_cart(session_id)
+    :ok
   end
 
   @doc """
@@ -395,6 +455,28 @@ defmodule PhoenixKitEcommerce.Events do
     |> Enum.each(fn topic ->
       Manager.broadcast(topic, message)
     end)
+  end
+
+  # The product and category writes of the legacy product source announce
+  # themselves on one of these two topics (single create/update/delete, bulk
+  # product status, bulk category status/parent/delete), so this is the one
+  # place that sees them - clearing here keeps the storefront's cached
+  # categories and facet counts (`StorefrontCache`) from outliving a change
+  # the admin just made, without a clear call in each write function. Cleared
+  # BEFORE the broadcast: a LiveView that reacts to the message and re-reads
+  # must not be handed the old entries. Per-product and inventory topics do
+  # not touch the cached values. The clear is node-local; other nodes rely on
+  # the TTL.
+  #
+  # Not covered here, but cleared at the write itself:
+  # `bulk_update_product_category/2` and `bulk_delete_products/1` (they never
+  # broadcast) and the Shopify sync's catalogue writes (`Shopify.Sync`).
+  # TTL-only: edits made in `phoenix_kit_catalogue`, the background Shopify
+  # jobs (media/variants and collection sync) and a change of the enabled
+  # languages (not a write of this package). See `StorefrontCache`.
+  defp broadcast(topic, message) when topic in [@products_topic, @categories_topic] do
+    StorefrontCache.clear()
+    Manager.broadcast(topic, message)
   end
 
   defp broadcast(topic, message) do

@@ -28,6 +28,8 @@ defmodule PhoenixKitEcommerce.ShopConfig do
   @primary_key {:key, :string, autogenerate: false}
   @timestamps_opts [type: :utc_datetime]
 
+  @type t :: %__MODULE__{}
+
   schema "phoenix_kit_shop_config" do
     field :value, :map
 

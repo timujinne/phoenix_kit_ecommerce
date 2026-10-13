@@ -13,6 +13,8 @@ defmodule PhoenixKitEcommerce.ModuleCallbacksTest do
   """
   use ExUnit.Case, async: true
 
+  alias PhoenixKit.Dashboard.Tab
+
   test "css_sources/0 contributes this app to the host Tailwind build" do
     assert PhoenixKitEcommerce.css_sources() == [:phoenix_kit_ecommerce]
   end
@@ -69,22 +71,15 @@ defmodule PhoenixKitEcommerce.ModuleCallbacksTest do
     assert PhoenixKitEcommerce.version() == Mix.Project.config()[:version]
   end
 
-  test "required_integrations/0 names shopify" do
-    assert "shopify" in PhoenixKitEcommerce.required_integrations()
-  end
+  # The avatar dropdown carries the shopper's own pages, not the catalogue:
+  # "My Cart" sits there beside billing's "My Orders", "Shop" stays in the nav.
+  @tag :requires_core_user_menu
+  test "user_dashboard_tabs/0 offers My Cart, and only My Cart, in the avatar dropdown" do
+    menu_ids =
+      for tab <- PhoenixKitEcommerce.user_dashboard_tabs(),
+          Tab.user_menu?(tab, nil),
+          do: tab.id
 
-  test "integration_providers/0 registers the Shopify provider with credentials auth" do
-    assert [provider] = PhoenixKitEcommerce.integration_providers()
-
-    assert provider.key == "shopify"
-    assert provider.auth_type == :credentials
-
-    field_keys = Enum.map(provider.setup_fields, & &1.key)
-    assert "shop_domain" in field_keys
-    assert "access_token" in field_keys
-
-    access_token_field = Enum.find(provider.setup_fields, &(&1.key == "access_token"))
-    assert access_token_field.required
-    assert access_token_field.type == :password
+    assert menu_ids == [:dashboard_cart]
   end
 end

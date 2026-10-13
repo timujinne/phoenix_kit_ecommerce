@@ -30,6 +30,7 @@ defmodule PhoenixKitEcommerce.Workers.ImageMigrationWorker do
   require Logger
 
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Services.ImageDownloader
 
   @impl Oban.Worker
@@ -299,8 +300,8 @@ defmodule PhoenixKitEcommerce.Workers.ImageMigrationWorker do
   defp broadcast_progress(product_uuid, index, total, url, result) do
     status = if match?({:ok, _}, result), do: :success, else: :failed
 
-    PhoenixKit.PubSubHelper.broadcast(
-      "shop:image_migration:#{product_uuid}",
+    Events.broadcast_image_migration(
+      product_uuid,
       {:image_progress,
        %{
          product_uuid: product_uuid,
@@ -313,8 +314,8 @@ defmodule PhoenixKitEcommerce.Workers.ImageMigrationWorker do
   end
 
   defp broadcast_complete(product_uuid, image_count) do
-    PhoenixKit.PubSubHelper.broadcast(
-      "shop:image_migration:#{product_uuid}",
+    Events.broadcast_image_migration(
+      product_uuid,
       {:migration_complete,
        %{
          product_uuid: product_uuid,
@@ -323,8 +324,7 @@ defmodule PhoenixKitEcommerce.Workers.ImageMigrationWorker do
     )
 
     # Also broadcast to the batch migration topic
-    PhoenixKit.PubSubHelper.broadcast(
-      "shop:image_migration:batch",
+    Events.broadcast_image_migration_batch(
       {:product_migrated, %{product_uuid: product_uuid, images_migrated: image_count}}
     )
   end

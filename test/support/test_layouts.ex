@@ -8,6 +8,10 @@ defmodule PhoenixKitEcommerce.Test.Layouts do
   via `render(view) =~ "Saved."` after click events. Without these,
   Phoenix.Flash.get/2 returns the message but it never reaches the
   rendered HTML, and tests fall back to "process alive" tautologies.
+
+  `root/1` renders the storefront's `og`, `canonical_url` and
+  `hreflang_links` assigns into `<head>` the way a host layout has to, so
+  a test can assert the page still supplies them.
   """
 
   use Phoenix.Component
@@ -20,6 +24,21 @@ defmodule PhoenixKitEcommerce.Test.Layouts do
         <meta charset="utf-8" />
         <meta name="csrf-token" content={Phoenix.Controller.get_csrf_token()} />
         <title>Test</title>
+        <%!-- What a host's root layout does with the storefront's SEO assigns.
+              Core's own root layout reads `og` only. --%>
+        <%= if og = assigns[:og] do %>
+          <meta :if={og[:type]} property="og:type" content={og[:type]} />
+          <meta :if={og[:title]} property="og:title" content={og[:title]} />
+          <meta :if={og[:url]} property="og:url" content={og[:url]} />
+          <meta :if={og[:locale]} property="og:locale" content={og[:locale]} />
+        <% end %>
+        <link :if={assigns[:canonical_url]} rel="canonical" href={assigns[:canonical_url]} />
+        <link
+          :for={link <- assigns[:hreflang_links] || []}
+          rel="alternate"
+          hreflang={link.code}
+          href={link.url}
+        />
       </head>
       <body>
         {@inner_content}

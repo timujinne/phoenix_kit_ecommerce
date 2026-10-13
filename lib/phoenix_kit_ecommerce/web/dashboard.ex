@@ -9,6 +9,7 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
 
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Web.Helpers
 
   @impl true
   def mount(_params, _session, socket) do
@@ -30,6 +31,9 @@ defmodule PhoenixKitEcommerce.Web.Dashboard do
     stats = Shop.get_dashboard_stats()
     {:noreply, assign(socket, :stats, stats)}
   end
+
+  @impl true
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
 
   @impl true
   def render(assigns) do

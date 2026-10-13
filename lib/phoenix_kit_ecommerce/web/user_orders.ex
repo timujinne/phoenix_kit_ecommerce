@@ -7,10 +7,10 @@ defmodule PhoenixKitEcommerce.Web.UserOrders do
   """
   use PhoenixKitEcommerce.Web, :live_view
 
-  alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.StatusLabels
 
   @impl true
   def mount(_params, _session, socket) do
@@ -37,7 +37,7 @@ defmodule PhoenixKitEcommerce.Web.UserOrders do
       {:ok,
        socket
        |> put_flash(:error, gettext("Billing module is not enabled"))
-       |> push_navigate(to: Routes.path("/dashboard"))}
+       |> push_navigate(to: Helpers.page_path(socket.assigns, "/dashboard"))}
     end
   end
 
@@ -66,12 +66,14 @@ defmodule PhoenixKitEcommerce.Web.UserOrders do
       end
 
     {:noreply,
-     push_patch(socket, to: Routes.path("/dashboard/orders", map_to_keyword(filter_params)))}
+     push_patch(socket,
+       to: Helpers.page_path(socket.assigns, "/dashboard/orders", filter_params)
+     )}
   end
 
   @impl true
   def handle_event("clear_filters", _params, socket) do
-    {:noreply, push_patch(socket, to: Routes.path("/dashboard/orders"))}
+    {:noreply, push_patch(socket, to: Helpers.page_path(socket.assigns, "/dashboard/orders"))}
   end
 
   @impl true
@@ -80,8 +82,15 @@ defmodule PhoenixKitEcommerce.Web.UserOrders do
     current_params = build_current_params(socket)
     params = Map.put(current_params, "page", page)
 
-    {:noreply, push_patch(socket, to: Routes.path("/dashboard/orders", map_to_keyword(params)))}
+    {:noreply,
+     push_patch(socket,
+       to: Helpers.page_path(socket.assigns, "/dashboard/orders", params)
+     )}
   end
+
+  # Last, so it shadows nothing: an event this page does not know, or a
+  # known one whose payload is not the shape its clause takes.
+  def handle_event(event, _params, socket), do: Helpers.ignore_event(event, socket)
 
   # Private functions
 
@@ -146,10 +155,6 @@ defmodule PhoenixKitEcommerce.Web.UserOrders do
     if socket.assigns.status_filter,
       do: Map.put(params, "status", socket.assigns.status_filter),
       else: params
-  end
-
-  defp map_to_keyword(map) when is_map(map) do
-    Enum.map(map, fn {k, v} -> {String.to_existing_atom(k), v} end)
   end
 
   # View helpers

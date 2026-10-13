@@ -99,6 +99,8 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
   # ============================================================
 
   defp connect_shopify do
+    enable_shopify!()
+
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
 

@@ -10,16 +10,23 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   use PhoenixKitEcommerce.Web, :live_view
 
   alias PhoenixKit.Utils.CountryData
-  alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
+  alias PhoenixKitBilling.BillingProfile
   alias PhoenixKitBilling.PaymentOption
+  alias PhoenixKitBilling.Web.Components.BillingProfileFields
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Errors
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.PriceDisplay
+  alias PhoenixKitEcommerce.Shipping.CartQuote
+  alias PhoenixKitEcommerce.ShippingMethod
+  alias PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker
+  alias PhoenixKitEcommerce.Web.Components.ShippingDisplay
   alias PhoenixKitEcommerce.Web.Components.ShopLayouts
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.ShippingRequote
 
   import PhoenixKitEcommerce.Web.Helpers,
     only: [
@@ -57,12 +64,56 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     session_id = session["shop_session_id"]
     user_uuid = if user, do: user.uuid
 
+    # Before the cart is read: an update landing between a read and a later
+    # subscription would never reach this page.
+    if connected?(socket) do
+      Events.subscribe_to_cart_of(user_uuid, session_id)
+      Events.subscribe_currencies()
+    end
+
     case Shop.find_active_cart(user_uuid: user_uuid, session_id: session_id) do
       nil ->
-        {:ok, redirect_to_cart(socket, gettext("Your cart is empty"))}
+        {:ok, redirect_without_cart(socket, user_uuid, session)}
 
       cart ->
+        cart = cart |> rebase_cart() |> refresh_pay_on_delivery_shipping()
         handle_cart_validation(socket, cart, user)
+    end
+  end
+
+  # Same as the cart page: a shopper who only looks at a cart frozen against
+  # a previous base currency must not see the old figures.
+  defp rebase_cart(cart) do
+    case Shop.rebase_cart(cart) do
+      {:ok, rebased} -> rebased
+      _ -> cart
+    end
+  end
+
+  # No active cart is also what a shopper finds when this page lost its
+  # process after their order was committed but before it sent them on. The
+  # confirmation page does its own authorization; the session id is offered
+  # only under the condition that page accepts one.
+  defp redirect_without_cart(socket, user_uuid, session) do
+    session_id = if session["shop_session_trusted"] == true, do: session["shop_session_id"]
+
+    case Shop.recent_checkout_order_uuid(user_uuid: user_uuid, session_id: session_id) do
+      nil ->
+        redirect_to_cart(socket, gettext("Your cart is empty"))
+
+      order_uuid ->
+        push_navigate(socket,
+          to: Helpers.page_path(socket.assigns, "/checkout/complete/#{order_uuid}")
+        )
+    end
+  end
+
+  # Same as the cart page: a method switched to pay-on-delivery after the
+  # cart picked it leaves the old fee in the stored totals the summary shows.
+  defp refresh_pay_on_delivery_shipping(cart) do
+    case Shop.refresh_pay_on_delivery_shipping(cart) do
+      {:ok, refreshed} -> refreshed
+      _ -> cart
     end
   end
 
@@ -77,13 +128,17 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         {:ok, redirect_to_cart(socket, gettext("Please select a shipping method"))}
 
       selected_shipping_method_outgrown?(cart, requires_shipping) ->
-        {:ok,
-         redirect_to_cart(
-           socket,
-           gettext(
-             "The selected shipping method is no longer available for this cart - please pick another"
-           )
-         )}
+        if Shop.shipping_selection_position() == :checkout do
+          {:ok, setup_checkout_assigns(socket, drop_shipping_selection(cart), user)}
+        else
+          {:ok,
+           redirect_to_cart(
+             socket,
+             gettext(
+               "The selected shipping method is no longer available for this cart - please pick another"
+             )
+           )}
+        end
 
       true ->
         {:ok, setup_checkout_assigns(socket, cart, user)}
@@ -115,10 +170,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     is_guest = is_nil(user)
     authenticated = not is_nil(socket.assigns[:phoenix_kit_current_user])
 
-    # Subscribe to cart events for real-time sync across tabs
     if connected?(socket) do
-      Events.subscribe_to_cart(cart)
-      Events.subscribe_currencies()
       PhoenixKitEcommerce.Notifications.checkout_started(cart)
     end
 
@@ -217,16 +269,75 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     |> assign(:use_new_profile, assigns.is_guest or assigns.billing_profiles == [])
     |> assign(:needs_profile_selection, assigns.needs_profile_selection)
     |> assign(:needs_billing, assigns.needs_billing)
-    |> assign(:billing_data, initial_billing_data(assigns.user, assigns.cart))
-    |> assign(:countries, CountryData.list_countries())
+    |> assign(:countries, CountryData.countries_for_select())
+    |> assign(:locale, Gettext.get_locale(PhoenixKitEcommerce.Gettext))
+    |> assign(:requoting, false)
+    |> assign(:requote_key, nil)
+    |> assign(:requote_streak, 0)
     |> assign(:checkout_shipping_methods, [])
     |> assign(:shipping_fallback, false)
     |> assign(:step, assigns.initial_step)
     |> assign(:processing, false)
     |> assign(:error_message, nil)
     |> assign(:email_exists_error, false)
-    |> assign(:form_errors, %{})
+    |> assign_new_billing_details(assigns.user)
+    |> assign_shipping_view()
   end
+
+  # A blank billing form: individual, nothing typed, the account email and the
+  # best-guess country, and "save as a billing profile" ticked (it is only
+  # ever offered to a logged-in shopper).
+  defp assign_new_billing_details(socket, user) do
+    socket
+    |> assign(:billing_data, initial_billing_data(user, socket.assigns.cart))
+    |> assign(:billing_type, "individual")
+    |> assign(:billing_validate?, false)
+    |> assign(:save_billing_profile, true)
+    |> assign(:billing_collected?, false)
+    |> assign(:save_profile_hint?, false)
+    |> assign_billing_form()
+  end
+
+  # The shipping of the cart is worked out HERE, when the cart changes, and
+  # handed to the render: packing, the request hash, the service list and the
+  # provider's check of the destination are too much to redo on every render.
+  # Only the steps that show or approve the shipping work it out; the payment
+  # and billing steps carry an empty snapshot until `advance_after_billing/1`.
+  defp put_cart(socket, cart) do
+    socket |> assign(:cart, cart) |> assign_shipping_view()
+  end
+
+  defp assign_shipping_view(%{assigns: %{step: step}} = socket) when step in [:shipping, :review],
+    do: refresh_shipping(socket)
+
+  defp assign_shipping_view(socket) do
+    socket
+    |> assign(:shipping_snapshot, Shop.shipping_quote_snapshot(socket.assigns.cart, nil))
+    |> assign(:shipping_presented, %{})
+  end
+
+  # Works the shipping out whatever the step: for the moments that decide on
+  # it (the billing is settled, an order is placed), when the time alone can
+  # change the answer (a quote ages out).
+  defp refresh_shipping(socket) do
+    cart = socket.assigns.cart
+    snapshot = Shop.shipping_quote_snapshot(cart)
+
+    presented =
+      Map.new(socket.assigns.checkout_shipping_methods, fn method ->
+        {method.uuid, presented_for(cart, snapshot, method)}
+      end)
+
+    socket
+    |> assign(:shipping_snapshot, snapshot)
+    |> assign(:shipping_presented, presented)
+  end
+
+  defp presented_for(cart, %{presented: %{} = presented}, %{uuid: uuid})
+       when uuid == cart.shipping_method_uuid,
+       do: presented
+
+  defp presented_for(cart, _snapshot, method), do: Shop.present_shipping_method(cart, method)
 
   # Select payment option with smart defaults
   defp select_payment_option([], _cart), do: {nil, false}
@@ -301,33 +412,163 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
       "address_line1" => "",
       "city" => "",
       "postal_code" => "",
-      "country" => cart.shipping_country || "EE"
+      "country" => cart.shipping_country || Shop.default_checkout_country()
     }
   end
 
-  defp profile_to_billing_data(profile, cart) do
-    profile
-    |> profile_base_data()
-    |> Map.put("country", profile.country || cart.shipping_country || "EE")
+  # Only profile fields reach the order's snapshot, and the type changes
+  # through `change_type` alone - a change event still in flight from before
+  # a type click must not flip it back.
+  defp merge_billing_params(socket, params) do
+    fields =
+      params
+      |> Map.take(billing_field_names())
+      |> Map.delete("type")
+      |> Map.filter(fn {_field, value} -> is_binary(value) end)
+
+    socket
+    |> assign(:billing_data, Map.merge(socket.assigns.billing_data, fields))
+    |> assign(:save_billing_profile, save_profile_param(params, socket))
+    |> assign_billing_form()
   end
 
-  defp profile_base_data(profile) do
-    %{
-      "type" => profile.type || "individual",
-      "first_name" => profile.first_name || "",
-      "last_name" => profile.last_name || "",
-      "email" => profile.email || "",
-      "phone" => profile.phone || "",
-      "address_line1" => profile.address_line1 || "",
-      "city" => profile.city || "",
-      "postal_code" => profile.postal_code || ""
-    }
+  defp proceed_with_new_billing(socket) do
+    # From the first attempt on, the form shows its errors and keeps
+    # re-validating as the shopper types.
+    socket = socket |> assign(:billing_validate?, true) |> assign_billing_form()
+
+    if billing_changeset(socket).valid? do
+      billing_data =
+        socket.assigns.billing_data
+        |> clean_for_type(socket.assigns.billing_type)
+        |> normalize_vat_number()
+
+      {:noreply,
+       socket
+       |> assign(:billing_data, billing_data)
+       |> assign(:billing_collected?, true)
+       |> assign_billing_form()
+       |> advance_after_billing()}
+    else
+      {:noreply, put_flash(socket, :error, gettext("Please fill in all required fields"))}
+    end
+  end
+
+  # The billing form state is a changeset over a blank profile - the same
+  # rules billing applies when it saves one - behind `to_form/2` under the
+  # `billing[...]` namespace. `billing_data` stays the plain string-keyed map
+  # the context takes; the form is derived from it on every change.
+  defp assign_billing_form(socket, extra_errors \\ []) do
+    changeset = Enum.reduce(extra_errors, billing_changeset(socket), &add_missing_error/2)
+
+    changeset =
+      if socket.assigns.billing_validate?, do: %{changeset | action: :validate}, else: changeset
+
+    socket
+    |> assign(:billing_form, to_form(changeset, as: :billing))
+    |> assign(:require_billing_address, Shop.cart_requires_shipping?(socket.assigns.cart))
+    |> assign(
+      :subdivision_label,
+      CountryData.get_subdivision_label(socket.assigns.billing_data["country"])
+    )
+  end
+
+  # An error the context reported that the form's own validation did not.
+  defp add_missing_error({field, {message, opts}}, changeset) do
+    if Enum.any?(changeset.errors, &match?({^field, {^message, _}}, &1)) do
+      changeset
+    else
+      Ecto.Changeset.add_error(changeset, field, message, opts)
+    end
+  end
+
+  # The fields the form actually renders for the chosen type.
+  @shared_billing_fields ~w(email phone country address_line1 address_line2 city state
+                            postal_code)a
+  defp visible_billing_fields(%{assigns: %{billing_type: "company"}}) do
+    @shared_billing_fields ++
+      ~w(company_name company_vat_number company_registration_number company_legal_address)a
+  end
+
+  defp visible_billing_fields(_socket),
+    do: @shared_billing_fields ++ ~w(first_name middle_name last_name)a
+
+  # The shop adds to billing's rules: the country is always needed (it drives
+  # tax and shipping), and a cart that ships needs the full address. Validate
+  # only the selected type; the other type's draft stays available in `data`
+  # without hidden errors blocking the form.
+  defp billing_changeset(socket) do
+    %{billing_data: data, billing_type: type, cart: cart} = socket.assigns
+
+    params =
+      data
+      |> clean_for_type(type)
+      |> Map.put("type", type)
+      |> Map.put("save_profile", to_string(socket.assigns.save_billing_profile))
+
+    %BillingProfile{}
+    |> BillingProfile.fields_changeset(params,
+      require_email: true,
+      require_address: Shop.cart_requires_shipping?(cart)
+    )
+    |> keep_blank_country(data["country"])
+    |> Ecto.Changeset.validate_required([:country])
+  end
+
+  # `cast/3` turns a blank param into the schema default, and a billing
+  # profile's country defaults to "EE" - so a shopper who has not picked a
+  # country would silently get one. Keep it blank so it is reported missing.
+  defp keep_blank_country(changeset, country) do
+    if is_nil(country) or String.trim(country) == "" do
+      Ecto.Changeset.force_change(changeset, :country, nil)
+    else
+      changeset
+    end
+  end
+
+  defp billing_field_names, do: Enum.map(BillingProfile.form_fields(), &to_string/1)
+
+  # An unticked checkbox still posts its hidden "false", so absence only
+  # happens for a payload that does not carry the checkbox at all.
+  defp save_profile_param(%{"save_profile" => value}, _socket), do: value == "true"
+  defp save_profile_param(_params, socket), do: socket.assigns.save_billing_profile
+
+  # Fields of the type that is NOT selected stay in the form state while the
+  # shopper flips between the two (so nothing typed is lost), but must not
+  # reach the order or the saved profile.
+  @individual_only_fields ~w(first_name last_name middle_name)
+  @company_only_fields ~w(company_name company_vat_number company_registration_number
+                          company_legal_address)
+
+  # Billing stores the VAT number upper-cased; the order snapshot gets the
+  # same form.
+  defp normalize_vat_number(%{"company_vat_number" => vat} = data) when is_binary(vat) do
+    Map.put(data, "company_vat_number", vat |> String.trim() |> String.upcase())
+  end
+
+  defp normalize_vat_number(data), do: data
+
+  defp clean_for_type(data, "company"), do: Map.drop(data, @individual_only_fields)
+  defp clean_for_type(data, _individual), do: Map.drop(data, @company_only_fields)
+
+  defp billing_incomplete_message(cart) do
+    if Shop.cart_requires_shipping?(cart) do
+      gettext("Please complete the billing address - a physical order needs one")
+    else
+      gettext("Please complete your billing details - this payment method needs them")
+    end
   end
 
   defp redirect_to_cart(socket, message) do
     socket
     |> put_flash(:error, message)
-    |> push_navigate(to: Routes.path("/cart"))
+    |> navigate_to_cart()
+  end
+
+  # The cart in the page's own language — not whatever Gettext holds, which
+  # is how a checkout redirect used to land on `/en/cart` from a `/uk/` page.
+  defp navigate_to_cart(socket) do
+    push_navigate(socket, to: Helpers.page_path(socket.assigns, "/cart"))
   end
 
   @impl true
@@ -347,7 +588,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
           {:noreply,
            socket
-           |> assign(:cart, updated_cart)
+           |> put_cart(updated_cart)
            |> assign(:selected_payment_option, option)
            |> assign(:needs_billing, needs_billing)}
 
@@ -405,20 +646,14 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
   @impl true
   def handle_event("use_new_profile", _params, socket) do
-    # Pre-fill form from selected profile if available
-    billing_data =
-      case Enum.find(
-             socket.assigns.billing_profiles,
-             &(to_string(&1.uuid) == to_string(socket.assigns.selected_profile_uuid))
-           ) do
-        nil -> socket.assigns.billing_data
-        profile -> profile_to_billing_data(profile, socket.assigns.cart)
-      end
-
+    # A blank form (account email and default country only) rather than a
+    # copy of the selected profile: the shopper chose "new details" to type
+    # something different, and a prefilled copy would be saved right back as
+    # a duplicate.
     {:noreply,
      socket
+     |> assign_new_billing_details(get_current_user(socket))
      |> assign(:use_new_profile, true)
-     |> assign(:billing_data, billing_data)
      |> assign(:selected_profile_uuid, nil)}
   end
 
@@ -436,24 +671,35 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
   @impl true
   def handle_event("update_billing", %{"billing" => params}, socket) do
-    billing_data = Map.merge(socket.assigns.billing_data, params)
-    {:noreply, assign(socket, :billing_data, billing_data)}
+    {:noreply, socket |> merge_billing_params(params) |> assign(:save_profile_hint?, false)}
   end
 
   @impl true
-  def handle_event("proceed_to_review", _params, socket) do
-    if socket.assigns.use_new_profile do
-      # Validate billing data
-      errors = validate_billing_data(socket.assigns.billing_data)
+  def handle_event("change_type", %{"type" => type}, socket)
+      when type in ["individual", "company"] do
+    {:noreply,
+     socket
+     |> assign(:billing_type, type)
+     |> assign(:billing_data, Map.put(socket.assigns.billing_data, "type", type))
+     |> assign_billing_form()}
+  end
 
-      if Enum.empty?(errors) do
-        {:noreply, socket |> advance_after_billing() |> assign(:form_errors, %{})}
-      else
-        {:noreply,
-         socket
-         |> assign(:form_errors, errors)
-         |> put_flash(:error, gettext("Please fill in all required fields"))}
-      end
+  # Only the two radios send this event; anything else is ignored rather
+  # than crashing the checkout.
+  def handle_event("change_type", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("proceed_to_review", params, socket) do
+    if socket.assigns.use_new_profile do
+      # A form submit (Enter) carries the values itself; the button's click
+      # does not, and relies on the change events that already merged them.
+      socket =
+        case params do
+          %{"billing" => billing} -> merge_billing_params(socket, billing)
+          _ -> socket
+        end
+
+      proceed_with_new_billing(socket)
     else
       if is_nil(socket.assigns.selected_profile_uuid) do
         {:noreply, put_flash(socket, :error, gettext("Please select a billing profile"))}
@@ -478,23 +724,43 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
              method,
              socket.assigns.cart.shipping_country
            ) do
-      {:ok, cart} -> {:noreply, assign(socket, :cart, cart)}
+      {:ok, cart} -> {:noreply, put_cart(socket, cart)}
       _ -> {:noreply, socket}
     end
   end
 
   @impl true
   def handle_event("shipping_continue", _params, socket) do
+    socket = refresh_shipping(socket)
     cart = socket.assigns.cart
 
     # A method chosen from the list, or the fallback notice's own
     # "we'll contact you" path - anything else means the shopper has not
-    # actually settled shipping yet, so the step holds.
-    if cart.shipping_method_uuid || socket.assigns.shipping_fallback do
-      {:noreply, enter_review(socket)}
-    else
-      {:noreply, socket}
+    # actually settled shipping yet, so the step holds. So does a calculated
+    # method whose delivery place or price is not settled (the button is
+    # disabled then; this is the same rule for a client that clicks anyway).
+    cond do
+      socket.assigns.shipping_snapshot.blocks? ->
+        {:noreply, socket}
+
+      cart.shipping_method_uuid || socket.assigns.shipping_fallback ->
+        {:noreply, enter_review(socket)}
+
+      true ->
+        {:noreply, socket}
     end
+  end
+
+  # From the review: the delivery place or its price needs another look.
+  @impl true
+  def handle_event("back_to_shipping", _params, socket) do
+    {:noreply, assign_shipping_step(socket)}
+  end
+
+  # The carrier could not be reached for the delivery options: ask again.
+  @impl true
+  def handle_event("recheck_shipping", _params, socket) do
+    {:noreply, socket |> refresh_shipping() |> settle_shipping()}
   end
 
   # §4.4: the shopper's own EXPLICIT choice to accept the current rate -
@@ -515,7 +781,31 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   end
 
   @impl true
+  # Only from the review step: the button exists nowhere else, and every
+  # earlier step is where billing and shipping get settled.
+  def handle_event("confirm_order", _params, %{assigns: %{step: step}} = socket)
+      when step != :review do
+    {:noreply, socket}
+  end
+
   def handle_event("confirm_order", _params, socket) do
+    # A carrier-priced method is ordered at a price the carrier just gave. One
+    # that aged out since the review was drawn is renewed first (the button is
+    # off meanwhile); the order is placed on the next click.
+    socket = refresh_shipping(socket)
+
+    if socket.assigns.shipping_snapshot.blocks? do
+      {:noreply, settle_shipping(socket)}
+    else
+      {:noreply, place_order(socket)}
+    end
+  end
+
+  # Last, so it shadows nothing: an event this page does not know, or a
+  # known one whose payload is not the shape its clause takes.
+  def handle_event(event, _params, socket), do: Helpers.ignore_event(event, socket)
+
+  defp place_order(socket) do
     socket = assign(socket, :processing, true)
 
     cart = socket.assigns.cart
@@ -527,15 +817,14 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         _ -> nil
       end
 
-    # Build options for convert_cart_to_order
-    opts =
-      if socket.assigns.use_new_profile do
-        # Guest or new profile - use billing_data directly
-        [billing_data: socket.assigns.billing_data, user_uuid: user_uuid]
-      else
-        # Logged-in user with existing profile
-        [billing_profile_uuid: socket.assigns.selected_profile_uuid, user_uuid: user_uuid]
-      end
+    # Only a logged-in shopper typing new details is offered (and can ask
+    # for) a saved profile - the context refuses it for anyone else too.
+    # Only when the form was actually filled in: a payment option that needs
+    # no billing step reaches review with a blank form, and saving THAT would
+    # fail and take the whole order down with it.
+    save_profile? =
+      socket.assigns.use_new_profile and not is_nil(user_uuid) and
+        socket.assigns.save_billing_profile and socket.assigns.billing_collected?
 
     # Re-check ownership at the point of USE, not just at selection. The
     # selection handler guards the normal path, but `selected_profile_uuid`
@@ -544,16 +833,52 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     # address. Cheap check, last line of defence.
     if socket.assigns.use_new_profile or
          owned_profile_uuid?(socket, socket.assigns.selected_profile_uuid) do
-      result = Shop.convert_cart_to_order(cart, opts)
-      {:noreply, handle_order_result(result, socket)}
+      result = Shop.convert_cart_to_order(cart, convert_opts(socket, user_uuid, save_profile?))
+      if save_profile?, do: log_billing_profile_saved(result, socket)
+      handle_order_result(result, socket)
     else
-      {:noreply,
-       socket
-       |> assign(:processing, false)
-       |> assign(:selected_profile_uuid, nil)
-       |> put_flash(:error, gettext("That billing profile is not available."))}
+      socket
+      |> assign(:processing, false)
+      |> assign(:selected_profile_uuid, nil)
+      |> put_flash(:error, gettext("That billing profile is not available."))
     end
   end
+
+  # Options for `convert_cart_to_order/2`.
+  defp convert_opts(%{assigns: %{use_new_profile: true}} = socket, user_uuid, save_profile?) do
+    # Guest or new profile - use billing_data directly
+    [
+      billing_data: socket.assigns.billing_data,
+      user_uuid: user_uuid,
+      language: socket.assigns[:current_locale]
+    ] ++
+      if(save_profile?, do: [save_billing_profile: true], else: [])
+  end
+
+  defp convert_opts(socket, user_uuid, _save_profile?) do
+    # Logged-in user with existing profile
+    [
+      billing_profile_uuid: socket.assigns.selected_profile_uuid,
+      user_uuid: user_uuid,
+      language: socket.assigns[:current_locale]
+    ]
+  end
+
+  # The profile was created inside the conversion transaction, so an order
+  # that came back carrying a profile uuid means it was saved and committed.
+  defp log_billing_profile_saved({:ok, %{billing_profile_uuid: profile_uuid} = order}, socket)
+       when not is_nil(profile_uuid) do
+    Activity.log("shop.checkout_billing_profile_saved",
+      actor_uuid: Activity.actor_uuid(socket),
+      actor_role: Activity.actor_role(socket),
+      mode: "checkout",
+      resource_type: "billing_profile",
+      resource_uuid: profile_uuid,
+      metadata: %{"order_uuid" => order.uuid}
+    )
+  end
+
+  defp log_billing_profile_saved(_result, _socket), do: :ok
 
   # The single decision point for "billing is settled, what's next" - reached
   # both from the billing form (`proceed_to_review`, either path: an existing
@@ -563,28 +888,54 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   # same shipping step when one is due - a shopper who never touched the
   # billing form is not exempt from picking a shipping method.
   defp advance_after_billing(socket) do
+    socket = refresh_shipping(socket)
+
     case next_step_after_billing(socket) do
       :shipping -> assign_shipping_step(socket)
       :review -> enter_review(socket)
     end
   end
 
-  # `:shipping` only when there is something to decide: selection happens at
-  # checkout (not the cart page), skipping isn't unconditional (`:always`
-  # already has nothing to pick), the cart actually ships something, and no
-  # method is selected yet (a tab that already picked one, or came back from
-  # review, has nothing left to do here).
+  # `:shipping` only when there is something to decide: skipping isn't
+  # unconditional (`:always` already has nothing to pick), the cart actually
+  # ships something, and either
+  #
+  #   * selection happens at checkout (not the cart page) and no method is
+  #     selected yet (a tab that already picked one, or came back from
+  #     review, has nothing left to do here), or
+  #   * the selected method is carrier-priced and needs the shopper: the
+  #     delivery place is missing or refused, or the method cannot serve the
+  #     cart - whichever page the method was picked on, the picker of this
+  #     step is where that gets finished.
+  #
+  # A carrier-priced method whose place is known but whose price is missing or
+  # out of date (a new payment option, which can change what the carrier
+  # charges; a quote that aged out) needs no one: the review asks the carrier
+  # itself.
   defp next_step_after_billing(socket) do
     cart = socket.assigns.cart
 
-    if Shop.shipping_selection_position() == :checkout and
-         Shop.shipping_skip_mode() != :always and
-         Shop.cart_requires_shipping?(cart) and
-         is_nil(cart.shipping_method_uuid) do
+    if Shop.shipping_skip_mode() != :always and Shop.cart_requires_shipping?(cart) and
+         (shipping_unselected_here?(cart) or
+            shipping_needs_shopper?(socket.assigns.shipping_snapshot)) do
       :shipping
     else
       :review
     end
+  end
+
+  # What only the shopper can settle: a place that is missing or refused, a
+  # method that cannot serve the cart. A carrier that could not be asked for
+  # its options (a transient failure) is a retry, not a reason to go back.
+  defp shipping_needs_shopper?(%{status: :needs_destination}), do: true
+
+  defp shipping_needs_shopper?(%{status: :unavailable, transient?: transient?}),
+    do: not transient?
+
+  defp shipping_needs_shopper?(_snapshot), do: false
+
+  defp shipping_unselected_here?(cart) do
+    Shop.shipping_selection_position() == :checkout and is_nil(cart.shipping_method_uuid)
   end
 
   # The billing identity just captured, read back as a plain country code -
@@ -613,6 +964,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     |> assign(:checkout_shipping_methods, methods)
     |> assign(:shipping_fallback, methods == [] and Shop.shipping_skip_mode() == :fallback)
     |> assign(:step, :shipping)
+    |> assign_shipping_view()
   end
 
   # A blank country must never overwrite one the cart already carries: the
@@ -650,12 +1002,20 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         # ineligible price is zero, so review would show an underpriced
         # total that conversion then rejects. Catch it here, at the moment
         # the number is first shown.
-        if shipping_selection_still_valid?(cart) do
-          assign(socket, :cart, cart)
-        else
-          socket
-          |> assign(:cart, cart)
-          |> reject_invalid_shipping_selection()
+        socket = put_cart(socket, cart)
+
+        cond do
+          not shipping_selection_still_valid?(cart) ->
+            reject_invalid_shipping_selection(socket)
+
+          # The delivery of a calculated method is not settled (the billing
+          # country, a new payment option or the time spent here): the
+          # review never approves it.
+          socket.assigns.shipping_snapshot.blocks? ->
+            settle_shipping(socket)
+
+          true ->
+            assign(socket, :requote_streak, 0)
         end
 
       # Never block review on a pricing refresh; conversion recalculates
@@ -680,22 +1040,22 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   # So for `:checkout` we drop the now-ineligible selection and re-enter the
   # step that owns the choice, with the methods for the country the shopper
   # actually just entered.
-  defp reject_invalid_shipping_selection(socket) do
-    message =
-      gettext(
-        "The selected shipping method is not available for your address - please pick another"
-      )
-
+  defp reject_invalid_shipping_selection(
+         socket,
+         message \\ gettext(
+           "The selected shipping method is not available for your address - please pick another"
+         )
+       ) do
     if Shop.shipping_selection_position() == :checkout do
       socket
-      |> assign(:cart, drop_shipping_selection(socket.assigns.cart))
+      |> put_cart(drop_shipping_selection(socket.assigns.cart))
       |> assign_shipping_step()
       |> put_flash(:error, message)
     else
       socket
       |> assign(:step, :shipping_invalid)
       |> put_flash(:error, message)
-      |> push_navigate(to: Routes.path("/cart"))
+      |> navigate_to_cart()
     end
   end
 
@@ -709,6 +1069,40 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     end
   end
 
+  # A calculated method whose delivery is not settled, met on the review or
+  # when the order is placed. A missing or out-of-date price is asked of the
+  # carrier right here; a place the carrier refuses (or a method that cannot
+  # serve the cart) needs the shopper, who gets the shipping step.
+  defp settle_shipping(socket) do
+    snapshot = socket.assigns.shipping_snapshot
+
+    cond do
+      snapshot.status in [:missing, :stale] -> requote_review(socket)
+      shipping_needs_shopper?(snapshot) -> assign_shipping_step(socket)
+      true -> socket
+    end
+  end
+
+  # Asks the carrier, unless that was just done for this very state of the
+  # cart (see `ShippingRequote`) or an answer is on its way.
+  defp requote_review(%{assigns: %{requoting: true}} = socket), do: socket
+
+  defp requote_review(socket) do
+    %{cart: cart, locale: locale, requote_streak: streak} = socket.assigns
+    status = socket.assigns.shipping_snapshot.status
+
+    if connected?(socket) and
+         ShippingRequote.due?(cart, status, socket.assigns.requote_key, streak) do
+      socket
+      |> assign(:requoting, true)
+      |> assign(:requote_key, ShippingRequote.key(cart, status))
+      |> assign(:requote_streak, streak + 1)
+      |> start_async(:requote, fn -> Shop.quote_cart_shipping(cart, locale: locale) end)
+    else
+      socket
+    end
+  end
+
   # A cart change broadcast from another tab lands here. Blindly assigning
   # it into an open REVIEW showed a total that had lost the billing country
   # (the cart page's select_shipping deliberately clears it), so the
@@ -719,15 +1113,29 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     socket =
       if socket.assigns[:step] == :review do
         case Shop.preview_checkout_totals(cart, checkout_opts(socket)) do
-          {:ok, priced} -> assign(socket, :cart, priced)
-          {:error, _} -> assign(socket, :cart, cart)
+          {:ok, priced} -> put_cart(socket, priced)
+          {:error, _} -> put_cart(socket, cart)
         end
       else
-        assign(socket, :cart, cart)
+        put_cart(socket, cart)
       end
 
-    assign(socket, :fx_drift, Shop.cart_rate_drift(socket.assigns.cart))
+    socket
+    |> assign(:fx_drift, Shop.cart_rate_drift(socket.assigns.cart))
+    |> requote_stale_review()
   end
+
+  # On the review a price that went stale is renewed without the shopper
+  # having to do anything.
+  defp requote_stale_review(%{assigns: %{step: :review}} = socket) do
+    if socket.assigns.shipping_snapshot.status in [:missing, :stale] do
+      requote_review(socket)
+    else
+      assign(socket, :requote_streak, 0)
+    end
+  end
+
+  defp requote_stale_review(socket), do: socket
 
   defp shipping_selection_still_valid?(cart) do
     cond do
@@ -776,29 +1184,43 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   defp handle_order_result({:ok, order}, socket) do
     socket
     |> assign(:processing, false)
-    |> push_navigate(to: Routes.path("/checkout/complete/#{order.uuid}"))
+    |> push_navigate(to: Helpers.page_path(socket.assigns, "/checkout/complete/#{order.uuid}"))
   end
 
-  defp handle_order_result({:error, :cart_not_active}, socket) do
-    message = Errors.message(:cart_not_active)
+  # A second click on "Confirm Order" lands here: the first one already made
+  # the order, so the shopper goes to it instead of reading an error. Two
+  # requests racing (two tabs) get `:cart_already_converting` when the loser
+  # waited on the winner's lock; the winner has committed by then.
+  defp handle_order_result({:error, reason}, socket)
+       when reason in [:cart_not_active, :cart_already_converting] do
+    case Shop.converted_order_uuid(socket.assigns.cart.uuid) do
+      nil ->
+        message = Errors.message(reason)
 
-    socket
-    |> assign(:processing, false)
-    |> assign(:error_message, message)
-    |> put_flash(:error, message)
+        socket
+        |> assign(:processing, false)
+        |> assign(:error_message, message)
+        |> put_flash(:error, message)
+
+      order_uuid ->
+        socket
+        |> assign(:processing, false)
+        |> push_navigate(
+          to: Helpers.page_path(socket.assigns, "/checkout/complete/#{order_uuid}")
+        )
+    end
   end
 
   defp handle_order_result({:error, :cart_empty}, socket) do
     socket
     |> assign(:processing, false)
-    |> push_navigate(to: Routes.path("/cart"))
+    |> navigate_to_cart()
   end
 
   defp handle_order_result({:error, :no_shipping_method}, socket) do
     socket
     |> assign(:processing, false)
-    |> put_flash(:error, gettext("Please select a shipping method"))
-    |> push_navigate(to: Routes.path("/cart"))
+    |> reject_invalid_shipping_selection(gettext("Please select a shipping method"))
   end
 
   defp handle_order_result({:error, :email_already_registered}, socket) do
@@ -814,27 +1236,38 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   defp handle_order_result({:error, :shipping_method_unavailable}, socket) do
     socket
     |> assign(:processing, false)
+    |> reject_invalid_shipping_selection()
+  end
+
+  # A carrier-priced method whose quote is missing, out of date or refused:
+  # the price the shopper saw is not one the order can carry. It is renewed
+  # (or, when it needs the shopper, the shipping step opens) with the cart as
+  # it is now.
+  defp handle_order_result({:error, :shipping_quote_required}, socket) do
+    cart = Shop.get_cart(socket.assigns.cart.uuid) || socket.assigns.cart
+
+    socket
+    |> assign(:processing, false)
+    |> put_cart(cart)
+    |> settle_shipping()
     |> put_flash(
       :error,
-      gettext(
-        "The selected shipping method is not available for your address - please pick another"
-      )
+      gettext("The delivery price needs to be confirmed - please check your delivery details")
     )
-    |> push_navigate(to: Routes.path("/cart"))
   end
 
   defp handle_order_result({:error, {:product_not_available, _uuid}}, socket) do
     socket
     |> assign(:processing, false)
     |> put_flash(:error, gettext("An item in your cart is no longer available"))
-    |> push_navigate(to: Routes.path("/cart"))
+    |> navigate_to_cart()
   end
 
   defp handle_order_result({:error, :product_not_available}, socket) do
     socket
     |> assign(:processing, false)
     |> put_flash(:error, gettext("An item in your cart is no longer available"))
-    |> push_navigate(to: Routes.path("/cart"))
+    |> navigate_to_cart()
   end
 
   # The billing details are missing deliverable-address fields — this is
@@ -856,18 +1289,42 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     socket
     |> assign(:step, :billing)
     |> assign(:use_new_profile, true)
-    |> put_flash(
-      :error,
-      gettext("Please complete the billing address - a physical order needs one")
-    )
+    |> put_flash(:error, billing_incomplete_message(socket.assigns.cart))
   end
 
-  defp handle_order_result({:error, :billing_profile_not_found}, socket) do
+  defp handle_order_result({:error, reason}, socket)
+       when reason in [:billing_profile_not_found, :billing_profile_not_owned] do
     socket
     |> assign(:processing, false)
     |> assign(:selected_profile_uuid, nil)
     |> assign(:step, :billing)
     |> put_flash(:error, gettext("That billing profile is not available."))
+  end
+
+  # The entered details did not make a valid profile - the whole conversion
+  # rolled back, so no order exists. Back to the editable form with the
+  # context's own errors on it. An error no field shows (the profile's owner,
+  # its name) gets a hint next to the save box instead: unticking it places
+  # the order without the profile.
+  defp handle_order_result({:error, {:billing_profile_invalid, changeset}}, socket) do
+    socket =
+      socket
+      |> assign(:processing, false)
+      |> assign(:step, :billing)
+      |> assign(:billing_validate?, true)
+      |> assign_billing_form(changeset.errors)
+
+    hint? =
+      Enum.any?(changeset.errors, fn {field, _} ->
+        field not in visible_billing_fields(socket)
+      end)
+
+    socket
+    |> assign(:save_profile_hint?, hint?)
+    |> put_flash(
+      :error,
+      gettext("The billing details could not be saved - please check the highlighted fields")
+    )
   end
 
   defp handle_order_result({:error, :payment_option_unavailable}, socket) do
@@ -877,7 +1334,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
       :error,
       gettext("The selected payment method is no longer available - please pick another")
     )
-    |> push_navigate(to: Routes.path("/cart"))
+    |> navigate_to_cart()
   end
 
   defp handle_order_result({:error, :shop_disabled}, socket) do
@@ -896,7 +1353,8 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
   # Seed the editable billing form from the profile the customer had
   # selected, so completing an address-less saved profile is a fill-in,
-  # not a retype.
+  # not a retype. The profile already exists, so saving it again is off by
+  # default, and the form opens showing what is still missing.
   defp prefill_from_selected_profile(socket) do
     case Enum.find(
            socket.assigns.billing_profiles,
@@ -906,13 +1364,21 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         socket
 
       profile ->
-        assign(socket, :billing_data, profile_form_data(profile, socket.assigns.billing_data))
+        socket
+        |> assign(:billing_data, profile_form_data(profile, socket.assigns.billing_data))
+        |> assign(:billing_type, profile.type || "individual")
+        |> assign(:billing_validate?, true)
+        |> assign(:save_billing_profile, false)
+        |> assign(:billing_collected?, false)
+        |> assign_billing_form()
     end
   end
 
   # Field-for-field copy of a saved profile into the editable form's shape.
-  @profile_form_fields ~w(first_name last_name phone company_name address_line1
-                          address_line2 city state postal_code country)a
+  @profile_form_fields ~w(type first_name last_name middle_name phone company_name
+                          company_vat_number company_registration_number
+                          company_legal_address address_line1 address_line2 city state
+                          postal_code country)a
 
   defp profile_form_data(profile, current) do
     base =
@@ -924,45 +1390,6 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     # a profile, so a blank profile email must not wipe it.
     Map.put(base, "email", profile.email || current["email"] || "")
   end
-
-  defp validate_billing_data(data) do
-    errors = %{}
-
-    errors =
-      if blank?(data["first_name"]),
-        do: Map.put(errors, :first_name, "is required"),
-        else: errors
-
-    errors =
-      if blank?(data["last_name"]),
-        do: Map.put(errors, :last_name, "is required"),
-        else: errors
-
-    errors =
-      if blank?(data["email"]),
-        do: Map.put(errors, :email, "is required"),
-        else: errors
-
-    errors =
-      if blank?(data["address_line1"]),
-        do: Map.put(errors, :address_line1, "is required"),
-        else: errors
-
-    errors =
-      if blank?(data["city"]), do: Map.put(errors, :city, "is required"), else: errors
-
-    errors =
-      if blank?(data["country"]),
-        do: Map.put(errors, :country, "is required"),
-        else: errors
-
-    errors
-  end
-
-  defp blank?(nil), do: true
-  defp blank?(""), do: true
-  defp blank?(str) when is_binary(str), do: String.trim(str) == ""
-  defp blank?(_), do: false
 
   # ============================================
   # PUBSUB EVENT HANDLERS
@@ -993,9 +1420,22 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     {:noreply, assign_cart_repriced(socket, cart)}
   end
 
+  # The picker's saves and quotes, the review's own quote: the cart as it is.
+  # What this page already holds is not worked out again.
   @impl true
   def handle_info({:shipping_selected, cart}, socket) do
-    {:noreply, assign_cart_repriced(socket, cart)}
+    if ShippingRequote.same_cart?(cart, socket.assigns.cart) do
+      {:noreply, socket}
+    else
+      {:noreply, assign_cart_repriced(socket, cart)}
+    end
+  end
+
+  # The picker says the answer may have changed without the cart (the delivery
+  # options were asked for again, the carrier refused the request).
+  @impl true
+  def handle_info(:shipping_recheck, socket) do
+    {:noreply, socket |> refresh_shipping() |> requote_stale_review()}
   end
 
   @impl true
@@ -1005,8 +1445,9 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
     {:noreply,
      socket
-     |> assign(:cart, cart)
-     |> assign(:selected_payment_option, selected)}
+     |> put_cart(cart)
+     |> assign(:selected_payment_option, selected)
+     |> requote_stale_review()}
   end
 
   @impl true
@@ -1032,16 +1473,54 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   # more than one, so adding a single new event shape would have started
   # crashing live sessions with no change here at all.
   @impl true
-  def handle_info(_message, socket), do: {:noreply, socket}
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
+
+  # ============================================
+  # ASYNC: THE CARRIER'S PRICE ON THE REVIEW
+  # ============================================
+
+  @impl true
+  def handle_async(:requote, {:ok, {:ok, cart}}, socket) do
+    {:noreply, socket |> assign(:requoting, false) |> assign_cart_repriced(cart)}
+  end
+
+  # The cart changed while the carrier was asked: read it as it is now.
+  def handle_async(:requote, {:ok, {:error, :stale}}, socket) do
+    socket = assign(socket, :requoting, false)
+
+    case Shop.get_cart(socket.assigns.cart.uuid) do
+      nil -> {:noreply, socket}
+      cart -> {:noreply, assign_cart_repriced(socket, cart)}
+    end
+  end
+
+  # What the shopper has to finish (the place was refused, the method cannot
+  # serve this cart) is finished on the shipping step.
+  def handle_async(:requote, {:ok, {:error, reason}}, socket)
+      when reason == :needs_destination or (is_tuple(reason) and elem(reason, 0) == :unavailable) do
+    socket = socket |> assign(:requoting, false) |> refresh_shipping()
+
+    {:noreply,
+     if(shipping_needs_shopper?(socket.assigns.shipping_snapshot),
+       do: assign_shipping_step(socket),
+       else: socket
+     )}
+  end
+
+  def handle_async(:requote, _failed, socket) do
+    {:noreply, assign(socket, :requoting, false)}
+  end
 
   @impl true
   def render(assigns) do
+    assigns = assign(assigns, :shipping_blocked, shipping_blocked?(assigns))
+
     ~H"""
     <ShopLayouts.shop_layout {assigns}>
       <div class="p-6 max-w-6xl mx-auto">
         <div class="flex items-center justify-between mb-8">
           <h1 class="text-3xl font-bold">{gettext("Checkout")}</h1>
-          <.link navigate={Routes.path("/cart")} class="btn btn-ghost btn-sm">
+          <.link navigate={Helpers.page_path(assigns, "/cart")} class="btn btn-ghost btn-sm">
             <.icon name="hero-arrow-left" class="w-4 h-4" />
           </.link>
         </div>
@@ -1091,6 +1570,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
               id="checkout-fx-drift-reprice"
               class="btn btn-sm btn-outline"
               phx-click="refresh_cart_rate"
+              phx-disable-with={gettext("Working…")}
             >
               {gettext("Reprice at the current rate")}
             </button>
@@ -1124,14 +1604,18 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
                 />
               <% :billing -> %>
                 <.billing_step
+                  current_locale={assigns[:current_locale]}
                   is_guest={@is_guest}
                   billing_profiles={@billing_profiles}
                   selected_profile_uuid={@selected_profile_uuid}
                   use_new_profile={@use_new_profile}
                   needs_profile_selection={@needs_profile_selection}
-                  billing_data={@billing_data}
-                  form_errors={@form_errors}
+                  billing_form={@billing_form}
+                  billing_type={@billing_type}
                   countries={@countries}
+                  subdivision_label={@subdivision_label}
+                  require_address={@require_billing_address}
+                  save_profile_hint={@save_profile_hint?}
                   payment_options={@payment_options}
                 />
               <% :shipping -> %>
@@ -1140,10 +1624,15 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
                   fallback={@shipping_fallback}
                   cart={@cart}
                   currency={@currency}
+                  locale={@locale}
                   needs_billing={@needs_billing}
+                  shipping_blocked={@shipping_blocked}
+                  snapshot={@shipping_snapshot}
+                  presented={@shipping_presented}
                 />
               <% :review -> %>
                 <.review_step
+                  current_locale={assigns[:current_locale]}
                   cart={@cart}
                   is_guest={@is_guest}
                   billing_profiles={@billing_profiles}
@@ -1157,19 +1646,36 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
                   selected_payment_option={@selected_payment_option}
                   needs_billing={@needs_billing}
                   payment_options={@payment_options}
+                  shipping_blocked={@shipping_blocked}
+                  snapshot={@shipping_snapshot}
+                  requoting={@requoting}
                 />
             <% end %>
           </div>
 
           <%!-- Order Summary Sidebar --%>
           <div class="lg:col-span-1">
-            <.order_summary cart={@cart} currency={@currency} />
+            <.order_summary
+              cart={@cart}
+              currency={@currency}
+              shipping_blocked={@shipping_blocked}
+              snapshot={@shipping_snapshot}
+            />
           </div>
         </div>
       </div>
     </ShopLayouts.shop_layout>
     """
   end
+
+  # Whether a carrier-priced method still lacks its delivery place or price.
+  # Only the steps that show or approve the shipping ask: the question can
+  # reach the carrier's service list, which the earlier steps never need.
+  defp shipping_blocked?(%{step: step, shipping_snapshot: snapshot})
+       when step in [:shipping, :review],
+       do: snapshot.blocks?
+
+  defp shipping_blocked?(_assigns), do: false
 
   # Components
 
@@ -1229,7 +1735,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     <div class="card bg-base-100 shadow-lg">
       <div class="card-body">
         <h2 class="card-title mb-4">
-          <%= if @is_guest or @billing_profiles == [] do %>
+          <%= if @use_new_profile do %>
             {gettext("Billing Information")}
           <% else %>
             {gettext("Select Billing Profile")}
@@ -1237,15 +1743,30 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         </h2>
 
         <%= if @use_new_profile do %>
-          <%!-- Guest checkout or no profiles - show billing form --%>
+          <%!-- Guest checkout, no profiles, or "use new details" - show billing form --%>
+          <button
+            :if={@billing_profiles != []}
+            type="button"
+            id="checkout-use-saved-billing"
+            phx-click="use_existing_profile"
+            class="btn btn-ghost btn-sm mb-4"
+          >
+            <.icon name="hero-arrow-left" class="w-4 h-4" /> {gettext("Back to saved profiles")}
+          </button>
+
           <.billing_form
-            billing_data={@billing_data}
-            form_errors={@form_errors}
+            billing_form={@billing_form}
+            billing_type={@billing_type}
             countries={@countries}
+            subdivision_label={@subdivision_label}
+            require_address={@require_address}
+            show_save_profile={not @is_guest}
+            save_profile_hint={@save_profile_hint}
           />
         <% else %>
           <%!-- Authenticated user with multiple profiles - show selector --%>
           <.profile_selector
+            current_locale={@current_locale}
             billing_profiles={@billing_profiles}
             selected_profile_uuid={@selected_profile_uuid}
             needs_profile_selection={@needs_profile_selection}
@@ -1279,7 +1800,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
           <.icon name="hero-information-circle" class="w-5 h-5" />
           <span>
             {gettext("You have multiple billing profiles. Please select one or")}
-            <.link navigate={Routes.path("/dashboard/billing-profiles")} class="link">
+            <.link navigate={Helpers.page_path(assigns, "/dashboard/billing-profiles")} class="link">
               {gettext("set a default in your account settings")}
             </.link>.
           </span>
@@ -1325,7 +1846,10 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
           <%= if to_string(@selected_profile_uuid) == to_string(profile.uuid) do %>
             <.link
               navigate={
-                Routes.path("/dashboard/billing-profiles/#{profile.uuid}/edit?return_to=/checkout")
+                Helpers.page_path(
+                  assigns,
+                  "/dashboard/billing-profiles/#{profile.uuid}/edit"
+                ) <> "?return_to=" <> Helpers.page_path(assigns, "/checkout")
               }
               class="btn btn-ghost btn-sm"
             >
@@ -1334,129 +1858,57 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
           <% end %>
         </div>
       <% end %>
+
+      <button
+        type="button"
+        id="checkout-use-new-billing"
+        phx-click="use_new_profile"
+        class="btn btn-ghost btn-sm"
+      >
+        <.icon name="hero-plus" class="w-4 h-4" /> {gettext("Use new details")}
+      </button>
     </div>
     """
   end
 
+  # The fields are billing's own component, so the checkout form and the
+  # profile forms cannot drift. The type radios click through to
+  # `change_type`; everything else is the form's `phx-change`.
   defp billing_form(assigns) do
     ~H"""
-    <form id="checkout-billing-form" phx-change="update_billing" class="space-y-4">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">{gettext("First Name *")}</legend>
-          <input
-            type="text"
-            name="billing[first_name]"
-            value={@billing_data["first_name"]}
-            class={["input", @form_errors[:first_name] && "input-error"]}
-            required
-          />
-          <%= if @form_errors[:first_name] do %>
-            <p class="fieldset-label text-error">{@form_errors[:first_name]}</p>
-          <% end %>
-        </fieldset>
-
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">{gettext("Last Name *")}</legend>
-          <input
-            type="text"
-            name="billing[last_name]"
-            value={@billing_data["last_name"]}
-            class={["input", @form_errors[:last_name] && "input-error"]}
-            required
-          />
-          <%= if @form_errors[:last_name] do %>
-            <p class="fieldset-label text-error">{@form_errors[:last_name]}</p>
-          <% end %>
-        </fieldset>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">{gettext("Email *")}</legend>
-          <input
-            type="email"
-            name="billing[email]"
-            value={@billing_data["email"]}
-            class={["input", @form_errors[:email] && "input-error"]}
-            required
-          />
-          <%= if @form_errors[:email] do %>
-            <p class="fieldset-label text-error">{@form_errors[:email]}</p>
-          <% end %>
-        </fieldset>
-
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">{gettext("Phone")}</legend>
-          <input
-            type="tel"
-            name="billing[phone]"
-            value={@billing_data["phone"]}
-            class="input"
-          />
-        </fieldset>
-      </div>
-
-      <fieldset class="fieldset">
-        <legend class="fieldset-legend">{gettext("Address *")}</legend>
-        <input
-          type="text"
-          name="billing[address_line1]"
-          value={@billing_data["address_line1"]}
-          class={["input", @form_errors[:address_line1] && "input-error"]}
-          placeholder={gettext("Street address")}
-          required
+    <.form
+      for={@billing_form}
+      id="checkout-billing-form"
+      phx-change="update_billing"
+      phx-submit="proceed_to_review"
+    >
+      <BillingProfileFields.billing_profile_fields
+        form={@billing_form}
+        type={@billing_type}
+        countries={@countries}
+        subdivision_label={@subdivision_label}
+        id_prefix="checkout-billing"
+        show_options={false}
+        require_email
+        require_address={@require_address}
+      >
+        <.checkbox
+          :if={@show_save_profile}
+          field={@billing_form[:save_profile]}
+          id="checkout-save-billing-profile"
+          label={gettext("Save as a billing profile")}
         />
-        <%= if @form_errors[:address_line1] do %>
-          <p class="fieldset-label text-error">{@form_errors[:address_line1]}</p>
-        <% end %>
-      </fieldset>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">{gettext("City *")}</legend>
-          <input
-            type="text"
-            name="billing[city]"
-            value={@billing_data["city"]}
-            class={["input", @form_errors[:city] && "input-error"]}
-            required
-          />
-          <%= if @form_errors[:city] do %>
-            <p class="fieldset-label text-error">{@form_errors[:city]}</p>
-          <% end %>
-        </fieldset>
-
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">{gettext("Postal Code")}</legend>
-          <input
-            type="text"
-            name="billing[postal_code]"
-            value={@billing_data["postal_code"]}
-            class="input"
-          />
-        </fieldset>
-
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">{gettext("Country *")}</legend>
-          <select
-            name="billing[country]"
-            class={["select", @form_errors[:country] && "select-error"]}
-            required
-          >
-            <option value="">{gettext("Select country...")}</option>
-            <%= for country <- @countries do %>
-              <option value={country.alpha2} selected={@billing_data["country"] == country.alpha2}>
-                {country.name}
-              </option>
-            <% end %>
-          </select>
-          <%= if @form_errors[:country] do %>
-            <p class="fieldset-label text-error">{@form_errors[:country]}</p>
-          <% end %>
-        </fieldset>
-      </div>
-    </form>
+        <p
+          :if={@show_save_profile and @save_profile_hint}
+          id="checkout-save-billing-profile-hint"
+          class="text-sm text-error"
+        >
+          {gettext(
+            "This profile could not be saved. Untick \"Save as a billing profile\" to place the order without saving it."
+          )}
+        </p>
+      </BillingProfileFields.billing_profile_fields>
+    </.form>
     """
   end
 
@@ -1474,49 +1926,77 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         <%= cond do %>
           <% @methods != [] -> %>
             <div class="space-y-3">
-              <label
-                :for={method <- @methods}
-                id={"checkout-shipping-method-#{method.uuid}"}
-                class={[
-                  "flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-colors",
-                  if(@cart.shipping_method_uuid == method.uuid,
-                    do: "border-primary bg-primary/5",
-                    else: "border-base-300 hover:border-primary/50"
-                  )
-                ]}
-              >
-                <input
-                  type="radio"
-                  name="checkout_shipping"
-                  class="radio radio-primary"
-                  checked={@cart.shipping_method_uuid == method.uuid}
-                  phx-click="select_checkout_shipping"
-                  phx-value-method_uuid={method.uuid}
+              <div :for={method <- @methods} class="space-y-2">
+                <label
+                  id={"checkout-shipping-method-#{method.uuid}"}
+                  class={[
+                    "flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-colors",
+                    if(@cart.shipping_method_uuid == method.uuid,
+                      do: "border-primary bg-primary/5",
+                      else: "border-base-300 hover:border-primary/50"
+                    )
+                  ]}
+                >
+                  <input
+                    type="radio"
+                    name="checkout_shipping"
+                    class="radio radio-primary"
+                    checked={@cart.shipping_method_uuid == method.uuid}
+                    phx-click="select_checkout_shipping"
+                    phx-value-method_uuid={method.uuid}
+                  />
+                  <div class="flex-1">
+                    <div class="font-medium">{method.name}</div>
+                    <%= if method.description do %>
+                      <div class="text-sm text-base-content/60">{method.description}</div>
+                    <% end %>
+                  </div>
+                  <%!-- `method.price` is a BASE amount; the cart is in its own
+                       currency, so present it through the cart's frozen rate. --%>
+                  <% presented = @presented[method.uuid] %>
+                  <div id={"checkout-shipping-price-#{method.uuid}"} class="font-semibold text-right">
+                    <%= cond do %>
+                      <% presented.pay_on_delivery? -> %>
+                        <span class="badge badge-info badge-soft whitespace-nowrap">
+                          {gettext("Paid on delivery")}
+                        </span>
+                      <% presented.free? -> %>
+                        <span class="badge badge-success">{gettext("FREE")}</span>
+                      <% presented.quote_status in [:needs_destination, :missing, :stale] -> %>
+                        <span class="text-sm font-normal text-base-content/60">
+                          {gettext("Calculated for your address")}
+                        </span>
+                      <% presented.quote_status == :unavailable -> %>
+                        <span class="badge badge-error badge-soft whitespace-nowrap">
+                          {gettext("Not available")}
+                        </span>
+                      <% true -> %>
+                        {format_price(presented.price, @currency)}
+                    <% end %>
+                  </div>
+                </label>
+
+                <%!-- Where a carrier-priced method delivers, and what it charges. --%>
+                <.live_component
+                  :if={@cart.shipping_method_uuid == method.uuid and ShippingMethod.calculated?(method)}
+                  module={ShippingDestinationPicker}
+                  id={"shipping-picker-#{method.uuid}"}
+                  cart={@cart}
+                  method={method}
+                  snapshot={@snapshot}
+                  locale={@locale}
+                  currency={@currency}
                 />
-                <div class="flex-1">
-                  <div class="font-medium">{method.name}</div>
-                  <%= if method.description do %>
-                    <div class="text-sm text-base-content/60">{method.description}</div>
-                  <% end %>
-                </div>
-                <%!-- `method.price` is a BASE amount; the cart is in its own
-                     currency, so present it through the cart's frozen rate. --%>
-                <% presented = Shop.present_shipping_method(@cart, method) %>
-                <div class="font-semibold">
-                  <%= if presented.free? do %>
-                    <span class="badge badge-success">{gettext("FREE")}</span>
-                  <% else %>
-                    {format_price(presented.price, @currency)}
-                  <% end %>
-                </div>
-              </label>
+              </div>
             </div>
             <div class="flex items-center gap-3 mt-6">
               <button
                 id="checkout-shipping-continue"
                 class="btn btn-primary"
                 phx-click="shipping_continue"
-                disabled={not Enum.any?(@methods, &(&1.uuid == @cart.shipping_method_uuid))}
+                disabled={
+                  @shipping_blocked or not Enum.any?(@methods, &(&1.uuid == @cart.shipping_method_uuid))
+                }
               >
                 {gettext("Continue")} <.icon name="hero-arrow-right" class="w-4 h-4 ml-2" />
               </button>
@@ -1580,7 +2060,10 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         )
       end
 
-    assigns = assign(assigns, :selected_profile, selected_profile)
+    assigns =
+      assigns
+      |> assign(:selected_profile, selected_profile)
+      |> assign(:shipping_details, review_shipping_details(assigns.cart, assigns.snapshot))
 
     ~H"""
     <div class="space-y-6">
@@ -1632,19 +2115,8 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
             <div class="text-sm">
               <%= if @use_new_profile do %>
-                <div class="font-medium">
-                  {@billing_data["first_name"]} {@billing_data["last_name"]}
-                </div>
-                <div class="text-base-content/60">
-                  {[
-                    @billing_data["address_line1"],
-                    @billing_data["city"],
-                    @billing_data["postal_code"],
-                    @billing_data["country"]
-                  ]
-                  |> Enum.filter(&(&1 && &1 != ""))
-                  |> Enum.join(", ")}
-                </div>
+                <div class="font-medium">{profile_display_name(@billing_data)}</div>
+                <div class="text-base-content/60">{profile_address(@billing_data)}</div>
                 <div class="text-base-content/60">{@billing_data["email"]}</div>
                 <%= if @billing_data["phone"] && @billing_data["phone"] != "" do %>
                   <div class="text-base-content/60">{@billing_data["phone"]}</div>
@@ -1671,7 +2143,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         <div class="card-body">
           <div class="flex items-center justify-between mb-4">
             <h2 class="card-title">{gettext("Shipping Method")}</h2>
-            <.link navigate={Routes.path("/cart")} class="btn btn-ghost btn-sm">
+            <.link navigate={Helpers.page_path(assigns, "/cart")} class="btn btn-ghost btn-sm">
               <.icon name="hero-pencil" class="w-4 h-4 mr-1" /> {gettext("Change")}
             </.link>
           </div>
@@ -1684,13 +2156,44 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
                   <div class="text-sm text-base-content/60">{@cart.shipping_method.description}</div>
                 <% end %>
               </div>
-              <div class="font-semibold">
-                <%= if Decimal.compare(@cart.shipping_amount || Decimal.new("0"), Decimal.new("0")) == :eq do %>
-                  <span class="text-success">{gettext("FREE")}</span>
-                <% else %>
-                  {format_price(@cart.shipping_amount, @currency)}
+              <div id="checkout-review-shipping-price" class="font-semibold">
+                <%= cond do %>
+                  <% PriceDisplay.cart_shipping_pay_on_delivery?(@cart) -> %>
+                    {gettext("Paid on delivery")}
+                  <% Decimal.compare(@cart.shipping_amount || Decimal.new("0"), Decimal.new("0")) == :eq -> %>
+                    <span class="text-success">{gettext("FREE")}</span>
+                  <% true -> %>
+                    {format_price(@cart.shipping_amount, @currency)}
                 <% end %>
               </div>
+            </div>
+
+            <%!-- A carrier-priced method: where it delivers, when, and the
+                 notes that belong to the carrier's quote. --%>
+            <div :if={@shipping_details} class="mt-3 space-y-1.5">
+              <p
+                :if={@shipping_details.label}
+                id="checkout-review-shipping-destination"
+                class="flex items-start gap-1.5 text-sm"
+              >
+                <.icon name="hero-map-pin" class="w-4 h-4 mt-0.5 shrink-0 text-base-content/60" />
+                <span class="break-words">{@shipping_details.label}</span>
+              </p>
+              <ShippingDisplay.quote_details
+                id="checkout-review-shipping"
+                eta={@shipping_details.eta}
+                cod_fee={@shipping_details.cod_fee}
+                currency={@shipping_details.currency}
+                fallback={@shipping_details.fallback?}
+              />
+              <button
+                id="checkout-review-change-shipping"
+                type="button"
+                class="btn btn-ghost btn-xs"
+                phx-click="back_to_shipping"
+              >
+                <.icon name="hero-pencil" class="w-3.5 h-3.5" /> {gettext("Change delivery details")}
+              </button>
             </div>
           <% end %>
         </div>
@@ -1701,7 +2204,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         <div class="card-body">
           <div class="flex items-center justify-between mb-4">
             <h2 class="card-title">{gettext("Order Items")}</h2>
-            <.link navigate={Routes.path("/cart")} class="btn btn-ghost btn-sm">
+            <.link navigate={Helpers.page_path(assigns, "/cart")} class="btn btn-ghost btn-sm">
               <.icon name="hero-pencil" class="w-4 h-4 mr-1" /> {gettext("Edit Cart")}
             </.link>
           </div>
@@ -1785,7 +2288,10 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
                 </p>
                 <div class="mt-3">
                   <.link
-                    navigate={Routes.path("/users/log-in") <> "?return_to=" <> Routes.path("/checkout")}
+                    navigate={
+                      Helpers.page_path(assigns, "/users/log-in") <>
+                        "?return_to=" <> Helpers.page_path(assigns, "/checkout")
+                    }
                     class="btn btn-primary btn-sm"
                   >
                     <.icon name="hero-arrow-right-on-rectangle" class="w-4 h-4 mr-1" />
@@ -1806,6 +2312,47 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
         </div>
       <% end %>
 
+      <%!-- The delivery price went stale (the cart or the payment changed, or
+           the carrier's answer aged out): it is settled on the shipping step. --%>
+      <div :if={@requoting} id="checkout-review-shipping-requoting" class="alert alert-info">
+        <span class="loading loading-spinner loading-sm"></span>
+        <span>{gettext("Updating the delivery price...")}</span>
+      </div>
+      <div
+        :if={@shipping_blocked and not @requoting}
+        id="checkout-review-shipping-blocked"
+        class="alert alert-warning"
+      >
+        <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
+        <%= if @snapshot.transient? do %>
+          <span class="flex-1">
+            {gettext("Delivery options are temporarily unavailable. Please try again in a moment.")}
+          </span>
+          <button
+            id="checkout-review-retry-shipping"
+            type="button"
+            class="btn btn-sm"
+            phx-click="recheck_shipping"
+          >
+            {gettext("Try again")}
+          </button>
+        <% else %>
+          <span class="flex-1">
+            {gettext(
+              "The delivery price needs to be confirmed - please check your delivery details"
+            )}
+          </span>
+          <button
+            id="checkout-review-recheck-shipping"
+            type="button"
+            class="btn btn-sm"
+            phx-click="back_to_shipping"
+          >
+            {gettext("Check delivery details")}
+          </button>
+        <% end %>
+      </div>
+
       <%!-- Confirm Button --%>
       <div class="flex justify-between items-center">
         <%= cond do %>
@@ -1821,9 +2368,11 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
             <div></div>
         <% end %>
         <button
+          id="checkout-confirm-order"
           phx-click="confirm_order"
+          phx-disable-with={gettext("Processing...")}
           class={["btn btn-primary btn-lg"]}
-          disabled={@processing}
+          disabled={@processing or @shipping_blocked or @requoting}
         >
           <%= if @processing do %>
             <span class="loading loading-spinner loading-sm"></span> {gettext("Processing...")}
@@ -1836,9 +2385,40 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
     """
   end
 
+  # What the review shows of a carrier-priced method: `nil` for an ordinary one.
+  defp review_shipping_details(
+         %{shipping_method: %ShippingMethod{} = method} = cart,
+         %{presented: %{} = presented, entry: entry}
+       ) do
+    if ShippingMethod.calculated?(method) do
+      estimate = presented.estimate
+
+      %{
+        label: cart |> Shop.cart_shipping_destination() |> CartQuote.destination_label(),
+        eta: (estimate && estimate.eta) || (entry && entry.quote && entry.quote.eta),
+        cod_fee: estimate && estimate.cod_fee,
+        currency: (estimate && estimate.currency) || cart.currency,
+        fallback?: presented.quote_status == :fallback
+      }
+    end
+  end
+
+  defp review_shipping_details(_cart, _snapshot), do: nil
+
+  # Carrier-priced delivery that has no price yet; a pay-on-delivery method
+  # charges the shop nothing either way.
+  defp shipping_unsettled?(%{cart: cart, snapshot: %{blocks?: true}}) do
+    not is_nil(cart.shipping_method_uuid) and
+      not ShippingMethod.pay_on_delivery?(cart.shipping_method)
+  end
+
+  defp shipping_unsettled?(_assigns), do: false
+
   defp order_summary(assigns) do
     assigns =
-      assign_new(assigns, :requires_shipping, fn -> Shop.cart_requires_shipping?(assigns.cart) end)
+      assigns
+      |> assign_new(:requires_shipping, fn -> Shop.cart_requires_shipping?(assigns.cart) end)
+      |> assign(:shipping_unsettled, shipping_unsettled?(assigns))
 
     ~H"""
     <div class="card bg-base-100 shadow-lg sticky top-6">
@@ -1858,19 +2438,24 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
             <span>{format_price(@cart.subtotal, @currency)}</span>
           </div>
 
-          <div class="flex justify-between">
+          <div id="checkout-summary-shipping" class="flex justify-between">
             <span class="text-base-content/70">{gettext("Shipping")}</span>
             <%= if !@requires_shipping do %>
               <span class="text-base-content/50">{gettext("Not needed")}</span>
             <% else %>
-            <%= if is_nil(@cart.shipping_method_uuid) do %>
-              <span class="text-base-content/50">{gettext("Select method")}</span>
-            <% else %>
-              <%= if Decimal.compare(@cart.shipping_amount || Decimal.new("0"), Decimal.new("0")) == :eq do %>
+            <%= cond do %>
+              <% is_nil(@cart.shipping_method_uuid) -> %>
+                <span class="text-base-content/50">{gettext("Select method")}</span>
+              <% @shipping_unsettled and @snapshot.status == :unavailable -> %>
+                <span class="text-error">{gettext("Not available")}</span>
+              <% @shipping_unsettled -> %>
+                <span class="text-base-content/50">{gettext("To be calculated")}</span>
+              <% PriceDisplay.cart_shipping_pay_on_delivery?(@cart) -> %>
+                <span>{gettext("Paid on delivery")}</span>
+              <% Decimal.compare(@cart.shipping_amount || Decimal.new("0"), Decimal.new("0")) == :eq -> %>
                 <span class="text-success">{gettext("FREE")}</span>
-              <% else %>
+              <% true -> %>
                 <span>{format_price(@cart.shipping_amount, @currency)}</span>
-              <% end %>
             <% end %>
             <% end %>
           </div>
@@ -1891,16 +2476,37 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
 
           <div class="divider my-2"></div>
 
-          <div class="flex justify-between text-lg font-bold">
+          <div id="checkout-summary-total" class="flex justify-between text-lg font-bold">
             <span>{gettext("Total")}</span>
-            <span>{format_price(@cart.total, @currency)}</span>
+            <span>
+              <span :if={@shipping_unsettled}>≈</span>
+              {format_price(@cart.total, @currency)}
+            </span>
           </div>
+
+          <%!-- The total of a cart whose carrier-priced delivery is not settled
+                carries the price of the method as a placeholder: said so. --%>
+          <p
+            :if={@shipping_unsettled and @snapshot.status != :unavailable}
+            id="checkout-summary-total-estimate"
+            class="text-xs text-base-content/60"
+          >
+            {gettext("The delivery cost is still to be calculated: the total will change.")}
+          </p>
 
           <%!-- Same disclosure as the cart page, and it matters more here: this
                 is the figure the shopper confirms. --%>
           <%= if PriceDisplay.any_line_on_request?(@cart.items) do %>
             <p class="text-xs text-base-content/60">
               {gettext("Items priced on request are not included in this total.")}
+            </p>
+          <% end %>
+
+          <%= if @requires_shipping && PriceDisplay.cart_shipping_pay_on_delivery?(@cart) do %>
+            <p id="checkout-shipping-pay-on-delivery-note" class="text-xs text-base-content/60">
+              {gettext(
+                "Shipping is not included in this total: you pay the carrier at their rates on delivery."
+              )}
             </p>
           <% end %>
         </div>

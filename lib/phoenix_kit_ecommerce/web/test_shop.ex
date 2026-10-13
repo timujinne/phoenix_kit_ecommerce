@@ -113,7 +113,7 @@ defmodule PhoenixKitEcommerce.Web.TestShop do
               Verify specification-based pricing (fixed and percent modifiers) and Storage image integration.
             </p>
             <div class="flex flex-wrap gap-3">
-              <button phx-click="run_tests" class="btn btn-primary">
+              <button phx-click="run_tests" phx-disable-with={gettext("Running…")} class="btn btn-primary">
                 <.icon name="hero-play" class="w-4 h-4" /> Run All Tests
               </button>
               <button phx-click="load_products" class="btn btn-outline">

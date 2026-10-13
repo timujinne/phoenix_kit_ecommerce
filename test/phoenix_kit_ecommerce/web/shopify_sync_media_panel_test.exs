@@ -58,6 +58,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncMediaPanelTest do
   end
 
   defp connect_shopify do
+    enable_shopify!()
+
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
 
@@ -209,9 +211,38 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncMediaPanelTest do
       refute_enqueued(worker: ShopifyMediaSyncWorker, args: %{"kind" => "variants"})
     end
 
-    test "a kind already in flight (per the progress record) renders disabled and refuses a second enqueue",
+    test "an unfinished record whose job is gone reads as interrupted and can be run again",
+         %{conn: conn} do
+      # What a deploy or a restart in the middle of a run leaves behind.
+      seed_progress("images", nil)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
+
+      refute has_element?(view, "#sync-media-images[disabled]")
+      assert has_element?(view, "#media-sync-status-images", "Interrupted")
+
+      render_click(element(view, "#sync-media-images"))
+      assert_enqueued(worker: ShopifyMediaSyncWorker, args: %{"kind" => "images"})
+    end
+
+    test "a page opened while the job was alive lets it be run again once it is gone",
          %{conn: conn} do
       seed_progress("images", nil)
+      {:ok, job} = %{"kind" => "images"} |> ShopifyMediaSyncWorker.new() |> Oban.insert()
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
+      assert has_element?(view, "#sync-media-images[disabled]")
+
+      Repo.delete!(job)
+
+      render_click(view, "run_media_sync", %{"kind" => "images"})
+      assert_enqueued(worker: ShopifyMediaSyncWorker, args: %{"kind" => "images"})
+    end
+
+    test "a kind already in flight (an unfinished record AND a live job) renders disabled and refuses a second enqueue",
+         %{conn: conn} do
+      seed_progress("images", nil)
+      {:ok, job} = %{"kind" => "images"} |> ShopifyMediaSyncWorker.new() |> Oban.insert()
 
       {:ok, view, html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
 
@@ -226,7 +257,9 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncMediaPanelTest do
       # completely untested. Drive the event directly, the way a
       # tampered/stale client request would.
       render_click(view, "run_media_sync", %{"kind" => "images"})
-      refute_enqueued(worker: ShopifyMediaSyncWorker, args: %{"kind" => "images"})
+
+      assert [%{id: id}] = all_enqueued(worker: ShopifyMediaSyncWorker)
+      assert id == job.id
     end
 
     test "a finished progress record does not disable the button", %{conn: conn} do

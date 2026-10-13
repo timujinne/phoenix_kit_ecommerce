@@ -33,6 +33,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.StatusLabels
 
   @per_page 25
 
@@ -127,17 +128,17 @@ defmodule PhoenixKitEcommerce.Web.Categories do
 
   @impl true
   def handle_event("open_status_modal", %{"uuids" => uuids}, socket) do
-    {:noreply, assign(socket, show_bulk_modal: "status", bulk_uuids: uuids)}
+    {:noreply, assign(socket, show_bulk_modal: "status", bulk_uuids: Helpers.cast_uuids(uuids))}
   end
 
   @impl true
   def handle_event("open_parent_modal", %{"uuids" => uuids}, socket) do
-    {:noreply, assign(socket, show_bulk_modal: "parent", bulk_uuids: uuids)}
+    {:noreply, assign(socket, show_bulk_modal: "parent", bulk_uuids: Helpers.cast_uuids(uuids))}
   end
 
   @impl true
   def handle_event("confirm_bulk_delete", %{"uuids" => uuids}, socket) do
-    {:noreply, assign(socket, show_bulk_modal: "delete", bulk_uuids: uuids)}
+    {:noreply, assign(socket, show_bulk_modal: "delete", bulk_uuids: Helpers.cast_uuids(uuids))}
   end
 
   @impl true
@@ -209,7 +210,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
   # more than one, so adding a single new event shape would have started
   # crashing live sessions with no change here at all.
   @impl true
-  def handle_info(_message, socket), do: {:noreply, socket}
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
 
   # ============================================
   # PRIVATE HELPERS
@@ -398,7 +399,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
           <%!-- Categories Table --%>
           <.table_default id="categories-table" variant="zebra" class="w-full" toggleable={true} items={@categories}
             card_fields={fn category -> [
-              %{label: gettext("Status"), value: category.status || "active"},
+              %{label: gettext("Status"), value: StatusLabels.category(category.status)},
               %{label: gettext("Position"), value: category.position}
             ] end}>
 
@@ -412,17 +413,18 @@ defmodule PhoenixKitEcommerce.Web.Categories do
           <:card_actions :let={category}>
             <.table_row_menu id={"card-menu-#{category.uuid}"}>
               <.table_row_menu_link
-                navigate={Helpers.admin_edit_path(:category, category.uuid, assigns[:url_path])}
+                navigate={Helpers.admin_edit_path(:category, category, assigns[:url_path])}
                 icon="hero-pencil"
-                label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
+                label={gettext("Edit")}
               />
               <.table_row_menu_divider />
               <.table_row_menu_button
                 phx-click="delete"
+                phx-disable-with={gettext("Deleting…")}
                 phx-value-uuid={category.uuid}
                 data-confirm={gettext("Delete this category?")}
                 icon="hero-trash"
-                label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
+                label={gettext("Delete")}
                 variant="error"
               />
             </.table_row_menu>
@@ -486,7 +488,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                   </.table_default_cell>
                   <.table_default_cell>
                     <span class={status_badge_class(category.status)}>
-                      {category.status || "active"}
+                      {StatusLabels.category(category.status)}
                     </span>
                   </.table_default_cell>
                   <.table_default_cell>{category.position}</.table_default_cell>
@@ -499,17 +501,18 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                     <div class="flex justify-end">
                       <.table_row_menu id={"menu-#{category.uuid}"}>
                         <.table_row_menu_link
-                          navigate={Helpers.admin_edit_path(:category, category.uuid, assigns[:url_path])}
+                          navigate={Helpers.admin_edit_path(:category, category, assigns[:url_path])}
                           icon="hero-pencil"
-                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
+                          label={gettext("Edit")}
                         />
                         <.table_row_menu_divider />
                         <.table_row_menu_button
                           phx-click="delete"
+                          phx-disable-with={gettext("Deleting…")}
                           phx-value-uuid={category.uuid}
                           data-confirm={gettext("Delete this category?")}
                           icon="hero-trash"
-                          label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
+                          label={gettext("Delete")}
                           variant="error"
                         />
                       </.table_row_menu>
@@ -554,6 +557,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
             <div class="flex flex-col gap-2">
               <button
                 phx-click="bulk_change_status"
+                phx-disable-with={gettext("Working…")}
                 phx-value-status="active"
                 class="btn btn-success btn-outline justify-start"
               >
@@ -561,6 +565,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
               </button>
               <button
                 phx-click="bulk_change_status"
+                phx-disable-with={gettext("Working…")}
                 phx-value-status="unlisted"
                 class="btn btn-warning btn-outline justify-start"
               >
@@ -568,6 +573,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
               </button>
               <button
                 phx-click="bulk_change_status"
+                phx-disable-with={gettext("Working…")}
                 phx-value-status="hidden"
                 class="btn btn-error btn-outline justify-start"
               >
@@ -593,6 +599,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
             <div class="flex flex-col gap-2 max-h-96 overflow-y-auto">
               <button
                 phx-click="bulk_change_parent"
+                phx-disable-with={gettext("Working…")}
                 phx-value-parent_uuid=""
                 class="btn btn-ghost justify-start"
               >
@@ -602,6 +609,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
                       category.uuid not in @bulk_uuids do %>
                 <button
                   phx-click="bulk_change_parent"
+                  phx-disable-with={gettext("Working…")}
                   phx-value-parent_uuid={category.uuid}
                   class="btn btn-outline justify-start"
                 >
@@ -634,7 +642,7 @@ defmodule PhoenixKitEcommerce.Web.Categories do
             </p>
             <div class="modal-action">
               <button phx-click="close_bulk_modal" class="btn">{gettext("Cancel")}</button>
-              <button phx-click="bulk_delete" class="btn btn-error">
+              <button phx-click="bulk_delete" phx-disable-with={gettext("Deleting…")} class="btn btn-error">
                 <.icon name="hero-trash" class="w-4 h-4 mr-2" /> {gettext("Delete Categories")}
               </button>
             </div>
@@ -693,28 +701,44 @@ defmodule PhoenixKitEcommerce.Web.Categories do
        |> assign(:show_bulk_modal, nil)
        |> put_flash(
          :info,
-         gettext("%{count} categories updated to %{status}", count: count, status: status)
+         gettext("%{count} categories updated to %{status}",
+           count: count,
+           status: StatusLabels.category(status)
+         )
        )}
     else
       {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
     end
   end
 
-  defp gated_event("bulk_change_parent", %{"parent_uuid" => parent_uuid}, socket) do
-    if Scope.has_module_access?(socket.assigns.phoenix_kit_current_scope, "shop") do
-      uuids = socket.assigns.bulk_uuids
-      parent_uuid = if parent_uuid == "", do: nil, else: parent_uuid
-      count = Shop.bulk_update_category_parent(uuids, parent_uuid)
+  defp gated_event("bulk_change_parent", %{"parent_uuid" => raw_parent_uuid}, socket) do
+    case Helpers.cast_optional_uuid(raw_parent_uuid) do
+      {:ok, parent_uuid} ->
+        if Scope.has_module_access?(socket.assigns.phoenix_kit_current_scope, "shop") do
+          uuids = socket.assigns.bulk_uuids
+          count = Shop.bulk_update_category_parent(uuids, parent_uuid)
 
-      {:noreply,
-       socket
-       |> load_static_category_data()
-       |> load_filtered_categories()
-       |> assign(:bulk_uuids, [])
-       |> assign(:show_bulk_modal, nil)
-       |> put_flash(:info, gettext("%{count} categories updated", count: count))}
-    else
-      {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+          Activity.log("shop.categories_parent_changed",
+            actor_uuid: Activity.actor_uuid(socket),
+            actor_role: Activity.actor_role(socket),
+            resource_type: "category",
+            target_uuid: parent_uuid,
+            metadata: %{"count" => count}
+          )
+
+          {:noreply,
+           socket
+           |> load_static_category_data()
+           |> load_filtered_categories()
+           |> assign(:bulk_uuids, [])
+           |> assign(:show_bulk_modal, nil)
+           |> put_flash(:info, gettext("%{count} categories updated", count: count))}
+        else
+          {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+        end
+
+      :error ->
+        Helpers.ignore_event("bulk_change_parent", socket)
     end
   end
 

@@ -14,6 +14,7 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.StatusLabels
   import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
   @impl true
@@ -79,7 +80,7 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
                 _ -> "badge-ghost"
               end
             ]}>
-              {@import.status}
+              {StatusLabels.import(@import.status)}
             </span>
           </:actions>
         </.admin_page_header>
@@ -183,18 +184,18 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
                             <.link
                               navigate={Routes.path("/admin/shop/products/#{product.uuid}")}
                               class="btn btn-xs btn-outline btn-info tooltip tooltip-bottom"
-                              data-tip={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
+                              data-tip={gettext("View")}
                             >
                               <.icon name="hero-eye" class="w-4 h-4 hidden sm:inline" />
-                              <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "View")}</span>
+                              <span class="sm:hidden whitespace-nowrap">{gettext("View")}</span>
                             </.link>
                             <.link
-                              navigate={Helpers.admin_edit_path(:item, product.uuid, assigns[:url_path])}
+                              navigate={Helpers.admin_edit_path(:item, product, assigns[:url_path])}
                               class="btn btn-xs btn-outline btn-info tooltip tooltip-bottom"
-                              data-tip={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
+                              data-tip={gettext("Edit")}
                             >
                               <.icon name="hero-pencil" class="w-4 h-4 hidden sm:inline" />
-                              <span class="sm:hidden whitespace-nowrap">{Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}</span>
+                              <span class="sm:hidden whitespace-nowrap">{gettext("Edit")}</span>
                             </.link>
                           </div>
                         </td>

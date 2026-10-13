@@ -152,6 +152,17 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.FiltersTest do
       results = Query.list_items(metadata_filters: [%{key: "size", values: ["m"]}])
       assert Enum.map(results, & &1.name) |> Enum.sort() == ["Item A", "Item B"]
     end
+
+    test "a filter naming a set that no longer exists matches nothing, not everything" do
+      assert Query.list_items(metadata_filters: [%{key: "no-such-set", values: ["m"]}]) == []
+
+      assert Query.list_items(
+               metadata_filters: [
+                 %{key: "size", values: ["m"]},
+                 %{key: "no-such-set", values: ["m"]}
+               ]
+             ) == []
+    end
   end
 
   describe "ProductSource.Catalogue.aggregate_filter_values/1" do

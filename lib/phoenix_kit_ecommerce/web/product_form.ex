@@ -40,13 +40,14 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Components.TranslationTabs
+  alias PhoenixKitEcommerce.Web.Helpers
 
   import TranslationTabs
   import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, new_product_trail(socket)}
+    {:ok, socket |> new_product_trail() |> assign(:return_to, nil)}
   end
 
   @impl true
@@ -59,6 +60,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     if socket.assigns.live_action in [:new, :edit] and catalogue_source_active?() do
       {:noreply, redirect_to_catalogue(socket)}
     else
+      socket = assign(socket, :return_to, Helpers.safe_return_to(params["return_to"]))
       {:noreply, apply_action(socket, socket.assigns.live_action, params)}
     end
   end
@@ -112,7 +114,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
-    product = Shop.get_product!(id, preload: [:category])
+    product = id |> Shop.get_product!(preload: [:category]) |> Product.with_dimensions()
     changeset = Shop.change_product(product)
     categories = Shop.category_options()
     currency = Shop.get_base_currency()
@@ -621,6 +623,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     {:noreply, assign(socket, :show_media_selector, false)}
   end
 
+  @impl true
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
+
   defp apply_media_selection(socket, :gallery, file_uuids) do
     current = socket.assigns.all_image_uuids
     new_ids = Enum.reject(file_uuids, &(&1 in current))
@@ -806,11 +811,19 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
         changeset = Shop.change_product(product)
 
+        socket =
+          socket
+          |> assign(:product, product)
+          |> assign_form(changeset)
+          |> put_flash(:info, gettext("Product updated"))
+
+        # Opened from a storefront or list Edit link: send the operator
+        # back to the page they came from instead of leaving them on the form.
         {:noreply,
-         socket
-         |> assign(:product, product)
-         |> assign_form(changeset)
-         |> put_flash(:info, gettext("Product updated"))}
+         case socket.assigns.return_to do
+           nil -> socket
+           return_to -> push_navigate(socket, to: return_to)
+         end}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
@@ -834,6 +847,15 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     }
   end
 
+  # 0 is "unknown", shown as an empty input: the hint says to leave it empty.
+  defp blank_zero(value) when value in [nil, 0, "0", ""], do: ""
+  defp blank_zero(value), do: value
+
+  defp blank_weight_to_zero(%{"weight_grams" => weight} = params) when weight in ["", nil],
+    do: Map.put(params, "weight_grams", "0")
+
+  defp blank_weight_to_zero(params), do: params
+
   defp price_to_string(nil), do: nil
   defp price_to_string(%Decimal{} = price), do: Decimal.to_string(price)
   defp price_to_string(price), do: to_string(price)
@@ -849,7 +871,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
   def render(assigns) do
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
-        <.admin_page_header back={Routes.path("/admin/shop/products")}>
+        <.admin_page_header back={@return_to || Routes.path("/admin/shop/products")}>
           <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-base-content">{@heading}</h1>
           <p class="text-sm sm:text-base text-base-content/60 mt-0.5">
             {if @live_action == :new, do: gettext("Create a new product"), else: gettext("Edit product details")}
@@ -859,6 +881,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
         <%!-- Form --%>
         <.form
           for={@form}
+          id="product-form"
           phx-change="validate"
           phx-submit="save"
           class="space-y-6"
@@ -988,7 +1011,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                   <.input
                     field={@form[:price]}
                     type="number"
-                    label={gettext("Base Price") <> " *"}
+                    label={gettext("Base Price")}
                     step="0.01"
                     min="0"
                     required
@@ -1077,6 +1100,61 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
                     checked={@price_on_request}
                     label={gettext("Price on request (hide the amount)")}
                     wrapper_class="h-12 px-4 bg-base-200 rounded-lg mt-2"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <%!-- Card: Shipping parcel (weight and the size of one unit) --%>
+          <div class="card bg-base-100 shadow-xl" id="product-dimensions">
+            <div class="card-body">
+              <h2 class="card-title text-xl mb-2">{gettext("Shipping parcel")}</h2>
+              <p class="text-sm text-base-content/60 mb-4">
+                {gettext(
+                  "Weight and size of one unit. Carriers price the parcel by them; leave empty to use the category's or the shop's defaults."
+                )}
+              </p>
+
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-4">
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:weight_grams]}
+                    id="product-weight-grams"
+                    type="number"
+                    min="0"
+                    value={blank_zero(@form[:weight_grams].value)}
+                    label={gettext("Weight (g)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:length_mm]}
+                    id="product-length-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Length (mm)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:width_mm]}
+                    id="product-width-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Width (mm)")}
+                  />
+                </div>
+
+                <div class="fieldset w-full">
+                  <.input
+                    field={@form[:height_mm]}
+                    id="product-height-mm"
+                    type="number"
+                    min="0"
+                    label={gettext("Height (mm)")}
                   />
                 </div>
               </div>
@@ -1203,7 +1281,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
               %{
                 "key" => key,
-                "label" => (schema_opt && schema_opt["label"]) || slot_label || humanize_key(key),
+                "label" => (schema_opt && schema_opt["label"]) || slot_label || Options.humanize_key(key),
                 "type" => (schema_opt && schema_opt["type"]) || "select",
                 "options" => values,
                 "imported" => true
@@ -1761,7 +1839,7 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
                 <%= for {option_key, option_values} <- get_mappable_options(assigns) do %>
                   <div class="p-4 bg-base-200 rounded-lg mb-4">
-                    <h3 class="font-medium mb-3">{humanize_key(option_key)}</h3>
+                    <h3 class="font-medium mb-3">{Options.humanize_key(option_key)}</h3>
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                       <%= for value <- option_values do %>
                         <div class="flex flex-col gap-2">
@@ -1893,10 +1971,10 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
 
           <%!-- Submit --%>
           <div class="flex justify-end gap-4">
-            <.link navigate={Routes.path("/admin/shop/products")} class="btn btn-ghost">
+            <.link navigate={@return_to || Routes.path("/admin/shop/products")} class="btn btn-ghost">
               {gettext("Cancel")}
             </.link>
-            <button type="submit" class="btn btn-primary">
+            <button type="submit" phx-disable-with={gettext("Saving…")} class="btn btn-primary">
               <.icon name="hero-check" class="w-5 h-5 mr-2" />
               {if @live_action == :new, do: gettext("Create Product"), else: gettext("Update Product")}
             </button>
@@ -2586,14 +2664,6 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
     get_in(metadata, ["_image_mappings", option_key, value])
   end
 
-  # Humanize option key for display (color -> Color, frame_material -> Frame material)
-  defp humanize_key(key) do
-    key
-    |> String.replace("_", " ")
-    |> String.split(" ")
-    |> Enum.map_join(" ", &String.capitalize/1)
-  end
-
   # Numeric minimum over Decimals — `Enum.min/2` compares %Decimal{} structs
   # by Erlang term order, not value, and returns 10 for [10, 9.99].
   defp decimal_min([]), do: Decimal.new("0")
@@ -2608,6 +2678,9 @@ defmodule PhoenixKitEcommerce.Web.ProductForm do
           String.starts_with?(k, "_add_option_")
       end)
       |> Map.new()
+
+    # An empty weight is "unknown", which is what 0 has always meant here.
+    product_params = blank_weight_to_zero(product_params)
 
     # Merge metadata into product params
     metadata = product_params["metadata"] || %{}

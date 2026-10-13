@@ -64,6 +64,41 @@ defmodule Mix.Tasks.PhoenixKitEcommerce.BackfillTranslationFingerprintsTest do
       assert FP.get(reloaded.metadata, "de", "seo_title") == nil
     end
 
+    test "a whitespace-only source or translation is empty, not something to stamp" do
+      blank_source =
+        create_product(%{title: %{"en" => "Vase", "de" => "Vase"}})
+        |> Ecto.Changeset.change(%{description: %{"en" => " \t ", "de" => "Beschreibung"}})
+        |> repo().update!()
+
+      blank_translation =
+        create_product(%{title: %{"en" => "Bowl", "de" => "Schale"}})
+        |> Ecto.Changeset.change(%{description: %{"en" => "A bowl", "de" => "  "}})
+        |> repo().update!()
+
+      Backfill.backfill(repo(), "en", ["de"])
+
+      for product <- [blank_source, blank_translation] do
+        reloaded = repo().get(Product, product.uuid)
+        assert FP.get(reloaded.metadata, "de", "description") == nil
+        assert FP.get(reloaded.metadata, "de", "title")
+      end
+    end
+
+    test "a row whose only pairs are whitespace is not counted or touched" do
+      product =
+        create_product(%{title: %{"en" => "Jar"}})
+        |> Ecto.Changeset.change(%{description: %{"en" => "   ", "de" => "   "}})
+        |> repo().update!()
+
+      before = Backfill.backfill(repo(), "en", ["de"], dry_run: true)
+      Backfill.backfill(repo(), "en", ["de"])
+
+      assert {"phoenix_kit_shop_products", 0} =
+               List.keyfind(before, "phoenix_kit_shop_products", 0)
+
+      assert FP.get(repo().get(Product, product.uuid).metadata, "de", "description") == nil
+    end
+
     test "a field with a source but no translation is left alone (still :missing afterward)" do
       product = create_product(%{title: %{"en" => "Wooden Vase"}})
 

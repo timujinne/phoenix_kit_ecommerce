@@ -55,6 +55,9 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
       |> assign(:cost_per_item_errors, field_errors(form, :cost_per_item))
       |> assign(:currency_errors, field_errors(form, :currency))
       |> assign(:weight_grams_errors, field_errors(form, :weight_grams))
+      |> assign(:length_mm_errors, field_errors(form, :length_mm))
+      |> assign(:width_mm_errors, field_errors(form, :width_mm))
+      |> assign(:height_mm_errors, field_errors(form, :height_mm))
       |> assign(:taxable_errors, field_errors(form, :taxable))
       |> assign(:requires_shipping_errors, field_errors(form, :requires_shipping))
       |> assign(:made_to_order_errors, field_errors(form, :made_to_order))
@@ -167,6 +170,38 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
               label={gettext("Weight (grams)")}
               errors={@weight_grams_errors}
             />
+          </div>
+
+          <div id="ext-ecommerce-dimensions" class="w-full md:col-span-2">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-4">
+              <.input
+                id="ext-ecommerce-length-mm"
+                name="item[ecommerce][length_mm]"
+                value={Map.get(@ecommerce, "length_mm")}
+                type="number"
+                min="0"
+                label={gettext("Length (mm)")}
+                errors={@length_mm_errors}
+              />
+              <.input
+                id="ext-ecommerce-width-mm"
+                name="item[ecommerce][width_mm]"
+                value={Map.get(@ecommerce, "width_mm")}
+                type="number"
+                min="0"
+                label={gettext("Width (mm)")}
+                errors={@width_mm_errors}
+              />
+              <.input
+                id="ext-ecommerce-height-mm"
+                name="item[ecommerce][height_mm]"
+                value={Map.get(@ecommerce, "height_mm")}
+                type="number"
+                min="0"
+                label={gettext("Height (mm)")}
+                errors={@height_mm_errors}
+              />
+            </div>
           </div>
 
           <div class="w-full">
@@ -321,6 +356,10 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
       |> assign(:selected_option, selected_option(item_options, ecommerce))
       |> assign(:shop_status_errors, field_errors(form, :shop_status))
       |> assign(:featured_item_uuid_errors, field_errors(form, :featured_item_uuid))
+      |> assign(:parcel_length_mm_errors, field_errors(form, :parcel_length_mm))
+      |> assign(:parcel_width_mm_errors, field_errors(form, :parcel_width_mm))
+      |> assign(:parcel_height_mm_errors, field_errors(form, :parcel_height_mm))
+      |> assign(:parcel_weight_g_errors, field_errors(form, :parcel_weight_g))
 
     ~H"""
     <div id="ext-ecommerce-section" class="card bg-base-100 shadow-lg">
@@ -429,6 +468,53 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
                 )}
               </div>
             <% end %>
+          </div>
+
+          <div id="ext-ecommerce-parcel-defaults" class="w-full md:col-span-2">
+            <h3 class="font-semibold mb-1">{gettext("Default parcel")}</h3>
+            <p class="text-sm text-base-content/60 mb-3">
+              {gettext(
+                "Size and weight assumed for items of this category that have none of their own. Leave empty to use the shop's defaults."
+              )}
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-4">
+              <.input
+                id="ext-ecommerce-parcel-length-mm"
+                name="category[ecommerce][parcel_length_mm]"
+                value={Map.get(@ecommerce, "parcel_length_mm")}
+                type="number"
+                min="0"
+                label={gettext("Length (mm)")}
+                errors={@parcel_length_mm_errors}
+              />
+              <.input
+                id="ext-ecommerce-parcel-width-mm"
+                name="category[ecommerce][parcel_width_mm]"
+                value={Map.get(@ecommerce, "parcel_width_mm")}
+                type="number"
+                min="0"
+                label={gettext("Width (mm)")}
+                errors={@parcel_width_mm_errors}
+              />
+              <.input
+                id="ext-ecommerce-parcel-height-mm"
+                name="category[ecommerce][parcel_height_mm]"
+                value={Map.get(@ecommerce, "parcel_height_mm")}
+                type="number"
+                min="0"
+                label={gettext("Height (mm)")}
+                errors={@parcel_height_mm_errors}
+              />
+              <.input
+                id="ext-ecommerce-parcel-weight-g"
+                name="category[ecommerce][parcel_weight_g]"
+                value={Map.get(@ecommerce, "parcel_weight_g")}
+                type="number"
+                min="0"
+                label={gettext("Weight (g)")}
+                errors={@parcel_weight_g_errors}
+              />
+            </div>
           </div>
         </div>
       </div>

@@ -12,12 +12,13 @@ defmodule PhoenixKitEcommerce.Web.UserOrderDetails do
   """
   use PhoenixKitEcommerce.Web, :live_view
 
-  alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.PriceDisplay
+  alias PhoenixKitEcommerce.Web.Components.ShippingDisplay
   alias PhoenixKitEcommerce.Web.Helpers, as: ShopHelpers
+  alias PhoenixKitEcommerce.Web.StatusLabels
 
   import PhoenixKitEcommerce.Web.Helpers,
     only: [format_price: 2, profile_display_name: 1, profile_address: 1, profile_email: 1]
@@ -35,7 +36,7 @@ defmodule PhoenixKitEcommerce.Web.UserOrderDetails do
       {:ok,
        socket
        |> put_flash(:error, gettext("Billing module is not enabled"))
-       |> push_navigate(to: Routes.path("/dashboard"))}
+       |> push_navigate(to: ShopHelpers.page_path(socket.assigns, "/dashboard"))}
     end
   end
 
@@ -47,14 +48,14 @@ defmodule PhoenixKitEcommerce.Web.UserOrderDetails do
         {:ok,
          socket
          |> put_flash(:error, gettext("Order not found"))
-         |> push_navigate(to: Routes.path("/dashboard/orders"))}
+         |> push_navigate(to: ShopHelpers.page_path(socket.assigns, "/dashboard/orders"))}
 
       order ->
         if order.user_uuid != current_user.uuid do
           {:ok,
            socket
            |> put_flash(:error, gettext("Access denied"))
-           |> push_navigate(to: Routes.path("/dashboard/orders"))}
+           |> push_navigate(to: ShopHelpers.page_path(socket.assigns, "/dashboard/orders"))}
         else
           {:ok, setup_order_assigns(socket, order, current_user)}
         end
@@ -86,6 +87,10 @@ defmodule PhoenixKitEcommerce.Web.UserOrderDetails do
   def handle_params(_params, uri, socket) do
     {:noreply, assign(socket, :url_path, URI.parse(uri).path)}
   end
+
+  # This page takes no events; one pushed at it anyway is ignored.
+  @impl true
+  def handle_event(event, _params, socket), do: ShopHelpers.ignore_event(event, socket)
 
   # View helpers
 

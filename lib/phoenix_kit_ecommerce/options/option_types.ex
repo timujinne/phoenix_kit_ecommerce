@@ -199,7 +199,7 @@ defmodule PhoenixKitEcommerce.OptionTypes do
       {:ok, %{"key" => "color", "label" => "Color", "type" => "select", "options" => ["Red", "Blue"]}}
 
       iex> OptionTypes.validate_option(%{"key" => "test"})
-      {:error, "Missing required keys: label, type"}
+      {:error, {:option_missing_keys, ["label", "type"]}}
   """
   def validate_option(opt) when is_map(opt) do
     with :ok <- validate_required_keys(opt),
@@ -213,7 +213,7 @@ defmodule PhoenixKitEcommerce.OptionTypes do
     end
   end
 
-  def validate_option(_), do: {:error, "Option must be a map"}
+  def validate_option(_), do: {:error, :option_not_a_map}
 
   @doc """
   Validates a list of option definitions.
@@ -229,7 +229,7 @@ defmodule PhoenixKitEcommerce.OptionTypes do
     end
   end
 
-  def validate_options(_), do: {:error, "Options must be a list"}
+  def validate_options(_), do: {:error, :options_not_a_list}
 
   # Private functions
 
@@ -239,7 +239,7 @@ defmodule PhoenixKitEcommerce.OptionTypes do
 
     case missing do
       [] -> :ok
-      keys -> {:error, "Missing required keys: #{Enum.join(keys, ", ")}"}
+      keys -> {:error, {:option_missing_keys, keys}}
     end
   end
 
@@ -247,11 +247,11 @@ defmodule PhoenixKitEcommerce.OptionTypes do
     if String.match?(key, ~r/^[a-z][a-z0-9_]*$/) do
       :ok
     else
-      {:error, "Key must be lowercase alphanumeric with underscores, starting with a letter"}
+      {:error, :option_key_invalid}
     end
   end
 
-  defp validate_key_format(_), do: {:error, "Key must be a string"}
+  defp validate_key_format(_), do: {:error, :option_key_not_a_string}
 
   # Label can be a string or a localized map
   defp validate_label_format(%{"label" => label}) when is_binary(label), do: :ok
@@ -261,18 +261,18 @@ defmodule PhoenixKitEcommerce.OptionTypes do
     if Enum.all?(label, fn {k, v} -> is_binary(k) and is_binary(v) end) do
       :ok
     else
-      {:error, "Localized label must be a map of language code => string"}
+      {:error, :option_localized_label_invalid}
     end
   end
 
-  defp validate_label_format(_), do: {:error, "Label must be a string or localized map"}
+  defp validate_label_format(_), do: {:error, :option_label_invalid}
 
   # allow_multiple_slots is optional boolean
   defp validate_allow_multiple_slots(%{"allow_multiple_slots" => value}) when is_boolean(value),
     do: :ok
 
   defp validate_allow_multiple_slots(%{"allow_multiple_slots" => _}),
-    do: {:error, "allow_multiple_slots must be a boolean"}
+    do: {:error, :option_allow_multiple_slots_invalid}
 
   defp validate_allow_multiple_slots(_), do: :ok
 
@@ -280,7 +280,7 @@ defmodule PhoenixKitEcommerce.OptionTypes do
     if valid_type?(type) do
       :ok
     else
-      {:error, "Invalid type '#{type}'. Must be one of: #{Enum.join(@supported_types, ", ")}"}
+      {:error, {:option_type_invalid, type}}
     end
   end
 
@@ -288,10 +288,10 @@ defmodule PhoenixKitEcommerce.OptionTypes do
        when type in ["select", "multiselect"] do
     cond do
       not is_list(options) ->
-        {:error, "Options must be a list for #{type} type"}
+        {:error, {:option_values_not_a_list, type}}
 
       Enum.empty?(options) ->
-        {:error, "Options cannot be empty for #{type} type"}
+        {:error, {:option_values_empty, type}}
 
       Enum.all?(options, &is_binary/1) ->
         # Simple string format - valid
@@ -302,12 +302,12 @@ defmodule PhoenixKitEcommerce.OptionTypes do
         :ok
 
       true ->
-        {:error, "Options must be strings or maps with 'value' key"}
+        {:error, :option_values_invalid}
     end
   end
 
   defp validate_select_options(%{"type" => type}) when type in ["select", "multiselect"] do
-    {:error, "Options are required for #{type} type"}
+    {:error, {:option_values_required, type}}
   end
 
   defp validate_select_options(_), do: :ok
@@ -328,13 +328,13 @@ defmodule PhoenixKitEcommerce.OptionTypes do
     if modifier_type in @modifier_types do
       validate_price_modifiers_map(opt)
     else
-      {:error, "modifier_type must be one of: #{Enum.join(@modifier_types, ", ")}"}
+      {:error, :option_modifier_type_invalid}
     end
   end
 
   defp validate_price_modifiers(%{"type" => type, "affects_price" => true})
        when type not in ["select", "multiselect"] do
-    {:error, "Price modifiers are only supported for select and multiselect types"}
+    {:error, :option_price_modifiers_unsupported}
   end
 
   defp validate_price_modifiers(_), do: :ok
@@ -350,20 +350,20 @@ defmodule PhoenixKitEcommerce.OptionTypes do
 
         cond do
           missing != [] ->
-            {:error, "Missing price modifiers for options: #{Enum.join(missing, ", ")}"}
+            {:error, {:option_price_modifiers_missing, missing}}
 
           not valid_modifiers?(modifiers) ->
-            {:error, "Price modifiers must be valid decimal strings (e.g., \"5.00\")"}
+            {:error, :option_price_modifiers_invalid}
 
           true ->
             :ok
         end
 
       %{"price_modifiers" => _} ->
-        {:error, "Price modifiers must be a map"}
+        {:error, :option_price_modifiers_not_a_map}
 
       _ ->
-        {:error, "Price modifiers are required when affects_price is true"}
+        {:error, :option_price_modifiers_required}
     end
   end
 

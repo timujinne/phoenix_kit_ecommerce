@@ -15,6 +15,7 @@ defmodule PhoenixKitEcommerce.Import.OptionBuilder do
   alias PhoenixKitEcommerce.Import.Money
 
   @max_options 10
+  @placeholder_option_names ["Title", "Default Title"]
 
   @doc """
   Build options data from variant rows (legacy format).
@@ -68,6 +69,13 @@ defmodule PhoenixKitEcommerce.Import.OptionBuilder do
 
     # Build option2 values (typically Color - no price impact, just values)
     option2_values = get_unique_values(variants, :option2_value)
+
+    option1 =
+      if placeholder_option?(option1_name, option1_values),
+        do: {nil, [], %{}},
+        else: {option1_name, option1_values, option1_modifiers}
+
+    {option1_name, option1_values, option1_modifiers} = option1
 
     %{
       base_price: base_price,
@@ -144,10 +152,10 @@ defmodule PhoenixKitEcommerce.Import.OptionBuilder do
     options =
       for i <- 1..@max_options,
           name = get_option_name(first_row, i),
-          name != nil do
-        field = String.to_atom("option#{i}_value")
-        {values, modifiers} = build_option_data(variants, field, base_price)
-
+          name != nil,
+          field = String.to_atom("option#{i}_value"),
+          {values, modifiers} = build_option_data(variants, field, base_price),
+          not placeholder_option?(name, values) do
         # Only include modifiers if they have non-zero values
         has_price_impact = Enum.any?(modifiers, fn {_k, v} -> v != "0" end)
 
@@ -168,6 +176,14 @@ defmodule PhoenixKitEcommerce.Import.OptionBuilder do
       option_slots: option_slots
     }
   end
+
+  # Shopify exports a product WITHOUT variants as one option named "Title"
+  # with the single value "Default Title". It is not a choice: imported as
+  # an option it becomes a required one-value picker on the product page.
+  # `Shopify.VariantMapper` skips the same pair on the API path.
+  defp placeholder_option?(name, values),
+    do:
+      name in @placeholder_option_names and Enum.all?(values, &(&1 in @placeholder_option_names))
 
   # Extract all option values (Option1..Option10) from variant rows
   defp extract_all_variants(rows) do

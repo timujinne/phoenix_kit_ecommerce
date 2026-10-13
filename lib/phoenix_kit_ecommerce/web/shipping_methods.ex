@@ -8,6 +8,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
+  alias PhoenixKitEcommerce.Shipping
+  alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.Web.Authz
   import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
@@ -67,12 +69,20 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
           items={@methods}
           card_fields={fn method ->
             [
-              %{label: "Price", value: format_price(method.price, @currency)},
               %{
-                label: "Delivery",
+                label: gettext("Price"),
+                value:
+                  if(PhoenixKitEcommerce.ShippingMethod.pay_on_delivery?(method),
+                    do: gettext("Paid on delivery"),
+                    else: format_price(method.price, @currency)
+                  )
+              },
+              %{
+                label: gettext("Delivery"),
                 value:
                   PhoenixKitEcommerce.ShippingMethod.delivery_estimate(method) || "-"
-              }
+              },
+              %{label: gettext("Provider"), value: provider_label(method)}
             ]
           end}
         >
@@ -93,6 +103,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
               <.table_row_menu_divider />
               <.table_row_menu_button
                 phx-click="delete"
+                phx-disable-with={gettext("Deleting…")}
                 phx-value-uuid={method.uuid}
                 data-confirm={gettext("Delete this shipping method?")}
                 icon="hero-trash"
@@ -132,12 +143,24 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
                         {method.description}
                       </div>
                     <% end %>
+                    <span
+                      id={"shipping-method-provider-#{method.uuid}"}
+                      class="badge badge-outline badge-sm mt-1"
+                    >
+                      {provider_label(method)}
+                    </span>
                   </.table_default_cell>
                   <.table_default_cell>
-                    <div class="font-semibold">{format_price(method.price, @currency)}</div>
+                    <%= if PhoenixKitEcommerce.ShippingMethod.pay_on_delivery?(method) do %>
+                      <div class="font-semibold">{gettext("Paid on delivery")}</div>
+                    <% else %>
+                      <div class="font-semibold">{format_price(method.price, @currency)}</div>
+                    <% end %>
                     <%= if method.free_above_amount do %>
                       <div class="text-xs text-success">
-                        Free above {format_price(method.free_above_amount, @currency)}
+                        {gettext("Free above %{amount}",
+                          amount: format_price(method.free_above_amount, @currency)
+                        )}
                       </div>
                     <% end %>
                   </.table_default_cell>
@@ -185,6 +208,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
                         <.table_row_menu_divider />
                         <.table_row_menu_button
                           phx-click="delete"
+                          phx-disable-with={gettext("Deleting…")}
                           phx-value-uuid={method.uuid}
                           data-confirm={gettext("Delete this shipping method?")}
                           icon="hero-trash"
@@ -201,6 +225,17 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
         </.table_default>
       </div>
     """
+  end
+
+  # The provider the price comes from, as the form names it; the key of one
+  # the host no longer registers.
+  defp provider_label(method) do
+    %{provider: key} = ShippingMethod.shipping_config(method)
+
+    case Shipping.provider(key) do
+      {:ok, module} -> module.label()
+      :error -> key
+    end
   end
 
   defp format_weight(grams) when grams >= 1000, do: "#{Float.round(grams / 1000, 1)} kg"

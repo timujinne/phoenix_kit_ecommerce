@@ -4,6 +4,227 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.5.24 - 2026-10-13
+
+### Fixed
+
+- **Sweep tick crash on a lost prompt create.** The tick runs inside a
+  transaction; a failed insert in `PromptRollout` (a lost create race, a name
+  another prompt already holds) aborted it and the re-read raised
+  `in_failed_sql_transaction`. The insert now runs in a savepoint and the
+  rollout answers `{:error, :prompt_create_failed}` as intended.
+
+## 0.5.23 - 2026-10-13
+
+### Fixed
+
+- **My Orders filter and pagination.** The status filter and the page
+  buttons patched to the bare `/dashboard/orders`, so neither applied.
+  `Helpers.page_path/3` now takes a `query` and appends it encoded
+  (review of #89).
+
+## 0.5.22 - 2026-10-13
+
+### Added
+
+- **Share image on the storefront `og` map** (#85): the product and category
+  pages carry their image for link previews.
+- **My Cart in the avatar menu** (#88), through the `Tab` option
+  `user_menu: true`; a core without it ignores the key.
+- **Edit and save return to the page you came from** (#87): the legacy
+  product and category forms honour a local `return_to`.
+
+### Changed
+
+- **Guest checkout reuses an unconfirmed account only when guest checkout
+  created it** (#84). Reuse needs the guest stamp AND an order the guest path
+  itself marked for that email (`metadata["guest_checkout"]`,
+  `guest_checkout_email`). ⚠️ A guest account created before this release
+  carries neither mark on its orders, so that customer's next guest checkout
+  with the same email is answered "already registered" and they sign in or
+  reset their password instead. There is no automatic backfill: the stamps
+  cannot be derived safely from old data, which an account holder can write.
+- **The admin Edit link picks its editor by the record's own `origin`**
+  (#86), not the global product source; a catalogue record also needs the
+  `"catalogue"` permission. Under the catalogue source the legacy forms still
+  redirect to the catalogue, so a legacy-origin link is meaningful only in a
+  transitional mixed store.
+- **Storefront links carry no locale segment on a single-language site**
+  (#89); a product or category page stays in its own language instead of
+  redirecting into the slug's.
+- **Quality sweep** (#84): public LiveViews ignore unknown or malformed
+  events; statuses render through translated labels; Shopify shop domains
+  must be `*.myshopify.com` and the Admin API follows no redirect; cart
+  quantity is bounded; global options are edited under a lock; bulk and
+  translation mutations are logged; admin and storefront literals translated.
+
+### Fixed
+
+- **Bulk actions on the products and categories pages take only valid
+  uuids.** A hand-made selection or target (`junk`, a non-list) used to
+  reach a query and raise; it is now cast by `Web.Helpers.cast_uuids/1` /
+  `cast_optional_uuid/1`, which the translations page shares.
+- **Editing a global option no longer renames it.** The key input is
+  disabled while editing, so the browser sent no key and one was derived from
+  the label, possibly onto another option's key.
+- **Base-currency re-pricing no longer erases concurrent option edits.** It
+  runs under the global options lock (`Options.transform_global_options/1`).
+- **The product page keeps the visitor's picked image** across product,
+  inventory and currency broadcasts.
+- **A second concurrent "Confirm Order"** goes to the placed order instead of
+  showing "Failed to create order".
+- **The Shopify storefront fallback** follows at most 3 redirects, each over
+  https on the default port and, off the shop's own host, to public addresses
+  only (the connection is pinned to the address that was checked), and
+  reports an unexpected response by shape, not content.
+- **Editing a category option no longer renames it**, and the category's
+  option edits (save, delete, reorder, base-currency re-pricing) apply to the
+  list as stored under a row lock instead of the form's copy, so concurrent
+  edits are no longer erased.
+- **The image-migration progress on the Imports page** refreshes its stats at
+  most once a second instead of four queries per product.
+- **A failed `shop_product_source` read** is not retried or logged on every
+  call for one memo interval.
+- The product page's "Yes"/"No" specification values and the product form's
+  "Base Price" label are translated and no longer double-marked.
+
+## 0.5.21 - 2026-10-12
+
+### Added
+
+- **Carrier-agnostic shipping providers and calculated rates** (#83). A
+  `Shipping.Provider` behaviour that carriers implement (services,
+  locality search, pickup points, quote, destination check), a facade that
+  runs a provider in an isolated, timed worker with telemetry, an ETS cache
+  (`Shipping.Cache`, started through `children/0`) and per-provider rate
+  limiting of the lookups a shopper's typing causes, and two built-in
+  providers: `fixed` (the method's own price, the default) and `table`
+  (weight bands). A host registers more with
+  `config :phoenix_kit_ecommerce, :shipping_providers, [MyCarrier]`; a
+  provider that needs credentials declares `integration/0` and its
+  connection is offered on the Integrations page.
+- **Shipping method cost calculation** (#83). The shipping method form has a
+  provider, service, provider settings (with locality search), markup
+  (percent and fixed) and optional rounding step; the methods list shows each
+  method's provider.
+- **Parcel dimensions** (#83). Products and catalogue items take length,
+  width and height in mm, categories and the shop a default box and weight
+  (settings page). Each cart line freezes its shipping profile, so a cart is
+  packed from its own snapshots.
+- **Destination and quote on the cart, checkout gated on both** (#83). The
+  cart keeps where the parcel goes and the provider's quote for exactly that
+  request; totals use the stored quote without calling the network, and
+  checkout is refused (`:shipping_quote_required`) while a calculated method
+  has no current quote. A transient provider failure falls back to the
+  method's price; a business refusal (too heavy, no service) makes the method
+  unavailable. The order keeps the provider, destination, quote and parcels.
+- **Destination picker** (#83). City search, pickup points with a filter, a
+  manual point code or an address, on the cart page and the checkout
+  shipping step, with automatic bounded re-quoting and the quote's price or
+  estimate, ETA, COD fee and fallback note; the destination and ETA show on
+  the confirmation and order pages. Translated for de, et, fr, ru and uk.
+
+### Fixed
+
+- **Shipping providers, review of #83.** A provider refusal that carries
+  details (`{:service_unavailable, "text"}`) no longer crashes the cart and
+  checkout pages. Provider crash and bad-return diagnostics no longer carry
+  the provider's credentials: a malformed return is described by its shape
+  only, exception text has every credential value (and its inspect-escaped
+  form) redacted, and the log line is redacted the same way; all of it is
+  bounded. A stored quote now records the provider that answered and is
+  stale for any other, so a method switched to another provider, or an answer
+  that was in flight at the switch, can no longer charge or record the old
+  provider's price (quotes stored before this change are re-asked). A cached
+  quote is not served past the carrier's own `expires_at`. Provider lists of
+  anything but `Service`/`Locality`/`PickupPoint` structs are a bad return
+  instead of being cached. Setting a destination, picking a point and
+  re-quoting are throttled per picker, and the manual/address events are
+  ignored without a matching service instead of crashing the page. A marked-up
+  quote in the base currency is rounded once, to the base currency's decimal
+  places (JPY shows whole yen). The admin locality pick is by id, not list
+  position. A malformed `:shipping_provider_timeout` falls back to the
+  default.
+
+## 0.5.20 - 2026-10-11
+
+### Added
+
+- **Storefront category and facet cache** (#79). `/shop` and the category
+  page share the category list and the filter facets for about a minute
+  (`StorefrontCache`, started through `children/0`), and the category-image
+  query no longer ships every item's `data`. This package's own product,
+  category, filter and Shopify-sync writes clear the cache; edits made in
+  `phoenix_kit_catalogue` show within the TTL.
+- **Stock tracking switch** (#81). A settings card for
+  `shop_stock_tracking_enabled`, effective only while the optional
+  `phoenix_kit_warehouse` (`~> 0.5`) is installed and enabled.
+- **Checkout starts on the shop's own country** (#76). A new cart with no
+  shipping country no longer opens on `EE`: the country comes from the
+  company country, `shop_default_tax_country`, the one country every
+  active shipping method shares, or the first priority country. `EE`
+  remains the last resort.
+- **Checkout uses billing's profile form and can save the profile** (#77).
+  The billing step renders billing's shared fields (type switch, middle
+  name, second address line, state, company details) with live
+  validation. A logged-in shopper typing new details can tick "Save as a
+  billing profile"; `convert_cart_to_order/2` takes
+  `save_billing_profile: true` and creates the profile in the conversion
+  transaction. Ukrainian translations for the new strings.
+
+### Changed
+
+- **Shopify sync is off by default and fails closed** (#80). **Upgrade
+  note:** run `mix phoenix_kit.update`. The chain's new V3 step writes
+  `shop_shopify_enabled = "true"` for an install that already uses Shopify
+  and has no such row; a host that skips the update loses the Shopify tab
+  and provider until the toggle is switched on.
+
+### Fixed
+
+- **The `phoenix_kit_billing` floor is now `~> 0.20`.** Checkout's billing
+  form needs `BillingProfileFields` and `BillingProfile.fields_changeset/3`,
+  which 0.20 is the first release to ship; against 0.13-0.19 the checkout
+  page failed at runtime. A floor test pins them.
+- **Hidden billing fields no longer block checkout after a type switch.**
+  An invalid company VAT number or overlong individual name was still
+  validated after its field disappeared. Checkout validates only the
+  selected type while preserving the other type's draft values.
+- **Unavailable checkout shipping can be replaced in checkout.** When
+  shipping selection is configured for checkout, an unavailable method on
+  mount or a missing/disabled selection at confirmation returns to its
+  picker instead of sending the shopper to a cart with no shipping controls.
+- **The transitional shop namespace exports the new APIs.**
+  `PhoenixKit.Modules.Shop` now delegates `default_checkout_country/0`,
+  `children/0`, `stock_tracking_enabled?/0` and `warehouse_status/0`.
+
+## 0.5.19 - 2026-10-10
+
+### Added
+
+- **Ukrainian (`uk`) translations** (#74). A full `priv/gettext/uk`
+  catalogue with the three Ukrainian plural forms; every plural form
+  carries `%{count}`, which a test pins.
+- **Pay-on-delivery shipping methods** (#75). A shipping method can be
+  marked as paid to the carrier at their own rates on delivery
+  (`metadata["pay_on_delivery"]`, no migration). The shop charges nothing
+  for it, so its price is forced to 0 and its free-shipping threshold is
+  cleared. The storefront says "Paid on delivery" and notes that shipping
+  is not in the total, instead of "FREE", on the cart, checkout, order
+  confirmation and order details pages. Orders record the flag on the
+  shipping line and as `metadata["shipping_pay_on_delivery"]`.
+  Auto-selection no longer treats such a method's 0 as the cheapest.
+  A cart that picked a method before it was flagged is re-priced on the
+  cart and checkout pages (`refresh_pay_on_delivery_shipping/1`).
+
+### Fixed
+
+- **The `uk` catalogue was missing the five pay-on-delivery strings.**
+  #75 added them for de/et/fr/ru before `uk` existed on its base, so
+  Ukrainian shoppers saw English for them. They are translated, and a
+  test now checks that every translated catalogue carries every msgid in
+  `default.pot`.
+
 ## 0.5.18 - 2026-10-05
 
 ### Fixed
@@ -1161,7 +1382,7 @@ resolve this release.
   do both, which is why the local copy existed. Stored slugs are not rewritten;
   only newly generated ones change.
 
-## Unreleased
+## 0.5.20 - 2026-10-11
 
 ### Added
 - **Cart-activity notifications for shop operators.** Three individually

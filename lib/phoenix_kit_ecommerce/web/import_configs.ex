@@ -167,15 +167,15 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
         <.admin_page_header
           back={Routes.path("/admin/shop/settings")}
-          title="Import Configurations"
-          subtitle="Configure keyword filters and category rules for CSV product imports"
+          title={gettext("Import Configurations")}
+          subtitle={gettext("Configure keyword filters and category rules for CSV product imports")}
         />
 
         <%!-- Controls Bar --%>
         <div class="bg-base-200 rounded-lg p-6 mb-6">
           <div class="flex flex-col lg:flex-row gap-4 justify-end">
             <button type="button" phx-click="show_add_modal" class="btn btn-primary">
-              <.icon name="hero-plus" class="w-4 h-4 mr-2" /> Add Config
+              <.icon name="hero-plus" class="w-4 h-4 mr-2" /> {gettext("Add Config")}
             </button>
           </div>
         </div>
@@ -184,10 +184,9 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
         <div class="alert alert-info mb-6">
           <.icon name="hero-information-circle" class="w-6 h-6" />
           <div>
-            <p class="font-medium">Import filter configurations</p>
+            <p class="font-medium">{gettext("Import filter configurations")}</p>
             <p class="text-sm">
-              Each config defines keyword filters and category rules for CSV imports.
-              The default config is used when no specific config is selected during import.
+              {gettext("Each config defines keyword filters and category rules for CSV imports. The default config is used when no specific config is selected during import.")}
             </p>
           </div>
         </div>
@@ -202,11 +201,14 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
           card_fields={fn config ->
             [
               %{
-                label: "Keywords",
+                label: gettext("Keywords"),
                 value:
                   "+#{length(config.include_keywords)} / -#{length(config.exclude_keywords)}"
               },
-              %{label: "Category Rules", value: "#{length(config.category_rules)} rules"}
+              %{
+                label: gettext("Category Rules"),
+                value: rules_count(config.category_rules)
+              }
             ]
           end}
         >
@@ -214,18 +216,18 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-bold">{config.name}</span>
               <%= if config.is_default do %>
-                <span class="badge badge-primary badge-sm">Default</span>
+                <span class="badge badge-primary badge-sm">{gettext("Default")}</span>
               <% end %>
               <%= if config.active do %>
-                <span class="badge badge-success badge-sm">Active</span>
+                <span class="badge badge-success badge-sm">{gettext("Active")}</span>
               <% else %>
-                <span class="badge badge-neutral badge-sm">Inactive</span>
+                <span class="badge badge-neutral badge-sm">{gettext("Inactive")}</span>
               <% end %>
               <%= if config.skip_filter do %>
-                <span class="badge badge-warning badge-sm">Skip Filter</span>
+                <span class="badge badge-warning badge-sm">{gettext("Skip Filter")}</span>
               <% end %>
               <%= if config.download_images do %>
-                <span class="badge badge-info badge-sm">Download Images</span>
+                <span class="badge badge-info badge-sm">{gettext("Download Images")}</span>
               <% end %>
             </div>
           </:card_header>
@@ -235,30 +237,33 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
               <%= unless config.is_default do %>
                 <.table_row_menu_button
                   phx-click="set_default"
+                  phx-disable-with={gettext("Working…")}
                   phx-value-uuid={config.uuid}
                   icon="hero-star"
-                  label="Set Default"
+                  label={gettext("Set Default")}
                 />
               <% end %>
               <.table_row_menu_button
                 phx-click="toggle_active"
+                phx-disable-with={gettext("Working…")}
                 phx-value-uuid={config.uuid}
                 icon={if config.active, do: "hero-eye-slash", else: "hero-eye"}
-                label={if config.active, do: "Deactivate", else: "Activate"}
+                label={if config.active, do: gettext("Deactivate"), else: gettext("Activate")}
               />
               <.table_row_menu_button
                 phx-click="show_edit_modal"
                 phx-value-uuid={config.uuid}
                 icon="hero-pencil"
-                label="Edit"
+                label={gettext("Edit")}
               />
               <.table_row_menu_divider />
               <.table_row_menu_button
                 phx-click="delete_config"
+                phx-disable-with={gettext("Deleting…")}
                 phx-value-uuid={config.uuid}
-                data-confirm="Delete this configuration?"
+                data-confirm={gettext("Delete this configuration?")}
                 icon="hero-trash"
-                label="Delete"
+                label={gettext("Delete")}
                 variant="error"
               />
             </.table_row_menu>
@@ -266,11 +271,11 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
 
           <.table_default_header>
             <.table_default_row>
-              <.table_default_header_cell>Name</.table_default_header_cell>
-              <.table_default_header_cell>Keywords</.table_default_header_cell>
-              <.table_default_header_cell>Categories</.table_default_header_cell>
-              <.table_default_header_cell>Status</.table_default_header_cell>
-              <.table_default_header_cell class="text-right">Actions</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Name")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Keywords")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Categories")}</.table_default_header_cell>
+              <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
+              <.table_default_header_cell class="text-right">{gettext("Actions")}</.table_default_header_cell>
             </.table_default_row>
           </.table_default_header>
 
@@ -279,8 +284,8 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
               <.table_default_row>
                 <.table_default_cell colspan={5} class="text-center py-12 text-base-content/60">
                   <.icon name="hero-funnel" class="w-16 h-16 mx-auto mb-4 opacity-30" />
-                  <p class="text-lg">No configurations defined yet</p>
-                  <p class="text-sm">Add your first import configuration to get started</p>
+                  <p class="text-lg">{gettext("No configurations defined yet")}</p>
+                  <p class="text-sm">{gettext("Add your first import configuration to get started")}</p>
                 </.table_default_cell>
               </.table_default_row>
             <% else %>
@@ -290,13 +295,13 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                     <div class="flex items-center gap-2 flex-wrap">
                       <span class="font-medium">{config.name}</span>
                       <%= if config.is_default do %>
-                        <span class="badge badge-primary badge-sm">Default</span>
+                        <span class="badge badge-primary badge-sm">{gettext("Default")}</span>
                       <% end %>
                       <%= if config.skip_filter do %>
-                        <span class="badge badge-warning badge-sm">Skip Filter</span>
+                        <span class="badge badge-warning badge-sm">{gettext("Skip Filter")}</span>
                       <% end %>
                       <%= if config.download_images do %>
-                        <span class="badge badge-info badge-sm">Download Images</span>
+                        <span class="badge badge-info badge-sm">{gettext("Download Images")}</span>
                       <% end %>
                     </div>
                   </.table_default_cell>
@@ -304,11 +309,11 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                     <div class="text-sm text-base-content/60 flex flex-wrap gap-3">
                       <span>
                         <.icon name="hero-plus-circle" class="w-3 h-3 inline" />
-                        {length(config.include_keywords)} include
+                        {gettext("%{count} include", count: length(config.include_keywords))}
                       </span>
                       <span>
                         <.icon name="hero-minus-circle" class="w-3 h-3 inline" />
-                        {length(config.exclude_keywords)} exclude
+                        {gettext("%{count} exclude", count: length(config.exclude_keywords))}
                       </span>
                     </div>
                   </.table_default_cell>
@@ -316,7 +321,7 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                     <div class="text-sm text-base-content/60">
                       <span>
                         <.icon name="hero-tag" class="w-3 h-3 inline" />
-                        {length(config.category_rules)} rules
+                        {rules_count(config.category_rules)}
                       </span>
                       <%= if config.default_category_slug && config.default_category_slug != "" do %>
                         <div class="mt-0.5">
@@ -328,9 +333,9 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                   </.table_default_cell>
                   <.table_default_cell>
                     <%= if config.active do %>
-                      <span class="badge badge-success badge-sm">Active</span>
+                      <span class="badge badge-success badge-sm">{gettext("Active")}</span>
                     <% else %>
-                      <span class="badge badge-neutral badge-sm">Inactive</span>
+                      <span class="badge badge-neutral badge-sm">{gettext("Inactive")}</span>
                     <% end %>
                   </.table_default_cell>
                   <.table_default_cell>
@@ -339,30 +344,33 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                         <%= unless config.is_default do %>
                           <.table_row_menu_button
                             phx-click="set_default"
+                            phx-disable-with={gettext("Working…")}
                             phx-value-uuid={config.uuid}
                             icon="hero-star"
-                            label="Set Default"
+                            label={gettext("Set Default")}
                           />
                         <% end %>
                         <.table_row_menu_button
                           phx-click="toggle_active"
+                          phx-disable-with={gettext("Working…")}
                           phx-value-uuid={config.uuid}
                           icon={if config.active, do: "hero-eye-slash", else: "hero-eye"}
-                          label={if config.active, do: "Deactivate", else: "Activate"}
+                          label={if config.active, do: gettext("Deactivate"), else: gettext("Activate")}
                         />
                         <.table_row_menu_button
                           phx-click="show_edit_modal"
                           phx-value-uuid={config.uuid}
                           icon="hero-pencil"
-                          label="Edit"
+                          label={gettext("Edit")}
                         />
                         <.table_row_menu_divider />
                         <.table_row_menu_button
                           phx-click="delete_config"
+                          phx-disable-with={gettext("Deleting…")}
                           phx-value-uuid={config.uuid}
-                          data-confirm="Delete this configuration?"
+                          data-confirm={gettext("Delete this configuration?")}
                           icon="hero-trash"
-                          label="Delete"
+                          label={gettext("Delete")}
                           variant="error"
                         />
                       </.table_row_menu>
@@ -380,7 +388,7 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
         <div class="modal modal-open">
           <div class="modal-box max-w-2xl">
             <h3 class="font-bold text-lg mb-4">
-              {if @editing_config, do: "Edit Configuration", else: "Add Configuration"}
+              {if @editing_config, do: gettext("Edit Configuration"), else: gettext("Add Configuration")}
             </h3>
 
             <.form
@@ -391,13 +399,13 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
             >
               <%!-- Name --%>
               <div class="fieldset">
-                <label class="label"><span class="fieldset-legend">Name *</span></label>
+                <label class="label"><span class="fieldset-legend">{gettext("Name")} *</span></label>
                 <input
                   type="text"
                   name="config[name]"
                   value={@form_data.name}
                   class="input"
-                  placeholder="e.g., decor_3d_default"
+                  placeholder={gettext("e.g., decor_3d_default")}
                   required
                 />
               </div>
@@ -414,7 +422,7 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                       checked={@form_data.active}
                       class="checkbox checkbox-primary"
                     />
-                    <span class="fieldset-legend">Active</span>
+                    <span class="fieldset-legend">{gettext("Active")}</span>
                   </label>
                 </div>
                 <div class="fieldset">
@@ -427,7 +435,7 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                       checked={@form_data.is_default}
                       class="checkbox checkbox-primary"
                     />
-                    <span class="fieldset-legend">Default</span>
+                    <span class="fieldset-legend">{gettext("Default")}</span>
                   </label>
                 </div>
               </div>
@@ -442,9 +450,9 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                     phx-click="toggle_skip_filter"
                   />
                   <div>
-                    <span class="fieldset-legend font-medium">Skip Filter</span>
+                    <span class="fieldset-legend font-medium">{gettext("Skip Filter")}</span>
                     <p class="text-xs text-base-content/60">
-                      All products will be imported without keyword filtering
+                      {gettext("All products will be imported without keyword filtering")}
                     </p>
                   </div>
                 </label>
@@ -457,27 +465,27 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
 
               <%!-- Filter Keywords (hidden when skip_filter is on) --%>
               <%= unless @form_data.skip_filter do %>
-                <div class="divider text-sm text-base-content/50">Keyword Filters</div>
+                <div class="divider text-sm text-base-content/50">{gettext("Keyword Filters")}</div>
 
                 <%!-- Include Keywords --%>
                 <div class="fieldset">
                   <label class="label">
                     <span class="fieldset-legend">
                       <.icon name="hero-plus-circle" class="w-4 h-4 inline text-success" />
-                      Include Keywords
+                      {gettext("Include Keywords")}
                     </span>
                   </label>
                   <textarea
                     name="config[include_keywords_text]"
                     class="textarea h-20"
-                    placeholder="shelf, mask, vase, planter, holder, stand, lamp"
+                    placeholder={gettext("shelf, mask, vase, planter, holder, stand, lamp")}
                   >{@form_data.include_keywords_text}</textarea>
                   <label class="label">
                     <span class="fieldset-label text-base-content/60">
-                      Comma-separated. Product must match at least one keyword.
+                      {gettext("Comma-separated. Product must match at least one keyword.")}
                     </span>
                     <span class="fieldset-label badge badge-sm badge-ghost">
-                      {length(parse_comma_list(@form_data.include_keywords_text))} keywords
+                      {keywords_count(@form_data.include_keywords_text)}
                     </span>
                   </label>
                 </div>
@@ -487,20 +495,20 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                   <label class="label">
                     <span class="fieldset-legend">
                       <.icon name="hero-minus-circle" class="w-4 h-4 inline text-error" />
-                      Exclude Keywords
+                      {gettext("Exclude Keywords")}
                     </span>
                   </label>
                   <textarea
                     name="config[exclude_keywords_text]"
                     class="textarea h-20"
-                    placeholder="decal, sticker, mural, wallpaper, poster"
+                    placeholder={gettext("decal, sticker, mural, wallpaper, poster")}
                   >{@form_data.exclude_keywords_text}</textarea>
                   <label class="label">
                     <span class="fieldset-label text-base-content/60">
-                      Comma-separated. Products matching these are excluded.
+                      {gettext("Comma-separated. Products matching these are excluded.")}
                     </span>
                     <span class="fieldset-label badge badge-sm badge-ghost">
-                      {length(parse_comma_list(@form_data.exclude_keywords_text))} keywords
+                      {keywords_count(@form_data.exclude_keywords_text)}
                     </span>
                   </label>
                 </div>
@@ -509,24 +517,24 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                 <div class="fieldset">
                   <label class="label">
                     <span class="fieldset-legend">
-                      <.icon name="hero-x-circle" class="w-4 h-4 inline text-error" /> Exclude Phrases
+                      <.icon name="hero-x-circle" class="w-4 h-4 inline text-error" /> {gettext("Exclude Phrases")}
                     </span>
                   </label>
                   <textarea
                     name="config[exclude_phrases_text]"
                     class="textarea h-16"
-                    placeholder="wall art, home decor stickers"
+                    placeholder={gettext("wall art, home decor stickers")}
                   >{@form_data.exclude_phrases_text}</textarea>
                   <label class="label">
                     <span class="fieldset-label text-base-content/60">
-                      Comma-separated phrases. Exact phrase match causes exclusion.
+                      {gettext("Comma-separated phrases. Exact phrase match causes exclusion.")}
                     </span>
                   </label>
                 </div>
               <% end %>
 
               <%!-- Category Rules --%>
-              <div class="divider text-sm text-base-content/50">Category Rules</div>
+              <div class="divider text-sm text-base-content/50">{gettext("Category Rules")}</div>
 
               <div class="space-y-3">
                 <%= for {rule, idx} <- Enum.with_index(@form_data.category_rules) do %>
@@ -542,7 +550,7 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                           )
                         }
                         class="input input-sm w-full"
-                        placeholder="Keywords (comma-separated)"
+                        placeholder={gettext("Keywords (comma-separated)")}
                         phx-blur="update_category_rule"
                         phx-value-index={idx}
                         name="keywords"
@@ -553,7 +561,7 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                         type="text"
                         value={Map.get(rule, "slug", "")}
                         class="input input-sm w-full"
-                        placeholder="Category slug"
+                        placeholder={gettext("Category slug")}
                         phx-blur="update_category_rule"
                         phx-value-index={idx}
                         name="slug"
@@ -571,25 +579,25 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                 <% end %>
 
                 <button type="button" phx-click="add_category_rule" class="btn btn-ghost btn-sm">
-                  <.icon name="hero-plus" class="w-4 h-4 mr-1" /> Add Category Rule
+                  <.icon name="hero-plus" class="w-4 h-4 mr-1" /> {gettext("Add Category Rule")}
                 </button>
               </div>
 
               <%!-- Default Category Slug --%>
               <div class="fieldset">
                 <label class="label">
-                  <span class="fieldset-legend">Default Category Slug</span>
+                  <span class="fieldset-legend">{gettext("Default Category Slug")}</span>
                 </label>
                 <input
                   type="text"
                   name="config[default_category_slug]"
                   value={@form_data.default_category_slug}
                   class="input input-sm"
-                  placeholder="e.g., other-3d"
+                  placeholder={gettext("e.g., other-3d")}
                 />
                 <label class="label">
                   <span class="fieldset-label text-base-content/60">
-                    Used when no category rule matches
+                    {gettext("Used when no category rule matches")}
                   </span>
                 </label>
               </div>
@@ -606,9 +614,9 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
                     class="checkbox checkbox-primary"
                   />
                   <div>
-                    <span class="fieldset-legend">Download Images</span>
+                    <span class="fieldset-legend">{gettext("Download Images")}</span>
                     <p class="text-xs text-base-content/60">
-                      Download images from CDN URLs during import
+                      {gettext("Download images from CDN URLs during import")}
                     </p>
                   </div>
                 </label>
@@ -617,10 +625,10 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
               <%!-- Actions --%>
               <div class="modal-action">
                 <button type="button" phx-click="close_modal" class="btn btn-ghost">
-                  Cancel
+                  {gettext("Cancel")}
                 </button>
-                <button type="submit" class="btn btn-primary">
-                  {if @editing_config, do: "Update", else: "Create"}
+                <button type="submit" phx-disable-with={gettext("Saving…")} class="btn btn-primary">
+                  {if @editing_config, do: gettext("Update"), else: gettext("Create")}
                 </button>
               </div>
             </.form>
@@ -737,6 +745,16 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
     end)
   end
 
+  defp rules_count(rules) do
+    count = length(rules)
+    ngettext("%{count} rule", "%{count} rules", count)
+  end
+
+  defp keywords_count(text) do
+    count = length(parse_comma_list(text))
+    ngettext("%{count} keyword", "%{count} keywords", count)
+  end
+
   defp gated_event("save_config", %{"config" => params}, socket) do
     form_data = params_to_form_data(params, socket.assigns.form_data.category_rules)
     attrs = build_attrs(form_data)
@@ -766,11 +784,14 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
          |> assign(:show_modal, false)
          |> assign(:editing_config, nil)
          |> assign(:form_data, initial_form_data())
-         |> put_flash(:info, if(editing, do: "Config updated", else: "Config created"))}
+         |> put_flash(
+           :info,
+           if(editing, do: gettext("Config updated"), else: gettext("Config created"))
+         )}
 
       {:error, changeset} ->
         message = format_changeset_errors(changeset)
-        {:noreply, put_flash(socket, :error, "Error: #{message}")}
+        {:noreply, put_flash(socket, :error, gettext("Error: %{message}", message: message))}
     end
   end
 
@@ -791,10 +812,10 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
           {:noreply,
            socket
            |> assign(:configs, Shop.list_import_configs(active_only: false))
-           |> put_flash(:info, "Config deleted")}
+           |> put_flash(:info, gettext("Config deleted"))}
 
         {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Failed to delete config")}
+          {:noreply, put_flash(socket, :error, gettext("Failed to delete config"))}
       end
     else
       {:noreply, socket}
@@ -820,11 +841,14 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
            |> assign(:configs, Shop.list_import_configs(active_only: false))
            |> put_flash(
              :info,
-             "Config #{if config.active, do: "deactivated", else: "activated"}"
+             if(config.active,
+               do: gettext("Config deactivated"),
+               else: gettext("Config activated")
+             )
            )}
 
         {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Failed to update config")}
+          {:noreply, put_flash(socket, :error, gettext("Failed to update config"))}
       end
     else
       {:noreply, socket}
@@ -848,10 +872,10 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
           {:noreply,
            socket
            |> assign(:configs, Shop.list_import_configs(active_only: false))
-           |> put_flash(:info, "\"#{config.name}\" set as default")}
+           |> put_flash(:info, gettext("\"%{name}\" set as default", name: config.name))}
 
         {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Failed to set default")}
+          {:noreply, put_flash(socket, :error, gettext("Failed to set default"))}
       end
     else
       {:noreply, socket}

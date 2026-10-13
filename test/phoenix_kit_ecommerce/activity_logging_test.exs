@@ -10,19 +10,10 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
   surrounding CRUD test still passes because logging is best-effort
   (rescued) at the LV layer.
 
-  ## Two layers of coverage
-
-  1. **Live wiring** drives the list/form LiveViews with
-     `render_click` / `render_submit` so the real `Activity.log` call
-     sites fire with `actor_uuid` threaded from the test scope. This
-     proves the wrapper + scope extraction works end-to-end.
-
-  2. **Action-string pins** call the context function then `Activity.log`
-     with exactly the opts the LV passes — mirroring billing's pattern
-     for mutations only reachable through detail/form panels with
-     complex multilang/media inputs that `render_click` can't easily
-     reach (product + category create/update). Each pins `actor_uuid`
-     so a test can't pass if the actor is dropped.
+  Every test drives the LiveView that owns the mutation — the real form
+  submit or the real event — so the row is written by the production
+  `Activity.log` call with `actor_uuid` threaded from the test scope. A test
+  that logs the row itself would stay green with the call site removed.
   """
 
   use PhoenixKitEcommerce.LiveCase, async: false
@@ -37,7 +28,7 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
     {:ok, conn: conn, actor_uuid: actor_uuid}
   end
 
-  # ── Products (live wiring for delete; pins for create/update) ────────
+  # ── Products ─────────────────────────────────────────────────────────
 
   describe "products" do
     test "delete (live) logs shop.product_deleted with the scope actor", %{
@@ -84,24 +75,16 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
       )
     end
 
-    test "create pin logs shop.product_created", %{actor_uuid: actor_uuid} do
-      {:ok, product} =
-        Shop.create_product(%{
-          "title" => %{"en" => "Created Widget"},
-          "price" => Decimal.new("20.00"),
-          "status" => "active"
-        })
+    test "create (live form) logs shop.product_created", %{conn: conn, actor_uuid: actor_uuid} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/products/new")
 
-      Activity.log("shop.product_created",
-        actor_uuid: actor_uuid,
-        resource_type: "product",
-        resource_uuid: product.uuid,
-        metadata: %{
-          "status" => product.status,
-          "product_type" => product.product_type,
-          "price" => Decimal.to_string(product.price)
-        }
-      )
+      view
+      |> form(~s(form.space-y-6), %{
+        "product" => %{"title" => "Created Widget", "price" => "20.00", "status" => "active"}
+      })
+      |> render_submit()
+
+      assert [product] = Shop.list_products(search: "Created Widget")
 
       assert_activity_logged("shop.product_created",
         actor_uuid: actor_uuid,
@@ -110,7 +93,7 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
       )
     end
 
-    test "update pin logs shop.product_updated", %{actor_uuid: actor_uuid} do
+    test "update (live form) logs shop.product_updated", %{conn: conn, actor_uuid: actor_uuid} do
       {:ok, product} =
         Shop.create_product(%{
           "title" => %{"en" => "Updatable Widget"},
@@ -118,28 +101,23 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
           "status" => "draft"
         })
 
-      {:ok, updated} = Shop.update_product(product, %{"status" => "active"})
+      {:ok, view, _html} = live(conn, "/en/admin/shop/products/#{product.uuid}/edit")
 
-      Activity.log("shop.product_updated",
-        actor_uuid: actor_uuid,
-        resource_type: "product",
-        resource_uuid: updated.uuid,
-        metadata: %{
-          "status" => updated.status,
-          "product_type" => updated.product_type,
-          "price" => Decimal.to_string(updated.price)
-        }
-      )
+      view
+      |> form(~s(form.space-y-6), %{"product" => %{"status" => "active"}})
+      |> render_submit()
+
+      assert Shop.get_product!(product.uuid).status == "active"
 
       assert_activity_logged("shop.product_updated",
         actor_uuid: actor_uuid,
-        resource_uuid: updated.uuid,
+        resource_uuid: product.uuid,
         metadata_has: %{"status" => "active"}
       )
     end
   end
 
-  # ── Categories (live wiring for delete; pins for create/update) ──────
+  # ── Categories ───────────────────────────────────────────────────────
 
   describe "categories" do
     test "delete (live) logs shop.category_deleted", %{conn: conn, actor_uuid: actor_uuid} do
@@ -172,15 +150,14 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
       )
     end
 
-    test "create pin logs shop.category_created", %{actor_uuid: actor_uuid} do
-      {:ok, category} = Shop.create_category(%{"name" => %{"en" => "Created Cat"}})
+    test "create (live form) logs shop.category_created", %{conn: conn, actor_uuid: actor_uuid} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/categories/new")
 
-      Activity.log("shop.category_created",
-        actor_uuid: actor_uuid,
-        resource_type: "category",
-        resource_uuid: category.uuid,
-        metadata: %{"status" => category.status}
-      )
+      view
+      |> form(~s(form.space-y-6), %{"category" => %{"name" => "Created Cat"}})
+      |> render_submit()
+
+      assert [category] = Shop.list_categories(search: "Created Cat")
 
       assert_activity_logged("shop.category_created",
         actor_uuid: actor_uuid,
@@ -188,20 +165,20 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
       )
     end
 
-    test "update pin logs shop.category_updated", %{actor_uuid: actor_uuid} do
+    test "update (live form) logs shop.category_updated", %{conn: conn, actor_uuid: actor_uuid} do
       {:ok, category} = Shop.create_category(%{"name" => %{"en" => "Updatable Cat"}})
-      {:ok, updated} = Shop.update_category(category, %{"status" => "hidden"})
 
-      Activity.log("shop.category_updated",
-        actor_uuid: actor_uuid,
-        resource_type: "category",
-        resource_uuid: updated.uuid,
-        metadata: %{"status" => updated.status}
-      )
+      {:ok, view, _html} = live(conn, "/en/admin/shop/categories/#{category.uuid}/edit")
+
+      view
+      |> form(~s(form.space-y-6), %{"category" => %{"status" => "hidden"}})
+      |> render_submit()
+
+      assert Shop.get_category!(category.uuid).status == "hidden"
 
       assert_activity_logged("shop.category_updated",
         actor_uuid: actor_uuid,
-        resource_uuid: updated.uuid,
+        resource_uuid: category.uuid,
         metadata_has: %{"status" => "hidden"}
       )
     end
@@ -320,15 +297,19 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
       )
     end
 
-    test "create pin logs shop.import_config_created", %{actor_uuid: actor_uuid} do
-      {:ok, config} = Shop.create_import_config(%{name: "Created Config"})
+    test "save_config (live form) logs shop.import_config_created", %{
+      conn: conn,
+      actor_uuid: actor_uuid
+    } do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/settings/import-configs")
 
-      Activity.log("shop.import_config_created",
-        actor_uuid: actor_uuid,
-        resource_type: "import_config",
-        resource_uuid: config.uuid,
-        metadata: %{"active" => config.active, "is_default" => config.is_default}
-      )
+      view |> element(~s(button[phx-click="show_add_modal"])) |> render_click()
+
+      view
+      |> form(~s(form[phx-submit="save_config"]), %{"config" => %{"name" => "Created Config"}})
+      |> render_submit()
+
+      assert config = Shop.get_import_config_by_name("Created Config")
 
       assert_activity_logged("shop.import_config_created",
         actor_uuid: actor_uuid,
@@ -337,36 +318,47 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
     end
   end
 
-  # ── Import runs (action-string pins, mirroring the LV opts) ──────────
+  # ── Import runs ──────────────────────────────────────────────────────
 
   describe "import runs" do
-    test "run_started pin logs shop.import_run_started", %{actor_uuid: actor_uuid} do
-      {:ok, log} =
-        Shop.create_import_log(%{filename: "products.csv", file_path: "/tmp/products.csv"})
+    test "starting a run (live) logs shop.import_run_started", %{conn: conn} do
+      # The import log row references its user, so the actor must exist.
+      actor_uuid = PhoenixKitEcommerce.DataCase.fixture_user().uuid
+      conn = put_test_scope(conn, fake_scope(user_uuid: actor_uuid))
 
-      Activity.log("shop.import_run_started",
-        actor_uuid: actor_uuid,
-        resource_type: "import_log",
-        resource_uuid: log.uuid,
-        metadata: %{"status" => log.status, "language" => "en"}
-      )
+      {:ok, view, _html} = live(conn, "/en/admin/shop/imports")
+
+      name = "audit-#{System.unique_integer([:positive])}.csv"
+      csv = "Handle,Title,Variant Price\nwand,Wand,10.00\n"
+
+      view
+      |> file_input("#csv-upload-form", :csv_file, [%{name: name, content: csv, type: "text/csv"}])
+      |> render_upload(name)
+
+      view |> form("#csv-upload-form") |> render_submit()
+      view |> element(~s([phx-click="run_import"])) |> render_click()
+
+      assert [log] = Enum.filter(Shop.list_import_logs(limit: 20), &(&1.filename == name))
+      on_exit(fn -> File.rm(log.file_path) end)
 
       assert_activity_logged("shop.import_run_started",
         actor_uuid: actor_uuid,
         resource_uuid: log.uuid,
-        metadata_has: %{"language" => "en"}
+        metadata_has: %{"status" => "pending"}
       )
     end
 
-    test "run_deleted pin logs shop.import_run_deleted", %{actor_uuid: actor_uuid} do
+    test "delete_import (live) logs shop.import_run_deleted", %{
+      conn: conn,
+      actor_uuid: actor_uuid
+    } do
       {:ok, log} = Shop.create_import_log(%{filename: "old.csv"})
 
-      Activity.log("shop.import_run_deleted",
-        actor_uuid: actor_uuid,
-        resource_type: "import_log",
-        resource_uuid: log.uuid,
-        metadata: %{"status" => log.status}
-      )
+      {:ok, view, _html} = live(conn, "/en/admin/shop/imports")
+
+      render_click(view, "delete_import", %{"id" => log.uuid})
+
+      refute Shop.get_import_log(log.uuid)
 
       assert_activity_logged("shop.import_run_deleted",
         actor_uuid: actor_uuid,
@@ -374,19 +366,27 @@ defmodule PhoenixKitEcommerce.ActivityLoggingTest do
       )
     end
 
-    test "run_retried pin logs shop.import_run_retried", %{actor_uuid: actor_uuid} do
-      {:ok, log} = Shop.create_import_log(%{filename: "retry.csv"})
+    test "retry_import (live) logs shop.import_run_retried", %{
+      conn: conn,
+      actor_uuid: actor_uuid
+    } do
+      path = Path.join(System.tmp_dir!(), "retry-#{System.unique_integer([:positive])}.csv")
+      File.write!(path, "Handle,Title,Variant Price\nwand,Wand,10.00\n")
+      on_exit(fn -> File.rm(path) end)
 
-      Activity.log("shop.import_run_retried",
-        actor_uuid: actor_uuid,
-        resource_type: "import_log",
-        resource_uuid: log.uuid,
-        metadata: %{"status" => log.status}
-      )
+      {:ok, log} = Shop.create_import_log(%{filename: "retry.csv", file_path: path})
+      {:ok, log} = Shop.update_import_log(log, %{status: "failed"})
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/imports")
+
+      render_click(view, "retry_import", %{"id" => log.uuid})
+
+      assert Shop.get_import_log(log.uuid).status == "pending"
 
       assert_activity_logged("shop.import_run_retried",
         actor_uuid: actor_uuid,
-        resource_uuid: log.uuid
+        resource_uuid: log.uuid,
+        metadata_has: %{"status" => "pending"}
       )
     end
   end

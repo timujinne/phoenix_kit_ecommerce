@@ -46,4 +46,19 @@ defmodule PhoenixKitEcommerce.NotificationAssertions do
     |> Enum.filter(&(&1.metadata["action"] == action))
     |> Enum.map(& &1.metadata["notification_text"])
   end
+
+  @doc """
+  Returns the link of the notification rows whose text mentions `fragment`
+  (the metadata's `notification_link`, which `create/1` folds the `:link` key
+  into). A standalone `create/1` notification carries no `metadata["action"]`
+  — only `create_many/2` stashes it — so a single-recipient one is found by
+  its text.
+  """
+  def notification_links_mentioning(fragment) do
+    "phoenix_kit_notifications"
+    |> select([n], %{metadata: n.metadata})
+    |> TestRepo.all()
+    |> Enum.filter(&String.contains?(&1.metadata["notification_text"] || "", fragment))
+    |> Enum.map(& &1.metadata["notification_link"])
+  end
 end

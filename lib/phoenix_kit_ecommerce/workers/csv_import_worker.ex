@@ -35,9 +35,9 @@ defmodule PhoenixKitEcommerce.Workers.CSVImportWorker do
     max_attempts: 3,
     unique: [period: :infinity, keys: [:import_log_uuid], states: :incomplete]
 
-  alias PhoenixKit.PubSub.Manager
   alias PhoenixKit.Utils.Date, as: UtilsDate
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Import.{CSVValidator, FormatDetector}
   alias PhoenixKitEcommerce.ImportConfig
   alias PhoenixKitEcommerce.Policy
@@ -546,14 +546,13 @@ defmodule PhoenixKitEcommerce.Workers.CSVImportWorker do
   end
 
   defp broadcast(import_log_uuid, message) do
-    topic = "shop:import:#{import_log_uuid}"
-    Manager.broadcast(topic, message)
+    Events.broadcast_import(import_log_uuid, message)
   rescue
     _ -> :ok
   end
 
   defp broadcast_general(message) do
-    Manager.broadcast("shop:imports", message)
+    Events.broadcast_imports(message)
   rescue
     _ -> :ok
   end

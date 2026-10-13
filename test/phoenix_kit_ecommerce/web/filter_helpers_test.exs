@@ -169,6 +169,17 @@ defmodule PhoenixKitEcommerce.Web.Components.FilterHelpersTest do
                %{}
     end
 
+    test "a price bound with trailing garbage is not a number" do
+      for value <- ["10abc", "5 OR 1=1", "1e", "--3", "abc"] do
+        assert FilterHelpers.parse_filter_params(%{"price_min" => value}, [@price_filter]) == %{}
+      end
+
+      assert %{"price" => %{min: min}} =
+               FilterHelpers.parse_filter_params(%{"price_min" => " 10.50 "}, [@price_filter])
+
+      assert Decimal.equal?(min, Decimal.new("10.50"))
+    end
+
     test "a list or map where a price bound is expected (?price_min[]=1) is ignored" do
       assert FilterHelpers.parse_filter_params(%{"price_min" => ["1"]}, [@price_filter]) == %{}
 

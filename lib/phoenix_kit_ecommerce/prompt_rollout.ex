@@ -115,7 +115,7 @@ defmodule PhoenixKitEcommerce.PromptRollout do
   # -- internals -----------------------------------------------------------
 
   defp create(attrs, target_sha, known_previous_shas) do
-    case PhoenixKitAI.create_prompt(Map.put(attrs, :metadata, metadata(target_sha))) do
+    case create_in_savepoint(Map.put(attrs, :metadata, metadata(target_sha))) do
       {:ok, prompt} ->
         {:ok, prompt.uuid, :created}
 
@@ -129,6 +129,30 @@ defmodule PhoenixKitEcommerce.PromptRollout do
           nil -> {:error, :prompt_create_failed}
           prompt -> reconcile(prompt, attrs, target_sha, known_previous_shas)
         end
+    end
+  end
+
+  # The sweep's tick runs inside a transaction, where a failed INSERT (the
+  # lost create race, a name another row already holds) aborts it and the
+  # re-read by slug above would raise `in_failed_sql_transaction` instead of
+  # taking the lost-race path. A savepoint confines the failure to the insert.
+  defp create_in_savepoint(attrs) do
+    repo = PhoenixKit.RepoHelper.repo()
+
+    if repo.in_transaction?() do
+      repo.query!("SAVEPOINT prompt_rollout_create")
+
+      case PhoenixKitAI.create_prompt(attrs) do
+        {:ok, _prompt} = ok ->
+          repo.query!("RELEASE SAVEPOINT prompt_rollout_create")
+          ok
+
+        {:error, _changeset} = error ->
+          repo.query!("ROLLBACK TO SAVEPOINT prompt_rollout_create")
+          error
+      end
+    else
+      PhoenixKitAI.create_prompt(attrs)
     end
   end
 

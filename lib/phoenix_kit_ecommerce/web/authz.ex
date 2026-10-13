@@ -27,6 +27,8 @@ defmodule PhoenixKitEcommerce.Web.Authz do
   starts them; the workers themselves run without a scope by design.
   """
 
+  use Gettext, backend: PhoenixKitEcommerce.Gettext
+
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
 
@@ -79,11 +81,5 @@ defmodule PhoenixKitEcommerce.Web.Authz do
     Phoenix.LiveView.put_flash(socket, :error, denial_message())
   end
 
-  defp denial_message do
-    Gettext.dgettext(
-      PhoenixKitEcommerce.Gettext,
-      "default",
-      "You don't have permission to do that"
-    )
-  end
+  defp denial_message, do: gettext("You don't have permission to do that")
 end

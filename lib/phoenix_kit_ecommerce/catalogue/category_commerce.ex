@@ -8,6 +8,7 @@ defmodule PhoenixKitEcommerce.Catalogue.CategoryCommerce do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias PhoenixKitEcommerce.Errors
   alias PhoenixKitEcommerce.OptionTypes
 
   @type t :: %__MODULE__{}
@@ -22,9 +23,19 @@ defmodule PhoenixKitEcommerce.Catalogue.CategoryCommerce do
     field :featured_item_uuid, Ecto.UUID
     # per-category override read by the storefront filters (Block 4)
     field :storefront_filters, :map, default: %{}
+    # Box and weight of a parcel for items without their own; nil = unset
+    # (see `Category.parcel_defaults/1`)
+    field :parcel_length_mm, :integer
+    field :parcel_width_mm, :integer
+    field :parcel_height_mm, :integer
+    field :parcel_weight_g, :integer
   end
 
-  @fields ~w(shop_status option_schema featured_item_uuid storefront_filters)a
+  @fields ~w(
+    shop_status option_schema featured_item_uuid storefront_filters
+    parcel_length_mm parcel_width_mm parcel_height_mm parcel_weight_g
+  )a
+  @parcel_fields ~w(parcel_length_mm parcel_width_mm parcel_height_mm parcel_weight_g)a
 
   @doc "Changeset — `option_schema` reuses `PhoenixKitEcommerce.OptionTypes.validate_options/1`."
   @spec changeset(t(), map()) :: Ecto.Changeset.t()
@@ -35,8 +46,15 @@ defmodule PhoenixKitEcommerce.Catalogue.CategoryCommerce do
     |> validate_change(:option_schema, fn :option_schema, value ->
       case OptionTypes.validate_options(value) do
         {:ok, _} -> []
-        {:error, reason} -> [option_schema: reason]
+        {:error, reason} -> [option_schema: Errors.message(reason)]
       end
+    end)
+    |> validate_parcel_defaults()
+  end
+
+  defp validate_parcel_defaults(changeset) do
+    Enum.reduce(@parcel_fields, changeset, fn field, acc ->
+      validate_number(acc, field, greater_than_or_equal_to: 0)
     end)
   end
 

@@ -843,7 +843,6 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   defp create_ecommerce_params(shopify_product) do
     %{
       "shop_status" => shopify_shop_status(shopify_product["status"]),
-      "currency" => base_currency_code(),
       "vendor" => shopify_product["vendor"],
       "tags" => shopify_product["tags"],
       "compare_at_price" =>
@@ -862,22 +861,20 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
         "product_id" => shopify_product["id"] && to_string(shopify_product["id"])
       }
     }
+    |> maybe_put_param("currency", base_currency_code())
   end
 
   # `product.currency` means "the currency the stored price is in"
   # (design spec §4.6), and the Shopify price a sync writes is already
-  # denominated in base — this labels it, never converts it. This
-  # module had no established "get the base currency" path yet (unlike
-  # `ProductSource.Catalogue.View`, which reads this exact same
-  # `PhoenixKitEcommerce.get_base_currency/0` for its own read-side
-  # fallback) — reused directly here for the same reason. "USD" is the
-  # last-resort fallback only when no currency is configured at all,
-  # matching `View`'s own fallback so a freshly-synced item never
-  # disagrees with what an unconfigured shop already assumes elsewhere.
+  # denominated in base — this labels it, never converts it. Nil when the
+  # shop has no base currency: the key is then left off, and
+  # `ProductSource.Catalogue.View` reads an unlabelled price as base. A
+  # guessed code would be stored on the item and preferred over the real
+  # base from then on.
   defp base_currency_code do
     case PhoenixKitEcommerce.get_base_currency() do
       %{code: code} -> code
-      nil -> "USD"
+      nil -> nil
     end
   end
 

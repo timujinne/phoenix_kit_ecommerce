@@ -181,12 +181,11 @@ defmodule PhoenixKitEcommerce.NotificationsTest do
         "shop"
       )
 
+      # `add_to_cart/3` alone, with no call to the notifier from here: the
+      # second add is what must not announce a "first item".
       {:ok, cart} = Shop.add_to_cart(cart, product_b, 1)
-      cart = Repo.preload(cart, [items: :product], force: true)
-      [new_item] = Enum.filter(cart.items, &(&1.product_uuid == product_b.uuid))
 
       assert cart.items_count == 2
-      assert :ok = ShopNotifications.cart_item_added(cart, new_item, new_item.product)
       assert notifications_for_action("shop.cart_first_item_added") == []
     end
 
@@ -226,11 +225,10 @@ defmodule PhoenixKitEcommerce.NotificationsTest do
 
       PhoenixKit.Settings.update_setting_with_module("shop_notify_cart_item", "true", "shop")
 
-      {:ok, cart} = Shop.add_to_cart(cart, product_b, 1)
-      cart = Repo.preload(cart, [items: :product], force: true)
-      [new_item] = Enum.filter(cart.items, &(&1.product_uuid == product_b.uuid))
+      # `add_to_cart/3` alone, with no call to the notifier from here: this
+      # fails if the context stops announcing the add.
+      {:ok, _cart} = Shop.add_to_cart(cart, product_b, 1)
 
-      assert :ok = ShopNotifications.cart_item_added(cart, new_item, new_item.product)
       assert notifications_for_action("shop.cart_first_item_added") == []
       assert notifications_for_action("shop.cart_item_added") != []
     end

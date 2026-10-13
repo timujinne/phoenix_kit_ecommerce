@@ -30,6 +30,8 @@ defmodule PhoenixKitEcommerce.Notifications do
 
   require Logger
 
+  alias PhoenixKit.Modules.Languages
+  alias PhoenixKit.Modules.Languages.DialectMapper
   alias PhoenixKit.Notifications
   alias PhoenixKit.Users.Auth
   alias PhoenixKit.Users.Permissions
@@ -49,12 +51,15 @@ defmodule PhoenixKitEcommerce.Notifications do
   Notifies shop operators that an order was placed, and (separately) the
   customer that theirs was confirmed.
 
+  `language:` is the language the buyer is checking out in; the customer's
+  link goes to the order page in it, in the primary language without one.
+
   Best-effort by construction — see the module doc.
   """
-  def order_placed(order) do
+  def order_placed(order, opts \\ []) do
     safely(fn ->
       notify_admins_of_order(order)
-      notify_customer_of_order(order)
+      notify_customer_of_order(order, opts[:language])
     end)
   end
 
@@ -182,7 +187,7 @@ defmodule PhoenixKitEcommerce.Notifications do
     recipients = Enum.reject(recipients, &(&1 == order.user_uuid))
 
     # `metadata["shipping_skipped"]` is stamped by
-    # `PhoenixKitEcommerce.build_order_attrs/4` when the order converted
+    # `PhoenixKitEcommerce.build_order_attrs/5` when the order converted
     # without a shipping method under the `:always`/`:fallback` skip modes -
     # the operator still owes this buyer a delivery arrangement, and
     # nothing else in the admin fan-out flags that.
@@ -200,9 +205,9 @@ defmodule PhoenixKitEcommerce.Notifications do
   # checkout creates an unconfirmed placeholder user whose channel is the
   # transactional confirmation email, and sending both would double-mail
   # someone who has not even confirmed an address yet.
-  defp notify_customer_of_order(%{user_uuid: nil}), do: :ok
+  defp notify_customer_of_order(%{user_uuid: nil}, _language), do: :ok
 
-  defp notify_customer_of_order(order) do
+  defp notify_customer_of_order(order, language) do
     case Auth.get_user(order.user_uuid) do
       %{confirmed_at: confirmed} = _user when not is_nil(confirmed) ->
         Notifications.create(%{
@@ -210,12 +215,35 @@ defmodule PhoenixKitEcommerce.Notifications do
           action: @customer_order_action,
           text: "Your order #{order.order_number} is confirmed",
           icon: "hero-check-circle",
-          link: Routes.path("/dashboard/orders/#{order.uuid}")
+          link:
+            Routes.path("/dashboard/orders/#{order.uuid}",
+              locale: PhoenixKitEcommerce.url_locale(buyer_language(language))
+            )
         })
 
       _unconfirmed_or_missing ->
         :ok
     end
+  end
+
+  # The language the buyer checked out in: the page's, handed down by the
+  # checkout, when the site serves it; the primary language otherwise (a
+  # worker or script has no page, and a language the site has not enabled has
+  # no URLs). It is the page's own code, never the Gettext locale: the shop's
+  # catalogues are a subset of the languages a site can enable, so a buyer in
+  # one of the others would read back the shop default there.
+  defp buyer_language(language) when is_binary(language) do
+    base = DialectMapper.extract_base(language)
+
+    if Languages.enabled?() and base in enabled_bases(),
+      do: base,
+      else: Translations.default_language()
+  end
+
+  defp buyer_language(_language), do: Translations.default_language()
+
+  defp enabled_bases do
+    Enum.map(Languages.get_enabled_languages(), &DialectMapper.extract_base(&1.code))
   end
 
   @doc """

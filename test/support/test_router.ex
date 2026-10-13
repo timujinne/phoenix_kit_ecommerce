@@ -39,6 +39,7 @@ defmodule PhoenixKitEcommerce.Test.Router do
       layout: {PhoenixKitEcommerce.Test.Layouts, :app},
       on_mount: [
         {PhoenixKitEcommerce.Test.Hooks, :assign_scope},
+        {PhoenixKitEcommerce.Test.Hooks, :assign_locale},
         {PhoenixKitEcommerce.Test.Hooks, :assign_currency}
       ] do
       live("/shop", ShopCatalog, :index, as: :shop_catalog)
@@ -48,57 +49,114 @@ defmodule PhoenixKitEcommerce.Test.Router do
       live("/checkout", CheckoutPage, :index, as: :shop_checkout)
 
       live("/checkout/complete/:uuid", CheckoutComplete, :show, as: :shop_checkout_complete)
+      live("/dashboard/orders", UserOrders, :index, as: :shop_user_orders)
+      live("/dashboard/orders/:uuid", UserOrderDetails, :show, as: :shop_user_order_details)
 
       # `Shop.catalog_url/1` resolves to the locale-prefixed form in the
       # test env, so patches from filter events land here.
       live("/:locale/shop", ShopCatalog, :index, as: :shop_catalog_localized)
 
       live("/:locale/shop/category/:slug", CatalogCategory, :show, as: :shop_category_localized)
+      live("/:locale/shop/product/:slug", CatalogProduct, :show, as: :shop_product_localized)
+      live("/:locale/cart", CartPage, :index, as: :shop_cart_localized)
+      live("/:locale/checkout", CheckoutPage, :index, as: :shop_checkout_localized)
     end
   end
 
-  scope "/en/admin/shop", PhoenixKitEcommerce.Web do
+  # Both URL shapes of the admin screens live in ONE live_session: a
+  # `push_patch` from `/admin/shop/...` to `/admin/shop/...?tab=x` must stay
+  # inside the session it started in, and the two shapes are what `Routes.path/2`
+  # emits for a single-language site (no locale segment, a core with the URL
+  # language policy) and for a multi-language one (`/en` segment, an older core).
+  scope "/", PhoenixKitEcommerce.Web do
     pipe_through(:browser)
 
     live_session :shop_test,
       layout: {PhoenixKitEcommerce.Test.Layouts, :app},
       on_mount: {PhoenixKitEcommerce.Test.Hooks, :assign_scope} do
-      # Dashboard / index
-      live("/", Dashboard, :index, as: :shop_dashboard)
+      scope "/en/admin/shop" do
+        # Dashboard / index
+        live("/", Dashboard, :index, as: :shop_dashboard)
 
-      # Products
-      live("/products", Products, :index, as: :shop_products)
-      live("/products/new", ProductForm, :new, as: :shop_product_new)
-      live("/products/:id", ProductDetail, :show, as: :shop_product_detail)
-      live("/products/:id/edit", ProductForm, :edit, as: :shop_product_edit)
+        # Products
+        live("/products", Products, :index, as: :shop_products)
+        live("/products/new", ProductForm, :new, as: :shop_product_new)
+        live("/products/:id", ProductDetail, :show, as: :shop_product_detail)
+        live("/products/:id/edit", ProductForm, :edit, as: :shop_product_edit)
 
-      # Categories
-      live("/categories", Categories, :index, as: :shop_categories)
-      live("/categories/new", CategoryForm, :new, as: :shop_category_new)
-      live("/categories/:id/edit", CategoryForm, :edit, as: :shop_category_edit)
+        # Categories
+        live("/categories", Categories, :index, as: :shop_categories)
+        live("/categories/new", CategoryForm, :new, as: :shop_category_new)
+        live("/categories/:id/edit", CategoryForm, :edit, as: :shop_category_edit)
 
-      # Shipping methods
-      live("/shipping", ShippingMethods, :index, as: :shop_shipping_methods)
-      live("/shipping/new", ShippingMethodForm, :new, as: :shop_shipping_new)
-      live("/shipping/:id/edit", ShippingMethodForm, :edit, as: :shop_shipping_edit)
+        # Shipping methods
+        live("/shipping", ShippingMethods, :index, as: :shop_shipping_methods)
+        live("/shipping/new", ShippingMethodForm, :new, as: :shop_shipping_new)
+        live("/shipping/:id/edit", ShippingMethodForm, :edit, as: :shop_shipping_edit)
 
-      # Carts
-      live("/carts", Carts, :index, as: :shop_carts)
+        # Carts
+        live("/carts", Carts, :index, as: :shop_carts)
 
-      # Settings
-      live("/settings", Settings, :index, as: :shop_settings)
-      live("/settings/options", OptionsSettings, :index, as: :shop_options_settings)
-      live("/settings/import-configs", ImportConfigs, :index, as: :shop_import_configs)
+        # Settings
+        live("/settings", Settings, :index, as: :shop_settings)
+        live("/settings/options", OptionsSettings, :index, as: :shop_options_settings)
+        live("/settings/import-configs", ImportConfigs, :index, as: :shop_import_configs)
 
-      # Imports
-      live("/imports", Imports, :index, as: :shop_imports)
-      live("/imports/:uuid", ImportShow, :show, as: :shop_import_show)
+        # Imports
+        live("/imports", Imports, :index, as: :shop_imports)
+        live("/imports/:uuid", ImportShow, :show, as: :shop_import_show)
 
-      # Shopify Sync
-      live("/shopify-sync", ShopifySync, :index, as: :shop_shopify_sync)
+        # Shopify Sync
+        live("/shopify-sync", ShopifySync, :index, as: :shop_shopify_sync)
 
-      # Translations
-      live("/translations", Translations, :index, as: :shop_translations)
+        # Translations
+        live("/translations", Translations, :index, as: :shop_translations)
+      end
+
+      scope "/admin/shop" do
+        # The same screens without the locale segment: what `Routes.path/2`
+        # emits on a single-language site on a core with the URL language
+        # policy. Every admin LiveView patches/navigates to such a path, and
+        # `single_language_links_test.exs` mounts the main ones.
+        live("/", Dashboard, :index, as: :shop_dashboard_prefixless)
+
+        # Products
+        live("/products", Products, :index, as: :shop_products_prefixless)
+        live("/products/new", ProductForm, :new, as: :shop_product_new_prefixless)
+        live("/products/:id", ProductDetail, :show, as: :shop_product_detail_prefixless)
+        live("/products/:id/edit", ProductForm, :edit, as: :shop_product_edit_prefixless)
+
+        # Categories
+        live("/categories", Categories, :index, as: :shop_categories_prefixless)
+        live("/categories/new", CategoryForm, :new, as: :shop_category_new_prefixless)
+        live("/categories/:id/edit", CategoryForm, :edit, as: :shop_category_edit_prefixless)
+
+        # Shipping methods
+        live("/shipping", ShippingMethods, :index, as: :shop_shipping_methods_prefixless)
+        live("/shipping/new", ShippingMethodForm, :new, as: :shop_shipping_new_prefixless)
+        live("/shipping/:id/edit", ShippingMethodForm, :edit, as: :shop_shipping_edit_prefixless)
+
+        # Carts
+        live("/carts", Carts, :index, as: :shop_carts_prefixless)
+
+        # Settings
+        live("/settings", Settings, :index, as: :shop_settings_prefixless)
+        live("/settings/options", OptionsSettings, :index, as: :shop_options_settings_prefixless)
+
+        live("/settings/import-configs", ImportConfigs, :index,
+          as: :shop_import_configs_prefixless
+        )
+
+        # Imports
+        live("/imports", Imports, :index, as: :shop_imports_prefixless)
+        live("/imports/:uuid", ImportShow, :show, as: :shop_import_show_prefixless)
+
+        # Shopify Sync
+        live("/shopify-sync", ShopifySync, :index, as: :shop_shopify_sync_prefixless)
+
+        # Translations
+        live("/translations", Translations, :index, as: :shop_translations_prefixless)
+      end
     end
   end
 end

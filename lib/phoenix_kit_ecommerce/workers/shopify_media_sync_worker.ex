@@ -227,6 +227,26 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
     end)
   end
 
+  @doc """
+  The kinds that have a job which has not finished — queued, running or
+  waiting to retry: the same states this worker's uniqueness covers.
+
+  A progress record alone cannot say a run is alive: a job killed mid-run (a
+  deploy, a restart) leaves `"finished_at" => nil` behind for good.
+  """
+  @spec incomplete_kinds() :: MapSet.t(String.t())
+  def incomplete_kinds do
+    worker = Oban.Worker.to_string(__MODULE__)
+
+    Oban.Job
+    |> where([j], j.worker == ^worker)
+    |> where([j], j.state in ["available", "scheduled", "executing", "retryable"])
+    |> select([j], fragment("?->>'kind'", j.args))
+    |> distinct(true)
+    |> repo().all()
+    |> MapSet.new()
+  end
+
   @doc "Reads one `kind`'s current (or last) progress record, `nil` if none exists yet."
   @spec get_progress(String.t()) :: map() | nil
   def get_progress(kind) when kind in @kinds do

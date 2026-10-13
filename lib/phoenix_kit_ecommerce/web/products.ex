@@ -32,6 +32,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.StatusLabels
   import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
   @per_page 25
@@ -176,7 +177,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
   def handle_event("open_status_modal", %{"uuids" => uuids}, socket) do
     {:noreply,
      socket
-     |> assign(:bulk_uuids, uuids)
+     |> assign(:bulk_uuids, Helpers.cast_uuids(uuids))
      |> assign(:show_bulk_modal, "status")}
   end
 
@@ -184,7 +185,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
   def handle_event("open_category_modal", %{"uuids" => uuids}, socket) do
     {:noreply,
      socket
-     |> assign(:bulk_uuids, uuids)
+     |> assign(:bulk_uuids, Helpers.cast_uuids(uuids))
      |> assign(:show_bulk_modal, "category")}
   end
 
@@ -192,7 +193,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
   def handle_event("confirm_bulk_delete", %{"uuids" => uuids}, socket) do
     {:noreply,
      socket
-     |> assign(:bulk_uuids, uuids)
+     |> assign(:bulk_uuids, Helpers.cast_uuids(uuids))
      |> assign(:show_bulk_modal, "delete")}
   end
 
@@ -282,7 +283,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
   # more than one, so adding a single new event shape would have started
   # crashing live sessions with no change here at all.
   @impl true
-  def handle_info(_message, socket), do: {:noreply, socket}
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
 
   @impl true
   def render(assigns) do
@@ -425,7 +426,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
             items={@products}
             card_fields={fn product ->
               [
-                %{label: gettext("Status"), value: product.status},
+                %{label: gettext("Status"), value: StatusLabels.product(product.status)},
                 %{label: gettext("Type"), value: product.product_type},
                 %{
                   label: gettext("Category"),
@@ -471,19 +472,19 @@ defmodule PhoenixKitEcommerce.Web.Products do
                 <.table_row_menu_link
                   navigate={Routes.path("/admin/shop/products/#{product.uuid}")}
                   icon="hero-eye"
-                  label={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
+                  label={gettext("View")}
                 />
                 <.table_row_menu_link
-                  navigate={Helpers.admin_edit_path(:item, product.uuid, assigns[:url_path])}
+                  navigate={Helpers.admin_edit_path(:item, product, assigns[:url_path])}
                   icon="hero-pencil"
-                  label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
+                  label={gettext("Edit")}
                 />
                 <.table_row_menu_divider />
                 <.table_row_menu_button
                   phx-click="confirm_delete"
                   phx-value-uuid={product.uuid}
                   icon="hero-trash"
-                  label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
+                  label={gettext("Delete")}
                   variant="error"
                 />
               </.table_row_menu>
@@ -549,6 +550,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
                         <button
                           type="button"
                           phx-click="toggle_status"
+                          phx-disable-with="…"
                           phx-value-uuid={product.uuid}
                           class={[status_badge_class(product.status), "cursor-pointer"]}
                           title={
@@ -557,10 +559,10 @@ defmodule PhoenixKitEcommerce.Web.Products do
                               else: gettext("Click to publish")
                           }
                         >
-                          {product.status}
+                          {StatusLabels.product(product.status)}
                         </button>
                       <% else %>
-                        <span class={status_badge_class(product.status)}>{product.status}</span>
+                        <span class={status_badge_class(product.status)}>{StatusLabels.product(product.status)}</span>
                       <% end %>
                     </.table_default_cell>
                     <.table_default_cell
@@ -598,19 +600,19 @@ defmodule PhoenixKitEcommerce.Web.Products do
                           <.table_row_menu_link
                             navigate={Routes.path("/admin/shop/products/#{product.uuid}")}
                             icon="hero-eye"
-                            label={Gettext.gettext(PhoenixKitWeb.Gettext, "View")}
+                            label={gettext("View")}
                           />
                           <.table_row_menu_link
-                            navigate={Helpers.admin_edit_path(:item, product.uuid, assigns[:url_path])}
+                            navigate={Helpers.admin_edit_path(:item, product, assigns[:url_path])}
                             icon="hero-pencil"
-                            label={Gettext.gettext(PhoenixKitWeb.Gettext, "Edit")}
+                            label={gettext("Edit")}
                           />
                           <.table_row_menu_divider />
                           <.table_row_menu_button
                             phx-click="confirm_delete"
                             phx-value-uuid={product.uuid}
                             icon="hero-trash"
-                            label={Gettext.gettext(PhoenixKitWeb.Gettext, "Delete")}
+                            label={gettext("Delete")}
                             variant="error"
                           />
                         </.table_row_menu>
@@ -654,6 +656,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
             <div class="flex flex-col gap-2">
               <button
                 phx-click="bulk_change_status"
+                phx-disable-with={gettext("Working…")}
                 phx-value-status="active"
                 class="btn btn-success btn-outline justify-start"
               >
@@ -661,6 +664,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
               </button>
               <button
                 phx-click="bulk_change_status"
+                phx-disable-with={gettext("Working…")}
                 phx-value-status="draft"
                 class="btn btn-warning btn-outline justify-start"
               >
@@ -668,6 +672,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
               </button>
               <button
                 phx-click="bulk_change_status"
+                phx-disable-with={gettext("Working…")}
                 phx-value-status="archived"
                 class="btn btn-neutral btn-outline justify-start"
               >
@@ -693,6 +698,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
             <div class="flex flex-col gap-2">
               <button
                 phx-click="bulk_change_category"
+                phx-disable-with={gettext("Working…")}
                 phx-value-category_uuid=""
                 class="btn btn-ghost justify-start"
               >
@@ -701,6 +707,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
               <%= for category <- @categories do %>
                 <button
                   phx-click="bulk_change_category"
+                  phx-disable-with={gettext("Working…")}
                   phx-value-category_uuid={category.uuid}
                   class="btn btn-outline justify-start"
                 >
@@ -742,7 +749,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
             </label>
             <div class="modal-action">
               <button phx-click="close_bulk_modal" class="btn">{gettext("Cancel")}</button>
-              <button phx-click="bulk_delete" class="btn btn-error">
+              <button phx-click="bulk_delete" phx-disable-with={gettext("Deleting…")} class="btn btn-error">
                 <.icon name="hero-trash" class="w-4 h-4 mr-2" /> {gettext("Delete Products")}
               </button>
             </div>
@@ -768,7 +775,7 @@ defmodule PhoenixKitEcommerce.Web.Products do
             </label>
             <div class="modal-action">
               <button phx-click="cancel_delete" class="btn">{gettext("Cancel")}</button>
-              <button phx-click="execute_delete" class="btn btn-error">{gettext("Delete")}</button>
+              <button phx-click="execute_delete" phx-disable-with={gettext("Deleting…")} class="btn btn-error">{gettext("Delete")}</button>
             </div>
           </div>
           <div class="modal-backdrop" phx-click="cancel_delete"></div>
@@ -978,22 +985,38 @@ defmodule PhoenixKitEcommerce.Web.Products do
      |> assign(:show_bulk_modal, nil)
      |> put_flash(
        :info,
-       gettext("%{count} products updated to %{status}", count: count, status: status)
+       gettext("%{count} products updated to %{status}",
+         count: count,
+         status: StatusLabels.product(status)
+       )
      )}
   end
 
-  defp gated_event("bulk_change_category", %{"category_uuid" => category_uuid}, socket) do
-    uuids = socket.assigns.bulk_uuids
-    category_uuid = if category_uuid == "", do: nil, else: category_uuid
-    count = Shop.bulk_update_product_category(uuids, category_uuid)
+  defp gated_event("bulk_change_category", %{"category_uuid" => raw_category_uuid}, socket) do
+    case Helpers.cast_optional_uuid(raw_category_uuid) do
+      {:ok, category_uuid} ->
+        uuids = socket.assigns.bulk_uuids
+        count = Shop.bulk_update_product_category(uuids, category_uuid)
 
-    socket = load_products(socket)
+        Activity.log("shop.products_category_changed",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "product",
+          target_uuid: category_uuid,
+          metadata: %{"count" => count}
+        )
 
-    {:noreply,
-     socket
-     |> assign(:bulk_uuids, [])
-     |> assign(:show_bulk_modal, nil)
-     |> put_flash(:info, gettext("%{count} products moved", count: count))}
+        socket = load_products(socket)
+
+        {:noreply,
+         socket
+         |> assign(:bulk_uuids, [])
+         |> assign(:show_bulk_modal, nil)
+         |> put_flash(:info, gettext("%{count} products moved", count: count))}
+
+      :error ->
+        Helpers.ignore_event("bulk_change_category", socket)
+    end
   end
 
   defp gated_event("bulk_delete", _params, socket) do

@@ -11,6 +11,7 @@ defmodule PhoenixKitEcommerce.Web.Carts do
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.StatusLabels
   import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
   @per_page 25
@@ -160,7 +161,7 @@ defmodule PhoenixKitEcommerce.Web.Carts do
                   count: cart.items_count || 0
                 )},
             %{label: gettext("Total"), value: if(cart.total, do: Decimal.to_string(Decimal.round(cart.total, 2)), else: "-")},
-            %{label: gettext("Status"), value: cart.status || "-"},
+            %{label: gettext("Status"), value: StatusLabels.cart(cart.status || "-")},
             %{label: gettext("Updated"), value: Calendar.strftime(cart.updated_at, "%Y-%m-%d %H:%M")}
           ] end}>
 
@@ -230,7 +231,7 @@ defmodule PhoenixKitEcommerce.Web.Carts do
                     <% end %>
                   </.table_default_cell>
                   <.table_default_cell>
-                    <span class={status_badge_class(cart.status)}>{cart.status}</span>
+                    <span class={status_badge_class(cart.status)}>{StatusLabels.cart(cart.status)}</span>
                   </.table_default_cell>
                   <.table_default_cell>
                     <div class="text-sm">{format_datetime(cart.updated_at)}</div>

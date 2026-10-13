@@ -12,6 +12,7 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClient do
   require Logger
 
   alias PhoenixKit.Integrations
+  alias PhoenixKitEcommerce.Shopify.ShopDomain
 
   # Shopify deprecates REST Admin API versions roughly a year after release
   # (see https://shopify.dev/docs/api/usage/versioning) — this needs
@@ -24,6 +25,12 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClient do
   @max_retries 5
   @default_retry_after_seconds 1
   @max_retry_after_seconds 60
+  # Bounds on one paginated read (`fetch_all/5`): the page count and the
+  # wall clock, the latter covering 429 sleeps as well. 2000 pages of 250
+  # is half a million rows — far past any store this syncs — so reaching
+  # either bound means a `Link` chain that never ends, not a large shop.
+  @max_pages 2000
+  @fetch_deadline_ms :timer.minutes(10)
 
   # Shopify's REST product payloads (`products.json`, `products/{id}.json`)
   # embed at most 100 variants whatever `limit` says — measured 2026-09-23:
@@ -241,7 +248,9 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClient do
       {:ok, %{"shop_domain" => shop_domain, "access_token" => access_token}}
       when is_binary(shop_domain) and shop_domain != "" and
              is_binary(access_token) and access_token != "" ->
-        {:ok, {shop_domain, build_req(access_token, req_options)}}
+        with {:ok, host} <- ShopDomain.validate(shop_domain) do
+          {:ok, {host, build_req(access_token, req_options)}}
+        end
 
       {:ok, _incomplete} ->
         {:error, :missing_credentials}
@@ -424,29 +433,61 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClient do
       query
   end
 
+  # `redirect: false`: Req strips only `authorization` when a redirect
+  # crosses origins, so following one would carry the access token header to
+  # whatever host the response names.
   defp build_req(access_token, req_options) do
-    [headers: [{"x-shopify-access-token", access_token}], retry: false]
+    [headers: [{"x-shopify-access-token", access_token}], retry: false, redirect: false]
     |> Keyword.merge(req_options)
     |> Req.new()
   end
 
-  defp fetch_all(_req, nil, acc, _retries_left, _response_key), do: {:ok, Enum.reverse(acc)}
-
+  # `budget` is `{host, pages_left, deadline}`: the only host a next-page
+  # link may name, and the two bounds on the whole read.
   defp fetch_all(req, url, acc, retries_left, response_key) do
+    budget =
+      {URI.parse(url).host, @max_pages, System.monotonic_time(:millisecond) + @fetch_deadline_ms}
+
+    fetch_pages(req, url, acc, retries_left, response_key, budget)
+  end
+
+  defp fetch_pages(_req, nil, acc, _retries_left, _response_key, _budget),
+    do: {:ok, Enum.reverse(acc)}
+
+  defp fetch_pages(_req, _url, _acc, _retries_left, _response_key, {_host, 0, _deadline}),
+    do: {:error, :too_many_pages}
+
+  defp fetch_pages(req, url, acc, retries_left, response_key, {host, pages_left, deadline}) do
+    cond do
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:error, :deadline_exceeded}
+
+      # The link comes from the response; the request it would start carries
+      # the access token.
+      not ShopDomain.same_host?(url, host) ->
+        {:error, :unexpected_next_page_host}
+
+      true ->
+        fetch_page(req, url, acc, retries_left, response_key, {host, pages_left, deadline})
+    end
+  end
+
+  defp fetch_page(req, url, acc, retries_left, response_key, {host, pages_left, deadline}) do
     case Req.get(req, url: url) do
       {:ok, %{status: 200, body: %{^response_key => entries}} = response} ->
-        fetch_all(
+        fetch_pages(
           req,
           next_page_url(response),
           Enum.reverse(entries, acc),
           @max_retries,
-          response_key
+          response_key,
+          {host, pages_left - 1, deadline}
         )
 
       {:ok, %{status: 429} = response} when retries_left > 0 ->
         retry_after = retry_after_seconds(response)
         Process.sleep(:timer.seconds(retry_after))
-        fetch_all(req, url, acc, retries_left - 1, response_key)
+        fetch_pages(req, url, acc, retries_left - 1, response_key, {host, pages_left, deadline})
 
       {:ok, %{status: 429}} ->
         {:error, :rate_limited}
@@ -520,12 +561,11 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClient do
   # Clamped to 0..60s, matching
   # `PhoenixKitEcommerce.Shopify.StorefrontClient.retry_after_seconds/1`
   # (whose moduledoc carries the full rationale). Shopify's own
-  # `Retry-After` is well-behaved, so this is not a live bug — but the
-  # header still crosses the network, an unclamped negative makes
-  # `Process.sleep/1` raise `FunctionClauseError` out of a function whose
-  # spec promises `{:ok, _} | {:error, _}`, and an unclamped large one
-  # sleeps for real up to @max_retries times per page, with no deadline on
-  # this path to bound it. The two clients had no reason to differ.
+  # `Retry-After` is well-behaved, but the header still crosses the
+  # network: an unclamped negative makes `Process.sleep/1` raise
+  # `FunctionClauseError` out of a function whose spec promises
+  # `{:ok, _} | {:error, _}`, and an unclamped large one sleeps for real up
+  # to @max_retries times per page.
   defp retry_after_seconds(response) do
     with value when is_binary(value) <- response_header(response, "retry-after"),
          {seconds, _} <- Integer.parse(value) do

@@ -46,6 +46,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
 
   alias PhoenixKit.Integrations
   alias PhoenixKit.Integrations.Providers
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Test.Repo
 
@@ -54,6 +55,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
   defp integrations_permissions, do: ["integrations_system" | shop_permissions()]
 
   defp connect_shopify do
+    enable_shopify!()
+
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
 
@@ -120,6 +123,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
 
   describe "not connected" do
     setup %{conn: conn} do
+      enable_shopify!()
       {:ok, conn: put_test_scope(conn, fake_scope())}
     end
 
@@ -139,7 +143,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
       conn = put_test_scope(conn, fake_scope(permissions: integrations_permissions()))
       {:ok, _view, html} = live(conn, "/en/admin/shop/shopify-sync")
 
-      assert html =~ ~s(href="/en/admin/settings/integrations")
+      assert html =~ ~s(href="#{Routes.path("/admin/settings/integrations")}")
       refute html =~ "/admin/settings/integrations/website"
     end
 

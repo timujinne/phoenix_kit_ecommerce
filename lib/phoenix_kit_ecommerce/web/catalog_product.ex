@@ -7,9 +7,9 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
 
   use PhoenixKitEcommerce.Web, :live_view
 
-  alias PhoenixKit.Modules.Languages.DialectMapper
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.CartItem
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.Policy
@@ -86,6 +86,15 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   end
 
   defp mount_product(product, params, session, socket, current_language) do
+    # As early as the product is known, before everything else this mount
+    # reads: an update landing after a read and before a later subscription
+    # would never reach this page.
+    if connected?(socket) do
+      Events.subscribe_product(product.uuid)
+      Events.subscribe_inventory()
+      Events.subscribe_currencies()
+    end
+
     session_id = session["shop_session_id"] || generate_session_id()
     user = Helpers.get_current_user(socket)
     user_uuid = if user, do: user.uuid, else: nil
@@ -105,12 +114,6 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     active_filters = FilterHelpers.parse_filter_params(params, enabled_filters)
 
     localized_title = Translations.get_display(product, :title, current_language)
-
-    if connected?(socket) do
-      Events.subscribe_product(product.uuid)
-      Events.subscribe_inventory()
-      Events.subscribe_currencies()
-    end
 
     seo = SEOHelpers.product_seo(product, current_language)
 
@@ -165,10 +168,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
       |> Helpers.maybe_assign_admin_edit(
         Helpers.admin_edit_path(
           :item,
-          product.uuid,
+          product,
           Shop.product_url(product, current_language)
         ),
-        gettext("Edit Product")
+        gettext("Edit Product"),
+        permission: Helpers.admin_edit_permissions(product)
       )
 
     {:ok, socket}
@@ -218,67 +222,46 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
      |> push_navigate(to: Shop.catalog_url(current_language))}
   end
 
+  # The product was found by a slug that is not the page language's own.
+  #
+  # The page keeps ITS language. Redirecting a visitor into whichever language
+  # the slug belongs to is how one page ended up with `Back` pointing at
+  # `/en/shop` and the product at `/uk/shop/...` — two languages on one page —
+  # and it left the visitor somewhere they did not ask to be. So the only
+  # redirect left is to the SAME language's own slug, when the product has
+  # one; anything else renders under the page's language, the slug falling
+  # back to the product's primary one (`SlugResolver.product_slug/2`).
   defp resolve_language_redirect(product, current_language, params, session, socket) do
-    redirect_lang = Helpers.best_redirect_language(product.slug || %{})
+    requested_lang = Helpers.requested_translation_lang(product, current_language)
 
-    # Normalize both languages to compare (e.g., "en" <-> "en-US")
-    current_base = DialectMapper.extract_base(current_language)
-    redirect_base = redirect_lang && DialectMapper.extract_base(redirect_lang)
+    if requested_lang && not Helpers.single_language?() do
+      # Translated into the requested language: the language switcher, and a
+      # link to the other-language slug, land on that language's own slug.
+      slug = SlugResolver.product_slug(product, requested_lang)
 
-    # The language the user explicitly requested via the URL locale prefix,
-    # IF the product is actually translated into it. Without this the
-    # language switcher can never leave the slug's own language: a
-    # `/fr/<en-slug>` request bounces to `best_redirect_language` (which
-    # prefers the default) → back to `/en/…`, so the visitor sees English
-    # even though a French translation exists.
-    requested_lang = requested_translation_lang(product, current_language)
-
-    cond do
-      # No valid redirect language found
-      is_nil(redirect_lang) ->
-        not_found(socket, current_language)
-
-      # Product IS translated into the requested language — honor the
-      # explicit choice and redirect to that language's slug.
-      not is_nil(requested_lang) ->
-        slug = SlugResolver.product_slug(product, requested_lang)
-
-        {:ok,
-         push_navigate(socket,
-           to: Helpers.build_lang_url("/shop/product/#{slug}", requested_lang)
-         )}
-
-      # Same base language (e.g., "en" vs "en-US") - use product without redirect
-      current_base == redirect_base ->
-        # Re-run mount with found product to avoid redirect loop
-        mount_with_product(product, current_language, params, session, socket)
-
-      # Different language - redirect to correct URL
-      true ->
-        slug = SlugResolver.product_slug(product, redirect_lang)
-
-        {:ok,
-         push_navigate(socket,
-           to: Helpers.build_lang_url("/shop/product/#{slug}", redirect_lang)
-         )}
+      {:ok,
+       push_navigate(socket,
+         to: Helpers.build_lang_url("/shop/product/#{slug}", requested_lang)
+       )}
+    else
+      # Single-language, or not translated into the page language: no other
+      # language to hop to, so render the product here. Its canonical URL is
+      # this page's (`Shop.product_url/2` resolves the same fallback slug),
+      # and hreflang lists only the languages it is really translated into.
+      mount_with_product(product, current_language, params, session, socket)
     end
-  end
-
-  # The requested language (base-matched) when the product has a non-empty
-  # slug for it — i.e. it is genuinely translated into what the URL asked for.
-  # Returns the product's own language code (e.g. "fr-FR") or nil.
-  defp requested_translation_lang(product, current_language) do
-    base = DialectMapper.extract_base(current_language)
-    slug_map = product.slug || %{}
-
-    Enum.find(Map.keys(slug_map), fn code ->
-      DialectMapper.extract_base(code) == base and Map.get(slug_map, code) not in [nil, ""]
-    end)
   end
 
   # Mount product page using already-found product (avoids redirect loop)
   # Used when cross-language lookup finds a product with same base language
   defp mount_with_product(product, current_language, params, session, socket) do
+    # As early as the product is known — see `mount_product/5`.
+    if connected?(socket) do
+      Events.subscribe_product(product.uuid)
+      Events.subscribe_inventory()
+      Events.subscribe_currencies()
+    end
+
     # Use the visitor's REAL shop session, same as the direct path.
     #
     # This used to mint a random id, with a comment claiming the session
@@ -325,13 +308,6 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     localized_body = Translations.get(product, :body_html, current_language)
     current_path = Shop.product_url(product, current_language)
 
-    # Subscribe to updates
-    if connected?(socket) do
-      Events.subscribe_product(product.uuid)
-      Events.subscribe_inventory()
-      Events.subscribe_currencies()
-    end
-
     seo = SEOHelpers.product_seo(product, current_language)
 
     socket =
@@ -376,10 +352,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
       |> Helpers.maybe_assign_admin_edit(
         Helpers.admin_edit_path(
           :item,
-          product.uuid,
+          product,
           Shop.product_url(product, current_language)
         ),
-        gettext("Edit Product")
+        gettext("Edit Product"),
+        permission: Helpers.admin_edit_permissions(product)
       )
 
     {:ok, socket}
@@ -387,13 +364,16 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
 
   @impl true
   def handle_event("set_quantity", %{"quantity" => quantity}, socket) do
-    quantity = Helpers.parse_int(quantity, 1) |> max(1)
+    quantity = quantity |> Helpers.parse_int(1) |> max(1) |> min(CartItem.max_quantity())
     {:noreply, assign(socket, :quantity, quantity)}
   end
 
+  def handle_event("set_quantity", _params, socket), do: {:noreply, socket}
+
   @impl true
   def handle_event("increment", _params, socket) do
-    {:noreply, assign(socket, :quantity, socket.assigns.quantity + 1)}
+    {:noreply,
+     assign(socket, :quantity, min(socket.assigns.quantity + 1, CartItem.max_quantity()))}
   end
 
   @impl true
@@ -404,8 +384,16 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
 
   @impl true
   def handle_event("select_image", %{"url" => url}, socket) do
-    {:noreply, assign(socket, :selected_image, url)}
+    # Only a URL this product's own gallery rendered: the value comes from an
+    # anonymous visitor and ends up in an `<img src>`.
+    if url in Enum.map(socket.assigns.product.images || [], &image_url/1) do
+      {:noreply, assign(socket, :selected_image, url)}
+    else
+      {:noreply, socket}
+    end
   end
+
+  def handle_event("select_image", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("select_spec", params, socket) do
@@ -447,14 +435,26 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
 
   @impl true
   def handle_event("select_storage_image", %{"uuid" => uuid}, socket) do
-    url = get_storage_image_url(uuid, "large")
-    {:noreply, assign(socket, :selected_image, url)}
+    # Only a file in this product's own gallery: signing whatever uuid an
+    # anonymous visitor sends would hand out URLs for files that are not
+    # product images at all.
+    if uuid in get_display_images(socket.assigns.product) do
+      {:noreply, assign(socket, :selected_image, get_storage_image_url(uuid, "large"))}
+    else
+      {:noreply, socket}
+    end
   end
+
+  def handle_event("select_storage_image", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("add_to_cart", _params, socket) do
     do_add_to_cart(socket)
   end
+
+  # Last, so it shadows nothing: an event this page does not know, or a
+  # known one whose payload is not the shape its clause takes.
+  def handle_event(event, _params, socket), do: Helpers.ignore_event(event, socket)
 
   defp do_add_to_cart(socket) do
     %{
@@ -850,7 +850,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                   >
                     <img
                       src={thumb_url}
-                      alt="Thumbnail"
+                      alt={gettext("Thumbnail")}
                       class="w-full h-full object-cover"
                       onerror={"this.src='#{placeholder_image_url()}'"}
                     />
@@ -878,7 +878,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                     >
                       <img
                         src={url}
-                        alt="Thumbnail"
+                        alt={gettext("Thumbnail")}
                         class="w-full h-full object-cover"
                         onerror={"this.src='#{placeholder_image_url()}'"}
                       />
@@ -917,7 +917,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                     {cmp.price}
                   </span>
                   <span class="badge badge-success">
-                    {cmp.percent}% OFF
+                    {gettext("%{percent}% OFF", percent: cmp.percent)}
                   </span>
                 <% end %>
               <% else %>
@@ -930,7 +930,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                     {cmp.price}
                   </span>
                   <span class="badge badge-success">
-                    {cmp.percent}% OFF
+                    {gettext("%{percent}% OFF", percent: cmp.percent)}
                   </span>
                 <% end %>
               <% end %>
@@ -1016,6 +1016,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                           value={@quantity}
                           name="quantity"
                           min="1"
+                          max={CartItem.max_quantity()}
                           class="input w-20 text-center"
                         />
                       </form>
@@ -1097,6 +1098,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                 <%!-- Add to Cart Button --%>
                 <button
                   phx-click="add_to_cart"
+                  phx-disable-with={gettext("Adding...")}
                   class={["btn btn-primary btn-lg w-full"]}
                   disabled={@adding_to_cart}
                 >
@@ -1445,10 +1447,10 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   end
 
   # Format specification value for display
-  defp format_spec_value(true), do: "Yes"
-  defp format_spec_value(false), do: "No"
-  defp format_spec_value("true"), do: "Yes"
-  defp format_spec_value("false"), do: "No"
+  defp format_spec_value(true), do: gettext("Yes")
+  defp format_spec_value(false), do: gettext("No")
+  defp format_spec_value("true"), do: gettext("Yes")
+  defp format_spec_value("false"), do: gettext("No")
   defp format_spec_value(list) when is_list(list), do: Enum.join(list, ", ")
   defp format_spec_value(value) when is_binary(value), do: value
   defp format_spec_value(value) when is_number(value), do: to_string(value)
@@ -1637,7 +1639,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   # more than one, so adding a single new event shape would have started
   # crashing live sessions with no change here at all.
   @impl true
-  def handle_info(_message, socket), do: {:noreply, socket}
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
 
   # Reload the canonical product (with preloads) and recompute every assign
   # derived from it. The visitor's in-progress option selection is kept where
@@ -1717,13 +1719,20 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   defp refreshed_image(socket, product) do
     current = socket.assigns[:selected_image]
 
-    still_present? =
-      is_binary(current) and
-        Enum.any?(get_display_images(product), fn uuid ->
-          current == image_url(uuid) or current == uuid
-        end)
+    if is_binary(current) and current in selectable_image_urls(product) do
+      current
+    else
+      first_image(product)
+    end
+  end
 
-    if still_present?, do: current, else: first_image(product)
+  # The URLs `selected_image` can hold for this product: a storage image is
+  # selected by its signed "large" URL (never by its uuid), a legacy image by
+  # its own URL.
+  defp selectable_image_urls(product) do
+    storage = Enum.map(get_display_images(product), &get_storage_image_url(&1, "large"))
+    legacy = for image <- product.images || [], url = image_url(image), do: url
+    storage ++ legacy
   end
 
   defp storefront_cart_count(session_id, user_uuid) do

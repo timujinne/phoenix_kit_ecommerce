@@ -33,6 +33,7 @@ defmodule PhoenixKitEcommerce.LiveCase do
       import PhoenixKitEcommerce.ActivityLogAssertions
       import PhoenixKitEcommerce.NotificationAssertions
       import PhoenixKitEcommerce.CheckoutFixtures
+      import PhoenixKitEcommerce.ShopifyFixtures
       # Reuse the helpers defined on DataCase so LiveView tests don't
       # need their own duplicate copies.
       import PhoenixKitEcommerce.DataCase, only: [errors_on: 1]
@@ -129,6 +130,15 @@ defmodule PhoenixKitEcommerce.LiveCase do
   """
   def put_test_scope(conn, scope) do
     Plug.Test.init_test_session(conn, %{"phoenix_kit_test_scope" => scope})
+  end
+
+  @doc """
+  Plugs a locale (e.g. `"ru"`) into the test conn's session so the
+  `:assign_locale` `on_mount` hook can set `:current_locale` at mount time,
+  as core's live_session does for a real visitor.
+  """
+  def put_test_locale(conn, locale) do
+    Plug.Test.init_test_session(conn, %{"phoenix_kit_test_locale" => locale})
   end
 
   @doc """

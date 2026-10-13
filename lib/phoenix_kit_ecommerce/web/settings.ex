@@ -10,6 +10,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   alias PhoenixKit.Integrations.Providers, as: IntegrationProviders
   alias PhoenixKit.Settings
   alias PhoenixKit.Users.Auth
+  alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitEcommerce, as: Shop
@@ -17,6 +18,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.Notifications, as: ShopNotifications
   alias PhoenixKitEcommerce.Policy
+  alias PhoenixKitEcommerce.StockTracking
   alias PhoenixKitEcommerce.TranslationSweepSettings
   alias PhoenixKitEcommerce.Vocabulary
   alias PhoenixKitEcommerce.Web.Authz
@@ -25,6 +27,16 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   # phoenix_kit_ai is an OPTIONAL dependency (see mix.exs) — this page must
   # compile and render fine without it. See `ai_translations_available?/0`.
   @compile {:no_warn_undefined, PhoenixKitAI.Translations}
+
+  # Core's Integrations pages: the connection's own page when one exists,
+  # the list otherwise. A fixed segment after `/integrations/` is read by
+  # core as a connection uuid.
+  defp shopify_integration_path do
+    case PhoenixKit.Integrations.list_connections("shopify", owner: :system) do
+      [%{uuid: uuid} | _rest] -> "/admin/settings/integrations/#{uuid}"
+      [] -> "/admin/settings/integrations"
+    end
+  end
 
   @impl true
   def mount(_params, _session, socket) do
@@ -53,6 +65,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign(:storefront_filters, storefront_filters)
       |> assign(:discovered_options, discovered_options)
       |> assign(
+        :can_manage_integrations?,
+        Scope.has_module_access?(
+          socket.assigns[:phoenix_kit_current_scope],
+          "integrations_system"
+        )
+      )
+      |> assign(
         :notify_cart_first_item,
         Settings.get_setting_cached("shop_notify_cart_first_item", "false") == "true"
       )
@@ -68,10 +87,12 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign(:recipient_candidates, load_recipient_candidates())
       |> assign(:shipping_skip_mode, to_string(Shop.shipping_skip_mode()))
       |> assign(:shipping_selection_position, to_string(Shop.shipping_selection_position()))
+      |> assign_parcel_form(Shop.shipping_parcel_defaults())
       |> assign(:shop_translations_enabled, TranslationSweepSettings.translations_enabled?())
       |> assign(:ai_translations_available, ai_translations_available?())
       |> assign(:translations_supported, Shop.translations_supported?())
       |> assign(:shop_shopify_enabled, Shop.shopify_enabled?())
+      |> assign_stock_tracking()
       |> assign_policy()
 
     {:ok, socket}
@@ -116,6 +137,21 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     |> assign(:cleanup_auto_created_only, Policy.import_cleanup_scope() == :auto_created)
     |> assign(:default_tax_country, Policy.default_tax_country() || "")
   end
+
+  defp assign_parcel_form(socket, defaults) do
+    {length, width, height} = parcel_box(defaults)
+
+    values =
+      Map.new(
+        [length_mm: length, width_mm: width, height_mm: height, weight_g: defaults.weight_g],
+        fn {field, value} -> {Atom.to_string(field), value && to_string(value)} end
+      )
+
+    assign(socket, :parcel_form, to_form(values, as: :parcel))
+  end
+
+  defp parcel_box(%{box_mm: [length, width, height]}), do: {length, width, height}
+  defp parcel_box(_defaults), do: {nil, nil, nil}
 
   defp get_category_name_display do
     Settings.get_setting_cached("shop_category_name_display", "truncate")
@@ -225,6 +261,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   end
 
   @impl true
+  def handle_event("save_shipping_parcel_defaults", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("save_shipping_parcel_defaults", params, socket)
+    end)
+  end
+
+  @impl true
   def handle_event("toggle_hide_zero_decimals", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("toggle_hide_zero_decimals", params, socket)
@@ -270,6 +313,13 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   def handle_event("toggle_shop_shopify_enabled", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("toggle_shop_shopify_enabled", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("toggle_shop_stock_tracking", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("toggle_shop_stock_tracking", params, socket)
     end)
   end
 
@@ -449,6 +499,63 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           </div>
         </div>
 
+        <%!-- The parcel assumed for a cart line that has no size or weight of
+             its own, after the category's defaults. --%>
+        <div class="card bg-base-100 shadow-xl mb-6" id="shop-shipping-parcel-card">
+          <div class="card-body">
+            <h2 class="card-title">{gettext("Default parcel")}</h2>
+            <p class="text-sm text-base-content/70">
+              {gettext(
+                "The size every parcel is at least as big as, and the weight assumed for a product that has none. Carriers price the parcel by them. A product's own values and its category's defaults come first. Leave empty to set nothing."
+              )}
+            </p>
+
+            <.form
+              for={@parcel_form}
+              id="shipping-parcel-defaults-form"
+              phx-submit="save_shipping_parcel_defaults"
+              class="mt-2"
+            >
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <.input
+                  field={@parcel_form[:length_mm]}
+                  id="shipping-parcel-length-mm"
+                  type="number"
+                  min="0"
+                  label={gettext("Length (mm)")}
+                />
+                <.input
+                  field={@parcel_form[:width_mm]}
+                  id="shipping-parcel-width-mm"
+                  type="number"
+                  min="0"
+                  label={gettext("Width (mm)")}
+                />
+                <.input
+                  field={@parcel_form[:height_mm]}
+                  id="shipping-parcel-height-mm"
+                  type="number"
+                  min="0"
+                  label={gettext("Height (mm)")}
+                />
+                <.input
+                  field={@parcel_form[:weight_g]}
+                  id="shipping-parcel-weight-g"
+                  type="number"
+                  min="0"
+                  label={gettext("Weight (g)")}
+                />
+              </div>
+
+              <div class="flex justify-end mt-4">
+                <button type="submit" phx-disable-with={gettext("Saving…")} id="shipping-parcel-defaults-save" class="btn btn-primary btn-sm">
+                  {gettext("Save")}
+                </button>
+              </div>
+            </.form>
+          </div>
+        </div>
+
         <%!-- Storefront notifications --%>
         <div class="card bg-base-100 shadow-xl mb-6" id="shop-notifications-card">
           <div class="card-body">
@@ -507,7 +614,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                   <span>{user.email}</span>
                 </label>
               <% end %>
-              <button type="submit" class="btn btn-primary btn-sm mt-2">
+              <button type="submit" phx-disable-with={gettext("Saving…")} class="btn btn-primary btn-sm mt-2">
                 {gettext("Save recipients")}
               </button>
             </form>
@@ -706,6 +813,51 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           </div>
         </div>
 
+        <%!-- Stock tracking switch (spec 8.1). Stock itself lives in the optional
+             Warehouse module; the hint tells the operator what is missing and
+             the button below it leads to where to fix it. The server refuses
+             turning it on while Warehouse is missing or off (see
+             `StockTracking.set_enabled/1`). --%>
+        <div class="card bg-base-100 shadow-xl mb-6" id="shop-stock-tracking-card">
+          <div class="card-body">
+            <h2 class="card-title text-xl mb-2">
+              <.icon name="hero-cube" class="w-6 h-6" />
+              {gettext("Stock")}
+            </h2>
+
+            <div class="fieldset">
+              <label class="label cursor-pointer justify-between">
+                <span class="fieldset-legend text-lg">
+                  <span class="font-semibold">{gettext("Stock tracking")}</span>
+                </span>
+                <input
+                  id="toggle-shop-stock-tracking"
+                  type="checkbox"
+                  class="toggle toggle-secondary"
+                  checked={@stock_tracking_enabled}
+                  disabled={@warehouse_status in [:not_installed, :disabled]}
+                  aria-describedby="shop-stock-tracking-hint"
+                  phx-click="toggle_shop_stock_tracking"
+                />
+              </label>
+            </div>
+
+            <p id="shop-stock-tracking-hint" class="text-sm text-base-content/70">
+              {@stock_tracking_hint.text}
+            </p>
+
+            <div class="mt-2">
+              <.link
+                id="stock-tracking-action"
+                navigate={@stock_tracking_hint.href}
+                class={["btn btn-sm", @stock_tracking_hint.button_class]}
+              >
+                {@stock_tracking_hint.label}
+              </.link>
+            </div>
+          </div>
+        </div>
+
         <%!-- Tax fallback --%>
         <div class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">
@@ -727,7 +879,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                 placeholder={gettext("e.g. EE")}
                 class="input w-32 uppercase"
               />
-              <button type="submit" class="btn btn-primary btn-sm">{gettext("Save")}</button>
+              <button type="submit" phx-disable-with={gettext("Saving…")} class="btn btn-primary btn-sm">{gettext("Save")}</button>
             </form>
           </div>
         </div>
@@ -810,7 +962,9 @@ defmodule PhoenixKitEcommerce.Web.Settings do
               }
             >
               <.link
-                navigate={Routes.path("/admin/settings/integrations/website")}
+                :if={@can_manage_integrations?}
+                id="shop-shopify-connect"
+                navigate={Routes.path(shopify_integration_path())}
                 class="btn btn-ghost"
               >
                 {gettext("Connect")}
@@ -829,7 +983,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
               <h2 class="card-title text-xl">
                 <.icon name="hero-funnel" class="w-6 h-6" /> {gettext("Storefront Filters")}
               </h2>
-              <button phx-click="reset_default_filters" class="btn btn-ghost btn-xs">
+              <button phx-click="reset_default_filters" phx-disable-with={gettext("Working…")} class="btn btn-ghost btn-xs">
                 {gettext("Reset to defaults")}
               </button>
             </div>
@@ -883,6 +1037,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                         <%= if filter["type"] in ["metadata_option", "attribute_set"] do %>
                           <button
                             phx-click="remove_filter"
+                            phx-disable-with="…"
                             phx-value-key={filter["key"]}
                             class="btn btn-outline btn-error btn-xs tooltip tooltip-bottom"
                             data-tip={gettext("Remove")}
@@ -940,7 +1095,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                 class="input input-sm w-48"
                 required
               />
-              <button type="submit" class="btn btn-outline btn-sm gap-1">
+              <button type="submit" phx-disable-with={gettext("Adding...")} class="btn btn-outline btn-sm gap-1">
                 <.icon name="hero-plus" class="w-3 h-3" /> {gettext("Add")}
               </button>
             </form>
@@ -1033,7 +1188,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                   placeholder={gettext("e.g. 3D Printed")}
                   class="input input-bordered flex-1 max-w-md"
                 />
-                <button type="submit" class="btn btn-primary btn-sm">{gettext("Save")}</button>
+                <button type="submit" phx-disable-with={gettext("Saving…")} class="btn btn-primary btn-sm">{gettext("Save")}</button>
               </form>
             </div>
 
@@ -1385,6 +1540,43 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     {:noreply, put_flash(socket, :error, gettext("Failed to update shipping selection step"))}
   end
 
+  defp gated_event("save_shipping_parcel_defaults", %{"parcel" => %{} = params}, socket) do
+    case Shop.update_shipping_parcel_defaults(params) do
+      {:ok, defaults} ->
+        {length, width, height} = parcel_box(defaults)
+
+        Activity.log("shop.shipping_parcel_defaults_changed",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "setting",
+          metadata: %{
+            "length_mm" => length,
+            "width_mm" => width,
+            "height_mm" => height,
+            "weight_g" => defaults.weight_g
+          }
+        )
+
+        {:noreply,
+         socket
+         |> assign_parcel_form(defaults)
+         |> put_flash(:info, gettext("Default parcel updated"))}
+
+      {:error, [{field, _message} | _] = errors} when is_atom(field) ->
+        {:noreply,
+         socket
+         |> assign(:parcel_form, to_form(params, as: :parcel, errors: errors))
+         |> put_flash(:error, gettext("Check the default parcel values"))}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, gettext("Failed to update the default parcel"))}
+    end
+  end
+
+  defp gated_event("save_shipping_parcel_defaults", _params, socket) do
+    {:noreply, put_flash(socket, :error, gettext("Failed to update the default parcel"))}
+  end
+
   defp gated_event("toggle_hide_zero_decimals", _params, socket) do
     value = to_string(!socket.assigns.hide_zero_decimals)
 
@@ -1451,6 +1643,37 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   # flip off here.
   defp gated_event("toggle_shop_shopify_enabled", _params, socket) do
     do_toggle_shop_shopify_enabled(!socket.assigns.shop_shopify_enabled, socket)
+  end
+
+  defp gated_event("toggle_shop_stock_tracking", _params, socket) do
+    new_value = !socket.assigns.stock_tracking_enabled
+
+    case StockTracking.set_enabled(new_value) do
+      {:ok, _} ->
+        Activity.log("shop.stock_tracking_changed",
+          actor_uuid: Activity.actor_uuid(socket),
+          actor_role: Activity.actor_role(socket),
+          resource_type: "setting",
+          metadata: %{"enabled" => new_value}
+        )
+
+        {:noreply,
+         socket
+         |> assign_stock_tracking()
+         |> put_flash(
+           :info,
+           if(new_value,
+             do: gettext("Stock tracking enabled"),
+             else: gettext("Stock tracking disabled")
+           )
+         )}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign_stock_tracking()
+         |> put_flash(:error, stock_tracking_error(reason))}
+    end
   end
 
   defp gated_event("update_catalog_vocabulary", %{"vocabulary" => vocabulary}, socket) do
@@ -1748,6 +1971,71 @@ defmodule PhoenixKitEcommerce.Web.Settings do
     end
 
     socket
+  end
+
+  defp assign_stock_tracking(socket) do
+    status = StockTracking.warehouse_status()
+
+    socket
+    |> assign(:warehouse_status, status)
+    |> assign(:stock_tracking_enabled, StockTracking.enabled?(status))
+    |> assign(:stock_tracking_hint, stock_tracking_hint(status))
+  end
+
+  defp stock_tracking_error(:warehouse_not_installed),
+    do: gettext("Stock tracking was not turned on: the Warehouse module is not installed.")
+
+  defp stock_tracking_error(:warehouse_disabled),
+    do: gettext("Stock tracking was not turned on: the Warehouse module is disabled.")
+
+  defp stock_tracking_error(:update_failed),
+    do: gettext("Failed to update stock tracking")
+
+  # Hint text and action button under the Stock tracking switch, one row per
+  # Warehouse state (spec 8.1). The hrefs go through `Routes.path/1`, so they
+  # follow the configured URL prefix. The button is primary while the operator
+  # has something to do, outline when it is only a pointer to the stock page.
+  defp stock_tracking_hint(:not_installed) do
+    %{
+      text:
+        gettext(
+          "Stock tracking needs the Warehouse module. Install it from Modules → Not installed."
+        ),
+      label: gettext("Open Modules"),
+      href: Routes.path("/admin/modules?tab=not_installed"),
+      button_class: "btn-primary"
+    }
+  end
+
+  defp stock_tracking_hint(:disabled) do
+    %{
+      text:
+        gettext("Stock tracking needs the Warehouse module. Enable it in Modules → Disabled."),
+      label: gettext("Enable Warehouse"),
+      href: Routes.path("/admin/modules?tab=disabled"),
+      button_class: "btn-primary"
+    }
+  end
+
+  defp stock_tracking_hint(:no_default_location) do
+    %{
+      text:
+        gettext(
+          "Stock is kept by the Warehouse module. Choose a default warehouse in Warehouse settings first."
+        ),
+      label: gettext("Set up Warehouse"),
+      href: Routes.path("/admin/settings/warehouse"),
+      button_class: "btn-primary"
+    }
+  end
+
+  defp stock_tracking_hint(:ready) do
+    %{
+      text: gettext("Stock is kept by the Warehouse module."),
+      label: gettext("Open stock"),
+      href: Routes.path("/admin/warehouse"),
+      button_class: "btn-outline"
+    }
   end
 
   defp do_toggle_shop_shopify_enabled(new_value, socket) do

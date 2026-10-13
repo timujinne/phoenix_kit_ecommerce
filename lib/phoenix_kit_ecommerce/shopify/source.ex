@@ -28,6 +28,7 @@ defmodule PhoenixKitEcommerce.Shopify.Source do
   alias PhoenixKit.Integrations
   alias PhoenixKitEcommerce.Shopify.AdminClient
   alias PhoenixKitEcommerce.Shopify.ProductDiff
+  alias PhoenixKitEcommerce.Shopify.ShopDomain
   alias PhoenixKitEcommerce.Shopify.StorefrontClient
 
   # Admin API failures that mean "this token doesn't work" rather than
@@ -154,7 +155,7 @@ defmodule PhoenixKitEcommerce.Shopify.Source do
   defp shop_domain(integration_uuid) do
     case Integrations.get_credentials(integration_uuid) do
       {:ok, %{"shop_domain" => shop_domain}} when is_binary(shop_domain) and shop_domain != "" ->
-        {:ok, shop_domain}
+        ShopDomain.validate(shop_domain)
 
       # Reachable, not defensive: `Integrations.has_credentials?/1` (core)
       # treats a present, non-empty `access_token` as sufficient on its

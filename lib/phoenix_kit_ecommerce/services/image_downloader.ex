@@ -657,6 +657,16 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   # for shops importing from a genuinely internal image host.
   def private_host?(host), do: resolve_public_address(host) == :error
 
+  @doc false
+  # The resolved public address a connection to `host` must use, or `:error`
+  # (see `resolve_public_address/1` below for the shapes). Strict: unlike the
+  # importer's own `validate_url/1` it never consults
+  # `shop_image_import_allow_private_networks`, so other outbound fetches
+  # (the Shopify storefront's redirect hops) can share the guard without
+  # inheriting that opt-out.
+  @spec public_address(String.t()) :: {:ok, :inet.ip_address() | nil} | :error
+  def public_address(host), do: resolve_public_address(host)
+
   # Resolves `host` ONCE and hands back the address the connection must
   # use: `{:ok, nil}` for a public literal (nothing to pin — the literal
   # is the address), `{:ok, address}` for a name whose every answer is

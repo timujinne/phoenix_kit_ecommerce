@@ -32,6 +32,7 @@ support_dir = Path.expand("support", __DIR__)
   "activity_log_assertions.ex",
   "notification_assertions.ex",
   "checkout_fixtures.ex",
+  "shopify_fixtures.ex",
   "data_case.ex",
   "live_case.ex"
 ]
@@ -154,9 +155,10 @@ Application.put_env(:phoenix_kit_ecommerce, :test_repo_available, repo_available
 # catalogue mutation) needs a `Phoenix.PubSub` server registered as
 # `PhoenixKit.PubSub` — the host app provides this in production, and
 # `phoenix_kit_catalogue`'s own test suite starts it the same way. Only
-# relevant when the optional test-only `phoenix_kit_catalogue` path dep
-# (see mix.exs's `catalogue_test_deps/0`) is actually resolved, so the
-# common (`:catalogue` excluded) run starts no extra process.
+# relevant when `phoenix_kit_catalogue` is actually resolved (the test-only
+# path bridge in mix.exs's `catalogue_test_deps/0`, or transitively through
+# the optional `phoenix_kit_warehouse`), so a run without it starts no extra
+# process.
 if Code.ensure_loaded?(PhoenixKitCatalogue) do
   case Phoenix.PubSub.Supervisor.start_link(name: PhoenixKit.PubSub) do
     {:ok, _} -> :ok
@@ -242,12 +244,34 @@ transliteration_exclude =
     []
   end
 
+# A switched-off multi-language site is single-language only on a core that
+# ships the URL language policy: its primary language is the stored default
+# language (`Languages.set_primary_language/1` arrived with it). An older core
+# answers "en" there, so the tests asserting the stored primary language wait
+# for the release that has it. The storefront's own links do not depend on it
+# (`Shop.url_locale/1`), and their tests run everywhere.
+single_language_exclude =
+  if Code.ensure_loaded?(PhoenixKit.Modules.Languages) and
+       function_exported?(PhoenixKit.Modules.Languages, :set_primary_language, 1) do
+    []
+  else
+    Logger.info(
+      "[test_helper] Languages.set_primary_language/1 not available - " <>
+        "single-language primary-language tests excluded. They will run " <>
+        "automatically once `phoenix_kit` is upgraded to a release that ships it."
+    )
+
+    [:requires_core_single_language]
+  end
+
 # `phoenix_kit_catalogue` is an OPTIONAL dependency (see mix.exs's comment
 # by the `pk_dep(:phoenix_kit_ai, ...)` line for the sibling case) — the
 # `ProductSource.Catalogue` adapter's own tests need it loaded (a real
 # `PhoenixKitCatalogue.Schemas.Item`/`Category` struct for the pure view
 # tests, a live catalogue DB for the query tests) and are tagged
-# `:catalogue` so they run automatically once a host declares the dep.
+# `:catalogue` so they run automatically once the package is loaded, whether
+# a host declares the dep, the path bridge is set, or the optional
+# `phoenix_kit_warehouse` dependency brings it in transitively.
 catalogue_exclude =
   if Code.ensure_loaded?(PhoenixKitCatalogue) do
     []
@@ -261,6 +285,45 @@ catalogue_exclude =
     [:catalogue]
   end
 
+# The avatar-dropdown flag (`Tab` option `:user_menu`, read by
+# `Tab.user_menu?/2`). An older core ignores the option, so the tests about
+# it run once the dep resolves to a release that ships it.
+user_menu_exclude =
+  if Code.ensure_loaded?(PhoenixKit.Dashboard.Tab) and
+       function_exported?(PhoenixKit.Dashboard.Tab, :user_menu?, 2) do
+    []
+  else
+    Logger.info(
+      "[test_helper] PhoenixKit.Dashboard.Tab.user_menu?/2 not available - avatar-dropdown " <>
+        "tab tests excluded. They will run automatically once `phoenix_kit` is " <>
+        "upgraded to a release that ships it."
+    )
+
+    [:requires_core_user_menu]
+  end
+
+# Billing's avatar-dropdown gate (`PhoenixKitBilling.user_menu_with_shop?/1`).
+# Billing releases up to 0.21.0 do not define it, so the test that drives it
+# runs once the dep resolves to a release that does.
+billing_user_menu_exclude =
+  if Code.ensure_loaded?(PhoenixKitBilling) and
+       function_exported?(PhoenixKitBilling, :user_menu_with_shop?, 1) do
+    []
+  else
+    Logger.info(
+      "[test_helper] PhoenixKitBilling.user_menu_with_shop?/1 not available - billing " <>
+        "avatar-dropdown gate test excluded. It will run automatically once " <>
+        "`phoenix_kit_billing` is upgraded to a release that ships it."
+    )
+
+    [:requires_billing_user_menu]
+  end
+
 ExUnit.start(
-  exclude: i18n_exclude ++ integration_exclude ++ transliteration_exclude ++ catalogue_exclude
+  exclude:
+    i18n_exclude ++
+      integration_exclude ++
+      transliteration_exclude ++
+      single_language_exclude ++
+      catalogue_exclude ++ user_menu_exclude ++ billing_user_menu_exclude
 )

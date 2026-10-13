@@ -29,6 +29,10 @@ defmodule PhoenixKit.Modules.Shop do
   defdelegate settings_tabs(), to: PhoenixKitEcommerce
   defdelegate user_dashboard_tabs(), to: PhoenixKitEcommerce
   defdelegate get_config(), to: PhoenixKitEcommerce
+  defdelegate children(), to: PhoenixKitEcommerce
+  defdelegate default_checkout_country(), to: PhoenixKitEcommerce
+  defdelegate stock_tracking_enabled?(), to: PhoenixKitEcommerce
+  defdelegate warehouse_status(), to: PhoenixKitEcommerce
 
   # Dashboard
   defdelegate get_dashboard_stats(), to: PhoenixKitEcommerce
@@ -51,6 +55,7 @@ defmodule PhoenixKit.Modules.Shop do
   defdelegate product_url(locale, slug), to: PhoenixKitEcommerce
   defdelegate cart_url(locale), to: PhoenixKitEcommerce
   defdelegate checkout_url(locale), to: PhoenixKitEcommerce
+  defdelegate url_locale(language), to: PhoenixKitEcommerce
 
   # Products
   defdelegate list_products(opts \\ []), to: PhoenixKitEcommerce
@@ -143,6 +148,7 @@ defmodule PhoenixKit.Modules.Shop do
   defdelegate set_cart_shipping_country(cart, country_code), to: PhoenixKitEcommerce
   defdelegate set_cart_payment_option(cart, payment_option_uuid), to: PhoenixKitEcommerce
   defdelegate auto_select_shipping_method(cart, shipping_methods), to: PhoenixKitEcommerce
+  defdelegate refresh_pay_on_delivery_shipping(cart), to: PhoenixKitEcommerce
   defdelegate auto_select_payment_option(cart, payment_options), to: PhoenixKitEcommerce
   defdelegate convert_cart_to_order(cart, opts), to: PhoenixKitEcommerce
   defdelegate list_carts_with_count(opts), to: PhoenixKitEcommerce
@@ -161,6 +167,20 @@ defmodule PhoenixKit.Modules.Shop do
   defdelegate create_shipping_method(attrs), to: PhoenixKitEcommerce
   defdelegate update_shipping_method(method, attrs), to: PhoenixKitEcommerce
   defdelegate delete_shipping_method(method), to: PhoenixKitEcommerce
+
+  # Calculated shipping
+  defdelegate shipping_parcel_defaults(), to: PhoenixKitEcommerce
+  defdelegate update_shipping_parcel_defaults(attrs), to: PhoenixKitEcommerce
+  defdelegate cart_parcels(cart), to: PhoenixKitEcommerce
+  defdelegate cart_declared_value(cart), to: PhoenixKitEcommerce
+  defdelegate cart_shipping_destination(cart), to: PhoenixKitEcommerce
+  defdelegate set_cart_shipping_destination(cart, destination), to: PhoenixKitEcommerce
+  defdelegate build_cart_rate_request(cart), to: PhoenixKitEcommerce
+  defdelegate quote_cart_shipping(cart, opts \\ []), to: PhoenixKitEcommerce
+  defdelegate shipping_quote_status(cart), to: PhoenixKitEcommerce
+  defdelegate cart_shipping_quote(cart), to: PhoenixKitEcommerce
+  defdelegate shipping_quote_blocks_checkout?(cart), to: PhoenixKitEcommerce
+  defdelegate shipping_quote_snapshot(cart, method \\ :selected), to: PhoenixKitEcommerce
 
   # Imports
   defdelegate list_import_configs(opts \\ []), to: PhoenixKitEcommerce

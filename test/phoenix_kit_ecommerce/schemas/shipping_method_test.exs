@@ -89,6 +89,92 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodTest do
     end
   end
 
+  describe "pay on delivery" do
+    test "a top-level form flag is stored as metadata[\"pay_on_delivery\"] = true" do
+      cs =
+        ShippingMethod.changeset(%ShippingMethod{}, Map.put(@valid, "pay_on_delivery", "true"))
+
+      assert cs.valid?
+      assert get_field(cs, :metadata) == %{"pay_on_delivery" => true}
+      assert ShippingMethod.pay_on_delivery?(apply_changes(cs))
+    end
+
+    test "an atom-key flag works like the form's string key" do
+      cs =
+        ShippingMethod.changeset(%ShippingMethod{}, %{
+          name: "Carrier",
+          price: Decimal.new("5"),
+          pay_on_delivery: true
+        })
+
+      assert ShippingMethod.pay_on_delivery?(apply_changes(cs))
+      assert Decimal.equal?(get_field(cs, :price), Decimal.new("0"))
+    end
+
+    test "a metadata-level flag is normalized to a boolean" do
+      cs =
+        ShippingMethod.changeset(
+          %ShippingMethod{},
+          Map.put(@valid, "metadata", %{"pay_on_delivery" => "true", "carrier" => "np"})
+        )
+
+      assert get_field(cs, :metadata) == %{"pay_on_delivery" => true, "carrier" => "np"}
+    end
+
+    test "the price is forced to 0 and the free threshold cleared" do
+      cs =
+        ShippingMethod.changeset(
+          %ShippingMethod{},
+          @valid
+          |> Map.put("pay_on_delivery", "true")
+          |> Map.put("free_above_amount", "100")
+        )
+
+      assert cs.valid?
+      assert Decimal.equal?(get_field(cs, :price), Decimal.new("0"))
+      assert get_field(cs, :free_above_amount) == nil
+    end
+
+    test "unchecking removes the flag and keeps other metadata keys" do
+      method = %ShippingMethod{
+        name: "Carrier",
+        price: Decimal.new("0"),
+        metadata: %{"pay_on_delivery" => true, "carrier" => "np"}
+      }
+
+      cs = ShippingMethod.changeset(method, %{"pay_on_delivery" => "false", "price" => "4"})
+
+      assert get_field(cs, :metadata) == %{"carrier" => "np"}
+      assert Decimal.equal?(get_field(cs, :price), Decimal.new("4"))
+      refute ShippingMethod.pay_on_delivery?(apply_changes(cs))
+    end
+
+    test "an update that does not mention the flag keeps it" do
+      method = %ShippingMethod{
+        name: "Carrier",
+        price: Decimal.new("0"),
+        metadata: %{"pay_on_delivery" => true}
+      }
+
+      cs = ShippingMethod.changeset(method, %{"name" => "Acme Post", "price" => "7"})
+
+      assert ShippingMethod.pay_on_delivery?(apply_changes(cs))
+      assert Decimal.equal?(get_field(cs, :price), Decimal.new("0"))
+    end
+
+    test "pay_on_delivery?/1 is false for anything but a flagged method" do
+      refute ShippingMethod.pay_on_delivery?(%ShippingMethod{})
+      refute ShippingMethod.pay_on_delivery?(%ShippingMethod{metadata: nil})
+
+      refute ShippingMethod.pay_on_delivery?(%ShippingMethod{
+               metadata: %{"pay_on_delivery" => "true"}
+             })
+
+      refute ShippingMethod.pay_on_delivery?(nil)
+      refute ShippingMethod.pay_on_delivery?(%Ecto.Association.NotLoaded{})
+    end
+  end
+
   describe "delivery_estimate/1" do
     test "formats day ranges" do
       assert ShippingMethod.delivery_estimate(%ShippingMethod{

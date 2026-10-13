@@ -38,7 +38,14 @@ config :phoenix_kit_ecommerce, PhoenixKitEcommerce.Test.Repo,
   hostname: System.get_env("PGHOST", "localhost"),
   database: pg_test_db,
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: pg_test_pool
+  pool_size: pg_test_pool,
+  # A sandboxed test shares ONE connection with every process it starts, and
+  # storing an image starts several at once (core generates the variants in
+  # parallel tasks). They queue on that connection; at DBConnection's
+  # default 50 ms target a loaded machine drops the waiting ones, which
+  # surfaces as a failed variant or a failed read in an unrelated assertion.
+  queue_target: 5_000,
+  queue_interval: 10_000
 
 # Wire repo for PhoenixKit.RepoHelper — without this, context-layer DB calls crash.
 config :phoenix_kit, repo: PhoenixKitEcommerce.Test.Repo
@@ -63,8 +70,11 @@ config :swoosh, :api_client, false
 
 # Test Endpoint for LiveView tests. `phoenix_kit_ecommerce` has no endpoint
 # of its own in production — the host app provides one — so this
-# endpoint only exists for `Phoenix.LiveViewTest`.
+# endpoint only exists for `Phoenix.LiveViewTest`. `pubsub_server` is the
+# one `test_helper.exs` starts through `PhoenixKit.PubSub.Manager`; the
+# LiveView upload test client joins its channel over it.
 config :phoenix_kit_ecommerce, PhoenixKitEcommerce.Test.Endpoint,
+  pubsub_server: :phoenix_kit_internal_pubsub,
   secret_key_base: String.duplicate("t", 64),
   live_view: [signing_salt: "ecommerce-test-salt"],
   server: false,
@@ -74,3 +84,7 @@ config :phoenix_kit_ecommerce, PhoenixKitEcommerce.Test.Endpoint,
 config :phoenix, :json_library, Jason
 
 config :logger, level: :warning
+
+# Tests flip `shop_product_source` by writing the row and read it back in
+# the same process; the per-process memo would hand them the old value.
+config :phoenix_kit_ecommerce, :product_source_memo_ms, 0

@@ -179,7 +179,7 @@ defmodule PhoenixKitEcommerce.Cart do
     attrs = Map.merge(%{status: new_status}, extra_attrs)
 
     cart
-    |> cast(attrs, [:status, :converted_at, :merged_into_cart_uuid])
+    |> cast(attrs, [:status, :converted_at, :merged_into_cart_uuid, :metadata])
     |> validate_status_transition(cart.status, new_status)
   end
 

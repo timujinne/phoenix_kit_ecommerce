@@ -25,6 +25,7 @@ defmodule PhoenixKitEcommerce.Services.ImageMigration do
   import Ecto.Query
 
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.Services.ImageDownloader
   alias PhoenixKitEcommerce.Workers.ImageMigrationWorker
@@ -464,17 +465,11 @@ defmodule PhoenixKitEcommerce.Services.ImageMigration do
   # PubSub broadcasts
 
   defp broadcast_migration_started(count) do
-    PhoenixKit.PubSubHelper.broadcast(
-      "shop:image_migration:batch",
-      {:migration_started, %{total: count}}
-    )
+    Events.broadcast_image_migration_batch({:migration_started, %{total: count}})
   end
 
   defp broadcast_migration_cancelled(count) do
-    PhoenixKit.PubSubHelper.broadcast(
-      "shop:image_migration:batch",
-      {:migration_cancelled, %{cancelled: count}}
-    )
+    Events.broadcast_image_migration_batch({:migration_cancelled, %{cancelled: count}})
   end
 
   defp repo do

@@ -226,6 +226,28 @@ defmodule PhoenixKitEcommerce.ProductSourceTest do
     end
   end
 
+  describe "discover_filterable_options/0 (raw SQL)" do
+    # Same hand-written-SQL hazard as the facet query below: the table name
+    # has to be the schema's own qualified one.
+    test "lists the option keys active products carry, most used first" do
+      create_product!("A", %{"metadata" => %{"_option_values" => %{"size" => ["S"]}}})
+
+      create_product!("B", %{
+        "metadata" => %{"_option_values" => %{"size" => ["M"], "color" => ["Red"]}}
+      })
+
+      create_product!("Drafted", %{
+        "status" => "draft",
+        "metadata" => %{"_option_values" => %{"finish" => ["Matte"]}}
+      })
+
+      assert PhoenixKitEcommerce.discover_filterable_options() == [
+               %{key: "size", count: 2},
+               %{key: "color", count: 1}
+             ]
+    end
+  end
+
   describe "Legacy.aggregate_filter_values/1 metadata_option facets (raw SQL)" do
     # The facet query is hand-written SQL that names the products table
     # itself (it cannot inherit the schema's `@schema_prefix`), so this

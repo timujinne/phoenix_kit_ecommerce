@@ -11,16 +11,18 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
 
   alias PhoenixKit.Utils.Routes
 
-  alias PhoenixKit.Modules.Languages.DialectMapper
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.CartItem
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Vocabulary
+  alias PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker
   alias PhoenixKitEcommerce.Web.Components.ShopLayouts
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.ShippingRequote
 
   import PhoenixKitEcommerce.Web.Helpers,
     only: [format_price: 2, humanize_key: 1, get_current_user: 1]
@@ -61,6 +63,10 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
     # default row resolves `nil` and the changeset rejects it. That is the
     # intended loud failure, but it must not reach a shopper as a MatchError
     # crashing the page — the shop is simply not open for business yet.
+    # Before the cart is read (real-time sync across tabs): an update landing
+    # between a read and a later subscription would never reach this page.
+    if connected?(socket), do: Events.subscribe_to_cart_of(user_uuid, session_id)
+
     case Shop.get_or_create_cart(user_uuid: user_uuid, session_id: session_id) do
       {:ok, cart} -> mount_with_cart(socket, cart, session_id, current_language)
       {:error, _reason} -> {:ok, shop_unavailable(socket)}
@@ -76,10 +82,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
   end
 
   defp mount_with_cart(socket, cart, session_id, current_language) do
-    # Subscribe to cart events for real-time sync across tabs
-    if connected?(socket) do
-      Events.subscribe_to_cart(cart)
-    end
+    cart = cart |> rebase_cart() |> refresh_pay_on_delivery_shipping()
 
     # Shipping selection only happens on this page when it hasn't been
     # skipped entirely and the shop's configured selection position is
@@ -111,6 +114,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
       |> assign(:currency, currency)
       |> assign(:authenticated, authenticated)
       |> assign(:current_language, current_language)
+      |> assign(:locale, Gettext.get_locale(PhoenixKitEcommerce.Gettext))
       |> assign_cart_state(cart)
 
     {:ok, socket}
@@ -118,10 +122,12 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
 
   @impl true
   def handle_event("update_quantity", %{"item_uuid" => item_uuid, "quantity" => quantity}, socket) do
-    quantity = max(1, Helpers.parse_int(quantity, 1))
+    quantity = quantity |> Helpers.parse_int(1) |> max(1) |> min(CartItem.max_quantity())
 
     update_item_quantity(socket, item_uuid, quantity)
   end
+
+  def handle_event("update_quantity", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("remove_item", %{"item_uuid" => item_uuid}, socket) do
@@ -152,7 +158,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
       # Country will be set at checkout based on billing info
       case Shop.set_cart_shipping(cart, method, nil) do
         {:ok, updated_cart} ->
-          {:noreply, assign(socket, :cart, updated_cart)}
+          {:noreply, put_cart(socket, updated_cart)}
 
         {:error, _} ->
           {:noreply, put_flash(socket, :error, gettext("Failed to set shipping method"))}
@@ -178,6 +184,10 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
         {:noreply, push_navigate(socket, to: Shop.checkout_url(socket.assigns.current_language))}
     end
   end
+
+  # Last, so it shadows nothing: an event this page does not know, or a
+  # known one whose payload is not the shape its clause takes.
+  def handle_event(event, _params, socket), do: Helpers.ignore_event(event, socket)
 
   # One choke point for "the cart changed": refresh available methods,
   # drop a selection the cart has outgrown (or stopped needing), and keep
@@ -216,6 +226,38 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
     |> assign(:skip_mode, skip_mode)
     |> assign(:shipping_position, position)
     |> assign(:shipping_required_here, shipping_required_here)
+    |> assign_shipping_view()
+  end
+
+  defp put_cart(socket, cart) do
+    socket |> assign(:cart, cart) |> assign_shipping_view()
+  end
+
+  # The shipping of the cart is worked out HERE, when the cart changes, and
+  # handed to the render: packing, the request hash, the service list and the
+  # provider's check of the destination are too much to redo on every render.
+  # Nothing is worked out for a page that does not pick the shipping.
+  defp assign_shipping_view(%{assigns: %{shipping_required_here: true}} = socket) do
+    %{cart: cart, shipping_methods: methods} = socket.assigns
+    snapshot = Shop.shipping_quote_snapshot(cart)
+
+    presented =
+      Map.new(methods, fn method ->
+        presented =
+          if method.uuid == cart.shipping_method_uuid and snapshot.presented,
+            do: snapshot.presented,
+            else: Shop.present_shipping_method(cart, method)
+
+        {method.uuid, presented}
+      end)
+
+    socket |> assign(:shipping_snapshot, snapshot) |> assign(:shipping_presented, presented)
+  end
+
+  defp assign_shipping_view(socket) do
+    socket
+    |> assign(:shipping_snapshot, Shop.shipping_quote_snapshot(socket.assigns.cart, nil))
+    |> assign(:shipping_presented, %{})
   end
 
   # Available shipping methods are only fetched when shipping is both
@@ -325,12 +367,23 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
 
   @impl true
   def handle_info({:shipping_selected, cart}, socket) do
-    {:noreply, assign(socket, :cart, cart)}
+    if ShippingRequote.same_cart?(cart, socket.assigns.cart) do
+      {:noreply, socket}
+    else
+      {:noreply, put_cart(socket, cart)}
+    end
+  end
+
+  # The picker says the answer may have changed without the cart (the delivery
+  # options were asked for again, the carrier refused the request).
+  @impl true
+  def handle_info(:shipping_recheck, socket) do
+    {:noreply, assign_shipping_view(socket)}
   end
 
   @impl true
   def handle_info({:payment_selected, cart}, socket) do
-    {:noreply, assign(socket, :cart, cart)}
+    {:noreply, put_cart(socket, cart)}
   end
 
   @impl true
@@ -347,10 +400,12 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
   # more than one, so adding a single new event shape would have started
   # crashing live sessions with no change here at all.
   @impl true
-  def handle_info(_message, socket), do: {:noreply, socket}
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
 
   @impl true
   def render(assigns) do
+    assigns = assign(assigns, :shipping_pending, shipping_pending?(assigns))
+
     ~H"""
     <ShopLayouts.shop_layout {assigns}>
       <%!-- Page container — see shop_catalog.ex. This page and the catalog were
@@ -481,7 +536,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                               </div>
                             </td>
                             <td class="text-center">
-                              <form phx-change="update_quantity" class="inline">
+                              <form id={"cart-quantity-form-#{item.uuid}"} phx-change="update_quantity" class="inline">
                                 <input type="hidden" name="item_uuid" value={item.uuid} />
                                 <input
                                   type="number"
@@ -519,6 +574,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                             <td>
                               <button
                                 phx-click="remove_item"
+                                phx-disable-with="…"
                                 phx-value-item_uuid={item.uuid}
                                 class="btn btn-ghost btn-sm text-error"
                               >
@@ -549,44 +605,75 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                   <% else %>
                     <div class="space-y-3">
                       <%= for method <- @shipping_methods do %>
-                        <label class={[
-                          "flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-colors",
-                          if(@cart.shipping_method_uuid == method.uuid,
-                            do: "border-primary bg-primary/5",
-                            else: "border-base-300 hover:border-primary/50"
-                          )
-                        ]}>
-                          <input
-                            type="radio"
-                            name="shipping_method"
-                            value={method.uuid}
-                            checked={@cart.shipping_method_uuid == method.uuid}
-                            phx-click="select_shipping"
-                            phx-value-method_uuid={method.uuid}
-                            class="radio radio-primary"
+                        <div class="space-y-2">
+                          <label class={[
+                            "flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-colors",
+                            if(@cart.shipping_method_uuid == method.uuid,
+                              do: "border-primary bg-primary/5",
+                              else: "border-base-300 hover:border-primary/50"
+                            )
+                          ]}>
+                            <input
+                              type="radio"
+                              name="shipping_method"
+                              value={method.uuid}
+                              checked={@cart.shipping_method_uuid == method.uuid}
+                              phx-click="select_shipping"
+                              phx-value-method_uuid={method.uuid}
+                              class="radio radio-primary"
+                            />
+                            <div class="flex-1">
+                              <div class="font-medium">{method.name}</div>
+                              <%= if method.description do %>
+                                <div class="text-sm text-base-content/60">{method.description}</div>
+                              <% end %>
+                              <%= if estimate = ShippingMethod.delivery_estimate(method) do %>
+                                <div class="text-sm text-base-content/50">{estimate}</div>
+                              <% end %>
+                            </div>
+                            <%!-- `method.price` and the free threshold are BASE
+                                 amounts; the cart is in its own currency. --%>
+                            <% presented = @shipping_presented[method.uuid] %>
+                            <div id={"cart-shipping-price-#{method.uuid}"} class="text-right">
+                              <%= cond do %>
+                                <% presented.pay_on_delivery? -> %>
+                                  <span class="badge badge-info badge-soft whitespace-nowrap">
+                                    {gettext("Paid on delivery")}
+                                  </span>
+                                <% presented.free? -> %>
+                                  <span class="badge badge-success">{gettext("FREE")}</span>
+                                <% presented.quote_status in [:needs_destination, :missing, :stale] -> %>
+                                  <span class="text-sm text-base-content/60">
+                                    {gettext("Calculated for your address")}
+                                  </span>
+                                <% presented.quote_status == :unavailable -> %>
+                                  <span class="badge badge-error badge-soft whitespace-nowrap">
+                                    {gettext("Not available")}
+                                  </span>
+                                <% true -> %>
+                                  <span class="font-semibold">
+                                    {format_price(presented.price, @currency)}
+                                  </span>
+                              <% end %>
+                            </div>
+                          </label>
+
+                          <%!-- Where a carrier-priced method delivers, and what
+                               it charges. --%>
+                          <.live_component
+                            :if={
+                              @cart.shipping_method_uuid == method.uuid and
+                                ShippingMethod.calculated?(method)
+                            }
+                            module={ShippingDestinationPicker}
+                            id={"shipping-picker-#{method.uuid}"}
+                            cart={@cart}
+                            method={method}
+                            snapshot={@shipping_snapshot}
+                            locale={@locale}
+                            currency={@currency}
                           />
-                          <div class="flex-1">
-                            <div class="font-medium">{method.name}</div>
-                            <%= if method.description do %>
-                              <div class="text-sm text-base-content/60">{method.description}</div>
-                            <% end %>
-                            <%= if estimate = ShippingMethod.delivery_estimate(method) do %>
-                              <div class="text-sm text-base-content/50">{estimate}</div>
-                            <% end %>
-                          </div>
-                          <%!-- `method.price` and the free threshold are BASE
-                               amounts; the cart is in its own currency. --%>
-                          <% presented = Shop.present_shipping_method(@cart, method) %>
-                          <div class="text-right">
-                            <%= if presented.free? do %>
-                              <span class="badge badge-success">{gettext("FREE")}</span>
-                            <% else %>
-                              <span class="font-semibold">
-                                {format_price(presented.price, @currency)}
-                              </span>
-                            <% end %>
-                          </div>
-                        </label>
+                        </div>
                       <% end %>
                     </div>
                   <% end %>
@@ -612,19 +699,24 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                     <span>{format_price(@cart.subtotal, @currency)}</span>
                   </div>
 
-                  <div class="flex justify-between">
+                  <div id="cart-summary-shipping" class="flex justify-between">
                     <span class="text-base-content/70">{gettext("Shipping")}</span>
                     <%= if !@requires_shipping do %>
                       <span class="text-base-content/50">{gettext("Not needed")}</span>
                     <% else %>
-                    <%= if is_nil(@cart.shipping_method_uuid) do %>
-                      <span class="text-base-content/50">{gettext("Select method")}</span>
-                    <% else %>
-                      <%= if Decimal.compare(@cart.shipping_amount || Decimal.new("0"), Decimal.new("0")) == :eq do %>
+                    <%= cond do %>
+                      <% is_nil(@cart.shipping_method_uuid) -> %>
+                        <span class="text-base-content/50">{gettext("Select method")}</span>
+                      <% @shipping_pending and @shipping_snapshot.status == :unavailable -> %>
+                        <span class="text-error">{gettext("Not available")}</span>
+                      <% @shipping_pending -> %>
+                        <span class="text-base-content/50">{gettext("To be calculated")}</span>
+                      <% PriceDisplay.cart_shipping_pay_on_delivery?(@cart) -> %>
+                        <span>{gettext("Paid on delivery")}</span>
+                      <% Decimal.compare(@cart.shipping_amount || Decimal.new("0"), Decimal.new("0")) == :eq -> %>
                         <span class="text-success">{gettext("FREE")}</span>
-                      <% else %>
+                      <% true -> %>
                         <span>{format_price(@cart.shipping_amount, @currency)}</span>
-                      <% end %>
                     <% end %>
                     <% end %>
                   </div>
@@ -645,10 +737,24 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
 
                   <div class="divider my-2"></div>
 
-                  <div class="flex justify-between text-lg font-bold">
+                  <div id="cart-summary-total" class="flex justify-between text-lg font-bold">
                     <span>{gettext("Total")}</span>
-                    <span>{format_price(@cart.total, @currency)}</span>
+                    <span>
+                      <span :if={@shipping_pending}>≈</span>
+                      {format_price(@cart.total, @currency)}
+                    </span>
                   </div>
+
+                  <%!-- The total of a cart whose carrier-priced delivery is not
+                        settled carries the price of the method as a placeholder:
+                        said so. --%>
+                  <p
+                    :if={@shipping_pending and @shipping_snapshot.status != :unavailable}
+                    id="cart-summary-total-estimate"
+                    class="text-xs text-base-content/60"
+                  >
+                    {gettext("The delivery cost is still to be calculated: the total will change.")}
+                  </p>
 
                   <%!-- An on-request line contributes 0 to every figure above, so
                         a cart holding one shows a total that is not the bill. The
@@ -658,6 +764,14 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                     <p class="text-xs text-base-content/60">
                       {gettext(
                         "Items priced on request are not included in this total."
+                      )}
+                    </p>
+                  <% end %>
+
+                  <%= if @requires_shipping && PriceDisplay.cart_shipping_pay_on_delivery?(@cart) do %>
+                    <p id="cart-shipping-pay-on-delivery-note" class="text-xs text-base-content/60">
+                      {gettext(
+                        "Shipping is not included in this total: you pay the carrier at their rates on delivery."
                       )}
                     </p>
                   <% end %>
@@ -692,12 +806,46 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
 
   # Private helpers
 
+  # A method switched to pay-on-delivery after this cart picked it leaves
+  # the old fee in the cart's stored totals. A failed refresh (the cart was
+  # converted meanwhile) keeps the cart as loaded; the summary then shows
+  # the amount it actually holds - see `PriceDisplay.cart_shipping_pay_on_delivery?/1`.
+  # A cart frozen against a previous base currency is rebased by the context
+  # whenever it is written to; a shopper who only LOOKS at it must not see
+  # the old figures either. A cart that cannot be rebased is shown as it is.
+  defp rebase_cart(cart) do
+    case Shop.rebase_cart(cart) do
+      {:ok, rebased} -> rebased
+      _ -> cart
+    end
+  end
+
+  defp refresh_pay_on_delivery_shipping(cart) do
+    case Shop.refresh_pay_on_delivery_shipping(cart) do
+      {:ok, refreshed} -> refreshed
+      _ -> cart
+    end
+  end
+
+  # A carrier-priced method whose delivery place or price is not settled yet:
+  # its amount is not known, so the summary says so rather than show the
+  # price of the method.
+  defp shipping_pending?(%{
+         cart: cart,
+         requires_shipping: true,
+         shipping_required_here: true,
+         shipping_snapshot: %{blocks?: true}
+       })
+       when not is_nil(cart.shipping_method_uuid),
+       do: not ShippingMethod.pay_on_delivery?(cart.shipping_method)
+
+  defp shipping_pending?(_assigns), do: false
+
   defp generate_session_id do
     :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)
   end
 
   defp product_item_url(item, language) do
-    base = DialectMapper.extract_base(language)
-    Routes.path("/shop/product/#{item.product_slug}", locale: base)
+    Routes.path("/shop/product/#{item.product_slug}", locale: Shop.url_locale(language))
   end
 end

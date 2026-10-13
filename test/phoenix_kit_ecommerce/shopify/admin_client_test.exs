@@ -1,5 +1,5 @@
 defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
-  use PhoenixKitEcommerce.DataCase, async: true
+  use PhoenixKitEcommerce.DataCase, async: false
 
   alias PhoenixKit.Integrations
   alias PhoenixKitEcommerce.Shopify.AdminClient
@@ -7,6 +7,8 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
   @stub __MODULE__
 
   defp connect_shopify(attrs \\ %{}) do
+    enable_shopify!()
+
     {:ok, %{uuid: uuid}} =
       Integrations.add_connection("shopify", "Test Shop #{System.unique_integer([:positive])}")
 
@@ -43,6 +45,7 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
     end
 
     test "returns an error when the connection has never been configured" do
+      enable_shopify!()
       {:ok, %{uuid: uuid}} = Integrations.add_connection("shopify", "Unconfigured Shop")
 
       assert {:error, _reason} = AdminClient.fetch_products(uuid, req_options())
@@ -89,6 +92,79 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
       Req.Test.stub(@stub, fn conn -> Req.Test.transport_error(conn, :closed) end)
 
       assert {:error, %Req.TransportError{}} = AdminClient.fetch_products(uuid, req_options())
+    end
+  end
+
+  describe "the connection's shop domain" do
+    for domain <- ["internal-host:8443/x#", "shop.example.com", "https://test-shop.myshopify.com"] do
+      test "#{inspect(domain)} is refused before any request is made" do
+        uuid = connect_shopify(%{"shop_domain" => unquote(domain)})
+        Req.Test.stub(@stub, fn _conn -> flunk("no request should be made") end)
+
+        assert AdminClient.fetch_products(uuid, req_options()) == {:error, :invalid_shop_domain}
+        assert AdminClient.fetch_shop(uuid, req_options()) == {:error, :invalid_shop_domain}
+        assert AdminClient.fetch_product(uuid, 1, req_options()) == {:error, :invalid_shop_domain}
+
+        assert AdminClient.fetch_collections([integration_uuid: uuid] ++ req_options()) ==
+                 {:error, :invalid_shop_domain}
+      end
+    end
+  end
+
+  describe "fetch_products/2 never carries the token off the shop's host" do
+    test "a next-page link naming another host is not followed" do
+      uuid = connect_shopify()
+      test_pid = self()
+
+      Req.Test.stub(@stub, fn conn ->
+        send(test_pid, {:requested, conn.host})
+
+        conn
+        |> Plug.Conn.put_resp_header(
+          "link",
+          ~s(<https://evil.example.com/admin/api/2025-01/products.json?page_info=x>; rel="next")
+        )
+        |> json_response(200, %{"products" => [%{"id" => 1, "handle" => "first"}]})
+      end)
+
+      assert AdminClient.fetch_products(uuid, req_options()) ==
+               {:error, :unexpected_next_page_host}
+
+      assert_received {:requested, "test-shop.myshopify.com"}
+      refute_received {:requested, _other}
+    end
+
+    test "a redirect is reported, not followed" do
+      uuid = connect_shopify()
+      test_pid = self()
+
+      Req.Test.stub(@stub, fn conn ->
+        send(test_pid, {:requested, conn.host})
+
+        conn
+        |> Plug.Conn.put_resp_header("location", "https://evil.example.com/steal")
+        |> Plug.Conn.send_resp(302, "")
+      end)
+
+      assert AdminClient.fetch_products(uuid, req_options()) ==
+               {:error, {:unexpected_status, 302}}
+
+      assert_received {:requested, "test-shop.myshopify.com"}
+      refute_received {:requested, _other}
+    end
+
+    test "a Link chain that never ends is cut off" do
+      uuid = connect_shopify()
+
+      Req.Test.stub(@stub, fn conn ->
+        next = "https://test-shop.myshopify.com#{conn.request_path}?page_info=again"
+
+        conn
+        |> Plug.Conn.put_resp_header("link", ~s(<#{next}>; rel="next"))
+        |> json_response(200, %{"products" => []})
+      end)
+
+      assert AdminClient.fetch_products(uuid, req_options()) == {:error, :too_many_pages}
     end
   end
 
@@ -492,6 +568,7 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
     end
 
     test "returns an error when the connection has never been configured" do
+      enable_shopify!()
       {:ok, %{uuid: uuid}} = Integrations.add_connection("shopify", "Unconfigured Shop")
 
       assert {:error, _reason} = AdminClient.fetch_product(uuid, 123, req_options())
@@ -788,6 +865,7 @@ defmodule PhoenixKitEcommerce.Shopify.AdminClientTest do
     end
 
     test "returns an error when the connection has never been configured" do
+      enable_shopify!()
       {:ok, %{uuid: uuid}} = Integrations.add_connection("shopify", "Unconfigured Shop")
 
       assert {:error, _reason} = AdminClient.fetch_shop(uuid, req_options())

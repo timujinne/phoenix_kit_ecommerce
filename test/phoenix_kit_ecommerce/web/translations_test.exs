@@ -230,6 +230,40 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       {:ok, conn: put_test_scope(conn, fake_scope())}
     end
 
+    test "a selection that is not a list of uuids opens nothing and crashes nothing", %{
+      conn: conn
+    } do
+      product = create_product()
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      for verb <- ~w(request_translate request_retranslate request_stamp),
+          params <- [%{}, %{"uuids" => "not-a-list"}, %{"uuids" => %{"0" => product.uuid}}] do
+        refute render_click(view, "#{verb}:all:all", params) =~ "Translate?"
+      end
+
+      refute render_click(view, "request_translate:all:all", %{"uuids" => ["not-a-uuid", 7]}) =~
+               "Translate?"
+    end
+
+    test "malformed entries are dropped and the real ones still go through", %{conn: conn} do
+      product = create_product()
+      {:ok, view, _html} = live(conn, "/en/admin/shop/translations")
+
+      html =
+        render_click(view, "request_translate:all:all", %{
+          "uuids" => ["not-a-uuid", product.uuid, nil]
+        })
+
+      assert html =~ "Translate?"
+      confirm!(view)
+
+      assert length(jobs_for(product.uuid)) == 2
+
+      assert_activity_logged("shop.translations_queued",
+        metadata_has: %{"resources" => 1, "enqueued" => 2}
+      )
+    end
+
     test "request opens a confirm modal; confirm enqueues missing∪stale languages", %{
       conn: conn
     } do
@@ -565,6 +599,7 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       html = confirm!(view)
 
       assert html =~ "Stamped 30 resources"
+      assert_activity_logged("shop.translations_stamped", metadata_has: %{"count" => 30})
 
       reloaded_last = Shop.get_product!(last.uuid)
       assert TranslationFingerprint.get(reloaded_last.metadata, "de", "title") != nil
@@ -609,6 +644,7 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       html = confirm!(view)
 
       assert html =~ "Reset the reference for 30 resources"
+      assert_activity_logged("shop.translations_reference_reset", metadata_has: %{"count" => 30})
 
       reloaded_last = Shop.get_product!(last.uuid)
       assert TranslationFingerprint.get(reloaded_last.metadata, "de", "title") == nil
@@ -786,6 +822,7 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
       assert repo().get(Oban.Job, category_job.id).state == "cancelled"
       refute repo().get(Oban.Job, foreign_job.id).state == "cancelled"
       assert html =~ "Cancelled"
+      assert_activity_logged("shop.translations_stopped", metadata_has: %{"count" => 2})
     end
 
     test "denied without shop.manage_settings", %{conn: conn} do
@@ -1170,16 +1207,29 @@ defmodule PhoenixKitEcommerce.Web.TranslationsTest do
     } do
       # The immediate-flash twin of the persisted-summary test below, and
       # provoked through a door an operator can actually open rather than
-      # by writing the outcome by hand: the AI section's explicit endpoint
-      # override left pointing at something that isn't a uuid.
-      # `default_endpoint_uuid/0` hands that value back verbatim, so both
-      # this page and the tick still consider AI available, while
-      # `enqueue_all_missing/2` refuses every language with
-      # `{:invalid_uuids, [:endpoint_uuid]}`. The tick then records
-      # `enqueued: 0, errors: 2` (one per language) — which, unsurfaced,
-      # reads exactly like "nothing needed doing".
+      # by writing the outcome by hand: a prompt that already holds the
+      # code-managed product prompt's NAME under another slug. The prompt
+      # rollout finds nothing at its own slug, `create_prompt/1` loses to the
+      # unique name and the re-read by slug finds nothing either
+      # (`:prompt_create_failed`), so the tick still has the category
+      # prompt, goes ahead, and counts every product language it cannot
+      # enqueue as an error: `enqueued: 0, errors: 2` (de and fr) — which,
+      # unsurfaced, reads exactly like "nothing needed doing". (The AI
+      # section's endpoint override used to be the door; the engine now
+      # refuses a bad endpoint before it enqueues anything.)
       Settings.update_boolean_setting_with_module("shop_translation_sweep_enabled", true, "shop")
-      {:ok, _} = Settings.update_setting_with_module("ai_translation_endpoint_uuid", "nope", "ai")
+
+      {:ok, squatter} =
+        PhoenixKitAI.create_prompt(%{
+          name: "PhoenixKit Shop Product Translation",
+          content: "An operator's own prompt."
+        })
+
+      repo().query!("UPDATE phoenix_kit_ai_prompts SET slug = $1 WHERE uuid = $2", [
+        "operators-own-slug",
+        Ecto.UUID.dump!(squatter.uuid)
+      ])
+
       product = create_product()
 
       {:ok, view, _html} = live(conn, "/en/admin/shop/translations")

@@ -17,11 +17,11 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
   use PhoenixKitEcommerce.Web, :live_view
 
-  alias PhoenixKit.PubSub.Manager
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Errors
+  alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.Import.{CSVAnalyzer, FormatDetector}
   alias PhoenixKitEcommerce.ImportLog
   alias PhoenixKitEcommerce.Options
@@ -30,17 +30,21 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
+  alias PhoenixKitEcommerce.Web.StatusLabels
   alias PhoenixKitEcommerce.Workers.CSVImportWorker
 
   require Logger
+
+  # How often a burst of per-product migration messages refreshes the stats.
+  @migration_stats_refresh_ms 1_000
 
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
       # Subscribe to import updates
-      Manager.subscribe("shop:imports")
+      Events.subscribe_imports()
       # Subscribe to image migration updates
-      Manager.subscribe("shop:image_migration:batch")
+      Events.subscribe_image_migration()
 
       # Subscribe to any active imports (processing status)
       subscribe_to_active_imports()
@@ -362,11 +366,24 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         {:product_migrated, %{product_uuid: _product_uuid, images_migrated: _count}},
         socket
       ) do
-    # Update stats on each product completion
+    # One message per product, and the stats are four queries (two table
+    # counts, two Oban counts): refresh at most once per interval however
+    # many products finish in it.
+    if socket.assigns[:migration_stats_refresh_pending] do
+      {:noreply, socket}
+    else
+      Process.send_after(self(), :refresh_migration_stats, @migration_stats_refresh_ms)
+      {:noreply, assign(socket, :migration_stats_refresh_pending, true)}
+    end
+  end
+
+  @impl true
+  def handle_info(:refresh_migration_stats, socket) do
     stats = ImageMigration.migration_stats()
 
     socket =
       socket
+      |> assign(:migration_stats_refresh_pending, false)
       |> assign(:migration_stats, stats)
       |> assign(:migration_in_progress, stats.in_progress > 0)
 
@@ -387,9 +404,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
   # Catch-all for other messages
   @impl true
-  def handle_info(_message, socket) do
-    {:noreply, socket}
-  end
+  def handle_info(message, socket), do: Helpers.ignore_message(message, socket)
 
   defp handle_progress(:csv_file, entry, socket) do
     if entry.done? do
@@ -408,7 +423,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
     Shop.list_import_logs(limit: 10, order_by: [desc: :inserted_at])
     |> Enum.filter(&(&1.status == "processing"))
     |> Enum.each(fn import_log ->
-      Manager.subscribe("shop:import:#{import_log.uuid}")
+      Events.subscribe_import(import_log.uuid)
     end)
   end
 
@@ -457,7 +472,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         else: worker_args
 
     worker_args |> CSVImportWorker.new() |> Oban.insert()
-    Manager.subscribe("shop:import:#{updated_log.uuid}")
+    Events.subscribe_import(updated_log.uuid)
 
     Activity.log("shop.import_run_retried",
       actor_uuid: Activity.actor_uuid(socket),
@@ -561,7 +576,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         )
 
         # Subscribe to this specific import
-        Manager.subscribe("shop:import:#{import_log.uuid}")
+        Events.subscribe_import(import_log.uuid)
 
         socket =
           socket
@@ -762,21 +777,23 @@ defmodule PhoenixKitEcommerce.Web.Imports do
 
     e ->
       Logger.error("CSV analysis failed: #{inspect(e)}")
-      {:error, "Failed to parse CSV file. Please check the file format."}
+      {:error, gettext("Failed to parse CSV file. Please check the file format.")}
   end
 
   defp parse_csv_error(message) do
     cond do
       String.contains?(message, "unexpected escape character") ->
-        "CSV format error: The file contains incorrectly escaped quotes. " <>
-          "Please export directly from Shopify using 'Export > CSV for Excel'."
+        gettext(
+          "CSV format error: The file contains incorrectly escaped quotes. Please export directly from Shopify using 'Export > CSV for Excel'."
+        )
 
       String.contains?(message, "reached the end of file") ->
-        "CSV format error: The file has unclosed quotes. " <>
-          "Please re-export from Shopify or check for corrupted data."
+        gettext(
+          "CSV format error: The file has unclosed quotes. Please re-export from Shopify or check for corrupted data."
+        )
 
       true ->
-        "CSV parse error: #{String.slice(message, 0, 100)}"
+        gettext("CSV parse error: %{details}", details: String.slice(message, 0, 100))
     end
   end
 
@@ -970,6 +987,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                 <button
                   type="button"
                   phx-click="cancel_image_migration"
+                  phx-disable-with={gettext("Cancelling…")}
                   class="btn btn-outline btn-error"
                 >
                   <.icon name="hero-stop" class="w-4 h-4 mr-2" /> {gettext("Cancel Migration")}
@@ -979,6 +997,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                   <button
                     type="button"
                     phx-click="start_image_migration"
+                    phx-disable-with={gettext("Starting…")}
                     class="btn btn-primary"
                   >
                     <.icon name="hero-arrow-down-on-square-stack" class="w-4 h-4 mr-2" />
@@ -1069,6 +1088,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                             <%= if import.status == "failed" do %>
                               <button
                                 phx-click="retry_import"
+                                phx-disable-with="…"
                                 phx-value-id={import.uuid}
                                 class="btn btn-xs btn-outline btn-warning tooltip tooltip-bottom"
                                 data-tip={gettext("Retry")}
@@ -1080,6 +1100,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
                             <%= if import.status in ["completed", "failed"] do %>
                               <button
                                 phx-click="delete_import"
+                                phx-disable-with="…"
                                 phx-value-id={import.uuid}
                                 class="btn btn-xs btn-outline btn-error tooltip tooltip-bottom"
                                 data-tip={gettext("Delete")}
@@ -1290,7 +1311,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
       <%= if length(@uploads.csv_file.entries) > 0 do %>
         <% entry = List.first(@uploads.csv_file.entries) %>
         <%= if entry.done? do %>
-          <button type="submit" class="btn btn-primary btn-block mt-4">
+          <button type="submit" phx-disable-with={gettext("Uploading…")} class="btn btn-primary btn-block mt-4">
             <.icon name="hero-arrow-right" class="w-5 h-5 mr-2" /> {gettext("Analyze & Configure")}
           </button>
         <% end %>
@@ -1387,7 +1408,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
           {gettext("Skip Mapping")}
         </button>
       <% end %>
-      <button type="button" phx-click="run_import" class="btn btn-primary">
+      <button type="button" phx-click="run_import" phx-disable-with={gettext("Starting…")} class="btn btn-primary">
         <.icon name="hero-arrow-down-tray" class="w-4 h-4 mr-2" /> {gettext("Start Import")}
       </button>
     </div>
@@ -1550,7 +1571,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         <.icon name="hero-arrow-left" class="w-4 h-4" />
       </button>
       <div class="flex-1"></div>
-      <button type="button" phx-click="confirm_import" class="btn btn-primary">
+      <button type="button" phx-click="confirm_import" phx-disable-with={gettext("Starting…")} class="btn btn-primary">
         <.icon name="hero-arrow-down-tray" class="w-4 h-4 mr-2" /> {gettext("Start Import")}
       </button>
     </div>
@@ -1606,7 +1627,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
         _ -> "badge-ghost"
       end
     ]}>
-      {@status}
+      {StatusLabels.import(@status)}
     </span>
     """
   end
@@ -1622,6 +1643,29 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   defp error_to_string(:too_many_files), do: gettext("Only one file at a time")
   defp error_to_string(err), do: inspect(err)
 
+  defp log_image_migration(socket, action, count) do
+    Activity.log(action,
+      actor_uuid: Activity.actor_uuid(socket),
+      actor_role: Activity.actor_role(socket),
+      resource_type: "product",
+      metadata: %{"count" => count}
+    )
+  end
+
+  # The browser names the file; only its last segment, reduced to characters
+  # that mean nothing to a filesystem, becomes part of the path.
+  defp upload_file_name(client_name) do
+    name =
+      client_name
+      |> to_string()
+      |> Path.basename()
+      |> String.replace(~r/[^A-Za-z0-9._-]/, "_")
+      |> String.trim_leading(".")
+      |> String.slice(0, 100)
+
+    if name == "", do: "upload.csv", else: name
+  end
+
   defp gated_event("start_import", _params, socket) do
     # Multi-step: consume upload, detect format, then route to appropriate step
     case consume_uploaded_entries(socket, :csv_file, fn %{path: path}, entry ->
@@ -1629,7 +1673,10 @@ defmodule PhoenixKitEcommerce.Web.Imports do
            File.mkdir_p!(dest_dir)
 
            dest_path =
-             Path.join(dest_dir, "#{System.system_time(:millisecond)}_#{entry.client_name}")
+             Path.join(
+               dest_dir,
+               "#{System.system_time(:millisecond)}_#{upload_file_name(entry.client_name)}"
+             )
 
            File.cp!(path, dest_path)
            {:ok, {dest_path, entry.client_name}}
@@ -1681,6 +1728,7 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   defp gated_event("start_image_migration", _params, socket) do
     user = socket.assigns.phoenix_kit_current_scope.user
     {:ok, count} = ImageMigration.queue_all_migrations(user.uuid)
+    log_image_migration(socket, "shop.image_migration_started", count)
 
     socket =
       socket
@@ -1694,6 +1742,8 @@ defmodule PhoenixKitEcommerce.Web.Imports do
   defp gated_event("cancel_image_migration", _params, socket) do
     case ImageMigration.cancel_pending_migrations() do
       {:ok, count} ->
+        log_image_migration(socket, "shop.image_migration_cancelled", count)
+
         socket =
           socket
           |> assign(:migration_in_progress, false)

@@ -141,7 +141,7 @@ defmodule PhoenixKitEcommerce.Web.OptionState do
   ## Examples
 
       {:ok, state} = OptionState.add_value(state, "size", "XL")
-      {:error, "already exists"} = OptionState.add_value(state, "size", "M")
+      {:error, {:option_value_exists, "M"}} = OptionState.add_value(state, "size", "M")
   """
   def add_value(%__MODULE__{} = state, option_key, value)
       when is_binary(option_key) and is_binary(value) do
@@ -166,7 +166,7 @@ defmodule PhoenixKitEcommerce.Web.OptionState do
     end
   end
 
-  defp validate_nonempty(""), do: {:error, "value cannot be empty"}
+  defp validate_nonempty(""), do: {:error, :option_value_empty}
   defp validate_nonempty(_), do: :ok
 
   defp validate_unique(value, state, option_key) do
@@ -174,7 +174,7 @@ defmodule PhoenixKitEcommerce.Web.OptionState do
     available_values = Map.get(state.available, option_key, [])
     all_existing = Enum.uniq(schema_values ++ available_values)
 
-    if value in all_existing, do: {:error, "value '#{value}' already exists"}, else: :ok
+    if value in all_existing, do: {:error, {:option_value_exists, value}}, else: :ok
   end
 
   @doc """
@@ -381,11 +381,11 @@ defmodule PhoenixKitEcommerce.Web.OptionState do
 
     cond do
       key == "" or value == "" ->
-        {:error, "option key and value are required"}
+        {:error, :option_key_and_value_required}
 
       # Check if value already exists in this option
       value in get_all_values(state, key) ->
-        {:error, "value '#{value}' already exists in '#{key}'"}
+        {:error, {:option_value_exists, value}}
 
       # Check if this is adding to existing option
       Map.has_key?(state.available, key) or
