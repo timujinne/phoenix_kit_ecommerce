@@ -50,6 +50,7 @@ defmodule PhoenixKitEcommerce.Errors do
           | :invalid_host
           | :invalid_quantity
           | :invalid_scheme
+          | :missing_base_currency
           | :missing_content_type
           | :missing_slug
           | :missing_title
@@ -91,6 +92,7 @@ defmodule PhoenixKitEcommerce.Errors do
           | :temp_file_missing
           | :timeout
           | :unknown_format
+          | {:unsupported_product_source, module()}
 
   @doc """
   Translates an error reason (atom, string, or any term) into a
@@ -133,6 +135,13 @@ defmodule PhoenixKitEcommerce.Errors do
   def message(:invalid_host), do: gettext("The URL host is not allowed.")
   def message(:invalid_quantity), do: gettext("That quantity is not available.")
   def message(:invalid_scheme), do: gettext("The URL scheme is not allowed.")
+
+  def message(:missing_base_currency),
+    do:
+      gettext(
+        "This shop has no base currency yet, so prices from Shopify cannot be written. Set a base currency first."
+      )
+
   def message(:missing_content_type), do: gettext("The response is missing a content type.")
   def message(:missing_slug), do: gettext("A slug is required.")
   def message(:missing_title), do: gettext("A title is required.")
@@ -237,6 +246,14 @@ defmodule PhoenixKitEcommerce.Errors do
 
   def message(:option_key_and_value_required),
     do: gettext("Option key and value are required")
+
+  # `reprice_for_base_change/3`'s refusal: only the shop's own tables are
+  # repriced, so the change is refused before any write.
+  def message({:unsupported_product_source, _source}),
+    do:
+      gettext(
+        "Catalogue-backed shops cannot change their base currency yet. Nothing was changed and every price is still in the current base currency."
+      )
 
   def message(reason) when is_binary(reason), do: reason
 

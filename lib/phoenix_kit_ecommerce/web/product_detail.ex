@@ -14,6 +14,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.Policy
+  alias PhoenixKitEcommerce.SelectedSpecs
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
@@ -284,7 +285,6 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
             </div>
 
             <%!-- Option Values Section --%>
-            <% image_mappings = @product.metadata["_image_mappings"] || %{} %>
             <%= if @selectable_specs != [] do %>
               <div class="card bg-base-100 shadow-xl">
                 <div class="card-body">
@@ -297,7 +297,8 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
                       <div class="flex flex-wrap items-center gap-2">
                         <span class="font-medium min-w-24">{attr["label"]}:</span>
                         <%= for value <- get_option_values(@product, attr) do %>
-                          <% has_image = get_in(image_mappings, [attr["key"], value]) not in [nil, ""] %>
+                          <% has_image =
+                            SelectedSpecs.image_mapping(@product.metadata, attr["key"], value) != nil %>
                           <% price_mod =
                             affects_price && get_price_modifier(@product, attr["key"], value) %>
                           <button
@@ -317,7 +318,7 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
                             <%= if has_image do %>
                               <.icon name="hero-photo" class="w-3 h-3" />
                             <% end %>
-                            {value}
+                            {SelectedSpecs.value_label(@product.metadata, attr["key"], value)}
                             <%= if price_mod do %>
                               <span class="text-xs opacity-70">
                                 {format_price_modifier(price_mod, @currency)}
@@ -652,9 +653,8 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
   end
 
   defp get_mapped_image_uuid(product, option_key, option_value, current_image_uuid) do
-    case get_in(product.metadata || %{}, ["_image_mappings", option_key, option_value]) do
+    case SelectedSpecs.image_mapping(product.metadata, option_key, option_value) do
       nil -> current_image_uuid
-      "" -> current_image_uuid
       "http" <> _rest -> current_image_uuid
       image_uuid -> image_uuid
     end

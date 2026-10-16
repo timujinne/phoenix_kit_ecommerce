@@ -41,9 +41,11 @@ pages.
   `phoenix_kit_warehouse` is resolved, which brings `phoenix_kit_catalogue`
   in transitively.
 - **Consumed by:** no sibling declares a dependency on this module. Core
-  reaches the old `PhoenixKit.Modules.Shop.*` namespace through the
-  transitional shims in `lib/phoenix_kit_ecommerce/compat/`, and
-  `phoenix_kit_catalogue` discovers `catalogue_extensions/0` by duck typing.
+  calls `PhoenixKitEcommerce.*` by its own name (the route module, the
+  session plug, the two customer order pages), and `phoenix_kit_catalogue`
+  discovers `catalogue_extensions/0` by duck typing. Nothing in core or a
+  sibling references the deprecated `PhoenixKit.Modules.Shop.*` names in
+  `lib/phoenix_kit_ecommerce/compat/`; only a host written against them does.
 - **Admin surface:** tab `E-Commerce` at `/admin/shop`, subtabs Dashboard,
   Products, Categories, Shipping, Carts, CSV Import, Shopify Sync (hidden
   while `shop_shopify_enabled` is off) and Translations
@@ -198,6 +200,19 @@ Repo-local aliases:
   transaction.** A caller's product can predate required options or removed
   values. Both add-to-cart paths validate the same product they price;
   `skip_spec_validation: true` is the explicit trusted-caller opt-out.
+- **A cart line's option selection is written and read through
+  `PhoenixKitEcommerce.SelectedSpecs`, never off `selected_specs` directly.**
+  On the catalogue source an option value's identity is its key (the
+  attribute-set value's slug): the picker submits keys, `add_to_cart/4`
+  validates and prices by key, and the line stores the key with a snapshot of
+  the label the buyer saw (`metadata["selection"]`). A label is a
+  translation, so two values can share one in some language. A line stored
+  before keys were the identity holds labels and no snapshot; it is displayed
+  as stored and never rewritten, and `SelectedSpecs.keys/2` is the only place
+  it is matched back to keys. An order line carries the labels
+  (`"selected_specs"`) and, for a keyed line, the keys
+  (`"selected_spec_keys"`). The Legacy source is unchanged: its option values
+  are admin-typed strings that are their own identity.
 - **Perceptual image reuse excludes multi-frame images and preserves
   aspect ratio in the confirmation.** An identical first frame does not
   establish identical animation; stretching both inputs to a square hides
@@ -209,7 +224,12 @@ Repo-local aliases:
   spawn a bare `Task`. The one exception is `TranslationSweepWorker`, on
   `default` beside the `PhoenixKitAI.TranslateWorker` jobs it enqueues:
   its batch and in-flight ceiling are sized against that queue, and a long
-  CSV import must not hold up a tick.
+  CSV import must not hold up a tick. The Shopify sync runs ONE kind at a
+  time: images and variants each write an item's whole `data` map from a
+  read taken when the run started, so two kinds together drop each other's
+  keys. `ShopifyMediaSyncWorker` is unique across kinds and its `perform/1`
+  snoozes behind a run that started earlier; a new kind of sync joins that
+  worker rather than getting a queue entry of its own.
 - **Schemas:** UUIDv7 primary keys (`@primary_key {:uuid, UUIDv7,
   autogenerate: true}`, `uuid_generate_v7()` in DDL — never
   `gen_random_uuid()`), and every table-backed schema declares
@@ -289,11 +309,13 @@ Repo-local aliases:
   key. A cart that picked a method before it was flagged keeps the old fee
   in its stored totals until `refresh_pay_on_delivery_shipping/1` (the cart
   and checkout pages call it on mount).
-- `compat/shop.ex` redefines `PhoenixKit.Modules.Shop`, which is why
-  `elixirc_options: [ignore_module_conflict: true]` is set. That suppression
-  also hides a genuine redefinition warning, and a new public function without
-  a delegate there fails only at core's call site — re-audit the delegate list
-  whenever the public API changes.
+- `elixirc_options: [ignore_module_conflict: true]` is set for
+  `compat/shop.ex` (`PhoenixKit.Modules.Shop`), and it also hides a genuine
+  redefinition warning anywhere else in the package. The `compat/` namespace
+  is deprecated: every delegate carries `@deprecated` naming its replacement,
+  a new public function gets NO delegate there, and nothing in `lib/` or
+  `test/` may call one directly (a deprecation warning fails
+  `mix compile --warnings-as-errors`).
 - Under `shop_shipping_selection_position: "checkout"` the cart page renders
   **no** shipping section, so redirecting a shopper to `/cart` to "pick
   another method" is a closed loop with no way out. `CheckoutPage` re-enters
@@ -352,18 +374,20 @@ lib/phoenix_kit_ecommerce/
 │                     # Extension, ItemCommerce, CategoryCommerce, ShopSections,
 │                     # ShopStatusColumn, Writer (Shopify -> catalogue),
 │                     # ValueResolver, SetSlug
-├── compat/           # transitional PhoenixKit.Modules.Shop.* delegate shims
+├── compat/           # deprecated PhoenixKit.Modules.Shop.* delegate shims
 ├── services/         # image download + batch image migration
 ├── workers/          # Oban: CSVImportWorker, ImageMigrationWorker,
 │                     # ShopifyMediaSyncWorker, TranslationSweepWorker
 ├── mix_tasks/        # install, deduplicate_products,
 │                     # backfill_translation_fingerprints (one-shot),
-│                     # backfill_image_fingerprints (after upgrading)
+│                     # backfill_image_fingerprints (after upgrading),
+│                     # list_unstamped_prices (read-only audit)
 ├── web/              # LiveViews, components, plugs, routes, helpers, authz
 ├── activity.ex       # activity-log wrapper (module + actor metadata, never raises)
 ├── policy.ex         # secure-by-default admin policy settings
 ├── vocabulary.ex     # "products" / "services" / "mixed" storefront wording
 ├── price_display.ex  # units, "From", price on request
+├── selected_specs.ex # a cart line's option selection: value keys + label snapshot
 ├── notifications.ex  # notification fan-out
 ├── errors.ex         # atom -> gettext-backed message dispatch
 ├── events.ex         # PubSub broadcasts
@@ -439,8 +463,11 @@ gets its topic, subscribe and broadcast functions in `Events`.
 
 - **Public LiveViews:** ShopCatalog, CatalogCategory, CatalogProduct,
   CartPage, CheckoutPage, CheckoutComplete. `UserOrders` and
-  `UserOrderDetails` also live here but this module registers no route for
-  them; they are reached through the `compat/` namespace.
+  `UserOrderDetails` also live here; their routes (`/dashboard/orders`,
+  `/dashboard/orders/:uuid`, localized and not) are declared by core's
+  `PhoenixKitWeb.Integration` inside its authenticated session, against
+  these modules by name. `Web.Routes` must not declare the same paths — its
+  public routes land in a session without the login requirement.
 - **Admin LiveViews:** Dashboard, Products, ProductForm, ProductDetail,
   Categories, CategoryForm, ShippingMethods, ShippingMethodForm, Carts,
   Settings, OptionsSettings, Imports, ImportShow, ImportConfigs, ShopifySync,
@@ -647,6 +674,18 @@ settings-layer error.
   and no next-page link to another host, and bounds a paginated read by
   page count and wall clock. Installs that used Shopify under the old default of
   `true` get the row written by the chain's V3 step (below).
+- **No price is written from Shopify while the shop has no base currency.**
+  `Shopify.Sync.currency_verdict/1` answers `:missing_base_currency` before
+  it looks at the store at all: creates are refused, price fields are
+  dropped from an update (its other fields still apply), the variants sync
+  writes no modifier, and the sync page disables those actions under a
+  banner. An amount stored with no currency is read as whatever the base
+  later becomes. `mix phoenix_kit_ecommerce.list_unstamped_prices` lists the
+  catalogue items that already carry one; it stamps nothing.
+- **A base-currency change is refused on a catalogue-backed shop**
+  (`reprice_for_base_change/3` reprices the shop's own tables only). A
+  screen offering the change asks `base_currency_change_supported/0` before
+  its confirmation step and shows `Errors.message/1` of the reason.
 
 **Stock tracking — read through `PhoenixKitEcommerce.StockTracking`**
 
@@ -695,6 +734,12 @@ in hosts (and `mix phoenix_kit.status` reports it); tests apply it by running
 `up_statements/1` directly. A marker-less or foreign-comment table reads as
 version 0 — the core-baseline shape from before the chain existed.
 
+`up/1` and `down/1` both honour `:version`. `up(version: N)` applies V1
+through VN and stamps N — the call a generated host migration makes — and
+leaves a database already past N untouched; with no `:version` it goes to
+`current_version/0`. A target outside `1..current_version/0` raises.
+`up_statements/2` takes the same target.
+
 V1 is **adoptive**: all ten shop tables are core baseline tables that core
 still creates, so V1 changes no shape — it stamps the marker and claims future
 ownership. V2 is the chain's first deliberate divergence: it drops the
@@ -709,7 +754,10 @@ upgrade. It never overwrites an existing row; `down/1` leaves the row alone.
 
 Rules for the chain, all of which have been broken at least once:
 
-1. **Never edit V1.** A shape change is a new version.
+1. **Never edit a shipped version** — V1 or any later one. A shape change
+   is a new version: a new `version_statements/3` clause, a new digest in
+   `migrations_test.exs` for the new target. The digests of the shipped
+   targets never change.
 2. **`down/1` drops nothing.** It unstamps the marker and restores the V2
    column defaults; it never drops a table, function or trigger. The tables
    are core-created and rolling back this chain must not destroy data.
@@ -830,8 +878,10 @@ publish has succeeded.
 ## TODOs
 
 - **Remove the `compat/` namespace** (and `elixirc_options:
-  [ignore_module_conflict: true]` in `mix.exs`) once core no longer references
-  `PhoenixKit.Modules.Shop`.
+  [ignore_module_conflict: true]` in `mix.exs`) one release after the one
+  that ships it deprecated. Core no longer references
+  `PhoenixKit.Modules.Shop`; what remains is checking each host for the old
+  names.
 - **Add a `phoenix_kit_catalogue` floor** once a released catalogue ships the
   `PhoenixKitCatalogue.Extension` slot the duck-typed integration targets.
 - **Deprecate `phoenix_kit_shop_products` / `phoenix_kit_shop_categories` and

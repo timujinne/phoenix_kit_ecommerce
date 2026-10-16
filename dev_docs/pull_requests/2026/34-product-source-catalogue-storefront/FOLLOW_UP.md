@@ -56,6 +56,15 @@ Triage of `KIMI_REVIEW.md` against current code, by reading.
 
 `PGUSER=maxdon mix test` — 2891 tests, 0 failures. `mix precommit` (compile `--warnings-as-errors`, format, `credo --strict`, dialyzer) — exit 0, dialyzer 0 unnecessary skips. Run on the tree that carries this file.
 
+## Fixed (Batch 2 — 2026-10-14)
+
+- ~~#10 (decision part): what to do with `compat/`.~~ Deprecated: every
+  delegate carries `@deprecated` naming its `PhoenixKitEcommerce`
+  replacement (`compat/`); README lists the replacements. Removal one
+  release later.
+
+`PGUSER=maxdon mix test` — 3099 tests, 0 failures. `mix precommit` — exit 0 (dialyzer 0 unnecessary skips). Run on the tree that carries this batch.
+
 ## Open
 
 - **#4 (rest): `category_options/0` and `list_category_product_options/1`
@@ -64,10 +73,9 @@ Triage of `KIMI_REVIEW.md` against current code, by reading.
   `ProductForm` and `CategoryForm`, which redirect to the catalogue under the
   catalogue source, but both are public functions.
 - **#10 NITPICK: no `compat/` delegates for `get_config/1`,
-  `get_price_range_for/1`, `category_image_url/2`**
-  (`lib/phoenix_kit_ecommerce.ex:285`, `:1367`, `:7976` on;
-  `compat/shop.ex` has `get_config/0` only). Tied to the decision on
-  removing `compat/`.
+  `get_price_range_for/1`, `category_image_url/2`** — will not be added by
+  decision: `compat/` is deprecated and gains no delegate; it is removed one
+  release after the deprecation ships.
 - **#11 NITPICK: `list_categories_with_count/1` loads the whole filtered
   list and slices it in memory** (`lib/phoenix_kit_ecommerce.ex:1930-1943`).
 - **Unverified surface: the catalogue adapter's tests run only when

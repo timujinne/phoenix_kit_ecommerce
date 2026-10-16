@@ -70,6 +70,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.ProductSource
+  alias PhoenixKitEcommerce.SelectedSpecs
   alias PhoenixKitEcommerce.Shipping
   alias PhoenixKitEcommerce.Shipping.CartPacking
   alias PhoenixKitEcommerce.Shipping.CartQuote
@@ -1283,7 +1284,9 @@ defmodule PhoenixKitEcommerce do
   (notably `"type"`) keeps the global filter's value. A key absent from
   the global list is appended as a brand-new filter, taken from the
   override attrs as they are (with `"key"` set to the map key, in case
-  the override itself omits it).
+  the override itself omits it). Such a category-only entry must carry
+  `"enabled" => true` itself: nothing defaults a missing `"enabled"`, so
+  `get_enabled_storefront_filters/2` ignores an entry that omits the key.
   """
   @spec merge_storefront_filters([map()], map()) :: [map()]
   def merge_storefront_filters(global_filters, category_filters)
@@ -2829,9 +2832,11 @@ defmodule PhoenixKitEcommerce do
     line is carted with whatever `:selected_specs` holds, even nothing for a
     product with required options, and priced from it. Trusted callers only.
   - `:language` - the language the shopper's page used. The product is re-read
-    in it before pricing, so `:selected_specs` values (option labels, which
-    differ per language on the catalogue source) match its price modifiers,
-    and the line's product title is snapshotted in it.
+    in it, so the line's product title and the labels of its selection
+    (`PhoenixKitEcommerce.SelectedSpecs`) are snapshotted in it. The
+    `:selected_specs` values themselves do not depend on it: on the catalogue
+    source they are option value KEYS, validated and priced as keys, and a
+    value that is not one of the product's own is refused.
 
   ## Examples
 
@@ -2968,12 +2973,9 @@ defmodule PhoenixKitEcommerce do
   #
   # `language` is threaded into the catalogue reload because the SAME
   # attribute-set value renders under a different label per language
-  # (`View.product_view/2`'s `:language` opt) — `_option_values` and
-  # `_price_modifiers` on the reloaded product must key on whatever label
-  # the shopper's page (and `selected_specs`) used, or a priced option
-  # picked on `/fr/...` reloads with English modifier keys, matches
-  # nothing in `calculate_product_price/2`, and the line is inserted at
-  # the base price while the page showed base+modifier.
+  # (`View.product_view/2`'s `:language` opt): the line snapshots the
+  # label the shopper saw (`SelectedSpecs.snapshot/2`). Validation and
+  # pricing do not depend on it — they go by the value's key.
   defp lock_or_reload_product(
          %Product{__meta__: %Ecto.Schema.Metadata{state: :built}} = product,
          language
@@ -3038,7 +3040,8 @@ defmodule PhoenixKitEcommerce do
         calculated_price = calculate_product_price(locked_product, %{})
 
         # Check if product already in cart (without specs)
-        existing = find_cart_item_by_specs(cart.uuid, product_lookup_key(locked_product), %{})
+        existing =
+          find_cart_item_by_specs(cart.uuid, product_lookup_key(locked_product), %{}, false)
 
         item =
           case existing do
@@ -3165,6 +3168,11 @@ defmodule PhoenixKitEcommerce do
     Currency.present(amount, cart.currency, rate: cart.exchange_rate)
   end
 
+  defp put_selection_snapshot(attrs, nil), do: attrs
+
+  defp put_selection_snapshot(attrs, selection),
+    do: Map.update!(attrs, :metadata, &Map.put(&1, SelectedSpecs.metadata_key(), selection))
+
   defp add_product_with_specs_to_cart(
          cart,
          product,
@@ -3184,9 +3192,16 @@ defmodule PhoenixKitEcommerce do
         # Calculate price with spec modifiers using locked product state
         calculated_price = calculate_product_price(locked_product, selected_specs)
 
+        selection = SelectedSpecs.snapshot(locked_product, selected_specs)
+
         # Check if same product with same specs already in cart
         existing =
-          find_cart_item_by_specs(cart.uuid, product_lookup_key(locked_product), selected_specs)
+          find_cart_item_by_specs(
+            cart.uuid,
+            product_lookup_key(locked_product),
+            selected_specs,
+            not is_nil(selection)
+          )
 
         item =
           case existing do
@@ -3203,6 +3218,7 @@ defmodule PhoenixKitEcommerce do
                 |> Map.update!(:compare_at_price, &(&1 && snapshot_unit_price(cart, &1)))
                 |> put_shipping_profile(locked_product)
                 |> Map.put(:selected_specs, selected_specs)
+                |> put_selection_snapshot(selection)
 
               %CartItem{} |> CartItem.changeset(attrs) |> repo().insert!()
 
@@ -4657,7 +4673,8 @@ defmodule PhoenixKitEcommerce do
       find_cart_item_by_specs(
         user_cart.uuid,
         cart_item_lookup_key(item),
-        item.selected_specs || %{}
+        item.selected_specs || %{},
+        SelectedSpecs.keyed?(item)
       )
 
     case existing do
@@ -5588,7 +5605,9 @@ defmodule PhoenixKitEcommerce do
     %{
       "name" => item.product_title,
       "description" => format_item_description(item),
-      "selected_specs" => item.selected_specs || %{},
+      # The LABELS, as an order line has always carried them: an order is a
+      # snapshot of what the buyer saw. A keyed line also carries the keys.
+      "selected_specs" => SelectedSpecs.labels(item),
       "quantity" => item.quantity,
       "unit_price" => Decimal.to_string(item.unit_price),
       "total" => Decimal.to_string(item.line_total),
@@ -5619,6 +5638,15 @@ defmodule PhoenixKitEcommerce do
       # or the snapshot dies at the cart/order boundary.
       "price_on_request" => metadata["price_on_request"] == true
     }
+    |> put_selected_spec_keys(item)
+  end
+
+  # The identity behind the labels above, for a line that has one. Absent
+  # for an unkeyed line, as on every order line written before keys existed.
+  defp put_selected_spec_keys(line, %CartItem{} = item) do
+    if SelectedSpecs.keyed?(item),
+      do: Map.put(line, "selected_spec_keys", item.selected_specs),
+      else: line
   end
 
   defp build_order_attrs(%Cart{} = cart, line_items, opts, placing_session_id, guest_email) do
@@ -6314,6 +6342,19 @@ defmodule PhoenixKitEcommerce do
     end
   end
 
+  @doc """
+  Whether a base-currency change can be made on this shop right now: `:ok`,
+  or the `{:error, reason}` `reprice_for_base_change/3` would refuse with.
+
+  A screen that offers the change asks this BEFORE its confirmation step,
+  shows `PhoenixKitEcommerce.Errors.message/1` of the reason and disables
+  the confirm action, so the refusal is stated up front rather than
+  surfacing as a failed save.
+  """
+  @spec base_currency_change_supported() ::
+          :ok | {:error, {:unsupported_product_source, module()}}
+  def base_currency_change_supported, do: reject_unsupported_product_source()
+
   defp fetch_currency_decimal_places(code) do
     case repo().get_by(Currency, code: code) do
       %Currency{decimal_places: places} -> {:ok, places}
@@ -6616,9 +6657,11 @@ defmodule PhoenixKitEcommerce do
     slug
   end
 
-  defp format_item_description(%CartItem{product_slug: slug, selected_specs: specs}) do
+  defp format_item_description(%CartItem{product_slug: slug} = item) do
     specs_text =
-      Enum.map_join(specs, ", ", fn {key, value} -> "#{Options.humanize_key(key)}: #{value}" end)
+      item
+      |> SelectedSpecs.labels()
+      |> Enum.map_join(", ", fn {key, value} -> "#{Options.humanize_key(key)}: #{value}" end)
 
     "#{slug} (#{specs_text})"
   end
@@ -6680,7 +6723,12 @@ defmodule PhoenixKitEcommerce do
   # this, re-adding the same catalogue product would never find the line it
   # just inserted and would duplicate the row on every add instead of
   # bumping quantity.
-  defp find_cart_item_by_specs(cart_uuid, {:product_uuid, product_uuid}, specs)
+  #
+  # `keyed?` says which shape `specs` is in (`PhoenixKitEcommerce.SelectedSpecs`):
+  # value keys only ever match a keyed line, and labels only an unkeyed one,
+  # so a new selection is never added onto a line stored before keys were the
+  # identity whose label merely reads the same as some value's key.
+  defp find_cart_item_by_specs(cart_uuid, {:product_uuid, product_uuid}, specs, _keyed?)
        when map_size(specs) == 0 do
     CartItem
     |> where([i], i.cart_uuid == ^cart_uuid and i.product_uuid == ^product_uuid)
@@ -6688,7 +6736,7 @@ defmodule PhoenixKitEcommerce do
     |> repo().one()
   end
 
-  defp find_cart_item_by_specs(cart_uuid, {:product_uuid, product_uuid}, specs)
+  defp find_cart_item_by_specs(cart_uuid, {:product_uuid, product_uuid}, specs, _keyed?)
        when is_map(specs) do
     CartItem
     |> where([i], i.cart_uuid == ^cart_uuid and i.product_uuid == ^product_uuid)
@@ -6696,7 +6744,7 @@ defmodule PhoenixKitEcommerce do
     |> repo().one()
   end
 
-  defp find_cart_item_by_specs(cart_uuid, {:catalogue_item_uuid, item_uuid}, specs)
+  defp find_cart_item_by_specs(cart_uuid, {:catalogue_item_uuid, item_uuid}, specs, _keyed?)
        when map_size(specs) == 0 do
     CartItem
     |> where(
@@ -6708,7 +6756,7 @@ defmodule PhoenixKitEcommerce do
     |> repo().one()
   end
 
-  defp find_cart_item_by_specs(cart_uuid, {:catalogue_item_uuid, item_uuid}, specs)
+  defp find_cart_item_by_specs(cart_uuid, {:catalogue_item_uuid, item_uuid}, specs, keyed?)
        when is_map(specs) do
     CartItem
     |> where(
@@ -6717,8 +6765,15 @@ defmodule PhoenixKitEcommerce do
         fragment("?->>'catalogue_item_uuid' = ?", i.metadata, ^item_uuid)
     )
     |> where([i], i.selected_specs == ^specs)
+    |> where_selection_keyed(keyed?)
     |> repo().one()
   end
+
+  defp where_selection_keyed(query, true),
+    do: where(query, [i], fragment("?->'selection'->>'format' = '2'", i.metadata))
+
+  defp where_selection_keyed(query, false),
+    do: where(query, [i], fragment("?->'selection'->>'format' IS NULL", i.metadata))
 
   # Lock a cart row and refuse to mutate it unless it is still active.
   #

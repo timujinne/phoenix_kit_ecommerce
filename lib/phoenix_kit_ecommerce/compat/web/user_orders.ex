@@ -1,8 +1,11 @@
 defmodule PhoenixKit.Modules.Shop.Web.UserOrders do
   @moduledoc """
-  Compat alias for PhoenixKitEcommerce.Web.UserOrders.
-  LiveView — delegates mount, handle_params, handle_event.
+  Deprecated name of `PhoenixKitEcommerce.Web.UserOrders`, for a host router
+  that still declares the page under it. Core routes `/dashboard/orders` to
+  the new name itself; a hand-written route switches by naming
+  `PhoenixKitEcommerce.Web.UserOrders`.
   """
+  @moduledoc deprecated: "Use PhoenixKitEcommerce.Web.UserOrders instead"
 
   use Phoenix.LiveView
 

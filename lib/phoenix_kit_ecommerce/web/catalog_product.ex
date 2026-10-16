@@ -14,6 +14,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.Policy
   alias PhoenixKitEcommerce.PriceDisplay
+  alias PhoenixKitEcommerce.SelectedSpecs
   alias PhoenixKitEcommerce.SlugResolver
   alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.Web.Components.CatalogSidebar
@@ -139,7 +140,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
       |> assign(:authenticated, not is_nil(socket.assigns[:phoenix_kit_current_user]))
       |> assign(
         :cart_item,
-        find_cart_item_with_specs(user_uuid, session_id, product.uuid, selected_specs)
+        find_cart_item_with_specs(user_uuid, session_id, product, selected_specs)
       )
       |> assign(:specifications, build_specifications(product))
       |> assign(:price_affecting_specs, Shop.get_price_affecting_specs(product))
@@ -284,7 +285,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     selectable_specs = Shop.get_selectable_specs(product)
     selected_specs = build_default_specs(selectable_specs, product.metadata || %{})
     calculated_price = Shop.calculate_product_price(product, selected_specs)
-    cart_item = find_cart_item_with_specs(user_uuid, session_id, product.uuid, selected_specs)
+    cart_item = find_cart_item_with_specs(user_uuid, session_id, product, selected_specs)
     missing_required_specs = get_missing_required_specs(selected_specs, selectable_specs)
 
     all_categories = Shop.list_active_categories(preload: [:featured_product])
@@ -415,7 +416,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
       find_cart_item_with_specs(
         socket.assigns.user_uuid,
         socket.assigns.session_id,
-        product.uuid,
+        product,
         selected_specs
       )
 
@@ -710,7 +711,9 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     title = Translations.get_display(product, :title, Translations.default_language())
 
     if map_size(selected_specs) > 0 do
-      specs_str = selected_specs |> Map.values() |> Enum.join(", ")
+      specs_str =
+        product |> SelectedSpecs.labels_for(selected_specs) |> Map.values() |> Enum.join(", ")
+
       "#{title} (#{specs_str})"
     else
       title
@@ -969,6 +972,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                               <.option_button
                                 option_key={attr["key"]}
                                 option_value={opt_value}
+                                label={SelectedSpecs.value_label(@product.metadata, attr["key"], opt_value)}
                                 price={
                                   calculate_option_total_price(
                                     @product,
@@ -986,6 +990,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
                               <.option_button_simple
                                 option_key={attr["key"]}
                                 option_value={opt_value}
+                                label={SelectedSpecs.value_label(@product.metadata, attr["key"], opt_value)}
                                 selected={@selected_specs[attr["key"]] == opt_value}
                                 is_missing={is_missing}
                               />
@@ -1257,8 +1262,11 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   end
 
   # Option button component - isolated for better debugging
+  # `option_value` is what the click submits — the value's key where the
+  # product has one; `label` is what the shopper reads.
   attr :option_key, :any, required: true
   attr :option_value, :any, required: true
+  attr :label, :any, required: true
   attr :price, :any, required: true
   attr :selected, :boolean, default: false
   attr :is_missing, :boolean, default: false
@@ -1278,7 +1286,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
         !@selected && @is_missing && "btn-error btn-outline"
       ]}
     >
-      {@option_value} — {PriceDisplay.render(nil, @currency, :selected, amount: @price)}
+      {@label} — {PriceDisplay.render(nil, @currency, :selected, amount: @price)}
     </button>
     """
   end
@@ -1286,6 +1294,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   # Simple option button without price - for non-price-affecting options
   attr :option_key, :any, required: true
   attr :option_value, :any, required: true
+  attr :label, :any, required: true
   attr :selected, :boolean, default: false
   attr :is_missing, :boolean, default: false
 
@@ -1303,7 +1312,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
         !@selected && @is_missing && "btn-error btn-outline"
       ]}
     >
-      {@option_value}
+      {@label}
     </button>
     """
   end
@@ -1323,9 +1332,8 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   # Get mapped image URL for selected option value, or keep current image if no mapping
   # Supports both Storage IDs and legacy URLs (from Shopify imports)
   defp get_mapped_image(product, option_key, option_value, current_image) do
-    case get_in(product.metadata || %{}, ["_image_mappings", option_key, option_value]) do
+    case SelectedSpecs.image_mapping(product.metadata, option_key, option_value) do
       nil -> current_image
-      "" -> current_image
       # If it's a URL (starts with http), use directly
       "http" <> _ = url -> url
       # Otherwise it's a Storage ID
@@ -1520,26 +1528,22 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     end)
   end
 
-  # Find cart item matching selected specs
-  defp find_cart_item_with_specs(user_uuid, session_id, product_uuid, selected_specs) do
+  # Find cart item matching selected specs. The page's selection is in the
+  # product's own value keys; `SelectedSpecs.keys/2` reads a line stored in
+  # the older label shape back into them, so "already in your cart" still
+  # recognises it.
+  defp find_cart_item_with_specs(user_uuid, session_id, product, selected_specs) do
     case Shop.find_active_cart(user_uuid: user_uuid, session_id: session_id) do
       %{items: items} when is_list(items) ->
         Enum.find(items, fn item ->
-          cart_item_matches_product?(item, product_uuid) &&
-            specs_match?(item.selected_specs, selected_specs)
+          cart_item_matches_product?(item, product.uuid) &&
+            SelectedSpecs.keys(item, product) == (selected_specs || %{})
         end)
 
       _ ->
         nil
     end
   end
-
-  # Safe comparison of specs maps (handles nil and empty maps)
-  defp specs_match?(nil, specs) when is_map(specs) and map_size(specs) == 0, do: true
-  defp specs_match?(specs, nil) when is_map(specs) and map_size(specs) == 0, do: true
-  defp specs_match?(nil, nil), do: true
-  defp specs_match?(%{} = a, %{} = b), do: Map.equal?(a, b)
-  defp specs_match?(_, _), do: false
 
   # Calculate total price when a specific option value is selected
   # This shows what the customer would pay if they select this option

@@ -312,7 +312,13 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue do
 
   defp build_products(items, opts) do
     language = Keyword.get(opts, :language)
-    sets_by_item = items |> resolve_sets() |> translate_set_names_by_item(language)
+
+    sets_by_item =
+      items
+      |> resolve_sets()
+      |> translate_set_names_by_item(language)
+      |> mark_whole_set_values()
+
     categories_by_uuid = maybe_categories_by_uuid(items, opts)
 
     Enum.map(items, fn item ->
@@ -326,7 +332,13 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue do
 
   defp build_product(item, opts) do
     language = Keyword.get(opts, :language)
-    sets = item.uuid |> AttributeSets.resolve_for_item() |> translate_set_names(language)
+
+    sets =
+      item.uuid
+      |> AttributeSets.resolve_for_item()
+      |> translate_set_names(language)
+      |> then(&(%{item.uuid => &1} |> mark_whole_set_values() |> Map.fetch!(item.uuid)))
+
     category = single_category(item, opts)
     View.product_view(item, sets: sets, category: category, language: language)
   end
@@ -359,6 +371,36 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue do
       {item_uuid, apply_set_labels(resolved, labels)}
     end)
   end
+
+  # An attachment whose selection is empty is the catalogue's "the whole
+  # set applies", and the picker offers the set's values for it
+  # (`View.legacy_metadata/3`). Only PUBLISHED ones: a resolved set's
+  # `:values` also carries drafts — the values a Shopify sync creates
+  # pending an admin's approval, which the storefront's facets already
+  # leave out. One query for every such set across the whole batch; the
+  # answer rides on the set as `:published_keys`.
+  defp mark_whole_set_values(sets_by_item) do
+    whole_set_uuids =
+      for {_item_uuid, %{sets: sets}} <- sets_by_item,
+          %{selected: [], uuid: uuid} <- sets,
+          uniq: true,
+          do: uuid
+
+    published = Query.published_value_slugs(whole_set_uuids)
+
+    Map.new(sets_by_item, fn
+      {item_uuid, %{sets: sets} = resolved} ->
+        {item_uuid, %{resolved | sets: Enum.map(sets, &put_published_keys(&1, published))}}
+
+      other ->
+        other
+    end)
+  end
+
+  defp put_published_keys(%{selected: [], uuid: uuid} = set, published),
+    do: Map.put(set, :published_keys, Map.get(published, uuid, []))
+
+  defp put_published_keys(set, _published), do: set
 
   # Single-item counterpart of `translate_set_names_by_item/2`, for
   # `build_product/2`'s one `AttributeSets.resolve_for_item/1` result.

@@ -50,6 +50,22 @@ defmodule PhoenixKitEcommerce.ErrorsTest do
             "This cart's currency is not available right now."
         )
 
+    test ":missing_base_currency",
+      do:
+        assert(
+          Errors.message(:missing_base_currency) ==
+            "This shop has no base currency yet, so prices from Shopify cannot be written. Set a base currency first."
+        )
+
+    test "{:unsupported_product_source, source} — the base-currency change refusal",
+      do:
+        assert(
+          Errors.message(
+            {:unsupported_product_source, PhoenixKitEcommerce.ProductSource.Catalogue}
+          ) ==
+            "Catalogue-backed shops cannot change their base currency yet. Nothing was changed and every price is still in the current base currency."
+        )
+
     test ":invalid_quantity",
       do: assert(Errors.message(:invalid_quantity) == "That quantity is not available.")
 

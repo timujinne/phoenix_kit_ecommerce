@@ -47,6 +47,16 @@ Triage of `KIMI_REVIEW.md` against current code, by reading.
 
 `PGUSER=maxdon mix test` — 2891 tests, 0 failures. `mix precommit` (compile `--warnings-as-errors`, format, `credo --strict`, dialyzer) — exit 0, dialyzer 0 unnecessary skips. Run on the tree that carries this file.
 
+## Fixed (Batch 2 — 2026-10-14)
+
+- ~~Changing the base currency on a catalogue-backed shop: an untranslated,
+  generic refusal.~~ Refused by decision, with an honest translated message
+  and a pre-check (`base_currency_change_supported/0`,
+  `lib/phoenix_kit_ecommerce.ex`; `errors.ex`). The reprice pass itself
+  stays open below.
+
+`PGUSER=maxdon mix test` — 3099 tests, 0 failures. `mix precommit` — exit 0 (dialyzer 0 unnecessary skips). Run on the tree that carries this batch.
+
 ## Open
 
 - **`build_cart_message/5` dereferences the line `find_cart_item_after_add/4`
@@ -55,6 +65,11 @@ Triage of `KIMI_REVIEW.md` against current code, by reading.
   The lookup matches on `selected_specs` exactly as the page sent them; if the
   stored line's specs ever differ from that map, the add succeeds and the
   flash raises. Not reproduced.
-- **Changing the base currency on a catalogue-backed shop** — awaiting the
-  maintainer's decision. `reprice_for_base_change/3` refuses unless the
-  Legacy source is active (`lib/phoenix_kit_ecommerce.ex:6208`).
+- **Catalogue shops cannot change base currency** — refused by decision.
+  `reprice_for_base_change/3` reprices the shop's own tables only; the
+  refusal now has a translated message (`Errors.message/1` on
+  `{:unsupported_product_source, _}`) and `base_currency_change_supported/0`
+  for a screen to ask before its confirm step. The catalogue reprice pass is
+  to be built when a shop needs the change. No screen in this module offers
+  the change; billing's Currencies page "set default" calls
+  `set_default_currency/1`, which reprices nothing on any source.

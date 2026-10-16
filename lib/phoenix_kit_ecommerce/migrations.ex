@@ -131,12 +131,29 @@ defmodule PhoenixKitEcommerce.Migrations do
     _ -> 0
   end
 
-  @doc "Applies every chain version up to `current_version/0` (idempotent)."
+  @doc """
+  Applies the chain up to `:version` in `opts` — `current_version/0` when
+  none is given — and stamps that version (idempotent).
+
+  A host migration generated for one version calls
+  `up(prefix: …, version: N)`: it applies V1 through VN and nothing later,
+  so the file does what its name says and the later versions are left to
+  their own migrations. A database already past `N` is left exactly as it
+  is — nothing is re-run and the marker is not lowered. A `:version` above
+  `current_version/0`, below 1 or not an integer raises: this code has no
+  such step to apply, and stamping it would claim one.
+  """
   def up(opts \\ []) do
-    opts
-    |> validated_prefix()
-    |> up_statements()
-    |> Enum.each(&execute/1)
+    prefix = validated_prefix(opts)
+    target = validated_target(opts)
+
+    if migrated_version(prefix: prefix) <= target do
+      prefix
+      |> up_statements(target)
+      |> Enum.each(&execute/1)
+    end
+
+    :ok
   end
 
   @doc "Rolls back to `target` (`:version` in `opts`). Never drops any table — see the moduledoc."
@@ -158,21 +175,31 @@ defmodule PhoenixKitEcommerce.Migrations do
   pre-existing `DELETE` inside the two adopted slug-projection function
   bodies — core-authored runtime logic, unchanged, not migration-time
   destruction), and that every index/constraint is guarded.
+
+  `target` stops the chain at that version: V1 through `target`, then the
+  `target` marker. Every version's statements are fixed once shipped — a
+  change of shape is a new version, never an edit to an old group.
   """
-  @spec up_statements(String.t()) :: [String.t()]
-  def up_statements(prefix \\ "public") do
+  @spec up_statements(String.t(), pos_integer()) :: [String.t()]
+  def up_statements(prefix \\ "public", target \\ @current_version)
+      when is_integer(target) and target >= 1 and target <= @current_version do
     prefix = validated_prefix(prefix: prefix)
     p = "#{prefix}."
 
+    Enum.flat_map(1..target, &version_statements(&1, prefix, p)) ++
+      [marker_statement(p, target)]
+  end
+
+  defp version_statements(1, prefix, p) do
     tables(p) ++
       functions(p) ++
       constraints(prefix, p) ++
       triggers(p) ++
-      indexes(prefix, p) ++
-      v2_drop_currency_defaults(p) ++
-      shopify_upgrade_statements(prefix) ++
-      [marker_statement(p, @current_version)]
+      indexes(prefix, p)
   end
+
+  defp version_statements(2, _prefix, p), do: v2_drop_currency_defaults(p)
+  defp version_statements(3, prefix, _p), do: shopify_upgrade_statements(prefix)
 
   @doc "The SQL `down/1` executes, as data (marker bookkeeping plus the V2 default restore)."
   @spec down_statements(String.t(), non_neg_integer()) :: [String.t()]
@@ -996,6 +1023,25 @@ defmodule PhoenixKitEcommerce.Migrations do
   end
 
   defp marker_to_version(_), do: 0
+
+  # `:version` is the version to migrate up TO. Absent means the newest this
+  # code knows; anything this code has no step for is refused.
+  defp validated_target(opts) do
+    target =
+      case opts do
+        opts when is_list(opts) -> Keyword.get(opts, :version, @current_version)
+        %{version: version} -> version
+        _ -> @current_version
+      end
+
+    unless is_integer(target) and target >= 1 and target <= @current_version do
+      raise ArgumentError,
+            "invalid migration target #{inspect(target)}: " <>
+              "expected a version from 1 to #{@current_version}"
+    end
+
+    target
+  end
 
   defp validated_prefix(opts) do
     prefix =

@@ -26,11 +26,18 @@ Not a finding of the review; found on the same path during the sweep.
 
 `PGUSER=maxdon mix test` — 2891 tests, 0 failures. `mix precommit` (compile `--warnings-as-errors`, format, `credo --strict`, dialyzer) — exit 0, dialyzer 0 unnecessary skips. Run on the tree that carries this file.
 
+## Fixed (Batch 2 — 2026-10-14)
+
+- ~~Whether the sync should refuse priced creates when the shop has no base
+  currency.~~ It does: `currency_verdict/1` answers `:missing_base_currency`
+  before any shop lookup; creates are refused, price fields dropped from
+  updates, the variants sync writes no modifier (`shopify/sync.ex`,
+  `workers/shopify_media_sync_worker.ex`); the sync page shows a banner and
+  disables the price actions (`web/shopify_sync.ex`). Existing damage is
+  listed read-only by `mix phoenix_kit_ecommerce.list_unstamped_prices`.
+
+`PGUSER=maxdon mix test` — 3099 tests, 0 failures. `mix precommit` — exit 0 (dialyzer 0 unnecessary skips). Run on the tree that carries this batch.
+
 ## Open
 
-- **Whether the sync should refuse priced creates when the shop has no base
-  currency** — awaiting the maintainer's decision.
-  `compare_currency/1` answers `:match` when there is no base
-  (`lib/phoenix_kit_ecommerce/shopify/sync.ex:661-664`), so prices are still
-  written. Refusing needs a new verdict carried through `Sync`, the media
-  worker and the sync page.
+None.

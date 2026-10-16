@@ -1,8 +1,10 @@
 defmodule PhoenixKit.Modules.Shop.Web.Plugs.ShopSession do
   @moduledoc """
-  Compat alias for PhoenixKitEcommerce.Web.Plugs.ShopSession.
-  Must be a real Plug so `plug` macro works.
+  Deprecated name of `PhoenixKitEcommerce.Web.Plugs.ShopSession`. A real Plug,
+  so a host pipeline that still names it in `plug` keeps working while it
+  switches.
   """
+  @moduledoc deprecated: "Use PhoenixKitEcommerce.Web.Plugs.ShopSession instead"
 
   use Plug.Builder
 

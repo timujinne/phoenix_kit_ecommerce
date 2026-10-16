@@ -16,6 +16,8 @@ defmodule PhoenixKitEcommerce.CompatShopTest do
              "PhoenixKit.Modules.Shop is missing #{name}/0"
     end
 
-    assert LegacyShop.children() == PhoenixKitEcommerce.children()
+    # `apply/3`: the shim is deprecated, and a direct call is a compile warning.
+    # credo:disable-for-next-line Credo.Check.Refactor.Apply
+    assert apply(LegacyShop, :children, []) == PhoenixKitEcommerce.children()
   end
 end

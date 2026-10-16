@@ -42,17 +42,22 @@ Triage of `KIMI_REVIEW.md` against current code, by reading.
 
 `PGUSER=maxdon mix test` — 2891 tests, 0 failures. `mix precommit` (compile `--warnings-as-errors`, format, `credo --strict`, dialyzer) — exit 0, dialyzer 0 unnecessary skips. Run on the tree that carries this file.
 
+## Fixed (Batch 2 — 2026-10-14)
+
+- ~~#7: the shape of a category-only filter override was undocumented.~~
+  `"enabled"` is required by decision; `merge_storefront_filters/2`'s doc
+  says an entry without it is ignored (`lib/phoenix_kit_ecommerce.ex`).
+
+`PGUSER=maxdon mix test` — 3099 tests, 0 failures. `mix precommit` — exit 0 (dialyzer 0 unnecessary skips). Run on the tree that carries this batch.
+
 ## Open
 
-- **#7 NITPICK: a category-only filter override without `"enabled"` is
-  dropped** — awaiting the maintainer's decision
-  (`merge_storefront_filters/2`, `lib/phoenix_kit_ecommerce.ex:1285`; the
-  entry is appended as written and `get_enabled_storefront_filters/2` then
-  filters on `"enabled"`). Defaulting it to `true` and requiring the key are
-  both defensible; no admin UI writes these yet.
+- **#7: validating a category-only filter override's `"enabled"`** —
+  `"enabled"` is required by decision and documented; validation arrives
+  with the first admin UI or write API for these overrides.
 - **Unverified surface: `handle_params/3` does not recompute facet counts
   after a filter change** (`web/shop_catalog.ex:136` on,
   `web/catalog_category.ex:160` on) — the counts shown are the mount's.
 - **Unverified surface: the `compat/` delegate names its second parameter
-  `product_uuid`** while the facade takes a product
-  (`compat/shop.ex:138`). Naming only.
+  `product_uuid`** while the facade takes a product. Naming only, in a
+  namespace that is now deprecated and removed one release later.

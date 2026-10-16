@@ -56,16 +56,27 @@ re-checks against current code:
 
 `PGUSER=maxdon mix test` — 2891 tests, 0 failures. `mix precommit` (compile `--warnings-as-errors`, format, `credo --strict`, dialyzer) — exit 0, dialyzer 0 unnecessary skips. Run on the tree that carries this file.
 
+## Fixed (Batch 2 — 2026-10-14)
+
+- ~~**Concurrent Shopify jobs of different kinds can overwrite each other's
+  `data["ecommerce"]`**~~ One sync runs at a time whatever its kind: the job
+  is unique across kinds and `perform/1` snoozes behind a run that started
+  earlier (`workers/shopify_media_sync_worker.ex`, "One run at a time, across
+  kinds"); every start button is disabled while one runs
+  (`web/shopify_sync.ex`, `media_sync_running_kind/1`).
+
+`PGUSER=maxdon mix test` — 3099 tests, 0 failures. `mix precommit` — exit 0 (dialyzer 0 unnecessary skips). Run on the tree that carries this batch.
+
 ## Open
 
-- **Concurrent Shopify jobs of different kinds can overwrite each other's
-  `data["ecommerce"]`** — awaiting the maintainer's decision. Uniqueness is
-  per kind (`keys: [:kind]`,
-  `lib/phoenix_kit_ecommerce/workers/shopify_media_sync_worker.ex:163-173`),
-  so an `images` and a `variants` run can read-modify-write the same item.
-- **Catalogue shops cannot change base currency** — awaiting the maintainer's
-  decision. `reprice_for_base_change/3` refuses unless the Legacy source is
-  active (`lib/phoenix_kit_ecommerce.ex:6208`).
+- **Catalogue shops cannot change base currency** — refused by decision.
+  `reprice_for_base_change/3` reprices the shop's own tables only; the
+  refusal now has a translated message (`Errors.message/1` on
+  `{:unsupported_product_source, _}`) and `base_currency_change_supported/0`
+  for a screen to ask before its confirm step. The catalogue reprice pass is
+  to be built when a shop needs the change. No screen in this module offers
+  the change; billing's Currencies page "set default" calls
+  `set_default_currency/1`, which reprices nothing on any source.
 - **Shopify variant values are created `draft`** and stay off the storefront
   until someone publishes them, while the worker reports the run as
   succeeded (`catalogue/value_resolver.ex:164-173`; the reason for `draft` is

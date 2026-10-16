@@ -46,8 +46,8 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
 
   `opts[:language]` (a language code, or `nil` for the untranslated
   labels `sets` already carries) picks the language `metadata`'s
-  `_option_values`/`_price_modifiers`/`_value_slugs` use for each
-  attribute-set VALUE's label — see `legacy_metadata/3`. It does NOT
+  `_value_labels`/`_value_slugs` use for each attribute-set VALUE's
+  label — see `legacy_metadata/3`. It does NOT
   translate a set's own `:name` (`_option_labels`, below) — a value's
   translation lives right on it (`values[].extras`, whatever
   `resolve_set/2` read off the value's `EntityData.data`), so this
@@ -219,26 +219,39 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   @doc """
   Synthesizes the legacy `metadata` sub-map every option/price-display
   reader (`Options`, variant picker, `CartItem.from_product/3`) expects:
-  `_option_values` (labels in the item's stored selection order),
-  `_price_modifiers` (slug-keyed `ecommerce.price_modifiers` swapped to
-  the label keys those readers match on), `_option_labels` (`%{set_slug
-  => set display name}`, read straight off `sets` — see the moduledoc
-  note on `product_view/2`'s `:language`, since a set's OWN translated
-  name has to already be sitting on it by the time it gets here) and
-  `_value_slugs` (`%{set_slug => %{label => value slug}}`, every value in
-  the set, not only the ones selected — Block 6/7's future slug-based
-  `selected_specs` reads this; nothing in THIS block writes it back).
-  All four computed fresh from `sets` on every call, merged over whatever
-  else `data["ecommerce"]["legacy_metadata"]` snapshotted (`_option_slots`,
-  `_image_mappings`, `_price_display`, …) — minus those same four keys,
-  so a stale snapshot never shadows the live attachment state.
+  `_option_values` (value KEYS — slugs — in the item's stored selection
+  order, or, for an attachment whose selection is empty, every available
+  value of the set in the set's own order: the catalogue's "the whole set
+  applies"), `_price_modifiers` (`ecommerce.price_modifiers` as stored,
+  keyed by the same value keys), `_option_labels` (`%{set_slug => set
+  display name}`, read straight off `sets` — see the moduledoc note on
+  `product_view/2`'s `:language`, since a set's OWN translated name has to
+  already be sitting on it by the time it gets here), `_value_labels`
+  (`%{set_slug => %{value key => label}}`, what a value is SHOWN as) and
+  `_value_slugs` (`%{set_slug => %{label => value key}}`, the way back
+  from a label — `SelectedSpecs.keys/2` reads it for a cart line stored
+  before keys were the identity). Both label maps cover every available
+  value of the set, not only the ones offered.
+
+  A value's key, never its label, is what the picker submits and what a
+  cart line stores (`PhoenixKitEcommerce.SelectedSpecs`): a label is a
+  translation, so two values may share one in some language, and a map
+  keyed by it would fold them into one entry priced as whichever came
+  last. Where two values do share a label, `_value_slugs` answers the
+  first in the set's own order.
+
+  All five are computed fresh from `sets` on every call, merged over
+  whatever else `data["ecommerce"]["legacy_metadata"]` snapshotted
+  (`_option_slots`, `_image_mappings`, `_price_display`, …) — minus those
+  same five keys, so a stale snapshot never shadows the live attachment
+  state.
 
   `sets` accepts the same shapes `product_view/2`'s `:sets` option does.
-  `language` (default `nil`) picks which translation of each VALUE's
-  label `_option_values`/`_price_modifiers`/`_value_slugs` key on —
-  `nil` keeps every one of them exactly as `product_view/2` built it
-  before this option existed. `_option_labels` doesn't take `language`
-  at all: it reads whatever `:name` already sits on each set in `sets`.
+  `language` (default `nil`, the untranslated label) picks which
+  translation `_value_labels`/`_value_slugs` carry; the keys in
+  `_option_values`/`_price_modifiers` are the same in every language.
+  `_option_labels` doesn't take `language` at all: it reads whatever
+  `:name` already sits on each set in `sets`.
   """
   @spec legacy_metadata(map(), list() | map(), String.t() | nil) :: map()
   def legacy_metadata(item, sets, language \\ nil) do
@@ -250,14 +263,16 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
         "_option_values",
         "_price_modifiers",
         "_option_labels",
+        "_value_labels",
         "_value_slugs"
       ])
 
     base
-    |> maybe_put("_option_values", option_values_from_sets(sets, language))
-    |> maybe_put("_price_modifiers", price_modifiers_from_sets(sets, item, language))
+    |> maybe_put("_option_values", option_values_from_sets(sets))
+    |> maybe_put("_price_modifiers", price_modifiers_from_sets(sets, item))
     |> maybe_put("_option_labels", option_labels_from_sets(sets))
-    |> maybe_put("_value_slugs", value_slugs_from_sets(sets, language))
+    |> maybe_put("_value_labels", value_maps_from_sets(sets, &value_labels(&1, language)))
+    |> maybe_put("_value_slugs", value_maps_from_sets(sets, &value_slug_mapping(&1, language)))
   end
 
   # ============================================================
@@ -357,31 +372,61 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
   defp sets_list(sets) when is_list(sets), do: sets
   defp sets_list(_), do: []
 
-  defp option_values_from_sets(sets, language) do
+  defp option_values_from_sets(sets) do
     sets
     |> sets_list()
     |> Enum.reduce(%{}, fn set, acc ->
       key = set |> Map.get(:key) |> strip_set_prefix()
-      selected = Map.get(set, :selected) || []
-      labels_by_value = value_labels(set, language)
+      available = available_value_keys(set)
+      offered = set |> offered_value_keys() |> Enum.filter(&MapSet.member?(available, &1))
 
-      labels =
-        selected
-        |> Enum.map(&Map.get(labels_by_value, &1))
-        |> Enum.reject(&is_nil/1)
-
-      if labels == [] or is_nil(key), do: acc, else: Map.put(acc, key, labels)
+      if offered == [] or is_nil(key), do: acc, else: Map.put(acc, key, offered)
     end)
   end
 
-  defp price_modifiers_from_sets(sets, item, language) do
+  # `:values` is active-only: a value archived or trashed after it was
+  # selected stays in `:selected` but is not on sale.
+  defp available_value_keys(set) do
+    set |> Map.get(:values, []) |> MapSet.new(&Map.get(&1, :key))
+  end
+
+  # An attachment with an EMPTY selection is the catalogue's "the whole set
+  # applies" (`AttributeSets.valid_selection/2`), so it offers every
+  # available value of the set, in the set's own order: one of `:values`
+  # (active-only, so never an archived or trashed value) that is published
+  # — `:published_keys`, which `ProductSource.Catalogue` puts on such a set;
+  # without it (a hand-built set) every one of `:values` counts. A set with
+  # none left offers nothing. A set carrying no `:selected` at all is not an
+  # attachment (`AttributeSets.resolve_set/2`) and offers nothing.
+  defp offered_value_keys(set) do
+    case Map.fetch(set, :selected) do
+      {:ok, []} -> whole_set_value_keys(set)
+      {:ok, selected} when is_list(selected) -> selected
+      _ -> []
+    end
+  end
+
+  defp whole_set_value_keys(set) do
+    keys = set |> Map.get(:values, []) |> Enum.map(&Map.get(&1, :key))
+
+    case Map.fetch(set, :published_keys) do
+      {:ok, published} ->
+        published = MapSet.new(published)
+        Enum.filter(keys, &MapSet.member?(published, &1))
+
+      :error ->
+        keys
+    end
+  end
+
+  defp price_modifiers_from_sets(sets, item) do
     raw_modifiers = get_in(item.data || %{}, ["ecommerce", "price_modifiers"]) || %{}
     sets_by_key = sets_by_key_index(sets)
 
     Enum.reduce(raw_modifiers, %{}, fn {key, slug_amounts}, acc ->
       case Map.get(sets_by_key, key) do
         nil -> acc
-        set -> put_labeled_modifiers(acc, key, slug_amounts, value_labels(set, language))
+        set -> put_keyed_modifiers(acc, key, slug_amounts, available_value_keys(set))
       end
     end)
   end
@@ -411,31 +456,31 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
     end)
   end
 
-  # `%{set_slug (bare) => %{label => value slug}}`, every value in the
-  # set (not only `:selected` — a future slug-based `selected_specs`
-  # write needs to resolve whichever label the shopper just picked, not
-  # only the ones the product started with). The label side matches
-  # whatever `_option_values`/`_price_modifiers` used for the SAME
-  # `language`, by construction (both come out of `translated_value_label/2`) —
-  # the picker's displayed option and its price-modifier/slug lookups can
-  # never disagree.
-  defp value_slugs_from_sets(sets, language) do
+  # One `%{set_slug (bare) => map}` entry per set, `map` built by
+  # `mapping` from the set — its `_value_labels` or `_value_slugs` half.
+  # Both cover every available value (not only the offered ones) and come
+  # out of `translated_value_label/2` for the SAME `language`, so the
+  # picker's label and the way back from it can never disagree.
+  defp value_maps_from_sets(sets, mapping) do
     sets
     |> sets_list()
-    |> Enum.reduce(%{}, &put_value_slugs(&2, &1, language))
+    |> Enum.reduce(%{}, fn set, acc ->
+      key = set |> Map.get(:key) |> strip_set_prefix()
+      map = mapping.(set)
+
+      if is_nil(key) or map == %{}, do: acc, else: Map.put(acc, key, map)
+    end)
   end
 
-  defp put_value_slugs(acc, set, language) do
-    key = set |> Map.get(:key) |> strip_set_prefix()
-    mapping = value_slug_mapping(set, language)
-
-    if is_nil(key) or mapping == %{}, do: acc, else: Map.put(acc, key, mapping)
-  end
-
+  # `put_new`, in the set's own order: where two values share a label the
+  # first one is the answer, every time, rather than whichever a map built
+  # from the list happened to keep.
   defp value_slug_mapping(set, language) do
     set
     |> Map.get(:values, [])
-    |> Map.new(&{translated_value_label(&1, language), Map.get(&1, :key)})
+    |> Enum.reduce(%{}, fn value, acc ->
+      Map.put_new(acc, translated_value_label(value, language), Map.get(value, :key))
+    end)
   end
 
   # A resolved set's `:key` is the entities blueprint NAME
@@ -464,18 +509,16 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.View do
     end)
   end
 
-  defp put_labeled_modifiers(acc, key, slug_amounts, labels_by_value) do
-    by_label = labels_for_amounts(slug_amounts, labels_by_value)
-    if by_label == %{}, do: acc, else: Map.put(acc, key, by_label)
-  end
+  # Only the set's available values: a modifier left behind by a value
+  # that is gone or hidden prices nothing.
+  defp put_keyed_modifiers(acc, key, slug_amounts, available) do
+    by_key =
+      for {slug, amount} <- slug_amounts || %{},
+          MapSet.member?(available, slug),
+          into: %{},
+          do: {slug, normalize_amount(amount)}
 
-  defp labels_for_amounts(slug_amounts, labels_by_value) do
-    Enum.reduce(slug_amounts || %{}, %{}, fn {slug, amount}, acc ->
-      case Map.get(labels_by_value, slug) do
-        nil -> acc
-        label -> Map.put(acc, label, normalize_amount(amount))
-      end
-    end)
+    if by_key == %{}, do: acc, else: Map.put(acc, key, by_key)
   end
 
   # `Options.has_nonzero_modifiers?/1` / `parse_modifier_value/1` accept

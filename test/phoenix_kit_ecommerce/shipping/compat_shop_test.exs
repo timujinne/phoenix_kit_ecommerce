@@ -35,8 +35,9 @@ defmodule PhoenixKitEcommerce.Shipping.CompatShopTest do
   end
 
   test "the shim answers like the module for a call that needs no database" do
-    assert Shop.cart_shipping_destination(%PhoenixKitEcommerce.Cart{
-             metadata: %{}
-           }) == nil
+    # `apply/3`: the shim is deprecated, and a direct call is a compile warning.
+    # credo:disable-for-next-line Credo.Check.Refactor.Apply
+    assert apply(Shop, :cart_shipping_destination, [%PhoenixKitEcommerce.Cart{metadata: %{}}]) ==
+             nil
   end
 end

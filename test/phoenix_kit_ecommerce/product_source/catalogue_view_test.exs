@@ -156,12 +156,20 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert product.images == []
       assert product.featured_image == nil
 
+      # Value KEYS, not labels: a label is a translation and can repeat.
       assert product.metadata["_option_values"] == %{
-               "size" => ["5 inches (13 cm)", "4 inches (10 cm)"]
+               "size" => ["5-inches-13-cm", "4-inches-10-cm"]
              }
 
       assert product.metadata["_price_modifiers"] == %{
-               "size" => %{"5 inches (13 cm)" => "9.00"}
+               "size" => %{"5-inches-13-cm" => "9.00"}
+             }
+
+      assert product.metadata["_value_labels"] == %{
+               "size" => %{
+                 "5-inches-13-cm" => "5 inches (13 cm)",
+                 "4-inches-10-cm" => "4 inches (10 cm)"
+               }
              }
 
       assert product.metadata["_option_slots"] == [%{"key" => "size", "type" => "select"}]
@@ -302,11 +310,11 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       metadata = product_view(item, sets: prefixed_sets).metadata
 
       assert metadata["_option_values"] == %{
-               "size" => ["5 inches (13 cm)", "4 inches (10 cm)"]
+               "size" => ["5-inches-13-cm", "4-inches-10-cm"]
              }
 
       assert metadata["_price_modifiers"] == %{
-               "size" => %{"5 inches (13 cm)" => "9.00"}
+               "size" => %{"5-inches-13-cm" => "9.00"}
              }
     end
 
@@ -329,7 +337,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       product = product_view(item, sets: @sets)
 
       assert product.metadata["_price_modifiers"] == %{
-               "size" => %{"5 inches (13 cm)" => "9", "4 inches (10 cm)" => "2.5"}
+               "size" => %{"5-inches-13-cm" => "9", "4-inches-10-cm" => "2.5"}
              }
 
       # Both now parse as the Decimals `Options` applies — a JSON number
@@ -351,7 +359,7 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       product = product_view(item, sets: @sets)
 
       assert product.metadata["_price_modifiers"] == %{
-               "size" => %{"5 inches (13 cm)" => %{"type" => "percent", "value" => "10"}}
+               "size" => %{"5-inches-13-cm" => %{"type" => "percent", "value" => "10"}}
              }
     end
 
@@ -451,12 +459,11 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
         build_item(%{"ecommerce" => %{"price_modifiers" => %{"color" => %{"red" => "5.00"}}}})
 
       fr = product_view(item, sets: @color_sets, language: "fr-FR")
-      assert fr.metadata["_option_values"] == %{"color" => ["Rouge"]}
-      # Consistency: the picker's displayed option and its price-modifier
-      # lookup key on the SAME translated label — `selected_specs` built
-      # from what's on screen must find the modifier `Options.
-      # get_price_modifier/2` looks up by that exact label.
-      assert fr.metadata["_price_modifiers"] == %{"color" => %{"Rouge" => "5.00"}}
+      # The language changes what a value is SHOWN as, never what it is:
+      # the offered keys and their modifiers are the same in every language.
+      assert fr.metadata["_option_values"] == %{"color" => ["red"]}
+      assert fr.metadata["_price_modifiers"] == %{"color" => %{"red" => "5.00"}}
+      assert fr.metadata["_value_labels"] == %{"color" => %{"red" => "Rouge"}}
       assert fr.metadata["_value_slugs"] == %{"color" => %{"Rouge" => "red"}}
     end
 
@@ -465,16 +472,18 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
         build_item(%{"ecommerce" => %{"price_modifiers" => %{"color" => %{"red" => "5.00"}}}})
 
       en = product_view(item, sets: @color_sets, language: "en-US")
-      assert en.metadata["_option_values"] == %{"color" => ["Red"]}
-      assert en.metadata["_price_modifiers"] == %{"color" => %{"Red" => "5.00"}}
+      assert en.metadata["_option_values"] == %{"color" => ["red"]}
+      assert en.metadata["_price_modifiers"] == %{"color" => %{"red" => "5.00"}}
+      assert en.metadata["_value_labels"] == %{"color" => %{"red" => "Red"}}
       assert en.metadata["_value_slugs"] == %{"color" => %{"Red" => "red"}}
     end
 
-    test "no :language given (default) behaves exactly as before this option existed" do
+    test "no :language given (default) shows the untranslated label" do
       item = build_item()
 
       metadata = product_view(item, sets: @color_sets).metadata
-      assert metadata["_option_values"] == %{"color" => ["Red"]}
+      assert metadata["_option_values"] == %{"color" => ["red"]}
+      assert metadata["_value_labels"] == %{"color" => %{"red" => "Red"}}
     end
 
     test "_option_labels carries each set's own :name, stripped of the catalogue_set_ prefix" do
@@ -702,8 +711,14 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
       assert metadata == %{
                "_option_slots" => [%{"key" => "size", "type" => "select"}],
                "_image_mappings" => %{"size" => %{"5-inches-13-cm" => @image_uuid}},
-               "_option_values" => %{"size" => ["5 inches (13 cm)", "4 inches (10 cm)"]},
-               "_price_modifiers" => %{"size" => %{"5 inches (13 cm)" => "9.00"}},
+               "_option_values" => %{"size" => ["5-inches-13-cm", "4-inches-10-cm"]},
+               "_price_modifiers" => %{"size" => %{"5-inches-13-cm" => "9.00"}},
+               "_value_labels" => %{
+                 "size" => %{
+                   "5-inches-13-cm" => "5 inches (13 cm)",
+                   "4-inches-10-cm" => "4 inches (10 cm)"
+                 }
+               },
                "_value_slugs" => %{
                  "size" => %{
                    "5 inches (13 cm)" => "5-inches-13-cm",
@@ -726,8 +741,8 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.ViewTest do
 
       metadata = View.legacy_metadata(item, @sets)
 
-      assert metadata["_option_values"] == %{"size" => ["5 inches (13 cm)", "4 inches (10 cm)"]}
-      assert metadata["_price_modifiers"] == %{"size" => %{"5 inches (13 cm)" => "9.00"}}
+      assert metadata["_option_values"] == %{"size" => ["5-inches-13-cm", "4-inches-10-cm"]}
+      assert metadata["_price_modifiers"] == %{"size" => %{"5-inches-13-cm" => "9.00"}}
     end
   end
 end

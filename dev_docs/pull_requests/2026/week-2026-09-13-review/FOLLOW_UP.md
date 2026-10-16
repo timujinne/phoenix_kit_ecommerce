@@ -54,27 +54,35 @@ I1–I6) in the commit that carried it. Spot re-checks against current code:
 
 `PGUSER=maxdon mix test` — 2891 tests, 0 failures. `mix precommit` (compile `--warnings-as-errors`, format, `credo --strict`, dialyzer) — exit 0, dialyzer 0 unnecessary skips. Run on the tree that carries this file.
 
+## Fixed (Batch 2 — 2026-10-14)
+
+- ~~Two option values with the same translated label collapse in the
+  catalogue picker.~~ A value's key is its identity: picker, add-to-cart,
+  pricing and the cart line go by key, with a label snapshot
+  (`selected_specs.ex`, `product_source/catalogue/view.ex`); old label
+  lines display, update and convert unchanged.
+- ~~A "whole set applies" attachment renders no picker.~~ An empty
+  selection offers every published value of the set
+  (`view.ex` `offered_value_keys/1`, `product_source/catalogue.ex`).
+- ~~`Migrations.up/1` ignores `:version`.~~ It applies V1..N and stamps N,
+  leaves a newer database alone, refuses a target outside the chain
+  (`migrations.ex`); the shipped SQL is pinned by digest.
+- ~~`UserOrders`/`UserOrderDetails` reached only through `compat/`.~~ Not
+  so: core's `PhoenixKitWeb.Integration` routes `/dashboard/orders` and
+  `/dashboard/orders/:uuid` to the real modules; `compat/` is deprecated.
+
+`PGUSER=maxdon mix test` — 3099 tests, 0 failures. `mix precommit` — exit 0 (dialyzer 0 unnecessary skips). Run on the tree that carries this batch.
+
 ## Open
 
-- **`reprice_for_base_change/3` refuses the catalogue product source** —
-  awaiting the maintainer's decision. A base-currency change on a
-  catalogue-backed shop is impossible until a catalogue reprice pass exists
-  (`lib/phoenix_kit_ecommerce.ex:6208`).
-- **Removing `compat/`** — awaiting the maintainer's decision
-  (`lib/phoenix_kit_ecommerce/compat/`, `mix.exs:19`
-  `ignore_module_conflict: true`). `UserOrders` and `UserOrderDetails` are
-  still reached only through that namespace: this module registers no route
-  for them.
-- **Two option values with the same translated label collapse in the
-  catalogue picker** — awaiting the maintainer's decision
-  (`product_source/catalogue/view.ex:436`, `Map.new/2` keyed by the label).
-  The label is what a cart line stores as its selection, so deduplicating it
-  changes the cart-line identity.
-- **A "whole set applies" attachment (empty selection) renders no picker**
-  and its price modifiers are unreachable. The review left it as a product
-  decision: catalogue documents the empty selection as intentional.
-- **`Migrations.up/1` ignores `:version`** — awaiting the maintainer's
-  decision (`lib/phoenix_kit_ecommerce/migrations.ex:134-140`: it always
-  applies the whole chain, while `down/1` honours `:version`). Not a finding
-  of this review; recorded here because it concerns the same release train
-  and no PR folder owns it.
+- **Catalogue shops cannot change base currency** — refused by decision.
+  `reprice_for_base_change/3` reprices the shop's own tables only; the
+  refusal now has a translated message (`Errors.message/1` on
+  `{:unsupported_product_source, _}`) and `base_currency_change_supported/0`
+  for a screen to ask before its confirm step. The catalogue reprice pass is
+  to be built when a shop needs the change. No screen in this module offers
+  the change; billing's Currencies page "set default" calls
+  `set_default_currency/1`, which reprices nothing on any source.
+- **Removing `compat/`** — deprecated by decision; removal (with
+  `ignore_module_conflict: true` in `mix.exs`) one release after the
+  deprecation ships, once each host is checked for the old names.

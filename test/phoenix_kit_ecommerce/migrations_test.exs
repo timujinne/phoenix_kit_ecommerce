@@ -178,6 +178,60 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
              ["COMMENT ON TABLE public.phoenix_kit_shop_config IS 'pke_schema:2'"]
   end
 
+  describe "up_statements/2 stops at the target version" do
+    test "the default target is the whole chain" do
+      for prefix <- ["public", "tenant_x"] do
+        assert Migrations.up_statements(prefix, Migrations.current_version()) ==
+                 Migrations.up_statements(prefix)
+      end
+    end
+
+    test "each target is the previous one plus its own version, then its own marker" do
+      [v1, v2, v3] = for target <- 1..3, do: Migrations.up_statements("public", target)
+
+      assert List.last(v1) =~ "IS 'pke_schema:1'"
+      assert List.last(v2) =~ "IS 'pke_schema:2'"
+      assert List.last(v3) =~ "IS 'pke_schema:3'"
+
+      body = &Enum.drop(&1, -1)
+      assert List.starts_with?(body.(v2), body.(v1))
+      assert List.starts_with?(body.(v3), body.(v2))
+
+      # V1 adopts and nothing else; V2 is the four DROP DEFAULTs; V3 the
+      # one Shopify step.
+      refute Enum.any?(v1, &(&1 =~ "DROP DEFAULT"))
+      assert body.(v2) -- body.(v1) == Enum.filter(v3, &(&1 =~ "DROP DEFAULT"))
+      assert length(body.(v2) -- body.(v1)) == 4
+      assert body.(v3) -- body.(v2) == Migrations.shopify_upgrade_statements("public")
+    end
+
+    test "a target outside the chain is not a statement list" do
+      for bad <- [0, Migrations.current_version() + 1] do
+        assert_raise FunctionClauseError, fn -> Migrations.up_statements("public", bad) end
+      end
+    end
+
+    # A shipped version's SQL is fixed: a host that already ran it never runs
+    # it again, so an edit would only ever reach new installs and the two
+    # would silently differ. A change of shape is a new version (and a new
+    # digest for the new target), never a different digest here.
+    test "the SQL of V1-V3 is exactly what shipped, in the public schema and under a prefix" do
+      digest = fn prefix, target ->
+        prefix
+        |> Migrations.up_statements(target)
+        |> Enum.join("\n;;\n")
+        |> then(&:crypto.hash(:sha256, &1))
+        |> Base.encode16(case: :lower)
+      end
+
+      assert digest.("public", 3) ==
+               "7b397d3d645af2bedea332865a015bea2c102c29be0b256352fab3df3f76a318"
+
+      assert digest.("tenant_x", 3) ==
+               "d7b7a5ac9775b986c5b82db9808d809948f36010ae2a4b597501f181542e7b67"
+    end
+  end
+
   test "V3 carries the Shopify-default upgrade step, ahead of the marker" do
     stmts = Migrations.up_statements("public")
 

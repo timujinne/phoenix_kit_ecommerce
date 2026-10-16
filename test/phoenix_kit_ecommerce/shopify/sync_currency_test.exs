@@ -108,6 +108,12 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCurrencyTest do
     :ok
   end
 
+  defp clear_base_currency do
+    PhoenixKit.Cache.clear(:billing_currencies)
+    Repo.delete_all(PhoenixKitBilling.Currency)
+    :ok
+  end
+
   describe "currency guard — shop currency differs from base" do
     test "refuses the price field but still applies a title change on the same call, logging both currencies" do
       set_base_currency("USD")
@@ -240,6 +246,92 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCurrencyTest do
 
       assert {:ok, updated} = Sync.apply_change(change, [:price])
       assert Decimal.eq?(updated.price, Decimal.new("12.00"))
+    end
+  end
+
+  describe "currency guard — the shop has no base currency" do
+    # A stub that fails the test when it is reached: a missing base is
+    # local configuration, decided before (and instead of) the shop lookup.
+    defp stub_shop_lookup_never_called do
+      Req.Test.stub(@stub, fn _conn -> flunk("the shop lookup must not run without a base") end)
+    end
+
+    test "currency_verdict/1 answers :missing_base_currency, with or without a connection" do
+      clear_base_currency()
+      assert Sync.currency_verdict() == :missing_base_currency
+
+      connect_shopify()
+      stub_shop_lookup_never_called()
+      assert Sync.currency_verdict(admin_options()) == :missing_base_currency
+    end
+
+    test "the price is not written, a title on the same change still is" do
+      clear_base_currency()
+      connect_shopify()
+      stub_shop_lookup_never_called()
+
+      product = create_product(%{"title" => %{"en" => "Old Title"}, "price" => "10.00"})
+
+      change =
+        build_change(product, %{
+          price: %{current: Decimal.new("10.00"), incoming: Decimal.new("12.00")},
+          compare_at_price: %{current: nil, incoming: Decimal.new("15.00")},
+          title: %{current: "Old Title", incoming: "New Title"}
+        })
+
+      log =
+        capture_log(fn ->
+          assert {:ok, updated} = Sync.apply_change(change, :all, admin_options())
+          assert updated.title["en"] == "New Title"
+          assert Decimal.eq?(updated.price, Decimal.new("10.00"))
+          assert is_nil(updated.compare_at_price)
+        end)
+
+      assert log =~ "no base currency"
+    end
+
+    test "a price-only change is refused by name, not reported as a silent success" do
+      clear_base_currency()
+
+      product = create_product(%{"price" => "10.00"})
+
+      change =
+        build_change(product, %{
+          price: %{current: Decimal.new("10.00"), incoming: Decimal.new("12.00")}
+        })
+
+      capture_log(fn ->
+        assert {:error, :missing_base_currency} = Sync.apply_change(change, [:price])
+        assert {:error, :missing_base_currency} = Sync.apply_change(change, :all)
+
+        assert %{succeeded: [], failed: [_change]} = Sync.apply_changes([change], [:price])
+      end)
+
+      assert Decimal.eq?(Shop.get_product!(product.uuid).price, Decimal.new("10.00"))
+    end
+
+    test "a precomputed :missing_base_currency verdict refuses the same way" do
+      set_base_currency("USD")
+      product = create_product(%{"price" => "10.00"})
+
+      change =
+        build_change(product, %{
+          price: %{current: Decimal.new("10.00"), incoming: Decimal.new("12.00")}
+        })
+
+      capture_log(fn ->
+        assert {:error, :missing_base_currency} =
+                 Sync.apply_change(change, [:price], currency_verdict: :missing_base_currency)
+      end)
+    end
+
+    test "a non-price field alone is unaffected" do
+      clear_base_currency()
+      product = create_product(%{"vendor" => "Old Co"})
+      change = build_change(product, %{vendor: %{current: "Old Co", incoming: "New Co"}})
+
+      assert {:ok, updated} = Sync.apply_change(change, :all)
+      assert updated.vendor == "New Co"
     end
   end
 
@@ -377,19 +469,31 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCurrencyTest do
     end
 
     # No currency row exists at all here (not even a non-default one), so
-    # `PhoenixKitEcommerce.get_base_currency/0` returns `nil`. The item must
-    # carry NO currency then: a guessed "USD" would be stored against
-    # whatever the Shopify prices really are and, being stored, would win
-    # over the real base once one is configured.
-    test "no base currency configured at all: the item is left unlabelled" do
-      PhoenixKit.Cache.clear(:billing_currencies)
-      Repo.delete_all(PhoenixKitBilling.Currency)
+    # `PhoenixKitEcommerce.get_base_currency/0` returns `nil`. A create
+    # always writes a price, and a price with no currency to mean would be
+    # relabelled by whatever base is chosen later — so nothing is created.
+    test "no base currency configured at all: the create is refused, nothing is created" do
+      clear_base_currency()
 
-      assert {:ok, created_view} = Sync.apply_change(new_product_change())
+      log =
+        capture_log(fn ->
+          assert {:error, :missing_base_currency} = Sync.apply_change(new_product_change())
+        end)
 
-      item = Catalogue.get_item!(created_view.uuid)
-      assert is_nil(item.data["ecommerce"]["currency"])
-      assert is_nil(created_view.currency)
+      assert log =~ "no base currency"
+      assert Catalogue.list_items() == []
+    end
+
+    test "no base currency: a batch of creates is refused whole" do
+      clear_base_currency()
+
+      changes = [new_product_change(), new_product_change(%{"handle" => "second-mug"})]
+
+      capture_log(fn ->
+        assert %{succeeded: [], failed: [_first, _second]} = Sync.apply_changes(changes)
+      end)
+
+      assert Catalogue.list_items() == []
     end
 
     # A create is the WORSE case, not a safer one: an update at least

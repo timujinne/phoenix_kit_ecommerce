@@ -71,9 +71,11 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   rules); on a mismatch every product in the run is skipped for
   `"variants"` with `{:error, {:currency_mismatch, shop, base}}`
   recorded in its own `errors` entry, and `Writer.sync_variants/2` is
-  never called at all. `"images"` and `"collections"` carry no money
-  and are entirely unaffected — the lookup isn't even attempted for
-  them.
+  never called at all. A shop with no base currency at all is refused
+  the same way, with `{:error, :missing_base_currency}` per product: a
+  modifier written with no currency to mean has no monetary meaning.
+  `"images"` and `"collections"` carry no money and are entirely
+  unaffected — the lookup isn't even attempted for them.
 
   A per-product guard is checked before the currency verdict: a product
   `AdminClient` could not read every variant of
@@ -150,6 +152,24 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   time it reads progress under the new keys — nothing is ever written
   back to the legacy key again, only read from it as a fallback.
 
+  ## One run at a time, across kinds
+
+  `"images"` and `"variants"` both read every item once, at the start of
+  the run, and write each one back through `Catalogue.update_item/3`
+  with a whole `data` map built from that read (`"collections"` writes
+  only an item's category and position, but moves the same rows). Two
+  kinds running together would each write back the other's keys as they
+  were when its own run started, dropping what the other wrote in between
+  (`price_modifiers` against `shopify.image_ids`). So the job is unique
+  across kinds — `fields: [:queue, :worker]`, no args — and a second
+  enqueue while any kind is queued, running or waiting to retry is
+  refused as a conflict.
+
+  Oban checks uniqueness when a job is inserted, so it says nothing about
+  two jobs that are both already in the table (queued under per-kind
+  uniqueness, or inserted past a lock). `perform/1` therefore snoozes
+  while a run that started earlier is still executing.
+
   A no-op — `{:error, :catalogue_source_inactive}` — when
   `ProductSource.current/0` isn't `Catalogue` (checked here too, even
   though every writer this dispatches to already self-gates: fetching
@@ -170,7 +190,9 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
       # `:cancelled`/`:discarded`, so a FINISHED run never blocks the
       # next one.
       period: :infinity,
-      keys: [:kind],
+      # No `:args`: one run at a time whatever its kind (moduledoc, "One
+      # run at a time, across kinds").
+      fields: [:queue, :worker],
       states: [:available, :scheduled, :executing, :retryable]
     ]
 
@@ -196,6 +218,7 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   @topic "shop:media_sync"
   @progress_interval 20
   @kinds ~w(images variants collections)
+  @busy_snooze_seconds 30
 
   @doc "The PubSub topic the sync page subscribes to for live progress."
   @spec topic() :: String.t()
@@ -263,9 +286,31 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
   defp progress_key(kind), do: @legacy_progress_key <> ":" <> kind
 
   @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"kind" => kind} = args}) when kind in @kinds do
-    run(kind, Map.get(args, "actor_uuid"))
+  def perform(%Oban.Job{args: %{"kind" => kind} = args} = job) when kind in @kinds do
+    if earlier_run_executing?(job) do
+      {:snooze, @busy_snooze_seconds}
+    else
+      run(kind, Map.get(args, "actor_uuid"))
+    end
   end
+
+  # Whichever run started first keeps going; `id` only breaks a tie between
+  # two that started in the same microsecond, so two jobs can never each
+  # wait for the other.
+  defp earlier_run_executing?(%Oban.Job{id: id, attempted_at: %DateTime{} = attempted_at})
+       when is_integer(id) do
+    worker = Oban.Worker.to_string(__MODULE__)
+
+    Oban.Job
+    |> where([j], j.worker == ^worker and j.state == "executing" and j.id != ^id)
+    |> where(
+      [j],
+      j.attempted_at < ^attempted_at or (j.attempted_at == ^attempted_at and j.id < ^id)
+    )
+    |> repo().exists?()
+  end
+
+  defp earlier_run_executing?(_job), do: false
 
   @doc """
   Runs one sync `kind` directly — what `perform/1` calls with production
@@ -533,6 +578,9 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
 
         {:mismatch, shop_currency, base_currency} ->
           {:error, {:currency_mismatch, shop_currency, base_currency}}
+
+        :missing_base_currency ->
+          {:error, :missing_base_currency}
       end
     end
   end
@@ -559,6 +607,11 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorker do
         Logger.warning(
           "Shopify media sync: skipping variants/price sync — shop currency " <>
             "#{shop_currency} does not match base currency #{base_currency} (design spec §7.5)"
+        )
+
+      :missing_base_currency ->
+        Logger.warning(
+          "Shopify media sync: skipping variants/price sync — the shop has no base currency"
         )
 
       :match ->

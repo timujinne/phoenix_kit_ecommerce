@@ -131,6 +131,66 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue.Query do
     end
   end
 
+  @doc """
+  The shop catalogue's items that carry money but no
+  `data["ecommerce"]["currency"]` stamp — a non-zero `base_price`, a
+  `compare_at_price`, or at least one price modifier. Read-only: an
+  unstamped amount has no currency to mean, and only a person who knows
+  what the amounts were entered in can say which one it is.
+
+  Every status is listed (a trashed or archived item can be restored with
+  its price). One map per item: `:uuid`, `:name`, `:status`, `:base_price`
+  and `:shopify_handle` (`nil` for an item Shopify never wrote).
+  """
+  @spec list_priced_items_without_currency(keyword()) :: [map()]
+  def list_priced_items_without_currency(opts \\ []) do
+    case resolve_catalogue_uuid(opts) do
+      nil ->
+        []
+
+      uuid ->
+        CatItem
+        |> where([i], i.catalogue_uuid == ^uuid)
+        |> where([i], fragment("COALESCE(?->'ecommerce'->>'currency', '') = ''", i.data))
+        |> where(
+          [i],
+          (not is_nil(i.base_price) and i.base_price != 0) or
+            fragment("COALESCE(?->'ecommerce'->>'compare_at_price', '') <> ''", i.data) or
+            fragment(
+              "jsonb_typeof(?->'ecommerce'->'price_modifiers') = 'object' AND ?->'ecommerce'->'price_modifiers' <> '{}'::jsonb",
+              i.data,
+              i.data
+            )
+        )
+        |> order_by([i], asc: i.name, asc: i.uuid)
+        |> select([i], %{
+          uuid: i.uuid,
+          name: i.name,
+          status: i.status,
+          base_price: i.base_price,
+          shopify_handle: fragment("?->'ecommerce'->'shopify'->>'handle'", i.data)
+        })
+        |> repo().all()
+    end
+  end
+
+  @doc """
+  `%{set_uuid => [value slug]}`: the PUBLISHED values of each set, the ones
+  the storefront may offer — a draft (a value a Shopify sync created and
+  an admin has not approved) or an archived one is not on sale. A set with
+  none has no entry.
+  """
+  @spec published_value_slugs([Ecto.UUID.t()]) :: %{Ecto.UUID.t() => [String.t()]}
+  def published_value_slugs([]), do: %{}
+
+  def published_value_slugs(set_uuids) when is_list(set_uuids) do
+    EntityData
+    |> where([ev], ev.entity_uuid in ^set_uuids and ev.status == "published")
+    |> select([ev], {ev.entity_uuid, ev.slug})
+    |> repo().all()
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+  end
+
   @doc "Number of items matching `opts` (the filters of `list_items/1`)."
   @spec count_items(keyword()) :: non_neg_integer()
   def count_items(opts \\ []) do

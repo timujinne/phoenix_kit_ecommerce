@@ -136,6 +136,14 @@ option_schema = [
 price = Shop.calculate_product_price(product, selected_specs)
 ```
 
+`selected_specs` is `%{option_key => value}`. For a product of the shop's own
+tables the value is the option value as typed. For a catalogue-backed product
+it is the attribute-set value's **key** (its slug), the same in every
+language — `product.metadata["_option_values"]` lists the keys on offer and
+`PhoenixKitEcommerce.SelectedSpecs.value_label/3` gives the label to show.
+A cart line stores the key and a snapshot of that label; read a line's
+selection with `PhoenixKitEcommerce.SelectedSpecs.labels/1`.
+
 ### Shopping Cart
 
 ```elixir
@@ -253,6 +261,21 @@ Fields compared: title, description (derived from Shopify's `Body
 lowest current variant price). Not synced: new products,
 categories/collections, images, variants/options, and inventory
 quantity.
+
+**Base currency first.** While the shop has no base currency, the sync
+writes no price and adds no product: an amount stored with no currency
+would be read as whatever the base later becomes. The sync page shows a
+banner linking to the currency settings and disables the price actions;
+titles, descriptions, tags, images and collections still sync. To find
+prices written before a base existed (read-only — it stamps nothing):
+
+```bash
+mix phoenix_kit_ecommerce.list_unstamped_prices
+```
+
+**One background sync at a time.** The images, variants and collections
+syncs share one queue slot: starting one while another is queued or
+running is refused and the page names the one in progress.
 
 ```elixir
 alias PhoenixKitEcommerce.Shopify.Sync
@@ -560,7 +583,35 @@ lib/
 | `/admin/shop/settings/options` | Global option schemas |
 | `/admin/shop/settings/import-configs` | Import profiles |
 
+**Customer account** (login required; declared by core's router integration,
+not by this package's route module):
+
+| Path | Description |
+|------|-------------|
+| `/dashboard/orders` | The customer's orders (`PhoenixKitEcommerce.Web.UserOrders`) |
+| `/dashboard/orders/:uuid` | One order (`PhoenixKitEcommerce.Web.UserOrderDetails`) |
+
 All public routes support localized variants via `public_live_locale_routes/0`.
+
+### Deprecated: the `PhoenixKit.Modules.Shop` namespace
+
+The names this package had before it was extracted from core still compile,
+and every one is deprecated: calling one prints a compiler warning naming
+its replacement. They are removed in the release after this one.
+
+| Deprecated | Use instead |
+|------------|-------------|
+| `PhoenixKit.Modules.Shop.<function>` | `PhoenixKitEcommerce.<function>` (same name and arguments) |
+| `PhoenixKit.Modules.Shop.Cart` | `PhoenixKitEcommerce.Cart` |
+| `PhoenixKit.Modules.Shop.Web.Routes` | `PhoenixKitEcommerce.Web.Routes` |
+| `PhoenixKit.Modules.Shop.Web.Plugs.ShopSession` | `PhoenixKitEcommerce.Web.Plugs.ShopSession` |
+| `PhoenixKit.Modules.Shop.Web.UserOrders` | `PhoenixKitEcommerce.Web.UserOrders` |
+| `PhoenixKit.Modules.Shop.Web.UserOrderDetails` | `PhoenixKitEcommerce.Web.UserOrderDetails` |
+
+A host router that declares the customer order pages itself switches one
+line each — `live "/dashboard/orders", PhoenixKitEcommerce.Web.UserOrders, :index`
+— or drops both lines: core declares the two routes whenever this package
+is installed.
 
 ## Development
 

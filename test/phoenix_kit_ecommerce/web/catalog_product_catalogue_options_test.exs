@@ -116,7 +116,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductCatalogueOptionsTest do
     view |> element("button[phx-click=add_to_cart]") |> render_click()
 
     assert [line] = cart_lines(session_id)
-    assert line.selected_specs == %{"liquid_color" => "Black", "cup_color" => "White"}
+    assert line.selected_specs == %{"liquid_color" => "black", "cup_color" => "white"}
     assert Decimal.equal?(line.base_unit_price, Decimal.new("67.52"))
   end
 
@@ -128,7 +128,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductCatalogueOptionsTest do
     assert key in ["liquid_color", "cup_color"]
 
     assert {:error, :missing_required_option, "liquid_color"} =
-             Shop.add_to_cart(cart, product, 1, selected_specs: %{"cup_color" => "Gold"})
+             Shop.add_to_cart(cart, product, 1, selected_specs: %{"cup_color" => "gold"})
 
     assert Shop.get_cart(cart.uuid).items == []
   end
@@ -140,7 +140,7 @@ defmodule PhoenixKitEcommerce.Web.CatalogProductCatalogueOptionsTest do
 
     assert {:error, :missing_required_option, "finish"} =
              Shop.add_to_cart(cart, stale, 1,
-               selected_specs: %{"liquid_color" => "Black", "cup_color" => "White"}
+               selected_specs: %{"liquid_color" => "black", "cup_color" => "white"}
              )
 
     assert Shop.get_cart(cart.uuid).items == []

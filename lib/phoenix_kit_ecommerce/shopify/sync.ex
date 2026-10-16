@@ -53,6 +53,15 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   see `currency_verdict/1`'s own doc for why this fails in the
   OTHER direction from the mismatch case above.
 
+  A shop with NO base currency is refused the same way as a mismatch,
+  with `{:error, :missing_base_currency}`: an amount written with no
+  currency to mean has no monetary meaning, and the base chosen later
+  would silently relabel it. Price fields are dropped (non-price fields
+  on the same change still apply), a price-only change and every create
+  are refused. This is local configuration, not an unreachable Shopify,
+  so it never fails open — the base is read before the shop lookup and
+  the lookup is skipped.
+
   ## Single-product check (`check_one/3`)
 
   `check_one/3` is the single-product counterpart to `check/2`, meant
@@ -485,8 +494,19 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
     {:error, {:currency_mismatch, shop_currency, base_currency}}
   end
 
+  defp create_change(%Change{} = change, :missing_base_currency) do
+    Logger.warning(
+      "Shopify sync: refusing to create #{inspect(change.handle)} — the shop has no base currency"
+    )
+
+    {:error, :missing_base_currency}
+  end
+
   defp do_apply_change(%Change{} = change, fields, verdict) do
     case resolve_priced_fields(fields, change.changes, verdict) do
+      {:error, :missing_base_currency} = error ->
+        error
+
       {:error, {shop_currency, base_currency}} ->
         {:error, {:currency_mismatch, shop_currency, base_currency}}
 
@@ -615,6 +635,10 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   as a warning). `opts[:admin_options]` forwards to `AdminClient.fetch_shop/2`
   (e.g. `req_options:` to stub the transport in tests).
 
+  `:missing_base_currency` — the shop has no base currency. Read first,
+  before any lookup, and never fail-open: every price write and every
+  create is refused until one exists (see the moduledoc).
+
   Re-resolves the connected Shopify integration on every call rather
   than accepting one as a parameter — safe only because this codebase
   supports exactly one Shopify connection everywhere (`Provider`,
@@ -624,8 +648,18 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   than one connection to compare against would need a different
   function, not another argument to this one.
   """
-  @spec currency_verdict(keyword()) :: :match | {:mismatch, String.t(), String.t()}
+  @type currency_verdict ::
+          :match | {:mismatch, String.t(), String.t()} | :missing_base_currency
+
+  @spec currency_verdict(keyword()) :: currency_verdict()
   def currency_verdict(opts \\ []) do
+    case base_currency_code() do
+      nil -> :missing_base_currency
+      base -> shop_currency_verdict(base, opts)
+    end
+  end
+
+  defp shop_currency_verdict(base, opts) do
     case shopify_integration_uuid() do
       nil ->
         :match
@@ -635,7 +669,7 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
 
         case AdminClient.fetch_shop(uuid, admin_options) do
           {:ok, %{"currency" => shop_currency}} when is_binary(shop_currency) ->
-            compare_currency(shop_currency)
+            compare_currency(shop_currency, base)
 
           {:ok, _shop} ->
             log_lookup_failure(:missing_currency)
@@ -658,17 +692,11 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   # `shop.currency` and `PhoenixKitBilling.Currency.code` alike), but a
   # comparison this consequential shouldn't depend on that staying true
   # forever.
-  defp compare_currency(shop_currency) do
-    case base_currency_code() do
-      nil ->
-        :match
-
-      base ->
-        if String.upcase(base) == String.upcase(shop_currency) do
-          :match
-        else
-          {:mismatch, shop_currency, base}
-        end
+  defp compare_currency(shop_currency, base) do
+    if String.upcase(base) == String.upcase(shop_currency) do
+      :match
+    else
+      {:mismatch, shop_currency, base}
     end
   end
 
@@ -719,7 +747,7 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
   # silent, empty "success".
   defp resolve_priced_fields(fields, changes, :match), do: {:ok, resolve_fields(fields, changes)}
 
-  defp resolve_priced_fields(fields, changes, {:mismatch, shop, base}) do
+  defp resolve_priced_fields(fields, changes, verdict) do
     resolved = resolve_fields(fields, changes)
     priced = Enum.filter(resolved, &(&1 in @price_fields))
 
@@ -728,22 +756,31 @@ defmodule PhoenixKitEcommerce.Shopify.Sync do
         {:ok, resolved}
 
       [] ->
-        log_price_refusal(priced, shop, base)
-        {:error, {shop, base}}
+        log_price_refusal(priced, verdict)
+        {:error, refusal_reason(verdict)}
 
       remaining ->
-        log_price_refusal(priced, shop, base)
+        log_price_refusal(priced, verdict)
         {:ok, remaining}
     end
   end
 
+  defp refusal_reason({:mismatch, shop, base}), do: {shop, base}
+  defp refusal_reason(:missing_base_currency), do: :missing_base_currency
+
   # `:warning`, not `:error` — a store switching currency is an admin
   # decision, not a system fault, and a host that pages on error-level
   # logs would page someone for a state no incident response can fix.
-  defp log_price_refusal(fields, shop_currency, base_currency) do
+  defp log_price_refusal(fields, {:mismatch, shop_currency, base_currency}) do
     Logger.warning(
       "Shopify sync: refusing to write #{inspect(fields)} — shop currency " <>
         "#{shop_currency} does not match base currency #{base_currency} (design spec §7.5)"
+    )
+  end
+
+  defp log_price_refusal(fields, :missing_base_currency) do
+    Logger.warning(
+      "Shopify sync: refusing to write #{inspect(fields)} — the shop has no base currency"
     )
   end
 

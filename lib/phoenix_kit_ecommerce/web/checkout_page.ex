@@ -20,6 +20,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   alias PhoenixKitEcommerce.Events
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.PriceDisplay
+  alias PhoenixKitEcommerce.SelectedSpecs
   alias PhoenixKitEcommerce.Shipping.CartQuote
   alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker
@@ -2230,7 +2231,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
                   <div class="font-medium">{display_title}</div>
                   <%= if item.selected_specs && item.selected_specs != %{} do %>
                     <div class="text-xs text-base-content/60 mt-0.5">
-                      <%= for {key, value} <- item.selected_specs do %>
+                      <%= for {key, value} <- SelectedSpecs.labels(item) do %>
                         <span class="inline-block mr-2">
                           <span class="font-medium">{humanize_key(key)}:</span>
                           <span>{value}</span>

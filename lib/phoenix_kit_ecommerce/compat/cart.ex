@@ -1,8 +1,10 @@
 defmodule PhoenixKit.Modules.Shop.Cart do
   @moduledoc """
-  Compat alias for PhoenixKitEcommerce.Cart.
-  Used as Ecto schema in queries (from(c in PhoenixKit.Modules.Shop.Cart, ...)).
+  Deprecated name of `PhoenixKitEcommerce.Cart`, kept so a query written
+  against it (`from(c in PhoenixKit.Modules.Shop.Cart, ...)`) keeps working
+  while the host switches to the new name.
   """
+  @moduledoc deprecated: "Use PhoenixKitEcommerce.Cart instead"
 
   use Ecto.Schema
 

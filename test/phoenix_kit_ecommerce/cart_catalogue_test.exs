@@ -171,20 +171,22 @@ defmodule PhoenixKitEcommerce.CartCatalogueTest do
       %{item: item}
     end
 
-    test "the fr-FR cart line is priced with the modifier, keyed by the SAME label the fr-FR page showed",
+    test "the fr-FR cart line is priced with the modifier and keeps the label the fr-FR page showed",
          %{item: item} do
       product = CatalogueSource.get_product(item.uuid, language: "fr-FR")
-      assert product.metadata["_option_values"] == %{"color" => ["Rouge"]}
-      assert product.metadata["_price_modifiers"] == %{"color" => %{"Rouge" => "5.00"}}
+      assert product.metadata["_option_values"] == %{"color" => ["red"]}
+      assert product.metadata["_price_modifiers"] == %{"color" => %{"red" => "5.00"}}
+      assert product.metadata["_value_labels"] == %{"color" => %{"red" => "Rouge"}}
 
       {:ok, cart} =
         Shop.add_to_cart(new_cart(), product, 1,
-          selected_specs: %{"color" => "Rouge"},
+          selected_specs: %{"color" => "red"},
           language: "fr-FR"
         )
 
       assert [cart_item] = cart.items
       assert Decimal.equal?(cart_item.unit_price, Decimal.new("25.00"))
+      assert PhoenixKitEcommerce.SelectedSpecs.labels(cart_item) == %{"color" => "Rouge"}
     end
   end
 

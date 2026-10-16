@@ -250,9 +250,10 @@ defmodule PhoenixKitEcommerce.Shopify.PriceFitSeamTest do
 
     deltas =
       for variant <- SeamStub.personalized_product()["variants"] do
+        # The picker submits value keys, not labels.
         specs = %{
-          "printing_file_ready" => variant["option1"],
-          "print_or_figure_height" => variant["option2"]
+          "printing_file_ready" => value_slug("printing_file_ready", variant["option1"]),
+          "print_or_figure_height" => value_slug("print_or_figure_height", variant["option2"])
         }
 
         product

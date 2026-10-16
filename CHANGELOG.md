@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- **`Migrations.up/1` honours `:version`** (#90): `up(version: N)` applies V1
+  through VN and stamps N, leaves a database already past N alone, and raises
+  on a target outside the chain. With no `:version` the SQL is unchanged.
+- **Whole-set option values** (#90): an attribute set attached with an empty
+  selection offers the set's published values.
+- `mix phoenix_kit_ecommerce.list_unstamped_prices` (#90): read-only list of
+  catalogue items that carry a price but no currency stamp.
+- `PhoenixKitEcommerce.base_currency_change_supported/0` (#90): the refusal
+  `reprice_for_base_change/3` would give, askable before a confirmation step.
+
+### Changed
+
+- **Shopify prices need a base currency** (#90): with none, the sync writes no
+  price and creates no priced item (other fields still apply); the sync page
+  says why and links to the currency settings.
+- **One Shopify sync at a time** (#90): `ShopifyMediaSyncWorker` is unique
+  across kinds and `perform/1` snoozes behind an earlier run.
+- **Catalogue option values are identified by key** (#90): the picker submits
+  value keys and a cart line stores them with a label snapshot
+  (`metadata["selection"]`); order lines keep labels and gain
+  `"selected_spec_keys"`. Existing cart lines keep their stored selection and
+  price.
+- The `compat/` namespace is marked `@deprecated` with each replacement (#90).
+
 ## 0.5.24 - 2026-10-13
 
 ### Fixed

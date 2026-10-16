@@ -195,7 +195,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncMediaPanelTest do
       # Constraints — no job is ever processed here) that must catch it.
       html2 = render_click(element(view, "#sync-media-images"))
       refute html2 =~ "Sync queued"
-      assert html2 =~ "already running"
+      assert html2 =~ "“Sync images” is already queued or running"
 
       assert [_one_job] =
                all_enqueued(worker: ShopifyMediaSyncWorker, args: %{"kind" => "images"})
@@ -247,7 +247,6 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncMediaPanelTest do
       {:ok, view, html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
 
       assert has_element?(view, "#sync-media-images[disabled]")
-      refute has_element?(view, "#sync-media-variants[disabled]")
       assert html =~ "images"
 
       # Not `render_click(element(view, "#sync-media-images"))` —
@@ -260,6 +259,91 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncMediaPanelTest do
 
       assert [%{id: id}] = all_enqueued(worker: ShopifyMediaSyncWorker)
       assert id == job.id
+    end
+
+    # One sync at a time, whatever its kind: images and variants each write
+    # an item's whole `data` from a read taken when the run started.
+    test "while one kind runs, every start button is disabled and the page says which kind",
+         %{conn: conn} do
+      seed_progress("images", nil)
+      {:ok, job} = %{"kind" => "images"} |> ShopifyMediaSyncWorker.new() |> Oban.insert()
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
+
+      for kind <- ~w(images variants collections) do
+        assert has_element?(view, "#sync-media-#{kind}[disabled]")
+      end
+
+      assert has_element?(view, "#media-sync-running-notice", "“Sync images” is running")
+
+      # A pushed event for ANOTHER kind is refused before it reaches Oban.
+      render_click(view, "run_media_sync", %{"kind" => "variants"})
+      render_click(view, "run_media_sync", %{"kind" => "collections"})
+
+      assert [%{id: id}] = all_enqueued(worker: ShopifyMediaSyncWorker)
+      assert id == job.id
+    end
+
+    test "a second kind queued before the first has started is refused by the job's uniqueness",
+         %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
+
+      assert render_click(element(view, "#sync-media-images")) =~ "Sync queued"
+
+      # Nothing has written a progress record yet, so the buttons are still
+      # enabled and the click reaches `Oban.insert/1`.
+      html = render_click(element(view, "#sync-media-variants"))
+
+      refute html =~ "Sync queued"
+      assert html =~ "“Sync images” is already queued or running"
+
+      assert [%{args: %{"kind" => "images"}}] = all_enqueued(worker: ShopifyMediaSyncWorker)
+    end
+
+    test "an interrupted run of one kind blocks no kind, and no notice claims it is running",
+         %{conn: conn} do
+      seed_progress("images", nil)
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
+
+      for kind <- ~w(images variants collections) do
+        refute has_element?(view, "#sync-media-#{kind}[disabled]")
+      end
+
+      refute has_element?(view, "#media-sync-running-notice")
+
+      render_click(element(view, "#sync-media-variants"))
+      assert_enqueued(worker: ShopifyMediaSyncWorker, args: %{"kind" => "variants"})
+    end
+
+    test "the buttons come back when the running kind's finished record is broadcast",
+         %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
+
+      running = %{
+        "kind" => "images",
+        "total" => 10,
+        "done" => 4,
+        "errors" => [],
+        "started_at" => "2026-01-01T00:00:00Z",
+        "finished_at" => nil,
+        "result" => nil
+      }
+
+      Manager.broadcast(ShopifyMediaSyncWorker.topic(), {:media_sync_progress, running})
+      render(view)
+      assert has_element?(view, "#sync-media-collections[disabled]")
+
+      Manager.broadcast(
+        ShopifyMediaSyncWorker.topic(),
+        {:media_sync_progress, %{running | "done" => 10, "finished_at" => "2026-01-01T00:09:00Z"}}
+      )
+
+      render(view)
+
+      for kind <- ~w(images variants collections) do
+        refute has_element?(view, "#sync-media-#{kind}[disabled]")
+      end
     end
 
     test "a finished progress record does not disable the button", %{conn: conn} do

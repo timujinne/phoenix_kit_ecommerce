@@ -136,6 +136,87 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
   end
 
   # ============================================================
+  # One run at a time, across kinds
+  # ============================================================
+
+  describe "one run at a time, across kinds" do
+    # Straight into `oban_jobs`, the way two jobs queued under per-kind
+    # uniqueness (or a job inserted past it) sit there — `Oban.insert/1`
+    # itself now refuses the second one.
+    defp executing_job!(kind, attempted_at) do
+      %{"kind" => kind, "actor_uuid" => nil}
+      |> Oban.Job.new(worker: Worker, queue: :shop_imports)
+      |> Ecto.Changeset.change(state: "executing", attempted_at: attempted_at)
+      |> Repo.insert!()
+    end
+
+    # The suite's own `Oban` instance runs `testing: :manual`: an insert
+    # reaches `oban_jobs` and nothing executes.
+    test "a job of another kind is refused while one is queued, running or waiting to retry" do
+      assert {:ok, %Oban.Job{conflict?: false} = first} =
+               %{"kind" => "images", "actor_uuid" => nil} |> Worker.new() |> Oban.insert()
+
+      for state <- ~w(available scheduled executing retryable) do
+        Repo.update_all(from(j in Oban.Job, where: j.id == ^first.id), set: [state: state])
+
+        for kind <- ~w(variants collections images) do
+          assert {:ok, %Oban.Job{conflict?: true, id: id}} =
+                   %{"kind" => kind, "actor_uuid" => nil} |> Worker.new() |> Oban.insert()
+
+          assert id == first.id
+        end
+      end
+
+      assert Repo.aggregate(Oban.Job, :count) == 1
+    end
+
+    test "a finished job blocks nothing" do
+      {:ok, first} = %{"kind" => "images", "actor_uuid" => nil} |> Worker.new() |> Oban.insert()
+
+      Repo.update_all(from(j in Oban.Job, where: j.id == ^first.id), set: [state: "completed"])
+
+      assert {:ok, %Oban.Job{conflict?: false}} =
+               %{"kind" => "variants", "actor_uuid" => nil} |> Worker.new() |> Oban.insert()
+    end
+
+    test "two jobs already in the table never run together: the later start waits" do
+      earlier = executing_job!("images", ~U[2026-01-01 10:00:00.000000Z])
+      later = executing_job!("variants", ~U[2026-01-01 10:00:05.000000Z])
+
+      # The later one snoozes and writes nothing — not even a progress record.
+      assert Worker.perform(later) == {:snooze, 30}
+      assert Worker.get_progress("variants") == nil
+
+      # The earlier one is not held up by it (the legacy source makes the run
+      # itself a no-op, which is all this needs to tell "ran" from "snoozed").
+      assert Worker.perform(earlier) == {:error, :catalogue_source_inactive}
+    end
+
+    test "the wait ends when the earlier run does, and the order does not follow the job id" do
+      # Inserted first (lower id) but started second.
+      later = executing_job!("variants", ~U[2026-01-01 10:00:05.000000Z])
+      earlier = executing_job!("images", ~U[2026-01-01 10:00:00.000000Z])
+      assert later.id < earlier.id
+
+      assert Worker.perform(later) == {:snooze, 30}
+      assert Worker.perform(earlier) == {:error, :catalogue_source_inactive}
+
+      Repo.update_all(from(j in Oban.Job, where: j.id == ^earlier.id), set: [state: "completed"])
+
+      assert Worker.perform(later) == {:error, :catalogue_source_inactive}
+    end
+
+    test "two that started in the same instant: exactly one goes ahead" do
+      at = ~U[2026-01-01 10:00:00.000000Z]
+      first = executing_job!("images", at)
+      second = executing_job!("variants", at)
+
+      assert Worker.perform(first) == {:error, :catalogue_source_inactive}
+      assert Worker.perform(second) == {:snooze, 30}
+    end
+  end
+
+  # ============================================================
   # "images" — client/downloader stubs
   # ============================================================
 
@@ -637,6 +718,34 @@ defmodule PhoenixKitEcommerce.Workers.ShopifyMediaSyncWorkerTest do
       assert progress["kind"] == "variants"
       assert progress["finished_at"] != nil
       assert length(progress["errors"]) == 1
+    end
+
+    test "variants: a shop with no base currency skips every product and writes no price_modifiers",
+         %{catalogue: catalogue} do
+      PhoenixKit.Cache.clear(:billing_currencies)
+      Repo.delete_all(PhoenixKitBilling.Currency)
+
+      item =
+        create_item(catalogue.uuid, "Two-Option Mug", %{"handle" => "two-option-mug"}, %{
+          data: %{
+            "_primary_language" => "en",
+            "ecommerce" => %{
+              "shop_status" => "active",
+              "shopify" => %{"handle" => "two-option-mug"}
+            }
+          }
+        })
+
+      assert {:ok, %{total: 1, done: 1, errors: [error]}} =
+               Worker.run("variants", Ecto.UUID.generate(),
+                 client: VariantsStub,
+                 integration_uuid: "test-integration"
+               )
+
+      assert error == %{"product" => "two-option-mug", "reason" => ":missing_base_currency"}
+
+      assert AttributeSets.list_attachments(item.uuid) == []
+      assert get_in(reload(item).data, ["ecommerce", "price_modifiers"]) in [nil, %{}]
     end
 
     test "variants: a product whose variant list is incomplete is refused, nothing written",

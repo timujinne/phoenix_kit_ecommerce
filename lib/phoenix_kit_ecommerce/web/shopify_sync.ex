@@ -73,6 +73,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
+  alias PhoenixKitEcommerce.Errors
   alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.Shopify.ProductDiff.Change
   alias PhoenixKitEcommerce.Shopify.ShopDomain
@@ -109,6 +110,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   # tractable at all. `:title` gets the plain current → incoming line
   # `row_change_summary/1` already renders for `:vendor`/`:tags`/etc.
   @text_fields [:description, :body_html]
+
+  # The fields `Shopify.Sync` refuses to write while the shop has no base
+  # currency (its own `@price_fields`).
+  @price_fields [:price, :compare_at_price]
 
   # Rows added per load within an expanded section. Not a display
   # preference: `TextDiff`'s own moduledoc measures a wholly-rewritten
@@ -155,6 +160,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
          can_manage_integrations?(socket.assigns[:phoenix_kit_current_scope])
        )
        |> assign(:catalogue_source_active?, catalogue_source_active?())
+       |> assign_base_currency()
        |> assign(:media_sync_progress, load_media_sync_progress())
        |> assign(
          :collections_filter,
@@ -286,6 +292,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         %{uuid: uuid} ->
           {:noreply,
            socket
+           |> assign_base_currency()
            |> assign(
              checking: true,
              changes: nil,
@@ -316,8 +323,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   # `"check"` — `ShopifyMediaSyncWorker`'s own moduledoc: "Background jobs
   # are authorized at ENQUEUE time by the LiveView that starts them; the
   # workers themselves run without a scope by design." Oban's own
-  # `unique:` on the worker is the real guard against a double-enqueue —
-  # the in-flight check here is UX only (an already-disabled button).
+  # `unique:` on the worker is the real guard against a second run of any
+  # kind — the in-flight check here is UX only (an already-disabled button).
   def handle_event("run_media_sync", %{"kind" => kind}, socket)
       when kind in ~w(images variants collections) do
     Authz.authorize(socket, :run_imports, fn ->
@@ -325,9 +332,11 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       # the job died would otherwise refuse to start another for as long as
       # it stays open.
       progress = load_media_sync_progress()
-      socket = assign(socket, :media_sync_progress, progress)
 
-      if media_sync_in_flight?(progress, kind) do
+      socket =
+        socket |> assign(:media_sync_progress, progress) |> assign_base_currency()
+
+      if media_sync_running_kind(progress) != nil or price_blocked?(socket, kind) do
         {:noreply, socket}
       else
         actor_uuid = Activity.actor_uuid(socket)
@@ -465,6 +474,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       # `Map.has_key?(&1.changes, field)` alone doesn't know `field` is
       # hidden for the current `source`. See `visible_changes/2`'s doc.
       with field when not is_nil(field) <- to_field(field_str),
+           false <- price_blocked?(socket, field),
            true <-
              changes
              |> visible_field_changes(socket.assigns.source, field)
@@ -486,6 +496,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
           changes = socket.assigns.changes || []
           section_changes = visible_field_changes(changes, socket.assigns.source, field)
           {eligible, _excluded} = split_bulk_eligible(section_changes, field)
+          eligible = unless_price_blocked(eligible, socket, field)
           open_pending(socket, eligible, %{scope: :section, field: field})
       end
     end)
@@ -494,7 +505,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   def handle_event("request_apply_everything", _params, socket) do
     Authz.authorize(socket, :run_imports, fn ->
       changes = socket.assigns.changes || []
-      {eligible, _excluded} = applicable_for_everything(changes, socket.assigns.source)
+      {eligible, _excluded} = applicable_for_everything(changes, socket.assigns)
       open_pending(socket, eligible, %{scope: :everything})
     end)
   end
@@ -508,7 +519,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     Authz.authorize(socket, :run_imports, fn ->
       new_products = socket.assigns.new_products || []
 
-      if Enum.any?(new_products, &(&1.handle == handle)) do
+      if not socket.assigns.base_currency_missing? and
+           Enum.any?(new_products, &(&1.handle == handle)) do
         {:noreply, assign(socket, :pending, %{scope: :new_row, handle: handle})}
       else
         {:noreply, socket}
@@ -518,7 +530,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   def handle_event("request_apply_new_all", _params, socket) do
     Authz.authorize(socket, :run_imports, fn ->
-      open_pending(socket, socket.assigns.new_products || [], %{scope: :new_all})
+      new_products =
+        if socket.assigns.base_currency_missing?,
+          do: [],
+          else: socket.assigns.new_products || []
+
+      open_pending(socket, new_products, %{scope: :new_all})
     end)
   end
 
@@ -540,6 +557,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
           field_changes = visible_field_changes(changes, socket.assigns.source, field)
           matching = Enum.filter(field_changes, &MapSet.member?(uuid_set, &1.product_uuid))
           {eligible, excluded} = split_bulk_eligible(matching, field)
+          eligible = unless_price_blocked(eligible, socket, field)
 
           open_pending(socket, eligible, %{
             scope: :selection,
@@ -629,7 +647,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   defp confirm_everything_apply(socket) do
     changes = socket.assigns.changes || []
-    {eligible, _excluded} = applicable_for_everything(changes, socket.assigns.source)
+    {eligible, _excluded} = applicable_for_everything(changes, socket.assigns)
     %{succeeded: succeeded, failed: failed} = Sync.apply_changes(eligible, :all)
 
     socket =
@@ -646,7 +664,9 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       end
 
     succeeded_uuids = MapSet.new(succeeded, & &1.product_uuid)
-    remaining = Enum.reject(changes, &MapSet.member?(succeeded_uuids, &1.product_uuid))
+
+    remaining =
+      remaining_after_everything(changes, succeeded_uuids, socket.assigns.base_currency_missing?)
 
     {:noreply,
      socket
@@ -654,6 +674,22 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
      |> refresh_diffs()
      |> flash_everything_result(succeeded, failed)}
     |> clear_pending()
+  end
+
+  defp remaining_after_everything(changes, succeeded_uuids, false),
+    do: Enum.reject(changes, &MapSet.member?(succeeded_uuids, &1.product_uuid))
+
+  # Without a base currency `Sync` writes every field but the price, so an
+  # applied change keeps its price row: dropping it would report a price as
+  # synced that was refused.
+  defp remaining_after_everything(changes, succeeded_uuids, true) do
+    changes
+    |> Enum.map(fn change ->
+      if MapSet.member?(succeeded_uuids, change.product_uuid),
+        do: %{change | changes: Map.take(change.changes, @price_fields)},
+        else: change
+    end)
+    |> Enum.reject(&(&1.changes == %{}))
   end
 
   # `change.product_uuid` is always `nil` on a create-`Change` (see
@@ -744,6 +780,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         base_currency: base_currency
       )
     )
+  end
+
+  defp flash_new_products_failure(socket, _failed, :missing_base_currency) do
+    put_flash(socket, :error, Errors.message(:missing_base_currency))
   end
 
   defp flash_new_products_failure(socket, failed, :match) do
@@ -899,6 +939,9 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     )
   end
 
+  defp apply_error_flash(:missing_base_currency, _title, _field),
+    do: Errors.message(:missing_base_currency)
+
   defp apply_error_flash(_reason, title, field) do
     gettext("Could not update %{title}'s %{field}.", title: title, field: field_label(field))
   end
@@ -948,10 +991,24 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   # through `Sync.apply_changes/2`'s single `:all` sentinel. The operator
   # still reaches its other fields individually, via that product's rows
   # in their own sections.
-  defp applicable_for_everything(changes, source) do
+  #
+  # Without a base currency the price fields are left out of what
+  # "everything" covers, the same way the price section's own buttons are
+  # disabled: a change is then applied for its other fields only, and a
+  # price-only change is not offered at all.
+  defp applicable_for_everything(changes, %{source: source, base_currency_missing?: missing?}) do
     changes
     |> visible_changes(source)
+    |> drop_unwritable_price_fields(missing?)
     |> Enum.split_with(&(not &1.price_extreme?))
+  end
+
+  defp drop_unwritable_price_fields(changes, false), do: changes
+
+  defp drop_unwritable_price_fields(changes, true) do
+    changes
+    |> Enum.map(&%{&1 | changes: Map.drop(&1.changes, @price_fields), price_extreme?: false})
+    |> Enum.reject(&(&1.changes == %{}))
   end
 
   @doc false
@@ -1189,6 +1246,27 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
 
   defp catalogue_source_active?, do: ProductSource.current() == ProductSource.Catalogue
 
+  # A price written while the shop has no base currency has no currency to
+  # mean (`Sync.currency_verdict/1`), so the page says so and offers no
+  # action that would write one.
+  defp assign_base_currency(socket) do
+    socket
+    |> assign(:base_currency_missing?, is_nil(Shop.get_base_currency()))
+    |> assign(
+      :can_manage_currencies?,
+      Scope.has_module_access?(socket.assigns[:phoenix_kit_current_scope], "billing")
+    )
+  end
+
+  # `subject` is a diff field or a media-sync kind: the ones that write money.
+  defp price_blocked?(socket, subject),
+    do: socket.assigns.base_currency_missing? and price_bearing?(subject)
+
+  defp price_bearing?(subject), do: subject in @price_fields or subject == "variants"
+
+  defp unless_price_blocked(eligible, socket, field),
+    do: if(price_blocked?(socket, field), do: [], else: eligible)
+
   # `label` is a real `gettext/1` call at each list entry, not a stored
   # runtime string reused from a module attribute — see `@sections`'
   # own comment above for why that distinction matters for extraction.
@@ -1209,6 +1287,23 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     case Map.get(progress_map, kind) do
       %{"finished_at" => nil} = progress -> progress["interrupted"] != true
       _ -> false
+    end
+  end
+
+  # The kind whose run is in flight, `nil` when none is. One sync runs at a
+  # time whatever its kind (`ShopifyMediaSyncWorker`'s moduledoc), so every
+  # start button is disabled while this is set — an interrupted run is not
+  # in flight and blocks nothing.
+  defp media_sync_running_kind(progress_map) do
+    Enum.find_value(media_sync_kinds(), fn {kind, _label} ->
+      media_sync_in_flight?(progress_map, kind) && kind
+    end)
+  end
+
+  defp media_sync_label(kind) do
+    case List.keyfind(media_sync_kinds(), kind, 0) do
+      {_kind, label} -> label
+      nil -> kind
     end
   end
 
@@ -1241,8 +1336,18 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     put_flash(socket, :info, gettext("Sync queued — running in the background."))
   end
 
-  defp flash_media_sync_enqueue(socket, {:ok, %Oban.Job{conflict?: true}}) do
-    put_flash(socket, :info, gettext("A sync of this kind is already running."))
+  # The job handed back on a conflict is the one already in the queue, so
+  # its own kind is the one to name.
+  defp flash_media_sync_enqueue(socket, {:ok, %Oban.Job{conflict?: true} = job}) do
+    kind = Map.get(job.args, "kind") || Map.get(job.args, :kind)
+
+    put_flash(
+      socket,
+      :info,
+      gettext("“%{sync}” is already queued or running — one sync runs at a time.",
+        sync: media_sync_label(kind)
+      )
+    )
   end
 
   defp flash_media_sync_enqueue(socket, {:error, _changeset}) do
@@ -1339,6 +1444,9 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       reused: Map.get(stats, "reused", 0)
     )
   end
+
+  defp media_error_line(%{"product" => product, "reason" => ":missing_base_currency"}),
+    do: "#{product} — #{Errors.message(:missing_base_currency)}"
 
   defp media_error_line(%{"product" => product, "reason" => reason}),
     do: "#{product} — #{reason}"
@@ -1496,6 +1604,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       count: count,
       bulk_eligible_count: length(eligible),
       bulk_excluded_count: length(excluded),
+      price_blocked?: assigns.base_currency_missing? and price_bearing?(field),
       expanded?: expanded?,
       rows: rows
     }
@@ -1504,7 +1613,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   defp build_everything(%{changes: nil}), do: %{eligible_count: 0, excluded_count: 0}
 
   defp build_everything(assigns) do
-    {eligible, excluded} = applicable_for_everything(assigns.changes, assigns.source)
+    {eligible, excluded} = applicable_for_everything(assigns.changes, assigns)
     %{eligible_count: length(eligible), excluded_count: length(excluded)}
   end
 
@@ -1695,8 +1804,8 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     }
   end
 
-  defp pending_modal(%{pending: %{scope: :everything}, changes: changes, source: source}) do
-    {eligible, excluded} = applicable_for_everything(changes || [], source)
+  defp pending_modal(%{pending: %{scope: :everything}, changes: changes} = assigns) do
+    {eligible, excluded} = applicable_for_everything(changes || [], assigns)
 
     %{
       title: gettext("Apply everything?"),
@@ -2004,6 +2113,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
     doc:
       "`<.table_default>` renders the table AND card views into the DOM at once (CSS picks which shows per breakpoint — see its moduledoc), so this component rendered a second time for the card body would collide on id with the table row's buttons unless one instance gets a distinct suffix. The table-view call site keeps the bare (pre-existing, test-pinned) id; only the card-view call site passes a suffix."
 
+  attr :blocked?, :boolean,
+    default: false,
+    doc: "A price row while the shop has no base currency: nothing to apply it in."
+
   defp row_actions(assigns) do
     ~H"""
     <button
@@ -2025,6 +2138,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
       phx-click="request_apply_row"
       phx-value-field={@field}
       phx-value-uuid={@row.product_uuid}
+      disabled={@blocked?}
     >
       {gettext("Apply")}
     </button>
@@ -2116,6 +2230,21 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
           <span>{invalid_shop_domain_message()}</span>
         </div>
 
+        <div :if={@base_currency_missing?} id="shopify-no-base-currency" class="alert alert-warning">
+          <span>
+            {gettext(
+              "This shop has no base currency, so prices from Shopify cannot be written and new products cannot be added. Other fields still sync."
+            )}
+            <.link
+              :if={@can_manage_currencies?}
+              navigate={Routes.path("/admin/billing/currencies")}
+              class="link"
+            >
+              {gettext("Set a base currency in the currency settings.")}
+            </.link>
+          </span>
+        </div>
+
         <div :if={@connection} class="text-sm text-base-content/70">
           {gettext("Connected: %{name}", name: @connection.name)}
         </div>
@@ -2135,6 +2264,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             applied_any?={@applied_any?}
             everything={@everything}
             sections={@sections}
+            base_currency_missing?={@base_currency_missing?}
           />
         </div>
 
@@ -2144,6 +2274,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             source={@source}
             new_products_out_of_scope={@new_products_out_of_scope}
             new_products_visible={@new_products_visible}
+            base_currency_missing?={@base_currency_missing?}
           />
         </div>
 
@@ -2155,6 +2286,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             media_sync_rows={@media_sync_rows}
             media_errors_loaded={@media_errors_loaded}
             media_warnings_loaded={@media_warnings_loaded}
+            base_currency_missing?={@base_currency_missing?}
           />
         </div>
 
@@ -2208,6 +2340,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   attr :applied_any?, :boolean, required: true
   attr :everything, :map, required: true
   attr :sections, :list, required: true
+  attr :base_currency_missing?, :boolean, default: false
 
   def changes_tab(assigns) do
     ~H"""
@@ -2326,7 +2459,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                 class="btn btn-xs btn-primary"
                 phx-click="request_apply_section"
                 phx-value-field={section.field}
-                disabled={section.bulk_eligible_count == 0}
+                disabled={section.bulk_eligible_count == 0 or section.price_blocked?}
               >
                 {gettext("Apply section")}
               </button>
@@ -2367,6 +2500,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                     id={"apply-selection-#{section.field}"}
                     class="btn btn-xs btn-primary ml-auto"
                     data-bulk-action={"request_apply_selection:" <> to_string(section.field)}
+                    disabled={section.price_blocked?}
                   >
                     {gettext("Apply selection")}
                   </button>
@@ -2409,7 +2543,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                         </.table_default_cell>
                         <.table_default_cell>
                           <div class="flex items-center gap-2 justify-end flex-wrap">
-                            <.row_actions row={row} field={section.field} />
+                            <.row_actions row={row} field={section.field} blocked?={section.price_blocked?} />
                           </div>
                         </.table_default_cell>
                       </.table_default_row>
@@ -2427,7 +2561,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                     <.diff_panel :if={row.expanded? && row.text?} words={row.words} />
                   </:card_body>
                   <:card_actions :let={row}>
-                    <.row_actions row={row} field={section.field} id_suffix="-card" />
+                    <.row_actions
+                      row={row}
+                      field={section.field}
+                      id_suffix="-card"
+                      blocked?={section.price_blocked?}
+                    />
                   </:card_actions>
                 </.table_default>
               </.bulk_select_scope>
@@ -2457,6 +2596,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   attr :source, :atom, required: true
   attr :new_products_out_of_scope, :integer, required: true
   attr :new_products_visible, :list, required: true
+  attr :base_currency_missing?, :boolean, default: false
 
   def new_products_tab(assigns) do
     ~H"""
@@ -2487,6 +2627,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             id="add-all-new-products"
             class="btn btn-sm btn-primary"
             phx-click="request_apply_new_all"
+            disabled={@base_currency_missing?}
           >
             {gettext("Add all (%{count})", count: length(@new_products))}
           </button>
@@ -2532,6 +2673,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
                   class="btn btn-xs btn-primary"
                   phx-click="request_apply_new_row"
                   phx-value-handle={change.handle}
+                  disabled={@base_currency_missing?}
                 >
                   {gettext("Add")}
                 </button>
@@ -2550,6 +2692,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
               class="btn btn-xs btn-primary"
               phx-click="request_apply_new_row"
               phx-value-handle={change.handle}
+              disabled={@base_currency_missing?}
             >
               {gettext("Add")}
             </button>
@@ -2576,6 +2719,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   attr :media_sync_rows, :list, required: true
   attr :media_errors_loaded, :map, required: true
   attr :media_warnings_loaded, :map, required: true
+  attr :base_currency_missing?, :boolean, default: false
 
   # Outside the "Changes" tab's field-diff report: these three writers act
   # directly on the catalogue (images, variants/prices, collections →
@@ -2583,6 +2727,13 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
   # under the catalogue product source. The collections filter summary
   # lives on the Settings tab instead — it's configuration, not status.
   def media_tab(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :media_sync_running_kind,
+        media_sync_running_kind(assigns.media_sync_progress)
+      )
+
     ~H"""
     <div
       :if={@connection && @catalogue_source_active?}
@@ -2596,6 +2747,12 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
         )}
       </p>
 
+      <p :if={@media_sync_running_kind} id="media-sync-running-notice" class="text-sm text-info">
+        {gettext("“%{sync}” is running. One sync runs at a time — the others can start when it has finished.",
+          sync: media_sync_label(@media_sync_running_kind)
+        )}
+      </p>
+
       <div :for={{kind, label, status} <- @media_sync_rows} class="border-t border-base-200 pt-3 first:border-t-0 first:pt-0">
         <div class="flex flex-wrap items-center gap-2">
           <button
@@ -2605,7 +2762,10 @@ defmodule PhoenixKitEcommerce.Web.ShopifySync do
             phx-click="run_media_sync"
             phx-disable-with={gettext("Starting…")}
             phx-value-kind={kind}
-            disabled={media_sync_in_flight?(@media_sync_progress, kind)}
+            disabled={
+              @media_sync_running_kind != nil or
+                (@base_currency_missing? and kind == "variants")
+            }
           >
             <span
               :if={media_sync_in_flight?(@media_sync_progress, kind)}
