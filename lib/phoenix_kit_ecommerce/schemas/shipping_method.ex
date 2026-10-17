@@ -297,15 +297,13 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     end
   end
 
-  defp country_ok?(%{countries: [], excluded_countries: []}, _country), do: true
-
-  defp country_ok?(%{countries: [], excluded_countries: excluded}, country) do
-    is_nil(country) or country not in excluded
-  end
+  # A NULL list (written outside the changeset) reads as an empty one.
+  defp country_ok?(_method, nil), do: true
 
   defp country_ok?(%{countries: allowed, excluded_countries: excluded}, country) do
-    (is_nil(country) or country in allowed) and
-      (is_nil(country) or country not in excluded)
+    allowed = allowed || []
+
+    (allowed == [] or country in allowed) and country not in (excluded || [])
   end
 
   # The admin form submits the flag as a top-level `pay_on_delivery` param:

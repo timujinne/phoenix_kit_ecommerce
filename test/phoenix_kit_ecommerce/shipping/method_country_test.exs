@@ -56,6 +56,13 @@ defmodule PhoenixKitEcommerce.Shipping.MethodCountryTest do
     refute ShippingMethod.serves_country?(%{fixed | excluded_countries: ["DE"]}, "DE")
   end
 
+  test "NULL country lists read as empty ones" do
+    fixed = method(metadata: %{}, countries: nil, excluded_countries: nil)
+    assert ShippingMethod.serves_country?(fixed, "DE")
+    refute ShippingMethod.serves_country?(%{fixed | excluded_countries: ["DE"]}, "DE")
+    refute ShippingMethod.serves_country?(%{fixed | countries: ["UA"]}, "DE")
+  end
+
   test "a method whose provider is not installed is not limited by it" do
     gone = method(metadata: %{"shipping_provider" => %{"provider" => "not_installed"}})
     assert ShippingMethod.serves_country?(gone, "DE")
