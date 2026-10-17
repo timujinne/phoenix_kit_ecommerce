@@ -297,9 +297,10 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     end
   end
 
-  # A NULL list (written outside the changeset) reads as an empty one.
+  # A country not known yet is never refused.
   defp country_ok?(_method, nil), do: true
 
+  # A NULL list (written outside the changeset) reads as an empty one.
   defp country_ok?(%{countries: allowed, excluded_countries: excluded}, country) do
     allowed = allowed || []
 
