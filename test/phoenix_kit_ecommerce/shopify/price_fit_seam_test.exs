@@ -3,7 +3,7 @@ defmodule PhoenixKitEcommerce.Shopify.PriceFitSeamTest do
   Seam tests for the Shopify variant price-fit chain (`docs/superpowers/
   specs/2026-09-23-shopify-variant-price-fit-design.md`, "Тест стыка
   (обязателен)"): one value travels through four places —
-  `VariantMapper.build/2` -> `Writer.finalize_variant_sync/4` -> the sync
+  `VariantMapper.build/2` -> `Writer.finalize_variant_sync/5` -> the sync
   worker's own run record -> the sync page's template — and the item's
   own `price_fit_rule` travels the other way, from a form save into the
   next sync. Each of Tasks 3-6's own unit tests covers its own piece in

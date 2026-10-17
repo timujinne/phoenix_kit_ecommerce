@@ -132,6 +132,17 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerce do
   defp decimal_leaf?(_), do: false
 
   @doc """
+  Whether an item's `data["ecommerce"]` map (or `nil`) links it to Shopify:
+  a `shopify.handle` or a `shopify.product_id`, either of which matches the
+  item in the Shopify syncs.
+  """
+  @spec shopify_linked?(map() | nil) :: boolean()
+  def shopify_linked?(%{"shopify" => %{} = shopify}),
+    do: Enum.any?(["handle", "product_id"], &(shopify[&1] not in [nil, ""]))
+
+  def shopify_linked?(_ecommerce), do: false
+
+  @doc """
   Merges `params` (submitted form/API values, or `nil`) over `current`
   (the existing `data["ecommerce"]` map, or `nil`) and validates the
   result.

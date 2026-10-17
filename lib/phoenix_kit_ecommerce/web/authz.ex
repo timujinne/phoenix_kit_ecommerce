@@ -47,6 +47,24 @@ defmodule PhoenixKitEcommerce.Web.Authz do
   end
 
   @doc """
+  True when the socket's scope holds core's `api` permission, the one that
+  manages API keys. It is opt-in: core does not grant it to the Admin role.
+  Changing the price-change confirmation threshold takes it on top of
+  `shop.manage_settings`, because the threshold decides what an API key may
+  do without a confirmation.
+
+  Fails closed: an absent or malformed scope is not authorized.
+  """
+  def can_manage_api?(socket) do
+    case socket.assigns[:phoenix_kit_current_scope] do
+      nil -> false
+      scope -> Scope.can?(scope, "api")
+    end
+  rescue
+    _ -> false
+  end
+
+  @doc """
   Runs `fun` when the scope holds `capability`, otherwise returns the
   socket with a denial flash and no side effect.
 

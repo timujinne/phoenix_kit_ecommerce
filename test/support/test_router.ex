@@ -32,6 +32,28 @@ defmodule PhoenixKitEcommerce.Test.Router do
     plug(:protect_from_forgery)
   end
 
+  # The claim route, the way `Web.Routes.generate/1` emits it in a host: the
+  # browser pipeline plus the shop-session plug. `assign_test_user/2` stands in
+  # for core's auto-setup pipeline (it assigns the logged-in user).
+  pipeline :claim_session do
+    plug(PhoenixKitEcommerce.Web.Plugs.ShopSession)
+    plug(:assign_test_user)
+  end
+
+  def assign_test_user(conn, _opts) do
+    case Plug.Conn.get_session(conn, "phoenix_kit_test_scope") do
+      %{user: user} -> Plug.Conn.assign(conn, :phoenix_kit_current_user, user)
+      _ -> conn
+    end
+  end
+
+  scope "/" do
+    pipe_through([:browser, :claim_session])
+
+    get("/checkout/claim/:token", PhoenixKitEcommerce.Web.ClaimController, :show)
+    post("/checkout/claim/:token", PhoenixKitEcommerce.Web.ClaimController, :create)
+  end
+
   scope "/", PhoenixKitEcommerce.Web do
     pipe_through(:browser)
 

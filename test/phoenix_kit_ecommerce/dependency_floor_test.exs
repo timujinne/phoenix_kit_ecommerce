@@ -123,6 +123,20 @@ defmodule PhoenixKitEcommerce.DependencyFloorTest do
     assert Version.match?("0.21.0", requirement)
   end
 
+  test "the declared req requirement excludes releases without adapter modules" do
+    # `PinnedAdapter` is an adapter MODULE and calls `Req.Plug.run/1`; both
+    # arrived in Req 0.7 (before it an adapter is a function and
+    # `Req.Plug` does not exist). mix.lock selects a newer release, so only the
+    # shipped requirement can show a floor that admits 0.5/0.6.
+    assert [_, requirement] = Regex.run(~r/\{:req,\s*"([^"]+)"/, File.read!("mix.exs"))
+
+    refute Version.match?("0.5.17", requirement)
+    refute Version.match?("0.6.3", requirement)
+    assert Version.match?("0.7.0", requirement)
+    assert Code.ensure_loaded?(Req.Plug)
+    assert function_exported?(Req.Plug, :run, 1)
+  end
+
   test "the phoenix_kit floor ships V186's cart/order freeze columns" do
     # Cart/CartItem cast base_currency/exchange_rate/base_unit_price —
     # real table columns core's V186 adds (first released in 2.16.0), not

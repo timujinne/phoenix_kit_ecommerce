@@ -18,6 +18,8 @@ E-commerce module for [PhoenixKit](https://github.com/BeamLabEU/phoenix_kit). Pr
 - **Real-time updates** — PubSub events for carts, products, categories, and inventory changes
 - **Admin dashboard** — LiveViews for managing products, categories, shipping, carts, imports, and settings
 - **User pages** — catalog, product detail, cart, checkout, order history, and order details
+- **Public read API** — full-text product search (PostgreSQL, per language, typo-tolerant with `pg_trgm`), product cards, category tree and similar products for AI agents and scripts, as REST and MCP tools of PhoenixKit core (needs a core with the shop API; off until `api_public_enabled` is on)
+- **Public cart API** — seven anonymous *write* tools that let a buyer's AI agent fill a cart and hand it to the site's checkout through a one-time link; no order, payment or address passes through the API (same switch, `api_public_enabled`)
 - **Auto-discovery** — implements `PhoenixKit.Module` behaviour; PhoenixKit finds it at startup with zero config
 
 ## Installation
@@ -52,7 +54,7 @@ PhoenixKit auto-discovers the module at startup — no additional configuration 
 3. Add Oban queues to `config/config.exs`:
    ```elixir
    config :my_app, Oban,
-     queues: [shop_imports: 5]
+     queues: [shop_imports: 5, shop_search: 2]
    ```
 4. Run `mix phoenix_kit.update` to generate migrations
 5. Enable the Shop module in Admin -> Modules
@@ -196,6 +198,108 @@ selection with `PhoenixKitEcommerce.SelectedSpecs.labels/1`.
 methods = Shop.get_available_shipping_methods(cart)
 ```
 
+### Public API: search and product tools
+
+With PhoenixKit core's shop API switched on (`api_public_enabled`), this module offers five read-only
+search and product tools to anonymous callers (the cart tools, which write, are described below), over REST (`POST /api/shop/v1/<tool>`) and MCP (`/mcp/shop`):
+
+| Tool | What it does |
+|---|---|
+| `shop.search_products` | Search by words, category branch, price, options, vendor and sale status; facets; exact count; cursor paging |
+| `shop.search_products_batch` | Up to 20 searches in one call (one rate-limit unit each) |
+| `shop.get_products` | Full cards for up to 50 ids (one rate-limit unit per ten ids); a discontinued product is a three-field stub; hidden or unknown ids are `not_found` |
+| `shop.list_categories` | The active categories as a tree with product counts |
+| `shop.similar_products` | Products in the same category or sharing an option value or tag |
+
+```bash
+curl -s -X POST https://shop.example.com/api/shop/v1/shop.search_products \
+  -H 'content-type: application/json' \
+  -d '{"q": "ceramic vase", "price_max": 30, "sort": "price_asc", "limit": 5}'
+```
+
+What a caller sees is decided by one rule (`PhoenixKitEcommerce.API.Visibility`): draft, inactive,
+deleted products and products in hidden or deleted categories are never shown (every product and
+card is read live); discontinued or archived ones appear only as a stub in `shop.get_products`.
+The counts and facets come from the search index and can lag a change by the reindex delay (a few
+seconds and the queue, or until the nightly rebuild if the job fails), so for that time they can
+include a product the items no longer show, and a query only that product matches answers `count: 1`
+with no items. The category counts of `shop.list_categories` come from the index too, and a
+sub-category under an unlisted middle category counts towards its listed ancestor's search but not
+towards that ancestor's `total_count`. Enabling the shop queues a rebuild; enabling a language does not, so call `PhoenixKitEcommerce.Search.Jobs.enqueue_rebuild/0` or wait for the nightly one (03:40). Prices come in the language and
+currency of the domain the request came to (a host maps domains with
+`config :phoenix_kit, :api_request_context, {Mod, :fun}`); `language` and `currency` inputs override.
+
+Search reads `phoenix_kit_shop_search_index`, kept fresh by `PhoenixKitEcommerce.Search.Subscriber`
+(catalogue and shop PubSub events, through Oban jobs on the `shop_search` queue) and rebuilt every
+night (`oban_crons/0`; `mix phoenix_kit.update` adds the queue and the cron entry to the host's
+Oban config). Without the `pg_trgm` extension search still works and only skips the typo fallback.
+
+### Public API: cart tools
+
+The same switch (`api_public_enabled`) also turns on seven anonymous **write** tools. They create
+cart rows, can send the owner a notification and mint checkout links, so decide on purpose whether
+to switch the public API on. They never take an order, a payment or an address: the buyer finishes
+on the site's own checkout.
+
+| Tool | What it does |
+|---|---|
+| `shop.create_cart` | Returns a cart token; writes nothing |
+| `shop.get_cart` | The cart: lines, totals, shipping choice and a `revision` |
+| `shop.set_cart_items` | Sets lines to final quantities in one transaction, per-line errors, `expected_revision`, `dry_run` |
+| `shop.clear_cart` | Empties the cart; asks for confirmation when it has lines (offered only when core carries the confirmation gate) |
+| `shop.get_shipping_options` | Shipping methods for a country |
+| `shop.set_shipping` | Chooses one of them |
+| `shop.get_checkout_link` | A one-time link to the checkout hand-off page |
+
+- **Token and row.** A cart token is 32 random bytes plus a short MAC, signed with the host's
+  `secret_key_base` and never stored. The cart row is created by the first write only, under core's
+  per-IP and global cart-row limits (`session_id` starts with `api:`).
+- **Hand-off.** The link opens `/checkout/claim/:token` (no locale prefix). A GET shows the cart and
+  consumes nothing; the buyer's confirmation (a CSRF `POST`) consumes it once and moves the cart to
+  the buyer's browser session, replaces the cart already there, or merges into it. The old token then
+  answers `cart_locked`. The claim page marks itself as not to be tracked by the web analytics module
+  (`PhoenixKitWebAnalytics.Plug.skip/1`, when the installed version has it), and the V5 migration step
+  also adds `/checkout/claim/*` to `web_analytics_exclude_paths` if the analytics tables existed when
+  it ran; if analytics was installed later, add that pattern yourself. **The claim token is part of
+  the request path, and this module cannot keep it out of your logs:** the path is written before
+  any controller runs, by the endpoint's request logger (`Plug.Telemetry`, the `GET /checkout/claim/...`
+  line) and by core's `RequestTimer` (a `START` line at debug and an `END` line at info, both with
+  the path; it is part of the `:phoenix_kit_auto_setup` pipeline the claim route goes through). The
+  `Parameters:` line is already `[FILTERED]` by core's `filter_parameters`, which covers parameters
+  and not the path. Anyone who can read the log can open a live link before the buyer, for up to
+  `api_checkout_claim_ttl_minutes`, so drop these lines in the host with a primary `:logger` filter,
+  which covers all three at once:
+
+  ```elixir
+  defmodule MyApp.ClaimLogFilter do
+    @moduledoc false
+    def filter(%{msg: {:string, text}}, _extra) do
+      if text |> IO.chardata_to_string() |> String.contains?("/checkout/claim/"),
+        do: :stop,
+        else: :ignore
+    end
+
+    def filter(_event, _extra), do: :ignore
+  end
+
+  # In MyApp.Application.start/2, before the supervisor starts:
+  :logger.add_primary_filter(:claim_token, {&MyApp.ClaimLogFilter.filter/2, []})
+  ```
+
+  Keep the link lifetime short (the default is 30 minutes). A fix at the source belongs to core
+  (skipping the path in `RequestTimer`) and to the host's endpoint (`Plug.Telemetry`'s `log:` option
+  can return `false` for these paths).
+- **Notifications.** An API write sends at most one message ("via assistant") through the two
+  existing cart notification actions and toggles, capped per cart and globally per hour.
+- **Settings** (E-Commerce settings page, "Assistant carts" card): `api_cart_idle_days` (7),
+  `api_checkout_claim_ttl_minutes` (30), `api_signal_per_cart_per_hour` (3),
+  `api_signal_global_per_hour` (30).
+- **Cron.** `oban_crons/0` adds an hourly sweep of idle `api:` carts, a daily deletion of
+  abandoned `api:` carts (with their lines) and a daily prune of used or expired claims (seven days
+  after a hand-off the old token stops answering `cart_locked`: it reads as an empty open cart, or
+  `cart_not_found` if the cart was merged); general cart expiry is unchanged. Run `mix phoenix_kit.update`: it applies migration V5 (`phoenix_kit_shop_cart_claims`)
+  and writes the cron entries into the host's Oban crontab.
+
 ### CSV Import
 
 ```elixir
@@ -210,6 +314,54 @@ methods = Shop.get_available_shipping_methods(cart)
 # Progress is broadcast on "shop:import:<uuid>" and rendered live at
 # /admin/shop/imports/:uuid
 ```
+
+### Admin API tools
+
+On a `phoenix_kit` core that ships the admin API (the tool registry), this
+module offers five admin tools over REST, and over MCP where the core also
+provides it, for an accounting system, a script or an AI agent. Shopify is not
+needed: on a shop without it, the API is how an outside system feeds the
+product list.
+
+| Tool | Does | Scope |
+|---|---|---|
+| `ecommerce.get_prices` | prices, option prices, visibility | `ecommerce.prices:read` |
+| `ecommerce.set_prices` | price, compare-at price, option prices | `ecommerce.prices:write` |
+| `ecommerce.set_availability` | visibility, made to order | `ecommerce.availability:write` |
+| `ecommerce.attach_images` | pictures by URL, at most 20 per call | `ecommerce.images:write` |
+| `ecommerce.detach_images` | takes pictures out of a gallery, by file id or by the URL they came from | `ecommerce.images:write` |
+
+The key owner needs `shop` to read prices, and both `shop.manage_catalog`
+and `catalogue` to use a write tool, including a dry run. Catalogue access
+is checked against the owner's current roles on every call; a confirmation
+does not preserve a permission that has since been revoked.
+
+They work on the catalogue product source only; on the legacy source (or with
+a `phoenix_kit_catalogue` that predates the admin API) they answer
+`unsupported_source`. A price move of more than `api_confirm_price_change_pct`
+percent (an option price is measured against the product's current price;
+default 30, set on the E-Commerce settings page by a user who also
+holds core's `api` permission) is held for confirmation first, and so is any
+batch larger than core's `api_confirm_batch_over`. The price threshold checks
+the base price and each option modifier independently; their changes are not
+combined into a customer selection's total. `detach_images` is held when
+a row would leave a product with no picture at all (the main picture alone is
+not held: replacing it is an attach followed by a detach); a picture shared
+with another product stays with it, and one nothing else holds goes to the
+media trash, not out of Storage; at most 50 pictures per product and 500 per
+call. A dry run (`dry_run: true`) of a write tool answers `requires_confirmation`
+(whether the real call would be held, by the tool's rule if it has one, or the
+batch size) and `confirmation_rules` (the thresholds that applied); it never
+creates a confirmation code. Keys, scopes and the switch are on core's
+Settings → API page.
+
+A `validation_failed` answer with `context.reason` `database_error`,
+`storage_error` or `unexpected` is not a problem with the request and is worth
+retrying; any other `validation_failed` should be fixed first.
+
+The module also offers the `shop_order` kind to Warehouse, so a shop order can
+be the basis of a goods issue. This needs the Warehouse module 0.5.3 or later,
+the first release where modules can declare source kinds.
 
 ### Shopify Sync
 
@@ -328,7 +480,7 @@ end
 
 ### Settings
 
-Keys are `shop_`-prefixed. (Earlier revisions of this table listed
+Keys are `shop_`-prefixed, except `api_confirm_price_change_pct`. (Earlier revisions of this table listed
 unprefixed names that the code never read.)
 
 | Key | Type | Default | Description |
@@ -341,6 +493,7 @@ unprefixed names that the code never read.)
 | `shop_sidebar_show_categories` | boolean | `true` | Show the category sidebar |
 | `shop_catalog_vocabulary` | string | `"products"` | `"products"`, `"services"` or `"mixed"` — what the storefront calls what you sell |
 | `shop_hide_zero_decimals` | boolean | `false` | Render `40` rather than `40.00` when the fraction is all zeros. **Storefront only** |
+| `api_confirm_price_change_pct` | integer | `30` | Admin API: a price move above this percent needs a confirmation. Not `shop_`-prefixed |
 
 `shop_catalog_vocabulary` exists because a shop selling colour grading reads
 badly under "No products match your filters". Each option is a separately
@@ -567,6 +720,7 @@ lib/
 | `/cart` | Shopping cart |
 | `/checkout` | Checkout flow |
 | `/checkout/complete/:uuid` | Order confirmation |
+| `/checkout/claim/:token` | Hand-off page of the public cart API (GET shows, POST confirms; no locale prefix) |
 
 **Admin:**
 
@@ -653,6 +807,11 @@ tests). The test repo runs core's versioned migrations via
 - Ensure Oban is configured with the `shop_imports` queue (every shop worker — CSV import, image migration, Shopify media sync — runs on it)
 - Check Oban dashboard for failed jobs
 - Review import logs at `/admin/shop/imports` for error details
+
+### Search finds nothing
+- Ensure Oban is configured with the `shop_search` queue (`queues: [shop_imports: 5, shop_search: 2]`). Without it the reindex and rebuild jobs stay `available` and the search index stays empty
+- An empty index is rebuilt by a job enqueued 30 seconds after boot, and every night; check the Oban dashboard for failed `SearchRebuildWorker` jobs
+- Typos are found only when the `pg_trgm` extension is installed and its operators are on the connection's search path; search works without it and logs a warning at boot
 
 ### Guest cart not persisting
 - Verify `ShopSession` plug is included in your router pipeline

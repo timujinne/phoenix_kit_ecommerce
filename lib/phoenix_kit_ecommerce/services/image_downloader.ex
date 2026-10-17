@@ -22,8 +22,10 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   require Logger
 
   alias PhoenixKit.Modules.Storage
+  alias PhoenixKit.Modules.Storage.Sniff
   alias PhoenixKitEcommerce.Policy
   alias PhoenixKitEcommerce.Services.ImageFingerprint
+  alias PhoenixKitEcommerce.Services.PinnedAdapter
 
   @default_timeout 30_000
   # 50 MB max
@@ -36,6 +38,10 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   # default; `shop_allow_svg_uploads` re-enables it for shops that need
   # vector assets and trust their import sources.
   @svg_content_type "image/svg+xml"
+
+  # The most of a remote-supplied value (a response header) that reaches a
+  # log line.
+  @max_logged_chars 80
 
   @doc """
   Downloads an image from a URL to a temporary file.
@@ -51,6 +57,17 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
       stands — the whole file is never buffered first.
     * `:req_options` - extra `Req` options merged into every request
       (tests inject a `plug:` adapter here)
+    * `:private_networks` - `:policy` (default: the shop's
+      `shop_image_import_allow_private_networks` setting decides) or
+      `:forbid` (loopback, private and link-local addresses are refused
+      whatever the setting says, on the first URL and on every redirect;
+      the admin API always passes it)
+    * `:require_raster` - `true` also reads the downloaded bytes
+      (`PhoenixKit.Modules.Storage.Sniff`) and refuses a body that is not a
+      raster image of the type the server declared, with
+      `{:error, :content_mismatch}`: HTML served as `image/png`, and an SVG
+      whatever the shop's SVG setting says (default: `false`; the admin API
+      passes `true`)
 
   ## Examples
 
@@ -67,20 +84,42 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
     max_bytes = Keyword.get(opts, :max_bytes, @max_file_size)
 
+    private_networks = Keyword.get(opts, :private_networks, :policy)
+
     request = %{
       timeout: timeout,
       max_bytes: max_bytes,
-      req_options: Keyword.get(opts, :req_options, [])
+      req_options: Keyword.get(opts, :req_options, []),
+      private_networks: private_networks
     }
 
-    with {:ok, url, pin} <- validate_url(url),
+    with {:ok, url, pin} <- validate_url(url, private_networks),
          {:ok, response} <- do_http_request(url, pin, request),
          {:ok, content_type} <- extract_content_type(response),
          :ok <- validate_content_type(content_type),
          :ok <- validate_size(response, max_bytes),
          body = IO.iodata_to_binary(response.body),
-         {:ok, temp_path} <- write_temp_file(body, content_type) do
+         {:ok, temp_path} <- write_temp_file(body, content_type),
+         :ok <- check_content(temp_path, content_type, opts) do
       {:ok, temp_path, content_type, byte_size(body)}
+    end
+  end
+
+  # With `require_raster: true` the bytes must be a raster image, and the one
+  # the declared type says: a Content-Type is the remote server's claim.
+  defp check_content(temp_path, content_type, opts) do
+    if Keyword.get(opts, :require_raster, false) and not raster_of_type?(temp_path, content_type) do
+      cleanup_temp_file(temp_path)
+      {:error, :content_mismatch}
+    else
+      :ok
+    end
+  end
+
+  defp raster_of_type?(path, content_type) do
+    case Sniff.sniff(path) do
+      {:ok, %{format: format, mime: mime}} -> mime == content_type and Sniff.raster?(format)
+      _unknown -> false
     end
   end
 
@@ -124,6 +163,11 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
     * `:metadata` - Additional metadata to store with the file
     * `:near_duplicates` - `false` skips step 2 and the fingerprint
       (default: `true`)
+    * `:redact_query` - `true` logs and stores the URL without its query
+      string, fragment and credentials (`source_key/1`) after the request has been made with the full
+      URL, so a signed URL's credential reaches neither the log nor the
+      file's `source_url` metadata (default: `false`; the admin API passes
+      `true`)
 
   ## Examples
 
@@ -140,20 +184,27 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
     metadata = Keyword.get(opts, :metadata, %{})
 
     with {:ok, temp_path, content_type, size} <- download_image(url, opts) do
+      # The request above used the full URL. From here on the URL is only
+      # logged and remembered. What is remembered is the redacted form when
+      # asked to be; what is logged then carries no path either, which can
+      # hold a signed token as well as the query can.
+      logged = log_url(url, opts)
+      url = stored_url(url, opts)
       file_checksum = calculate_file_hash(temp_path)
       filename = extract_filename_from_url(url, content_type)
 
       case find_existing_file(file_checksum, filename) do
         %{uuid: existing_uuid} ->
           Logger.info(
-            "[ImageDownloader] Reusing #{existing_uuid} for #{url}: same bytes and name (checksum: #{file_checksum})"
+            "[ImageDownloader] Reusing #{existing_uuid} for #{logged}: same bytes and name (checksum: #{file_checksum})"
           )
 
-          reuse(existing_uuid, url, temp_path)
+          reuse(existing_uuid, {url, logged}, temp_path)
 
         nil ->
           download = %{
             url: url,
+            logged: logged,
             temp_path: temp_path,
             filename: filename,
             content_type: content_type,
@@ -166,20 +217,20 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   end
 
   defp reuse_same_picture_or_store(download, user_uuid, metadata, opts) do
-    %{url: url, temp_path: temp_path, size: size} = download
+    %{url: url, logged: logged, temp_path: temp_path, size: size} = download
     fingerprint = fingerprint(temp_path, opts)
 
     case find_near_duplicate(fingerprint, temp_path) do
       {existing_uuid, distances} ->
         Logger.info(
-          "[ImageDownloader] Reusing #{existing_uuid} for #{url}: same picture (#{inspect(distances)})"
+          "[ImageDownloader] Reusing #{existing_uuid} for #{logged}: same picture (#{inspect(distances)})"
         )
 
-        reuse(existing_uuid, url, temp_path)
+        reuse(existing_uuid, {url, logged}, temp_path)
 
       nil ->
         Logger.info(
-          "[ImageDownloader] Storing new file from URL #{url}, temp_path=#{temp_path}, size=#{size}"
+          "[ImageDownloader] Storing new file from URL #{logged}, temp_path=#{temp_path}, size=#{size}"
         )
 
         store_new_file(
@@ -194,20 +245,22 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
     end
   end
 
-  defp reuse(file_uuid, url, temp_path) do
-    remember_source_url(file_uuid, url)
+  defp reuse(file_uuid, {url, logged}, temp_path) do
+    remember_source_url(file_uuid, url, logged)
     cleanup_temp_file(temp_path)
     {:ok, file_uuid}
   end
 
   @doc """
   The form a download URL is matched in: the URL with its query string
-  (Shopify's `?v=<timestamp>`) removed. `nil` for anything that is not a
-  string.
+  (Shopify's `?v=<timestamp>`), its fragment and any `user:password@` part
+  removed. `nil` for anything that is not a string.
   """
   @spec source_key(term()) :: String.t() | nil
   def source_key(url) when is_binary(url) do
-    url |> URI.parse() |> Map.put(:query, nil) |> URI.to_string()
+    uri = URI.parse(url)
+
+    URI.to_string(%URI{uri | query: nil, fragment: nil, userinfo: nil, authority: nil})
   end
 
   def source_key(_url), do: nil
@@ -357,7 +410,7 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   # already answers to it. A file without a download source is left alone:
   # nothing reads aliases off it. Best effort — a failure here costs one
   # download later, never the reuse itself.
-  defp remember_source_url(file_uuid, url) do
+  defp remember_source_url(file_uuid, url, logged) do
     key = source_key(url)
 
     result =
@@ -374,12 +427,14 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
 
     with {:error, reason} <- result do
       Logger.warning(
-        "[ImageDownloader] Could not record #{url} on #{file_uuid}: #{inspect(reason)}"
+        "[ImageDownloader] Could not record #{logged} on #{file_uuid}: #{inspect(reason)}"
       )
     end
   rescue
     e ->
-      Logger.warning("[ImageDownloader] Could not record #{url} on #{file_uuid}: #{inspect(e)}")
+      Logger.warning(
+        "[ImageDownloader] Could not record #{logged} on #{file_uuid}: #{inspect(e)}"
+      )
   end
 
   # Store a new file after verifying it exists
@@ -394,7 +449,7 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
           metadata: Map.merge(metadata, %{"source_url" => url})
         )
 
-      Logger.info("[ImageDownloader] Storage result: #{inspect(result)}")
+      Logger.info("[ImageDownloader] Storage result: #{storage_outcome(result)}")
       cleanup_temp_file(temp_path)
       handle_storage_result(result)
     else
@@ -433,9 +488,18 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   end
 
   defp handle_storage_result({:error, reason}) do
-    Logger.error("[ImageDownloader] Storage failed: #{inspect(reason)}")
+    Logger.error("[ImageDownloader] Storage failed: #{loggable_storage_error(reason)}")
     {:error, reason}
   end
+
+  # The stored file carries the source URL in its metadata, so neither the
+  # file nor a changeset over it is logged whole: only what happened.
+  defp storage_outcome({:ok, %{uuid: uuid, status: status}}), do: "ok #{uuid} (#{status})"
+  defp storage_outcome({:ok, _file}), do: "ok"
+  defp storage_outcome({:error, reason}), do: "error: " <> loggable_storage_error(reason)
+
+  defp loggable_storage_error(%Ecto.Changeset{errors: errors}), do: inspect(errors)
+  defp loggable_storage_error(reason), do: inspect(reason)
 
   # Find an active file with the same checksum AND original filename. A
   # trashed copy is not a file to reuse: attaching it would show a picture
@@ -497,7 +561,7 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
     indexed_urls
     |> Task.async_stream(
       fn {url, index} ->
-        result = download_and_store(url, user_uuid, opts)
+        result = guarded_download(url, user_uuid, opts)
 
         if on_progress do
           on_progress.(url, result, index, total)
@@ -517,9 +581,24 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
 
       {{:exit, reason}, {url, _index}} ->
         # Recover URL from original indexed list when task exits
-        Logger.warning("Task exited for URL #{url}: #{inspect(reason)}")
+        Logger.warning("Task exited for URL #{log_url(url, opts)}: #{inspect(reason)}")
         {url, {:error, {:task_exit, reason}}}
     end)
+  end
+
+  # One URL's work never takes the caller down: the batch's tasks are linked
+  # to it, and a crash report of a task prints its arguments - the URL, with
+  # a signed query string in it. Only the shape of the failure is logged.
+  defp guarded_download(url, user_uuid, opts) do
+    download_and_store(url, user_uuid, opts)
+  rescue
+    exception ->
+      Logger.error("[ImageDownloader] Download crashed: #{inspect(exception.__struct__)}")
+      {:error, :download_failed}
+  catch
+    kind, _reason ->
+      Logger.error("[ImageDownloader] Download crashed: #{kind}")
+      {:error, :download_failed}
   end
 
   @doc """
@@ -587,7 +666,7 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
 
   @spec valid_image_url?(String.t(), non_neg_integer()) :: boolean()
   defp valid_image_url?(url, timeout) when is_binary(url) do
-    case validate_url(url) do
+    case validate_url(url, :policy) do
       {:ok, url, pin} ->
         case head_request(url, pin, %{timeout: timeout, req_options: []}) do
           {:ok, %{status: status, headers: headers}} when status in 200..299 ->
@@ -603,13 +682,28 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
     end
   end
 
+  @doc """
+  Checks a URL without fetching it: the scheme is http(s), the host exists,
+  and the host resolves only into public addresses. A name lookup is made;
+  no HTTP request is.
+
+  Takes `:private_networks` like `download_image/2`.
+  """
+  @spec check_url(String.t(), keyword()) :: :ok | {:error, atom()}
+  def check_url(url, opts \\ []) when is_binary(url) do
+    case validate_url(url, Keyword.get(opts, :private_networks, :policy)) do
+      {:ok, _url, _pin} -> :ok
+      {:error, _reason} = error -> error
+    end
+  end
+
   # Private functions
 
   # Returns `{:ok, url, pin}`: `pin` is the ONE resolved public address
   # the request must connect to (see `pinned_request/2`), or `nil` when
   # no pinning is needed (a literal-IP host, or private networks are
   # allowed by policy so there is nothing to defend).
-  defp validate_url(url) do
+  defp validate_url(url, private_networks) do
     uri = URI.parse(url)
 
     cond do
@@ -619,21 +713,27 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
       is_nil(uri.host) or uri.host == "" ->
         {:error, :invalid_host}
 
+      # `URI.parse/1` is lenient; a space, a non-ASCII character or a `|` in
+      # the URL is not something the request can be built from.
+      match?({:error, _}, URI.new(url)) ->
+        {:error, :invalid_url}
+
       true ->
-        # Upgrade HTTP to HTTPS for security
+        # Upgrade HTTP to HTTPS for security. The scheme is case-insensitive
+        # (`URI.parse/1` lowercases it), so the prefix is matched that way.
         url =
           if uri.scheme == "http",
-            do: String.replace_prefix(url, "http://", "https://"),
+            do: Regex.replace(~r/\Ahttp:\/\//i, url, "https://"),
             else: url
 
-        with {:ok, pin} <- pin_for(uri.host) do
+        with {:ok, pin} <- pin_for(uri.host, private_networks) do
           {:ok, url, pin}
         end
     end
   end
 
-  defp pin_for(host) do
-    if Policy.image_import_allow_private_networks?() do
+  defp pin_for(host, private_networks) do
+    if private_networks != :forbid and Policy.image_import_allow_private_networks?() do
       {:ok, nil}
     else
       case resolve_public_address(host) do
@@ -714,35 +814,65 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   # Checking both is also strictly safer than checking one: a host with a
   # public A record and a private AAAA record was previously waved through
   # on the strength of the record the resolver happened to be asked for.
+  #
+  # Each lookup has a deadline (`@dns_timeout`): `:inet.getaddrs/2` waits as
+  # long as the authoritative server cares to, and the guard runs in the
+  # caller's own process (also when a call only plans, `check_url/2`). A
+  # family that does not answer in time fails the whole name closed: its
+  # records are unknown, so the name cannot be vouched for.
+  @dns_timeout 3_000
+
   defp resolve_all(host) do
-    Enum.flat_map([:inet, :inet6], fn family ->
-      case :inet.getaddrs(host, family) do
-        {:ok, addresses} -> addresses
-        {:error, _} -> []
-      end
-    end)
+    resolver = Application.get_env(:phoenix_kit_ecommerce, :image_resolver, :inet)
+    timeout = Application.get_env(:phoenix_kit_ecommerce, :image_dns_timeout, @dns_timeout)
+
+    results =
+      Task.async_stream(
+        [:inet, :inet6],
+        fn family -> lookup(resolver, host, family, timeout) end,
+        timeout: timeout,
+        on_timeout: :kill_task,
+        ordered: true
+      )
+      |> Enum.to_list()
+
+    if Enum.all?(results, &match?({:ok, _}, &1)),
+      do: Enum.flat_map(results, fn {:ok, answers} -> answers end),
+      else: []
+  end
+
+  defp lookup(resolver, host, family, timeout) do
+    case resolver.getaddrs(host, family, timeout) do
+      {:ok, addresses} -> addresses
+      {:error, _} -> []
+    end
   end
 
   @doc false
   # Rewrites `url` to connect to the already-validated `address` while the
-  # ORIGINAL hostname keeps doing everything a hostname does: Mint's
-  # `:hostname` connect option (`connect_options: [hostname: host]`) is
-  # what it sends as TLS SNI and verifies the certificate against, and
-  # the explicit `host` header is what the origin routes on (Mint would
-  # otherwise derive it from the IP literal in the URL). The port is
-  # kept in the header only when it is not the scheme's default, which
-  # is what Mint's own default host header does.
+  # ORIGINAL hostname keeps doing everything a hostname does: the explicit
+  # `host` header is what the origin routes on (Mint would otherwise derive
+  # it from the IP literal in the URL), and `PinnedAdapter` sends the same
+  # name as TLS SNI and verifies the certificate against it. The port is kept
+  # in the header only when it is not the scheme's default, which is what
+  # Mint's own default host header does.
   #
-  # `nil` means "no pin" (see `validate_url/1`) and returns the URL and
+  # The request does NOT go through `connect_options: [hostname: host]`:
+  # `Req` starts a `Finch` pool, with a new atom for its name, for every
+  # distinct value and never stops it, so every hostname an API caller can
+  # name would stay in the node for good.
+  #
+  # `nil` means "no pin" (see `validate_url/2`) and returns the URL and
   # options untouched.
   @spec pinned_request(String.t(), :inet.ip_address() | nil) :: {String.t(), keyword()}
   def pinned_request(url, nil), do: {url, []}
 
   def pinned_request(url, address) when is_tuple(address) do
-    # `URI.new!/1`, not `parse/1`: it leaves the deprecated `authority`
-    # field nil, so `to_string/1` rebuilds the authority from the pinned
-    # host rather than echoing the original one.
-    uri = URI.new!(url)
+    # `parse/1`, not `new!/1`: a URL that cannot be parsed strictly never
+    # gets here (`validate_url/2` refuses it), and this function must not be
+    # the place that raises. Only `host` is replaced; `to_string/1` builds
+    # the authority from it.
+    uri = URI.parse(url)
     ip = address |> :inet.ntoa() |> to_string()
     pinned_url = URI.to_string(%{uri | host: ip})
 
@@ -751,7 +881,7 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
         do: uri.host,
         else: "#{uri.host}:#{uri.port}"
 
-    {pinned_url, [connect_options: [hostname: uri.host], headers: [{"host", host_header}]]}
+    {pinned_url, [adapter: PinnedAdapter, headers: [{"host", host_header}]]}
   end
 
   # IPv4-mapped and IPv4-compatible IPv6 forms decode to the same host.
@@ -767,6 +897,16 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   defp private_address?({0, 0, 0, 0, 0, 0, g, h}) when g > 0 or h > 1,
     do: private_address?(unfold_v4(g, h))
 
+  # The other IPv6 forms that carry an IPv4 address reach it through a
+  # translator or a relay the host may have: SIIT (`::ffff:0:a.b.c.d`), NAT64
+  # (`64:ff9b::a.b.c.d`) and 6to4 (`2002:<IPv4>::`). The IPv4 rule below
+  # decides, on the embedded address. The local-use NAT64 prefix
+  # (`64:ff9b:1::/48`) is never a public destination.
+  defp private_address?({0, 0, 0, 0, 0xFFFF, 0, g, h}), do: private_address?(unfold_v4(g, h))
+  defp private_address?({0x64, 0xFF9B, 0, 0, 0, 0, g, h}), do: private_address?(unfold_v4(g, h))
+  defp private_address?({0x64, 0xFF9B, 1, _, _, _, _, _}), do: true
+  defp private_address?({0x2002, g, h, _, _, _, _, _}), do: private_address?(unfold_v4(g, h))
+
   # Loopback, RFC1918, link-local (incl. 169.254.169.254 metadata),
   # carrier-grade NAT, and the various reserved ranges.
   defp private_address?({127, _, _, _}), do: true
@@ -775,12 +915,28 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   defp private_address?({169, 254, _, _}), do: true
   defp private_address?({172, b, _, _}) when b >= 16 and b <= 31, do: true
   defp private_address?({100, b, _, _}) when b >= 64 and b <= 127, do: true
+  defp private_address?({192, 0, 0, _}), do: true
+  defp private_address?({192, 0, 2, _}), do: true
+  defp private_address?({198, 51, 100, _}), do: true
+  defp private_address?({203, 0, 113, _}), do: true
+  defp private_address?({198, b, _, _}) when b in 18..19, do: true
   defp private_address?({0, _, _, _}), do: true
   defp private_address?({a, _, _, _}) when a >= 224, do: true
   defp private_address?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
   defp private_address?({0, 0, 0, 0, 0, 0, 0, 0}), do: true
   defp private_address?({a, _, _, _, _, _, _, _}) when a in 0xFC00..0xFDFF, do: true
   defp private_address?({a, _, _, _, _, _, _, _}) when a in 0xFE80..0xFEBF, do: true
+  defp private_address?({a, _, _, _, _, _, _, _}) when a in 0xFEC0..0xFEFF, do: true
+  # Multicast (ff00::/8) is never a unicast destination. The rest are ranges
+  # no public host lives in: the discard prefix (100::/64), Teredo
+  # (2001::/32, a tunnel whose server is reached over IPv4), benchmarking
+  # (2001:2::/48) and the documentation prefixes (2001:db8::/32, 3fff::/20).
+  defp private_address?({a, _, _, _, _, _, _, _}) when a in 0xFF00..0xFFFF, do: true
+  defp private_address?({0x100, 0, 0, 0, _, _, _, _}), do: true
+  defp private_address?({0x2001, 0, _, _, _, _, _, _}), do: true
+  defp private_address?({0x2001, 2, 0, _, _, _, _, _}), do: true
+  defp private_address?({0x2001, 0xDB8, _, _, _, _, _, _}), do: true
+  defp private_address?({0x3FFF, b, _, _, _, _, _, _}) when b <= 0x0FFF, do: true
   defp private_address?(_), do: false
 
   defp unfold_v4(g, h), do: {div(g, 256), rem(g, 256), div(h, 256), rem(h, 256)}
@@ -790,13 +946,27 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   # `Req`'s own `max_redirects` follows them internally, so only the
   # original URL was ever checked: a public URL redirecting to
   # `http://169.254.169.254/...` or `http://127.0.0.1:5432/` was fetched
-  # with no re-check, and the http->https upgrade in `validate_url/1`
+  # with no re-check, and the http->https upgrade in `validate_url/2`
   # applied only to the first URL. The `{301, 302} -> :redirect_loop`
   # clause below was a dead branch that only made sense if Req did not
   # auto-follow — which is the tell that this was never intended.
   @max_redirects 5
 
   defp do_http_request(url, pin, request), do: do_http_request(url, pin, request, @max_redirects)
+
+  @doc false
+  # The request step with the pin already resolved, hops and all; the
+  # connection tests drive it with a loopback pin, which `validate_url/2`
+  # would never hand out.
+  @spec pinned_get(String.t(), :inet.ip_address() | nil, map()) ::
+          {:ok, Req.Response.t()} | {:error, term()}
+  def pinned_get(url, pin, request), do: do_http_request(url, pin, request)
+
+  @doc false
+  # `pinned_get/3` for the HEAD preflight.
+  @spec pinned_head(String.t(), :inet.ip_address() | nil, map()) ::
+          {:ok, Req.Response.t()} | {:error, term()}
+  def pinned_head(url, pin, request), do: head_request(url, pin, request)
 
   defp do_http_request(_url, _pin, _request, 0), do: {:error, :too_many_redirects}
 
@@ -835,6 +1005,9 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
     base = [
       receive_timeout: request.timeout,
       redirect: false,
+      # Req's default retries a 429/503 after the origin's `Retry-After`,
+      # uncapped: a hostile origin could park the caller for as long as it likes.
+      retry: false,
       headers: [
         {"user-agent", "PhoenixKit/1.0 (Image Downloader)"},
         {"accept", "image/*"}
@@ -907,7 +1080,7 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
         # hop's own resolved address, exactly like the first request.
         target = from_url |> URI.merge(location) |> URI.to_string()
 
-        case validate_url(target) do
+        case validate_url(target, Map.get(request, :private_networks, :policy)) do
           {:ok, safe_url, pin} -> continue.(safe_url, pin, request, hops_left - 1)
           {:error, _} = error -> error
         end
@@ -977,8 +1150,16 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
   end
 
   defp validate_content_type(content_type) do
-    Logger.warning("Invalid content type for image download: #{content_type}")
+    Logger.warning("Invalid content type for image download: #{loggable(content_type)}")
     {:error, {:invalid_content_type, content_type}}
+  end
+
+  # A remote-supplied value for a log line: printable ASCII only, cut short.
+  defp loggable(value) do
+    value
+    |> to_string()
+    |> String.replace(~r/[^\x20-\x7E]/, "?")
+    |> String.slice(0, @max_logged_chars)
   end
 
   # The streaming collector already halted an oversized body; this turns
@@ -1019,6 +1200,10 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
     Path.join(System.tmp_dir!(), "phx_img_#{random}.#{ext}")
   end
 
+  # `original_file_name` is a varchar(255): a long last path segment must
+  # not reach the insert.
+  @max_filename_base_chars 120
+
   defp extract_filename_from_url(url, content_type) do
     uri = URI.parse(url)
 
@@ -1035,7 +1220,7 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
           |> List.first()
           |> case do
             "" -> "image"
-            name -> Path.rootname(name)
+            name -> name |> Path.rootname() |> String.slice(0, @max_filename_base_chars)
           end
       end
 
@@ -1053,6 +1238,24 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloader do
       "image/svg+xml" -> "svg"
       _ -> "jpg"
     end
+  end
+
+  # The form of a URL that may be remembered: in stored metadata and in the
+  # reuse index.
+  defp stored_url(url, opts) do
+    if Keyword.get(opts, :redact_query, false), do: source_key(url), else: url
+  end
+
+  # The form of a URL that may appear in a log line. When redacting, the path
+  # goes as well as the query: a signed token can sit in a path segment.
+  defp log_url(url, opts) do
+    if Keyword.get(opts, :redact_query, false), do: without_path(url), else: url
+  end
+
+  defp without_path(url) do
+    uri = URI.parse(url)
+    port = if uri.port in [nil, URI.default_port(uri.scheme)], do: "", else: ":#{uri.port}"
+    "#{uri.scheme}://#{uri.host}#{port}/..."
   end
 
   defp cleanup_temp_file(temp_path) do

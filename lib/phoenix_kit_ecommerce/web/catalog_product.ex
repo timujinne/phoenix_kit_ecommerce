@@ -529,11 +529,10 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
         # from the snapshot even by a rounding cent (review follow-up on
         # Э1-E4).
         updated_cart_item =
-          find_cart_item_after_add(
+          find_cart_item_by_selection(
             updated_cart.items,
-            product.uuid,
-            selected_specs,
-            price_affecting_specs
+            product,
+            selected_specs
           )
 
         display_name = build_cart_display_name(product, price_affecting_specs, selected_specs)
@@ -736,15 +735,16 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
     "#{display_name} (#{quantity} × #{unit_price_str} = #{line_str}) added to cart.\nCart total: #{cart_total_str}"
   end
 
-  defp find_cart_item_after_add(items, product_uuid, selected_specs, _price_affecting_specs) do
-    if map_size(selected_specs) > 0 do
-      Enum.find(
-        items,
-        &(cart_item_matches_product?(&1, product_uuid) && &1.selected_specs == selected_specs)
-      )
-    else
-      Enum.find(items, &cart_item_matches_product?(&1, product_uuid))
-    end
+  # Match the same selection format as add-to-cart: an older label can
+  # read exactly like a current key but belong to a different priced line.
+  defp find_cart_item_by_selection(items, product, selected_specs) do
+    keyed? = product.origin == :catalogue and map_size(selected_specs) > 0
+
+    Enum.find(items, fn item ->
+      cart_item_matches_product?(item, product.uuid) and
+        SelectedSpecs.keyed?(item) == keyed? and
+        SelectedSpecs.keys(item, product) == selected_specs
+    end)
   end
 
   # `product_uuid` here is always the product's real identifying uuid — for
@@ -1531,14 +1531,16 @@ defmodule PhoenixKitEcommerce.Web.CatalogProduct do
   # Find cart item matching selected specs. The page's selection is in the
   # product's own value keys; `SelectedSpecs.keys/2` reads a line stored in
   # the older label shape back into them, so "already in your cart" still
-  # recognises it.
+  # recognises it. Prefer the current format when both exist, so the
+  # notice agrees with the line the next add will update.
   defp find_cart_item_with_specs(user_uuid, session_id, product, selected_specs) do
     case Shop.find_active_cart(user_uuid: user_uuid, session_id: session_id) do
       %{items: items} when is_list(items) ->
-        Enum.find(items, fn item ->
-          cart_item_matches_product?(item, product.uuid) &&
-            SelectedSpecs.keys(item, product) == (selected_specs || %{})
-        end)
+        find_cart_item_by_selection(items, product, selected_specs || %{}) ||
+          Enum.find(items, fn item ->
+            cart_item_matches_product?(item, product.uuid) &&
+              SelectedSpecs.keys(item, product) == (selected_specs || %{})
+          end)
 
       _ ->
         nil

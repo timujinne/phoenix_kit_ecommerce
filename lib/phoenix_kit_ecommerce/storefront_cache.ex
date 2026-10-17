@@ -40,12 +40,15 @@ defmodule PhoenixKitEcommerce.StorefrontCache do
   the legacy-source product and category writes that announce themselves
   through `PhoenixKitEcommerce.Events` (single create/update/delete, bulk
   product status, bulk category status, parent and delete), the legacy bulk
-  category change and bulk product delete (which do not broadcast), and the
+  category change and bulk product delete (which do not broadcast), the
   Shopify sync (`Shopify.Sync`: under the catalogue source once per
   `apply_changes/3` run and once per standalone `apply_change/3`; under the
   legacy source `Shop.update_product/2` also clears per product through
-  `Events`). The clear is node-local: another node of a cluster serves its
-  entries until they expire.
+  `Events`), and the admin API: `API.Batch.write/3` and `API.Batch.write_if_unchanged/4`
+  (once per call that changed a product), `API.AttachImages` and
+  `API.DetachImages` (once per product whose pictures changed).
+  The clear is node-local: another node of a cluster serves its entries until
+  they expire.
 
   Everything else is visible within the TTL only:
 

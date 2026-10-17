@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.MixProject do
   use Mix.Project
 
-  @version "0.5.24"
+  @version "0.6.0"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_ecommerce"
 
   def project do
@@ -234,7 +234,7 @@ defmodule PhoenixKitEcommerce.MixProject do
       {:nimble_csv, "~> 1.2"},
 
       # HTTP client for downloading product images.
-      {:req, "~> 0.5"},
+      {:req, "~> 0.7"},
 
       # JSON encoding/decoding.
       {:jason, "~> 1.4"},
@@ -277,8 +277,8 @@ defmodule PhoenixKitEcommerce.MixProject do
     if is_binary(catalogue_path) and catalogue_path != "" and is_binary(entities_path) and
          entities_path != "" do
       [
-        {:phoenix_kit_catalogue, path: catalogue_path, only: :test},
-        {:phoenix_kit_entities, path: entities_path, only: :test}
+        {:phoenix_kit_catalogue, path: catalogue_path, only: :test, override: true},
+        {:phoenix_kit_entities, path: entities_path, only: :test, override: true}
       ]
     else
       []

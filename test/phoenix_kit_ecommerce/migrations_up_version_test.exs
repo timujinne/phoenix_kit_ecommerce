@@ -67,6 +67,12 @@ defmodule PhoenixKitEcommerce.MigrationsUpVersionTest do
     count
   end
 
+  # V4's and V5's effect: the tables they create.
+  defp table?(prefix, table) do
+    %{rows: [[found]]} = Repo.query!("SELECT to_regclass($1) IS NOT NULL", ["#{prefix}.#{table}"])
+    found
+  end
+
   # V3's effect.
   defp shopify_row?(prefix) do
     %{rows: rows} =
@@ -151,7 +157,7 @@ defmodule PhoenixKitEcommerce.MigrationsUpVersionTest do
       refute shopify_row?(prefix)
     end
 
-    test "version: 3 applies the whole chain" do
+    test "version: 3 applies V1 to V3 and stops before the search index and the claims" do
       prefix = create_schema("pke_up_three")
 
       run_up(prefix: prefix, version: 3)
@@ -159,6 +165,18 @@ defmodule PhoenixKitEcommerce.MigrationsUpVersionTest do
       assert version(prefix) == 3
       assert currency_defaults(prefix) == 0
       assert shopify_row?(prefix)
+      refute table?(prefix, "phoenix_kit_shop_search_index")
+      refute table?(prefix, "phoenix_kit_shop_cart_claims")
+    end
+
+    test "version: 4 adds the search index and stops before the claims" do
+      prefix = create_schema("pke_up_four")
+
+      run_up(prefix: prefix, version: 4)
+
+      assert version(prefix) == 4
+      assert table?(prefix, "phoenix_kit_shop_search_index")
+      refute table?(prefix, "phoenix_kit_shop_cart_claims")
     end
 
     test "no :version means the current version" do
@@ -169,6 +187,8 @@ defmodule PhoenixKitEcommerce.MigrationsUpVersionTest do
       assert version(prefix) == Migrations.current_version()
       assert currency_defaults(prefix) == 0
       assert shopify_row?(prefix)
+      assert table?(prefix, "phoenix_kit_shop_search_index")
+      assert table?(prefix, "phoenix_kit_shop_cart_claims")
     end
   end
 
@@ -186,6 +206,20 @@ defmodule PhoenixKitEcommerce.MigrationsUpVersionTest do
 
       assert catalog(stepwise) == catalog(full)
       assert shopify_row?(stepwise) == shopify_row?(full)
+    end
+
+    test "a database at V3, the last version before the search index, upgrades to the current one" do
+      prefix = create_schema("pke_up_from_three")
+      full = create_schema("pke_up_reference")
+
+      run_up(prefix: prefix, version: 3)
+      run_up(prefix: prefix)
+      run_up(prefix: full)
+
+      assert version(prefix) == Migrations.current_version()
+      assert table?(prefix, "phoenix_kit_shop_search_index")
+      assert table?(prefix, "phoenix_kit_shop_cart_claims")
+      assert catalog(prefix) == catalog(full)
     end
 
     test "from 1 straight to the current version" do

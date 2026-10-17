@@ -114,6 +114,54 @@ defmodule PhoenixKitEcommerce.Services.ImageDownloaderStoreTest do
     assert current_version?(file.metadata["image_fingerprint"])
   end
 
+  test "with redact_query a credential in the path reaches no log line, the query neither", %{
+    user: user,
+    banner: banner,
+    banner_jpeg: banner_jpeg
+  } do
+    opts =
+      serve(%{
+        "/sign/PATHSECRET1/a.png" => {"image/png", banner},
+        "/sign/PATHSECRET2/copy.jpg" => {"image/jpeg", banner_jpeg}
+      }) ++ [redact_query: true]
+
+    # The suite runs at :warning; the lines under test are :info (and the
+    # repo's own query log, which holds the stored metadata, is :debug).
+    previous = Logger.level()
+    Logger.configure(level: :info)
+    on_exit(fn -> Logger.configure(level: previous) end)
+
+    log =
+      ExUnit.CaptureLog.capture_log([level: :info], fn ->
+        assert {:ok, original} =
+                 ImageDownloader.download_and_store(
+                   "#{@host}/sign/PATHSECRET1/a.png?sig=QUERYSECRET",
+                   user.uuid,
+                   opts
+                 )
+
+        # The same picture again, re-encoded, under another signed path.
+        assert {:ok, ^original} =
+                 ImageDownloader.download_and_store(
+                   "#{@host}/sign/PATHSECRET2/copy.jpg?sig=QUERYSECRET",
+                   user.uuid,
+                   opts
+                 )
+
+        send(self(), {:original, original})
+      end)
+
+    assert_received {:original, original}
+
+    refute log =~ "PATHSECRET"
+    refute log =~ "QUERYSECRET"
+    assert log =~ "Storing new file from URL https://93.184.216.34/..."
+    assert log =~ "Reusing #{original} for https://93.184.216.34/...: same picture"
+
+    # What is remembered stays the identity the reuse index matches on.
+    assert file!(original).metadata["source_url"] == "#{@host}/sign/PATHSECRET1/a.png"
+  end
+
   test "a re-encoded copy at another URL reuses the stored file and remembers that URL", %{
     user: user,
     banner: banner,

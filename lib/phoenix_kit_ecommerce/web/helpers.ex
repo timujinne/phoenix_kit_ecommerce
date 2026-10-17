@@ -524,18 +524,25 @@ defmodule PhoenixKitEcommerce.Web.Helpers do
   and legacy URL-based images (Shopify imports).
   Returns nil if no image is available.
   """
-  def first_image(%{featured_image_uuid: id}) when is_binary(id) do
-    get_storage_image_url(id, "small")
+  def first_image(product, stored_url \\ &get_storage_image_url/2) do
+    case first_stored_image(product) do
+      nil -> first_legacy_image(product)
+      id -> stored_url.(id, "small")
+    end
   end
 
-  def first_image(%{image_uuids: [id | _]}) when is_binary(id) do
-    get_storage_image_url(id, "small")
-  end
+  @doc """
+  The Storage file `first_image/2` shows for `product`: its featured image, else
+  the first of its image uuids; `nil` when it falls back to a legacy URL.
+  """
+  def first_stored_image(%{featured_image_uuid: id}) when is_binary(id), do: id
+  def first_stored_image(%{image_uuids: [id | _]}) when is_binary(id), do: id
+  def first_stored_image(_), do: nil
 
   # Legacy URL-based images (Shopify imports)
-  def first_image(%{images: [%{"src" => src} | _]}), do: src
-  def first_image(%{images: [first | _]}) when is_binary(first), do: first
-  def first_image(_), do: nil
+  defp first_legacy_image(%{images: [%{"src" => src} | _]}), do: src
+  defp first_legacy_image(%{images: [first | _]}) when is_binary(first), do: first
+  defp first_legacy_image(_), do: nil
 
   @doc """
   Get signed URL for a Storage image file.

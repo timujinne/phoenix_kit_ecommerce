@@ -49,6 +49,19 @@ defmodule PhoenixKitEcommerce.ProductSource.Catalogue do
     ids |> Query.list_items_by_uuids() |> build_products([])
   end
 
+  @doc """
+  View-structs for catalogue items the caller already loaded, in the same
+  order. Unlike `list_products_by_ids/1` it takes `language:`, which picks
+  the language the option value labels (`metadata["_option_values"]`, ...)
+  are written in.
+  The public API loader uses it so it can read the raw item (for the four
+  catalogue item states) and the view from one query.
+  """
+  @spec products_for_items([map()], keyword()) :: [PhoenixKitEcommerce.Product.t()]
+  def products_for_items(items, opts \\ []) when is_list(items) do
+    build_products(items, opts)
+  end
+
   @impl PhoenixKitEcommerce.ProductSource
   def get_product(id, opts \\ [])
 

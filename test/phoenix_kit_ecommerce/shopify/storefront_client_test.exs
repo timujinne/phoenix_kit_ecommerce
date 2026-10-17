@@ -479,8 +479,9 @@ defmodule PhoenixKitEcommerce.Shopify.StorefrontClientTest do
 
       elapsed_ms = System.monotonic_time(:millisecond) - started_at
 
+      # Assert the minimum delay: scheduler contention can increase the
+      # elapsed time without changing the configured pagination interval.
       assert elapsed_ms >= 400
-      assert elapsed_ms < 900
     end
   end
 

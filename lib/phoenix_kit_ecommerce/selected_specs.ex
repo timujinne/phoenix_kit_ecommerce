@@ -134,8 +134,10 @@ defmodule PhoenixKitEcommerce.SelectedSpecs do
   A keyed line answers its own `selected_specs`. A line in the unkeyed shape
   is resolved label by label through the product's `_value_slugs`; where two
   values share the label, the first in the set's own order is the answer,
-  every time. A label the product no longer has stays as it is, so it
-  matches nothing.
+  every time. A label no longer present in a keyed option resolves to
+  `nil`, so it cannot accidentally match a value's key. Options without
+  a label-to-key map (legacy and catalogue schema options) keep their
+  stored values.
   """
   @spec keys(CartItem.t(), Product.t()) :: map()
   def keys(%CartItem{selected_specs: specs} = item, %Product{metadata: metadata})
@@ -151,7 +153,7 @@ defmodule PhoenixKitEcommerce.SelectedSpecs do
 
   defp key_for_label(%{"_value_slugs" => %{} = slugs}, option_key, label) do
     case slugs do
-      %{^option_key => %{^label => slug}} when is_binary(slug) -> slug
+      %{^option_key => %{} = labels} -> Map.get(labels, label)
       _ -> label
     end
   end

@@ -27,6 +27,8 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterVariantsTest do
 
   alias PhoenixKitCatalogue.Catalogue
   alias PhoenixKitCatalogue.Catalogue.AttributeSets
+  alias PhoenixKitEcommerce.APICase
+  alias PhoenixKitEcommerce.APIFixtures, as: F
   alias PhoenixKitEcommerce.Catalogue.Writer
   alias PhoenixKitEcommerce.ShopConfig
   alias PhoenixKitEcommerce.Test.Repo
@@ -121,6 +123,64 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterVariantsTest do
     test "is a no-op returning :catalogue_source_inactive", %{item: item, actor_uuid: actor_uuid} do
       assert Writer.sync_variants(item, two_option_product(), actor_uuid: actor_uuid) ==
                {:error, :catalogue_source_inactive}
+    end
+  end
+
+  describe "sync_variants/3 — attribution and what the API wrote meanwhile" do
+    @describetag :catalogue_api
+
+    setup do
+      set_product_source("catalogue")
+      :ok
+    end
+
+    test "the write names the sync in the change log", %{item: item, actor_uuid: actor_uuid} do
+      assert {:ok, _} = Writer.sync_variants(item, two_option_product(), actor_uuid: actor_uuid)
+
+      assert_activity_logged("item.updated",
+        resource_uuid: item.uuid,
+        metadata_has: %{"via" => "shopify_sync"}
+      )
+    end
+
+    test "a stale item keeps the compare-at and the option price the API wrote meanwhile", %{
+      item: item,
+      actor_uuid: actor_uuid
+    } do
+      F.put_config!("shop_catalogue", Catalogue.get_catalogue!(item.catalogue_uuid).name)
+      F.attach_set!(item, "Finish", "finish", [{"Matte", "matte"}])
+      stale = Catalogue.get_item!(item.uuid)
+      ctx = F.ctx(F.user!())
+
+      assert {:ok, %{"summary" => %{"updated" => 1}}} =
+               APICase.call(
+                 "ecommerce.set_prices",
+                 %{
+                   "items" => [
+                     %{
+                       "ref" => %{"id" => item.uuid},
+                       "compare_at" => "55.00",
+                       "price_modifiers" => %{"finish" => %{"matte" => "3.00"}}
+                     }
+                   ]
+                 },
+                 ctx
+               )
+
+      # the sync still holds the item as it was before the API write
+      assert {:ok, _} = Writer.sync_variants(stale, two_option_product(), actor_uuid: actor_uuid)
+
+      ecommerce = Catalogue.get_item!(item.uuid).data["ecommerce"]
+
+      assert ecommerce["compare_at_price"] == "55.00"
+      assert ecommerce["price_modifiers"]["finish"] == %{"matte" => "3.00"}
+
+      assert (Map.keys(ecommerce["price_modifiers"]) -- ["finish"]) |> Enum.sort() == [
+               "color",
+               "size"
+             ]
+
+      assert Enum.sort(ecommerce["shopify"]["set_slugs"]) == ["color", "size"]
     end
   end
 
@@ -250,7 +310,7 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterVariantsTest do
     } do
       # An operator-authored modifier for a set Shopify has never driven
       # (not in `set_slugs`, so `sync_variants/2` never attaches or
-      # detaches it) — `finalize_variant_sync/4` must write only the
+      # detaches it) — `finalize_variant_sync/5` must write only the
       # `size`/`color` keys this run computed, not replace the whole
       # `price_modifiers` map.
       {:ok, item} =

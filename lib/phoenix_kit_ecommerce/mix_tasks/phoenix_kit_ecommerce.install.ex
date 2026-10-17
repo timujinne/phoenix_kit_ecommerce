@@ -119,7 +119,7 @@ defmodule Mix.Tasks.PhoenixKitEcommerce.Install do
     Next steps:
     1. Run `mix deps.get` if you haven't already
     2. Add Oban queues to config/config.exs:
-       queues: [shop_imports: 5]
+       queues: [shop_imports: 5, shop_search: 2]
     3. Run `mix phoenix_kit.update` to apply shop migrations
     4. Enable the Shop module in Admin → Modules
     5. Configure shop settings in Admin → E-Commerce → Settings

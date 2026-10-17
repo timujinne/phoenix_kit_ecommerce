@@ -22,6 +22,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
   import PhoenixKitWeb.Components.Core.Select
 
   alias PhoenixKit.Modules.Storage.URLSigner
+  alias PhoenixKitEcommerce.Catalogue.ItemCommerce
   alias PhoenixKitEcommerce.ProductSource.Catalogue.Query
 
   attr :form, :any, default: nil
@@ -67,7 +68,7 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
       |> assign(:download_limit_errors, field_errors(form, :download_limit))
       |> assign(:download_expiry_days_errors, field_errors(form, :download_expiry_days))
       |> assign(:price_fit, get_in(ecommerce, ["shopify", "price_fit"]))
-      |> assign(:shopify_linked?, shopify_linked?(ecommerce))
+      |> assign(:shopify_linked?, ItemCommerce.shopify_linked?(ecommerce))
       |> assign(:price_fit_rule_errors, field_errors(form, :price_fit_rule))
 
     ~H"""
@@ -655,16 +656,9 @@ defmodule PhoenixKitEcommerce.Catalogue.ShopSections do
   defp price_fit_base_offset(_offset), do: ""
 
   # A malformed/partial `price_fit` (never expected from
-  # `Writer.finalize_variant_sync/4`, but the note must not crash on one)
+  # `Writer.finalize_variant_sync/5`, but the note must not crash on one)
   # falls back the same way every field here does.
   defp fit_value(fit, key, default), do: fit[key] || default
-
-  # The price-fit control only means something for an item the Shopify
-  # variant sync writes — one linked by handle or product id.
-  defp shopify_linked?(ecommerce) do
-    shopify = Map.get(ecommerce, "shopify") || %{}
-    Enum.any?(["handle", "product_id"], &(shopify[&1] not in [nil, ""]))
-  end
 
   # Prefill from the stored value, else the shop's base currency, else
   # blank. Never `"USD"`: an unconfigured shop must not silently stamp

@@ -88,6 +88,7 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
   require Logger
 
   alias PhoenixKitCatalogue.Catalogue
+  alias PhoenixKitEcommerce.Catalogue.ShopifyAttribution
   alias PhoenixKitEcommerce.ProductSource
   alias PhoenixKitEcommerce.Shopify.AdminClient
   alias PhoenixKitEcommerce.Translations
@@ -457,7 +458,7 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
   end
 
   defp with_reposition(item, position, index, assigned, repositioned, unmatched) do
-    case Catalogue.update_item(item, %{position: position}) do
+    case Catalogue.update_item(item, %{position: position}, ShopifyAttribution.metadata_opts()) do
       {:ok, updated} ->
         index = Map.put(index, shopify_product_id(updated), updated)
         {:cont, {:ok, index, assigned, repositioned + 1, unmatched}}
@@ -468,7 +469,9 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSync do
   end
 
   defp with_assignment(item, category_uuid, position, index, assigned, repositioned, unmatched) do
-    case Catalogue.update_item(item, %{category_uuid: category_uuid, position: position}) do
+    attrs = %{category_uuid: category_uuid, position: position}
+
+    case Catalogue.update_item(item, attrs, ShopifyAttribution.metadata_opts()) do
       {:ok, updated} ->
         index = Map.put(index, shopify_product_id(updated), updated)
         {:cont, {:ok, index, assigned + 1, repositioned, unmatched}}

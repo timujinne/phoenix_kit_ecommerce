@@ -16,8 +16,8 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
     phoenix_kit_shop_import_logs
   )
 
-  test "chain is V3 and marks phoenix_kit_shop_config" do
-    assert Migrations.current_version() == 3
+  test "chain is V5 and marks phoenix_kit_shop_config" do
+    assert Migrations.current_version() == 5
     assert Migrations.version_table() == "phoenix_kit_shop_config"
   end
 
@@ -28,7 +28,7 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
       assert Enum.any?(stmts, &String.contains?(&1, "CREATE TABLE IF NOT EXISTS public.#{t} ("))
     end
 
-    assert List.last(stmts) == "COMMENT ON TABLE public.phoenix_kit_shop_config IS 'pke_schema:3'"
+    assert List.last(stmts) == "COMMENT ON TABLE public.phoenix_kit_shop_config IS 'pke_schema:5'"
   end
 
   test "no statement can destroy data, in either direction" do
@@ -68,8 +68,10 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
     stmts = Migrations.up_statements("public")
 
     # 10 tables + 2 functions + 23 constraints + 2 triggers + 39 indexes
-    # + 4 V2 `DROP DEFAULT`s + 1 V3 Shopify-default step + 1 marker
-    assert length(stmts) == 82
+    # + 4 V2 `DROP DEFAULT`s + 1 V3 Shopify-default step
+    # + 7 V4 search-index statements
+    # + 1 V5 claims table + 3 V5 claim indexes + 1 V5 analytics step + 1 marker
+    assert length(stmts) == 94
 
     for name <- ~w(
           idx_shop_config_key
@@ -129,7 +131,10 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
         end
       end)
 
-    assert length(names) == 39
+    # 39 + the 4 guarded indexes of the search table + the trigram index
+    # (created inside a DO block, behind the extension check)
+    # + the 3 indexes of the V5 claims table
+    assert length(names) == 47
 
     assert names |> Enum.filter(&String.starts_with?(&1, "tenant_x_")) |> Enum.sort() ==
              @exempt_uuid_indexes |> Enum.map(&("tenant_x_" <> &1)) |> Enum.sort()
@@ -232,11 +237,43 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
     end
   end
 
+  # V4 and V5 are not released yet; once they are, an edit would reach new
+  # installs only. The V5 analytics step depends on what is loaded and on the
+  # route prefix, so the claims table is pinned on its own.
+  test "the SQL of V4 and of V5's claims table is pinned, in the public schema and under a prefix" do
+    digest = fn statements ->
+      statements
+      |> Enum.join("\n;;\n")
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
+    end
+
+    assert digest.(Migrations.search_index_statements("public")) ==
+             "86b4a3a7578607ec1abc77805e4b62d23b83ed9470f08e7d60f28f5a506f23f7"
+
+    assert digest.(Migrations.search_index_statements("tenant_x")) ==
+             "5a20e39102908f3163f46e76b77560315d35d3b0d3c6b3075d51b94f3f138b5a"
+
+    assert digest.(Migrations.claims_statements("public")) ==
+             "4a2b223e1313cb05bfe3109d8bcd5a124137d93d3b5b2a91361244aeca2fcba0"
+
+    assert digest.(Migrations.claims_statements("tenant_x")) ==
+             "e6cf38da4e73c6915247e0d1029571ae5f53eb0c91edd6e46283a160380a17ce"
+  end
+
   test "V3 carries the Shopify-default upgrade step, ahead of the marker" do
     stmts = Migrations.up_statements("public")
 
     assert Migrations.shopify_upgrade_statements("public") -- stmts == []
-    assert Enum.at(stmts, -2) == hd(Migrations.shopify_upgrade_statements("public"))
+
+    # V3's step is followed by V4's statements and then the marker.
+    step_at =
+      Enum.find_index(stmts, &(&1 == hd(Migrations.shopify_upgrade_statements("public"))))
+
+    assert step_at ==
+             length(stmts) - 2 - length(Migrations.search_index_statements("public")) -
+               length(Migrations.claims_statements("public")) -
+               length(Migrations.claim_analytics_statements("public"))
   end
 
   test "the Shopify-default step only ever inserts, and never overwrites" do
@@ -264,5 +301,45 @@ defmodule PhoenixKitEcommerce.MigrationsTest do
     for t <- ~w(trg_shop_product_slugs trg_shop_category_slugs) do
       assert joined =~ ~r/IF NOT EXISTS \(SELECT 1 FROM pg_trigger WHERE tgname = '#{t}'/
     end
+  end
+
+  test "V4 creates the search index table and its indexes, and treats pg_trgm as optional" do
+    stmts = Migrations.search_index_statements("public")
+    joined = Enum.join(stmts, "\n")
+
+    assert length(stmts) == 7
+    assert joined =~ "CREATE TABLE IF NOT EXISTS public.phoenix_kit_shop_search_index ("
+    assert joined =~ ~s("document" tsvector NOT NULL)
+
+    for name <- ~w(
+          phoenix_kit_shop_search_index_item_lang_idx
+          phoenix_kit_shop_search_index_document_idx
+          phoenix_kit_shop_search_index_category_idx
+          phoenix_kit_shop_search_index_options_idx
+          phoenix_kit_shop_search_index_title_trgm_idx
+        ) do
+      assert joined =~ "INDEX IF NOT EXISTS #{name} ON public.phoenix_kit_shop_search_index",
+             "missing index #{name}"
+    end
+
+    # The extension is created if the server has it; a refusal is a notice, not an error.
+    [extension | _] = stmts
+    assert extension =~ "CREATE EXTENSION IF NOT EXISTS pg_trgm"
+    assert extension =~ "EXCEPTION WHEN OTHERS"
+
+    # The trigram index exists only when the extension does.
+    trigram = List.last(stmts)
+    assert trigram =~ "IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm')"
+    assert trigram =~ "gin_trgm_ops"
+
+    # A trigram index that cannot be built (the operator class is not on the
+    # search path) is a notice, not a failed migration.
+    assert trigram =~ "EXCEPTION WHEN OTHERS"
+    assert trigram =~ "trigram index skipped"
+  end
+
+  test "rolling back to V3 only rewrites the marker: the search table is derived data and stays" do
+    assert Migrations.down_statements("public", 3) ==
+             ["COMMENT ON TABLE public.phoenix_kit_shop_config IS 'pke_schema:3'"]
   end
 end

@@ -15,6 +15,8 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Activity
+  alias PhoenixKitEcommerce.API.CartSettings
+  alias PhoenixKitEcommerce.API.Settings, as: ApiSettings
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.Notifications, as: ShopNotifications
   alias PhoenixKitEcommerce.Policy
@@ -93,7 +95,9 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign(:translations_supported, Shop.translations_supported?())
       |> assign(:shop_shopify_enabled, Shop.shopify_enabled?())
       |> assign_stock_tracking()
+      |> assign_api_cart_form()
       |> assign_policy()
+      |> assign_api()
 
     {:ok, socket}
   end
@@ -152,6 +156,14 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
   defp parcel_box(%{box_mm: [length, width, height]}), do: {length, width, height}
   defp parcel_box(_defaults), do: {nil, nil, nil}
+
+  defp assign_api(socket) do
+    socket
+    |> assign(:api_available, ApiSettings.core_available?())
+    |> assign(:api_admin_enabled, ApiSettings.admin_enabled?())
+    |> assign(:api_confirm_pct, ApiSettings.price_change_pct())
+    |> assign(:api_manager, Authz.can_manage_api?(socket))
+  end
 
   defp get_category_name_display do
     Settings.get_setting_cached("shop_category_name_display", "truncate")
@@ -215,6 +227,24 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   def handle_event("save_name_prefixes", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("save_name_prefixes", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("save_api_cart_settings", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("save_api_cart_settings", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("save_api_confirm_price_change_pct", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      # shop.manage_settings is not enough: the threshold decides what a key may do
+      # without confirmation, so changing it also takes core's `api` permission
+      if Authz.can_manage_api?(socket),
+        do: gated_event("save_api_confirm_price_change_pct", params, socket),
+        else: {:noreply, Authz.deny(socket)}
     end)
   end
 
@@ -942,6 +972,96 @@ defmodule PhoenixKitEcommerce.Web.Settings do
           </div>
         </div>
 
+        <%!-- Admin API. The card exists only on a core that ships the
+             API. It says where the API's keys and its on/off switch live, whether it is
+             on, what it means for a shop with and without Shopify, and holds the one
+             e-commerce setting of the API: the confirmation threshold for price moves. --%>
+        <div :if={@api_available} class="card bg-base-100 shadow-xl mb-6" id="shop-api-card">
+          <div class="card-body">
+            <h2 class="card-title text-xl mb-2">
+              <.icon name="hero-key" class="w-6 h-6" />
+              {gettext("Admin API")}
+            </h2>
+            <p class="text-sm text-base-content/70 mb-4">
+              {gettext(
+                "Outside systems, scripts and AI agents can read and change prices, availability and images through the admin API. The on/off switch and the keys are on the API settings page."
+              )}
+            </p>
+
+            <p
+              id="shop-api-status"
+              class="text-sm font-medium mb-2"
+              data-enabled={to_string(@api_admin_enabled)}
+            >
+              <%= if @api_admin_enabled do %>
+                {gettext("The admin API is switched on.")}
+              <% else %>
+                {gettext("The admin API is switched off.")}
+              <% end %>
+            </p>
+
+            <p
+              :if={not @shop_shopify_enabled}
+              id="shop-api-shopify-off"
+              class="text-sm text-base-content/70 mb-4"
+            >
+              {gettext(
+                "Shopify sync is off. The admin API is how an outside system feeds products into this shop."
+              )}
+            </p>
+            <p
+              :if={@shop_shopify_enabled}
+              id="shop-api-shopify-on"
+              class="text-sm text-base-content/70 mb-4"
+            >
+              {gettext(
+                "Shopify sync is on. A price written through the API can be overwritten by the next sync; the change log shows who wrote each value."
+              )}
+            </p>
+
+            <form
+              :if={@api_manager}
+              id="shop-api-confirm-pct-form"
+              phx-submit="save_api_confirm_price_change_pct"
+              class="flex flex-wrap gap-2 items-end"
+            >
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">
+                  {gettext("Confirmation threshold for price changes (%)")}
+                </span>
+                <input
+                  id="shop-api-confirm-pct-input"
+                  type="number"
+                  name="pct"
+                  min="0"
+                  max={ApiSettings.max_price_change_pct()}
+                  step="1"
+                  value={@api_confirm_pct}
+                  class="input input-bordered w-32"
+                />
+              </label>
+              <button type="submit" class="btn btn-primary btn-sm">{gettext("Save")}</button>
+            </form>
+            <p :if={not @api_manager} id="shop-api-confirm-pct-readonly" class="text-sm">
+              {gettext("Confirmation threshold for price changes (%)")}:
+              <strong>{@api_confirm_pct}</strong>
+            </p>
+            <p class="text-sm text-base-content/70 mt-2">
+              {gettext(
+                "A price change larger than this percentage of the current price is held until it is confirmed. A price set to zero is always held; any other first price is not. From 100 percent on, only increases are held, as a cut cannot exceed 100 percent."
+              )}
+            </p>
+
+            <.link
+              id="shop-api-settings-link"
+              navigate={Routes.path("/admin/settings/api")}
+              class="link link-primary text-sm mt-3"
+            >
+              {gettext("Open API settings →")}
+            </.link>
+          </div>
+        </div>
+
         <%!-- Shopify Sync connection status. Design §4.7: hidden along with
              the existence card above once `shop_shopify_enabled` is off —
              "Connect" and "Open Sync" would otherwise dangle: Shopify has
@@ -1165,6 +1285,66 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                   <span>{gettext("Wrap (multi-line)")}</span>
                 </label>
               </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div id="shop-api-carts-card" class="mb-6">
+              <h3 class="font-medium mb-1">{gettext("Assistant carts")}</h3>
+              <p class="text-sm text-base-content/70 mb-3">
+                {gettext(
+                  "Carts built by an AI assistant through the shop API. The caps limit the notifications about them (0 turns them off). How many new assistant carts one client may open is set on the API settings page."
+                )}
+              </p>
+              <%!-- `novalidate`: the browser must not stop an out-of-range number before
+                   the server can say which ranges apply (min/max still steer the spinner). --%>
+              <.form
+                for={@api_cart_form}
+                id="shop-api-carts-form"
+                phx-submit="save_api_cart_settings"
+                novalidate
+                class="grid gap-3 sm:grid-cols-2 max-w-2xl"
+              >
+                <.input
+                  field={@api_cart_form[:idle_days]}
+                  id="api-cart-idle-days"
+                  type="number"
+                  min="1"
+                  max="365"
+                  step="1"
+                  label={gettext("Days before an idle assistant cart is abandoned")}
+                />
+                <.input
+                  field={@api_cart_form[:claim_ttl_minutes]}
+                  id="api-cart-claim-ttl-minutes"
+                  type="number"
+                  min="1"
+                  max="1440"
+                  step="1"
+                  label={gettext("Minutes a checkout link works")}
+                />
+                <.input
+                  field={@api_cart_form[:signal_per_cart_per_hour]}
+                  id="api-cart-signal-per-cart"
+                  type="number"
+                  min="0"
+                  max="1000"
+                  step="1"
+                  label={gettext("Assistant notifications per cart per hour")}
+                />
+                <.input
+                  field={@api_cart_form[:signal_global_per_hour]}
+                  id="api-cart-signal-global"
+                  type="number"
+                  min="0"
+                  max="100000"
+                  step="1"
+                  label={gettext("Assistant notifications per hour, all carts")}
+                />
+                <div class="sm:col-span-2">
+                  <button type="submit" class="btn btn-primary btn-sm">{gettext("Save")}</button>
+                </div>
+              </.form>
             </div>
 
             <div class="divider"></div>
@@ -1406,6 +1586,53 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   # `?prefixes[]=x` / a missing field: the value must be a plain string.
   defp gated_event("save_name_prefixes", _params, socket) do
     {:noreply, put_flash(socket, :error, gettext("Invalid value"))}
+  end
+
+  defp gated_event("save_api_cart_settings", %{"settings" => %{} = raw}, socket) do
+    case parse_api_cart_settings(raw) do
+      {:ok, values} ->
+        write_api_cart_settings(socket, values)
+
+      :error ->
+        {:noreply,
+         put_flash(socket, :error, gettext("Enter whole numbers within the shown ranges."))}
+    end
+  end
+
+  defp gated_event("save_api_cart_settings", _params, socket) do
+    {:noreply, put_flash(socket, :error, gettext("Invalid value"))}
+  end
+
+  defp gated_event("save_api_confirm_price_change_pct", %{"pct" => raw}, socket)
+       when is_binary(raw) do
+    previous = ApiSettings.price_change_pct()
+
+    with {pct, ""} <- Integer.parse(String.trim(raw)),
+         {:ok, _setting} <- ApiSettings.put_price_change_pct(pct) do
+      Activity.log("shop.api_confirm_price_change_pct_changed",
+        actor_uuid: Activity.actor_uuid(socket),
+        actor_role: Activity.actor_role(socket),
+        resource_type: "setting",
+        metadata: %{
+          "setting" => ApiSettings.price_change_pct_key(),
+          "value" => pct,
+          "previous" => previous
+        }
+      )
+
+      {:noreply,
+       socket
+       |> assign(:api_confirm_pct, pct)
+       |> put_flash(:info, gettext("Price change threshold updated"))}
+    else
+      _invalid ->
+        {:noreply, put_flash(socket, :error, gettext("Enter a whole number from 0 to 1000."))}
+    end
+  end
+
+  # `?pct[]=x` / a missing field: the value must be a plain string.
+  defp gated_event("save_api_confirm_price_change_pct", _params, socket) do
+    {:noreply, put_flash(socket, :error, gettext("Enter a whole number from 0 to 1000."))}
   end
 
   defp gated_event("toggle_notify_cart_first_item", _params, socket) do
@@ -2086,4 +2313,63 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   defp vocabulary_label("services"), do: gettext("Services")
   defp vocabulary_label("mixed"), do: gettext("Both (neutral wording)")
   defp vocabulary_label(_), do: gettext("Products")
+
+  # The four settings of the public cart API as the form shows them (the
+  # effective values, defaults included).
+  defp api_cart_settings do
+    Map.new(CartSettings.keys(), fn {name, _key} -> {name, CartSettings.get(name)} end)
+  end
+
+  defp assign_api_cart_form(socket) do
+    values =
+      Map.new(api_cart_settings(), fn {name, number} ->
+        {Atom.to_string(name), Integer.to_string(number)}
+      end)
+
+    assign(socket, :api_cart_form, to_form(values, as: :settings))
+  end
+
+  # All four whole numbers, each inside its range, or nothing: a form with one
+  # bad field must not store the other three.
+  defp parse_api_cart_settings(raw) do
+    Enum.reduce_while(CartSettings.bounds(), {:ok, %{}}, fn {name, range}, {:ok, acc} ->
+      with value when is_binary(value) <- Map.get(raw, Atom.to_string(name)),
+           {number, ""} <- Integer.parse(String.trim(value)),
+           true <- number in range do
+        {:cont, {:ok, Map.put(acc, name, number)}}
+      else
+        _invalid -> {:halt, :error}
+      end
+    end)
+  end
+
+  defp write_api_cart_settings(socket, values) do
+    keys = CartSettings.keys()
+    changed = Enum.reject(values, fn {name, number} -> CartSettings.get(name) == number end)
+
+    written =
+      Enum.map(changed, fn {name, number} ->
+        {Map.fetch!(keys, name), number,
+         Settings.update_setting(Map.fetch!(keys, name), Integer.to_string(number))}
+      end)
+
+    # Each stored value is audited, also when a later write failed: the
+    # earlier ones are already in effect.
+    for {key, number, {:ok, _}} <- written do
+      Activity.log("shop.api_cart_setting_updated",
+        actor_uuid: Activity.actor_uuid(socket),
+        actor_role: Activity.actor_role(socket),
+        resource_type: "setting",
+        metadata: %{"setting" => key, "value" => number}
+      )
+    end
+
+    socket = assign_api_cart_form(socket)
+
+    if Enum.all?(written, &match?({_key, _number, {:ok, _}}, &1)) do
+      {:noreply, put_flash(socket, :info, gettext("Assistant cart settings updated"))}
+    else
+      {:noreply, put_flash(socket, :error, gettext("Failed to update setting"))}
+    end
+  end
 end

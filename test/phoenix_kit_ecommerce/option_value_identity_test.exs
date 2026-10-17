@@ -108,7 +108,7 @@ defmodule PhoenixKitEcommerce.OptionValueIdentityTest do
     end
   end
 
-  defp product(item, language \\ nil),
+  defp product(item, language),
     do: CatalogueSource.get_product(item.uuid, language: language, preload: [:category])
 
   defp cart_for(session_id) do
@@ -308,6 +308,46 @@ defmodule PhoenixKitEcommerce.OptionValueIdentityTest do
   end
 
   describe "a cart line stored before keys were the identity" do
+    test "a label that happens to be a key does not identify the new selection", %{
+      conn: conn,
+      item: item,
+      session_id: session_id
+    } do
+      insert_label_line!(cart_for(session_id), item, "crimson", "24.00")
+
+      {:ok, view, _html} = live(conn, "/shop/product/#{@slug}")
+      render_click(view, "select_spec", %{"key" => "color", "opt" => "crimson"})
+
+      refute render(view) =~ "Already in cart:"
+
+      html = view |> element("button[phx-click=add_to_cart]") |> render_click()
+
+      assert html =~ ~r/1 × .29\.00 = .29\.00/u
+      refute html =~ ~r/1 × .24\.00 = .24\.00/u
+      assert [_old, _new] = lines(session_id)
+    end
+
+    test "the current keyed line takes priority over an older line with the same label", %{
+      conn: conn,
+      item: item,
+      session_id: session_id
+    } do
+      cart = cart_for(session_id)
+      insert_label_line!(cart, item, "Red", "24.00")
+
+      {:ok, _} =
+        Shop.add_to_cart(cart, product(item, "en-US"), 1,
+          selected_specs: %{"color" => "red"},
+          language: "en-US"
+        )
+
+      {:ok, view, _html} = live(conn, "/shop/product/#{@slug}")
+      html = render_click(view, "select_spec", %{"key" => "color", "opt" => "red"})
+
+      assert html =~ ~r/1 × .25\.00 = .25\.00/u
+      refute html =~ ~r/1 × .24\.00 = .24\.00/u
+    end
+
     test "still displays, updates its quantity at its own price, and converts unchanged", %{
       conn: conn,
       item: item,

@@ -69,8 +69,22 @@ defmodule PhoenixKitEcommerce.Notifications do
   Emits `shop.cart_first_item_added` once per cart (atomic claim) when that
   toggle is on; otherwise emits `shop.cart_item_added` per add when the
   every-add toggle is on. A first add never produces both.
+
+  `via: :assistant` in `opts` suppresses the message: the public cart API
+  sends one coalesced signal per write instead (`assistant_cart_updated/3`).
   """
-  def cart_item_added(cart, item, product) do
+  def cart_item_added(cart, item, product, opts \\ []) do
+    if Keyword.get(opts, :via) == :assistant do
+      # A write made through the public cart API sends ONE coalesced signal of
+      # its own (`assistant_cart_updated/3`, called by `API.Signals`), not one
+      # per line.
+      :ok
+    else
+      do_cart_item_added(cart, item, product)
+    end
+  end
+
+  defp do_cart_item_added(cart, item, product) do
     safely(fn ->
       first? =
         PhoenixKitEcommerce.notify_event?(:cart_first_item) and
@@ -101,6 +115,69 @@ defmodule PhoenixKitEcommerce.Notifications do
       end
     end)
   end
+
+  @assistant_lines_shown 3
+  @assistant_title_max 40
+
+  @doc """
+  Storefront signal for a cart written through the public cart API: ONE
+  message per write call, "via assistant", summarising the lines. Whether to
+  send, and the caps, are decided by `PhoenixKitEcommerce.API.Signals`; this
+  function words and delivers it to the same audience and under the same two
+  actions as the storefront signals, so every recipient's notification
+  preferences apply.
+
+  Options: `first?` (the first-item action and wording), `more_carts` (how
+  many assistant signals the global cap dropped since the last message).
+  """
+  @spec assistant_cart_updated(
+          map(),
+          [%{title: String.t(), quantity: pos_integer()}],
+          keyword()
+        ) :: :ok
+  def assistant_cart_updated(cart, lines, opts \\ []) when is_list(lines) do
+    safely(fn ->
+      first? = Keyword.get(opts, :first?, false)
+      more_carts = Keyword.get(opts, :more_carts, 0)
+
+      lead = if first?, do: "New cart started via assistant", else: "Cart updated via assistant"
+      action = if first?, do: @cart_first_item_action, else: @cart_item_action
+
+      notify_shop(%{
+        action: action,
+        text:
+          lead <>
+            ": " <>
+            assistant_lines(lines) <> assistant_total(cart) <> assistant_more(more_carts),
+        icon: "hero-shopping-cart",
+        link: Routes.path("/admin/shop/carts")
+      })
+    end)
+  end
+
+  defp assistant_lines(lines) do
+    shown =
+      lines
+      |> Enum.take(@assistant_lines_shown)
+      |> Enum.map_join(", ", fn %{title: title, quantity: quantity} ->
+        "#{truncate(to_string(title), @assistant_title_max)} ×#{quantity}"
+      end)
+
+    hidden = length(lines) - @assistant_lines_shown
+    if hidden > 0, do: shown <> " (+#{hidden} more lines)", else: shown
+  end
+
+  defp assistant_total(cart) do
+    case cart_totals(cart) do
+      "" -> ""
+      totals -> " — " <> totals
+    end
+  end
+
+  defp assistant_more(count) when is_integer(count) and count > 0,
+    do: " (+#{count} more assistant carts)"
+
+  defp assistant_more(_none), do: ""
 
   @doc """
   Storefront signal: a buyer reached the checkout page with a valid cart.

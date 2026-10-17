@@ -12,7 +12,17 @@ and its `perform/1` snooze, whole-set attribute values (`mark_whole_set_values`,
 
 ## Findings
 
-No BUG-level findings. The PR is large (53 files, ~2k lines outside the gettext
+**Correction (2026-10-16):** the line below was wrong. The independent Codex review
+(`CODEX_REVIEW.md`, fixed in `ef3b2b7`) found two BUG - MEDIUM defects in the
+option-key work that this review marked "checked, no change needed": an old label
+stored on a cart line that equals a current value key was read as that key
+(`SelectedSpecs.keys/2` returned an unknown label unchanged), so the product page
+showed the old line's price and a false "Already in cart"; and the post-add lookup
+could pick the wrong line when an old label line and a new keyed line coexist. I read
+`keys/2` and `find_cart_item_with_specs/4` for the unkeyed-line case but did not try a
+label that collides with a key.
+
+No BUG-level findings were found in the first pass. The PR is large (53 files, ~2k lines outside the gettext
 catalogues) and its seams hold; each area was traced against its callers.
 
 ### NITPICK — an orphaned `executing` job makes every later run snooze

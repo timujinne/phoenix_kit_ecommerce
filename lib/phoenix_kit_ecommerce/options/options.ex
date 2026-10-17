@@ -970,9 +970,16 @@ defmodule PhoenixKitEcommerce.Options do
   but are not defined in the schema (e.g., imported products with custom options).
   """
   def get_price_affecting_specs_for_product(product) do
-    product
-    |> get_option_schema_for_product()
-    |> price_affecting_specs(product)
+    get_price_affecting_specs_for_product(product, get_option_schema_for_product(product))
+  end
+
+  @doc """
+  `get_price_affecting_specs_for_product/1` over an option schema the caller
+  already built with `get_option_schema_for_product/1` or `merge_schemas/2`, so
+  that a caller pricing many products reads the schema once.
+  """
+  def get_price_affecting_specs_for_product(product, schema) when is_list(schema) do
+    price_affecting_specs(schema, product)
   end
 
   defp price_affecting_specs(schema, product) do
@@ -1114,9 +1121,14 @@ defmodule PhoenixKitEcommerce.Options do
     end
   end
 
-  # Checks if a price modifiers map has at least one non-zero value.
-  # Used to determine if an option group actually affects pricing.
-  defp has_nonzero_modifiers?(modifiers) when is_map(modifiers) do
+  @doc """
+  True when a price modifiers map (`%{value => amount}`, an amount is a binary
+  or `%{"value" => binary}`) holds at least one non-zero amount. This is what
+  decides whether an option group actually affects pricing; a blank or
+  non-numeric amount counts as zero.
+  """
+  @spec has_nonzero_modifiers?(term()) :: boolean()
+  def has_nonzero_modifiers?(modifiers) when is_map(modifiers) do
     Enum.any?(modifiers, fn {_key, value} ->
       decimal =
         case value do
@@ -1129,7 +1141,7 @@ defmodule PhoenixKitEcommerce.Options do
     end)
   end
 
-  defp has_nonzero_modifiers?(_), do: false
+  def has_nonzero_modifiers?(_), do: false
 
   defp safe_parse_decimal(value) when is_binary(value) do
     case Decimal.parse(value) do

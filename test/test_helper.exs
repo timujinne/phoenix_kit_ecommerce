@@ -33,8 +33,12 @@ support_dir = Path.expand("support", __DIR__)
   "notification_assertions.ex",
   "checkout_fixtures.ex",
   "shopify_fixtures.ex",
+  "search_fixtures.ex",
   "data_case.ex",
-  "live_case.ex"
+  "live_case.ex",
+  "cart_api_fixtures.ex",
+  "api_fixtures.ex",
+  "api_case.ex"
 ]
 |> Enum.each(&Code.require_file(&1, support_dir))
 
@@ -285,6 +289,35 @@ catalogue_exclude =
     [:catalogue]
   end
 
+# The admin API's tests need three things this repo does not declare as
+# dependencies, so each family runs only against a build that has what it
+# needs. Run the suite once per build and read the excluded count.
+#
+#   :catalogue_api     a catalogue with the API (resolve_refs/2, update_items/2)
+#   :old_catalogue     a catalogue WITHOUT it
+#   :no_catalogue      no phoenix_kit_catalogue at all
+#   :core_api          a core with the tool registry (PhoenixKit.API.Tool)
+#   :core_confirm      ... and the confirmation gate (Keys.active?/1 and Flow.gate/1)
+#   :core_no_confirm   ... and not the confirmation flow
+#   :warehouse         phoenix_kit_warehouse with SourceKinds
+catalogue_loaded? = Code.ensure_loaded?(PhoenixKitCatalogue)
+catalogue_api? = PhoenixKitEcommerce.API.Gate.catalogue_api_ready?()
+core_api? = Code.ensure_loaded?(PhoenixKit.API.Tool)
+core_confirm? = PhoenixKitEcommerce.API.confirmation_available?()
+
+admin_api_exclude =
+  [
+    if(catalogue_api?, do: nil, else: :catalogue_api),
+    if(catalogue_loaded? and not catalogue_api?, do: nil, else: :old_catalogue),
+    if(catalogue_loaded?, do: :no_catalogue, else: nil),
+    if(core_api?, do: nil, else: :core_api),
+    if(core_confirm?, do: :core_no_confirm, else: :core_confirm),
+    if(Code.ensure_loaded?(PhoenixKitWarehouse.SourceKinds), do: nil, else: :warehouse)
+  ]
+  |> Enum.reject(&is_nil/1)
+
+IO.puts("[test_helper] admin API test families excluded: #{inspect(admin_api_exclude)}")
+
 # The avatar-dropdown flag (`Tab` option `:user_menu`, read by
 # `Tab.user_menu?/2`). An older core ignores the option, so the tests about
 # it run once the dep resolves to a release that ships it.
@@ -319,11 +352,76 @@ billing_user_menu_exclude =
     [:requires_billing_user_menu]
   end
 
+# The shop API registers tools and cron entries through callbacks that exist only in
+# a core with the shop API (`PhoenixKit.API.*`, `PhoenixKit.ObanCrons`). Tests of
+# those are tagged :requires_core_api and are EXCLUDED AT RUN TIME on a core
+# without the API. The tag does not stop a test file from being COMPILED, so
+# those files must not use `%PhoenixKit.API.Actor{}` / `%PhoenixKit.API.Tool{}`
+# struct literals (a CompileError aborts the whole `mix test` run on a released
+# core); they build structs with `struct/2` and match on maps.
+api_exclude =
+  if Code.ensure_loaded?(PhoenixKit.API.Tool) and Code.ensure_loaded?(PhoenixKit.ObanCrons) do
+    []
+  else
+    Logger.info(
+      "[test_helper] PhoenixKit.API.Tool / PhoenixKit.ObanCrons not available - " <>
+        "public API tests excluded. They run once `phoenix_kit` resolves to a core " <>
+        "with the shop API."
+    )
+
+    [:requires_core_api]
+  end
+
+# The typo fallback needs the pg_trgm extension. Without it those tests are
+# excluded (and counted in the summary), never silently passed.
+trigram_exclude =
+  if repo_available do
+    try do
+      Ecto.Adapters.SQL.Sandbox.unboxed_run(TestRepo, fn ->
+        TestRepo.query("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm')", [])
+      end)
+      |> case do
+        {:ok, %{rows: [[true]]}} -> []
+        _other -> [:requires_pg_trgm]
+      end
+    rescue
+      _error -> [:requires_pg_trgm]
+    end
+  else
+    []
+  end
+
+# The claim-path exclusion test (`:analytics`) needs the optional analytics module.
+analytics_exclude =
+  if Code.ensure_loaded?(PhoenixKitWebAnalytics.Config) do
+    []
+  else
+    Logger.info(
+      "[test_helper] phoenix_kit_web_analytics not loaded - the claim-path exclusion " <>
+        "test (:analytics) excluded."
+    )
+
+    [:analytics]
+  end
+
+# The MCP tests (tagged `:mcp`) need the MCP plug of the shop API as well.
+mcp_exclude =
+  if Code.ensure_loaded?(PhoenixKit.API.MCP) do
+    []
+  else
+    Logger.info("[test_helper] PhoenixKit.API.MCP not loaded - the MCP tests (:mcp) excluded.")
+    [:mcp]
+  end
+
 ExUnit.start(
   exclude:
     i18n_exclude ++
       integration_exclude ++
       transliteration_exclude ++
       single_language_exclude ++
-      catalogue_exclude ++ user_menu_exclude ++ billing_user_menu_exclude
+      catalogue_exclude ++
+      admin_api_exclude ++
+      user_menu_exclude ++
+      billing_user_menu_exclude ++
+      api_exclude ++ trigram_exclude ++ analytics_exclude ++ mcp_exclude
 )

@@ -147,7 +147,8 @@ defmodule PhoenixKitEcommerce.Web.Plugs.ShopSession do
   #   2. It never authorizes an order. Adopted ids are marked untrusted,
   #      and `CheckoutComplete` requires a trusted one.
   #   3. It expires. `Policy.legacy_cookie_window_open?/0` closes the door
-  #      on a configured date. This is load-bearing: nothing deletes carts
+  #      on a configured date. This is load-bearing: only abandoned `api:`
+  #      carts are deleted (after 30 days) and browser carts stay
   #      (`mark_abandoned_carts/1` only flips a status and is wired to no
   #      cron), so without a cutoff the criterion in (1) would stay
   #      satisfiable indefinitely and the window would never self-close.

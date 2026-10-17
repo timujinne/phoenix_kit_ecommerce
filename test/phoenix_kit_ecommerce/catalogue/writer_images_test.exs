@@ -667,6 +667,40 @@ defmodule PhoenixKitEcommerce.Catalogue.WriterImagesTest do
     end
   end
 
+  describe "build_reuse_index/1 with keys" do
+    test "reads only the files that answer to a key, by their own URL or an alias", %{
+      user_uuid: user_uuid
+    } do
+      own = store_linked_file("https://cdn.example/own.jpg?v=1", user_uuid)
+      aliased = store_linked_file("https://cdn.example/aliased.jpg", user_uuid)
+      other = store_linked_file("https://cdn.example/other.jpg", user_uuid)
+
+      {:ok, _} =
+        Storage.update_file_metadata(
+          aliased.uuid,
+          &Map.put(&1, "source_url_aliases", ["https://cdn.example/copy.jpg"])
+        )
+
+      keys = ["https://cdn.example/own.jpg", "https://cdn.example/copy.jpg"]
+      %{url_index: index, active_uuids: active} = Writer.build_reuse_index(keys)
+
+      assert index == %{
+               "https://cdn.example/own.jpg" => own.uuid,
+               "https://cdn.example/aliased.jpg" => aliased.uuid,
+               "https://cdn.example/copy.jpg" => aliased.uuid
+             }
+
+      assert active == MapSet.new([own.uuid, aliased.uuid])
+      refute MapSet.member?(active, other.uuid)
+    end
+
+    test "an empty list reads nothing" do
+      assert %{url_index: index, active_uuids: active} = Writer.build_reuse_index([])
+      assert index == %{}
+      assert MapSet.size(active) == 0
+    end
+  end
+
   # The seam between `ImageDownloader` (writes `source_url_aliases`) and
   # this module (reads them into the reuse index): the same banner listed
   # under a second Shopify src — its own file in Shopify, a few bytes

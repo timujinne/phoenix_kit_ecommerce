@@ -59,6 +59,8 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitBilling.Currency
+  alias PhoenixKitEcommerce.API.CartTools
+  alias PhoenixKitEcommerce.API.PublicTools
   alias PhoenixKitEcommerce.Cart
   alias PhoenixKitEcommerce.CartItem
   alias PhoenixKitEcommerce.Category
@@ -70,6 +72,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.Product
   alias PhoenixKitEcommerce.ProductSource
+  alias PhoenixKitEcommerce.Search.Jobs, as: SearchJobs
   alias PhoenixKitEcommerce.SelectedSpecs
   alias PhoenixKitEcommerce.Shipping
   alias PhoenixKitEcommerce.Shipping.CartPacking
@@ -202,6 +205,10 @@ defmodule PhoenixKitEcommerce do
     result = Settings.update_boolean_setting_with_module("shop_enabled", true, "shop")
     refresh_dashboard_tabs()
     recover_translation_sweep()
+    # The search index drops every product event while the shop is off, so what
+    # changed in the meantime (or a fresh install's empty table) is rebuilt now,
+    # not at the nightly rebuild. A refused insert is logged by `Search.Jobs`.
+    SearchJobs.enqueue_rebuild(nil)
     result
   end
 
@@ -825,9 +832,11 @@ defmodule PhoenixKitEcommerce do
   # `PhoenixKit.ModuleRegistry.static_children/0` - no host wiring - and
   # started after `PhoenixKit.Cache.Registry`, a fixed earlier child of the
   # same supervisor.
-  # The shipping lookup cache (`Shipping.Cache`) goes in the same list.
+  # The shipping lookup cache (`Shipping.Cache`) and the search-index subscriber
+  # (`Search.Subscriber`) go in the same list.
   @impl PhoenixKit.Module
-  def children, do: StorefrontCache.children() ++ [Shipping.Cache]
+  def children,
+    do: StorefrontCache.children() ++ [Shipping.Cache, PhoenixKitEcommerce.Search.Subscriber]
 
   @impl PhoenixKit.Module
   def permission_metadata do
@@ -1108,6 +1117,42 @@ defmodule PhoenixKitEcommerce do
   @impl PhoenixKit.Module
   def migration_module, do: PhoenixKitEcommerce.Migrations
 
+  # The public search index: reindex and rebuild jobs run on their own small
+  # queue, so a nightly rebuild cannot hold up imports or images.
+  # `mix phoenix_kit.update` adds the queue to a host's Oban config; it never
+  # changes a limit the host already has.
+  @impl PhoenixKit.Module
+  def oban_queues, do: [shop_search: [limit: 2, kind: :batch]]
+
+  # One entry per worker module, no args (core's contract for module crons).
+  # `mix phoenix_kit.update` writes it into the host's Oban crontab.
+  # Defined WITHOUT `@impl`: `oban_crons/0` is an optional callback that only a
+  # core with the shop API declares, and an `@impl` for a callback the core does
+  # not declare is a compile warning.
+  def oban_crons do
+    [
+      {"40 3 * * *", PhoenixKitEcommerce.Workers.SearchRebuildWorker},
+      # The hourly sweep of idle `api:` carts, the daily deletion of
+      # abandoned `api:` carts and the daily claim prune. The workers run on the
+      # `default` queue and do nothing while the shop is off.
+      {"17 * * * *", PhoenixKitEcommerce.Workers.ApiCartSweepWorker},
+      {"40 4 * * *", PhoenixKitEcommerce.Workers.ApiCartPruneWorker},
+      {"50 4 * * *", PhoenixKitEcommerce.Workers.ApiClaimPruneWorker}
+    ]
+  end
+
+  @doc """
+  The tools of the shop API this module offers, for core's tool registry: the
+  e-commerce tools of the admin API (`PhoenixKitEcommerce.API`), the public read
+  tools and the cart tools. Core collects them while the module is enabled.
+  Defined without `@impl`, like `oban_crons/0`, `notification_types/0` and
+  `ai_translatables/0`: the callback is optional, and this package compiles
+  against cores that predate it. A core without the tool registry gets `[]`
+  from each group.
+  """
+  def api_tools,
+    do: PhoenixKitEcommerce.API.tools() ++ PublicTools.tools() ++ CartTools.tools()
+
   @doc """
   PhoenixKitAI translation adapters (duck-typed discovery — see
   `PhoenixKitAI.Translatables`).
@@ -1155,6 +1200,14 @@ defmodule PhoenixKitEcommerce do
   def catalogue_extensions do
     [PhoenixKitEcommerce.Catalogue.Extension]
   end
+
+  @doc """
+  Warehouse source kinds this package contributes (duck-typed discovery by
+  `PhoenixKitWarehouse.SourceKinds`, which merges them with the host's own
+  list): the `shop_order` kind. A literal list, because Warehouse calls it for
+  every reference it renders. See `PhoenixKitEcommerce.WarehouseSourceKind`.
+  """
+  def warehouse_source_kinds, do: PhoenixKitEcommerce.WarehouseSourceKind.kinds()
 
   # ============================================
   # PRODUCTS
@@ -1704,8 +1757,11 @@ defmodule PhoenixKitEcommerce do
         )
 
       # Does not broadcast, so the storefront cache (`StorefrontCache`) is
-      # cleared here.
-      if count > 0, do: StorefrontCache.clear()
+      # cleared and the search index told here.
+      if count > 0 do
+        StorefrontCache.clear()
+        SearchJobs.enqueue_items(uuids)
+      end
 
       count
     end
@@ -1724,8 +1780,11 @@ defmodule PhoenixKitEcommerce do
       {count, _} = repo().delete_all(query)
 
       # Does not broadcast, so the storefront cache (`StorefrontCache`) is
-      # cleared here.
-      if count > 0, do: StorefrontCache.clear()
+      # cleared and the search index told here.
+      if count > 0 do
+        StorefrontCache.clear()
+        SearchJobs.enqueue_items(ids)
+      end
 
       count
     end
@@ -1807,13 +1866,19 @@ defmodule PhoenixKitEcommerce do
       # Product with base $20, material options (0, +5, +10), finish options (0%, +20%)
       get_price_range(product)
       # => {Decimal.new("20.00"), Decimal.new("36.00")}
+
+  A caller pricing many products passes the option `schema` it already built
+  (`Options.get_option_schema_for_product/1`), so that it is read once.
   """
-  def get_price_range(%Product{} = product) do
+  def get_price_range(%Product{} = product, schema \\ nil) do
     base_price = product.price || Decimal.new("0")
     metadata = product.metadata || %{}
 
     # Get price-affecting options
-    price_affecting_specs = Options.get_price_affecting_specs_for_product(product)
+    price_affecting_specs =
+      if schema,
+        do: Options.get_price_affecting_specs_for_product(product, schema),
+        else: Options.get_price_affecting_specs_for_product(product)
 
     if Enum.empty?(price_affecting_specs) do
       {base_price, base_price}
@@ -2584,9 +2649,67 @@ defmodule PhoenixKitEcommerce do
     session_id = Keyword.get(opts, :session_id)
 
     case find_active_cart(user_uuid: user_uuid, session_id: session_id) do
-      nil -> create_cart(user_uuid: user_uuid, session_id: session_id)
+      nil -> create_cart_serialized(user_uuid, session_id)
       cart -> {:ok, cart}
     end
+  end
+
+  # The create path of `get_or_create_cart/1` was find-then-insert with
+  # nothing in between, so two tabs of one browser (or a tab and the checkout
+  # hand-off of an API cart) could each find nothing and each insert an
+  # active cart for the same identity. It now takes the identity lock and
+  # looks again inside it. Only the create path pays for the transaction: a
+  # visitor who already has a cart goes through the plain read above.
+  # Result shapes are unchanged: `{:ok, cart}` or `{:error, reason}` (the
+  # changeset `create_cart/1` returned before). A failed insert rolls the
+  # transaction back, so do not call this inside another transaction that has
+  # to go on after an `{:error, _}`.
+  defp create_cart_serialized(user_uuid, session_id) do
+    repo().transaction(fn ->
+      lock_cart_identity!(user_uuid, session_id)
+
+      case find_active_cart(user_uuid: user_uuid, session_id: session_id) do
+        nil -> create_cart_or_rollback(user_uuid, session_id)
+        cart -> cart
+      end
+    end)
+  end
+
+  defp create_cart_or_rollback(user_uuid, session_id) do
+    case create_cart(user_uuid: user_uuid, session_id: session_id) do
+      {:ok, cart} -> cart
+      {:error, reason} -> repo().rollback(reason)
+    end
+  end
+
+  @doc false
+  # Serializes everything that creates or claims "the active cart of this
+  # identity": a transaction-scoped advisory lock (released at commit or
+  # rollback, so it is safe behind a transaction-pooling PgBouncer) on the
+  # user key and then the session key, always in that order so two callers
+  # can never lock them crosswise. Must be called inside a transaction (it
+  # raises otherwise: outside one the lock would be released at the end of its
+  # own statement and protect nothing); the lock is re-entrant for the same
+  # transaction.
+  @spec lock_cart_identity!(String.t() | nil, String.t() | nil) :: :ok
+  def lock_cart_identity!(user_uuid, session_id) do
+    if not repo().in_transaction?() do
+      raise ArgumentError, "lock_cart_identity!/2 must be called inside a transaction"
+    end
+
+    for key <- cart_identity_keys(user_uuid, session_id) do
+      repo().query!("SELECT pg_advisory_xact_lock(hashtext($1))", [key])
+    end
+
+    :ok
+  end
+
+  defp cart_identity_keys(user_uuid, session_id) do
+    [
+      user_uuid && "shop_cart_user:" <> user_uuid,
+      session_id && "shop_cart_session:" <> session_id
+    ]
+    |> Enum.reject(&is_nil/1)
   end
 
   @doc """
@@ -2732,8 +2855,9 @@ defmodule PhoenixKitEcommerce do
     #
     #   * `status == "active"` — a converted or abandoned cart is finished
     #     business, and matching one would keep the migration window open
-    #     forever (nothing deletes carts; `mark_abandoned_carts/1` only
-    #     flips a status and is wired to no cron).
+    #     forever (only abandoned `api:` carts are deleted, after 30 days;
+    #     browser carts stay, and `mark_abandoned_carts/1` only flips a
+    #     status and is wired to no cron).
     #   * `is_nil(user_uuid)` — a cart already claimed by an account must
     #     never be reachable by presenting an unsigned cookie.
     Cart
@@ -2837,6 +2961,11 @@ defmodule PhoenixKitEcommerce do
     `:selected_specs` values themselves do not depend on it: on the catalogue
     source they are option value KEYS, validated and priced as keys, and a
     value that is not one of the product's own is refused.
+  - `:via` - `:assistant` marks a write made through the public cart API
+    (`PhoenixKitEcommerce.API.CartWriter`): the per-line "item added"
+    notification is not sent, the API sends one coalesced signal per call
+    (`PhoenixKitEcommerce.API.Signals`). Default `nil`: the storefront
+    behaviour, unchanged.
 
   ## Examples
 
@@ -2851,6 +2980,7 @@ defmodule PhoenixKitEcommerce do
   def add_to_cart(%Cart{} = cart, %Product{} = product, quantity, opts) when is_list(opts) do
     selected_specs = Keyword.get(opts, :selected_specs, %{})
     skip_validation = Keyword.get(opts, :skip_spec_validation, false)
+    via = Keyword.get(opts, :via)
     language = Keyword.get(opts, :language)
 
     # The disabled check lives in the CONTEXT, not only the LiveView mounts:
@@ -2871,10 +3001,11 @@ defmodule PhoenixKitEcommerce do
           quantity,
           selected_specs,
           language,
-          skip_validation
+          skip_validation,
+          via
         )
       else
-        add_simple_product_to_cart(cart, product, quantity, language, skip_validation)
+        add_simple_product_to_cart(cart, product, quantity, language, skip_validation, via)
       end
     end
   end
@@ -2885,7 +3016,7 @@ defmodule PhoenixKitEcommerce do
          :ok <- validate_quantity(quantity),
          :ok <- validate_cart_currency(cart, product),
          {:ok, cart} <- rebase_cart(cart) do
-      add_simple_product_to_cart(cart, product, quantity, nil, false)
+      add_simple_product_to_cart(cart, product, quantity, nil, false, nil)
     end
   end
 
@@ -3025,7 +3156,7 @@ defmodule PhoenixKitEcommerce do
     end
   end
 
-  defp add_simple_product_to_cart(cart, product, quantity, language, skip_validation) do
+  defp add_simple_product_to_cart(cart, product, quantity, language, skip_validation, via) do
     result =
       repo().transaction(fn ->
         # Lock product row to prevent price changes during cart update
@@ -3077,7 +3208,7 @@ defmodule PhoenixKitEcommerce do
     case result do
       {:ok, {updated_cart, item}} ->
         Events.broadcast_item_added(updated_cart, item)
-        PhoenixKitEcommerce.Notifications.cart_item_added(updated_cart, item, product)
+        PhoenixKitEcommerce.Notifications.cart_item_added(updated_cart, item, product, via: via)
         {:ok, updated_cart}
 
       {:error, {:invalid_specs, error}} ->
@@ -3179,7 +3310,8 @@ defmodule PhoenixKitEcommerce do
          quantity,
          selected_specs,
          language,
-         skip_validation
+         skip_validation,
+         via
        ) do
     result =
       repo().transaction(fn ->
@@ -3236,7 +3368,7 @@ defmodule PhoenixKitEcommerce do
     case result do
       {:ok, {updated_cart, item}} ->
         Events.broadcast_item_added(updated_cart, item)
-        PhoenixKitEcommerce.Notifications.cart_item_added(updated_cart, item, product)
+        PhoenixKitEcommerce.Notifications.cart_item_added(updated_cart, item, product, via: via)
         {:ok, updated_cart}
 
       {:error, {:invalid_specs, error}} ->
@@ -6973,6 +7105,22 @@ defmodule PhoenixKitEcommerce do
       |> Decimal.max(zero)
     end
   end
+
+  @doc false
+  # Public conversions for the public cart API, which reports shipping
+  # thresholds in the cart's currency next to the base-currency amount the shop
+  # compares against.
+  @spec cart_amount_to_base(Cart.t(), Decimal.t()) :: Decimal.t()
+  def cart_amount_to_base(%Cart{} = cart, amount), do: to_base(cart, amount)
+
+  # The exact conversion at the cart's frozen rate, for an amount that is not a
+  # price (a distance to a limit): `from_base/2` would also apply the currency's
+  # rounding rule (`charm_99` and the like), which only a price may go through.
+  @doc false
+  @spec cart_amount_from_base(Decimal.t(), Cart.t()) :: Decimal.t()
+  def cart_amount_from_base(amount, %Cart{currency: same, base_currency: same}), do: amount
+  def cart_amount_from_base(amount, %Cart{exchange_rate: nil}), do: amount
+  def cart_amount_from_base(amount, %Cart{exchange_rate: rate}), do: Decimal.mult(amount, rate)
 
   @doc """
   What a shopper sees for a shipping method on THIS cart: the method's

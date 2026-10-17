@@ -107,13 +107,16 @@ defmodule PhoenixKitEcommerce.GuestCheckoutAccountReuseTest do
     assert second.user_uuid == first.user_uuid
   end
 
-  # Core's profile form writes `custom_fields` as submitted, so the account's
-  # own holder can add the stamp. `update_user_profile/2` is that form's write.
+  # Core's profile form takes only the custom fields that are defined and
+  # user-editable, so it no longer writes the stamp; any other write to the
+  # account's `custom_fields` can, and the reuse check must not trust it.
   defp forge_stamp(user) do
     {:ok, forged} =
-      Auth.update_user_profile(user, %{
-        "custom_fields" => Map.put(user.custom_fields || %{}, "source", "guest_checkout")
-      })
+      Auth.update_user_custom_fields(
+        user,
+        Map.put(user.custom_fields || %{}, "source", "guest_checkout"),
+        ensure_definitions: false
+      )
 
     assert forged.custom_fields["source"] == "guest_checkout"
     assert is_nil(forged.confirmed_at)

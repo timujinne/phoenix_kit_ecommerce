@@ -7,6 +7,23 @@ defmodule PhoenixKitEcommerce.Catalogue.ItemCommerceTest do
 
   alias PhoenixKitEcommerce.Catalogue.ItemCommerce
 
+  describe "shopify_linked?/1" do
+    test "an item is linked by a Shopify handle or a Shopify product id" do
+      assert ItemCommerce.shopify_linked?(%{"shopify" => %{"handle" => "mug"}})
+      assert ItemCommerce.shopify_linked?(%{"shopify" => %{"product_id" => "9001"}})
+      assert ItemCommerce.shopify_linked?(%{"shopify" => %{"handle" => "", "product_id" => "7"}})
+    end
+
+    test "blank, missing and malformed links are not links" do
+      refute ItemCommerce.shopify_linked?(%{"shopify" => %{"handle" => "", "product_id" => nil}})
+      refute ItemCommerce.shopify_linked?(%{"shopify" => %{"image_ids" => %{"1" => "x"}}})
+      refute ItemCommerce.shopify_linked?(%{"shopify" => %{}})
+      refute ItemCommerce.shopify_linked?(%{"shopify" => "mug"})
+      refute ItemCommerce.shopify_linked?(%{})
+      refute ItemCommerce.shopify_linked?(nil)
+    end
+  end
+
   describe "cast/2 validity" do
     test "rejects a negative compare_at_price" do
       assert {:error, errors} = ItemCommerce.cast(%{"compare_at_price" => "-1"}, %{})

@@ -55,6 +55,26 @@ defmodule PhoenixKitEcommerce.Web do
     end
   end
 
+  @doc "Controllers of the storefront (the checkout claim page): HTML only, this module's Gettext."
+  def controller do
+    quote do
+      use Phoenix.Controller, formats: [:html]
+      use Gettext, backend: PhoenixKitEcommerce.Gettext
+
+      alias PhoenixKit.Utils.Routes
+    end
+  end
+
+  @doc "Function components rendered by those controllers."
+  def html do
+    quote do
+      use Phoenix.Component
+      use Gettext, backend: PhoenixKitEcommerce.Gettext
+
+      alias PhoenixKit.Utils.Routes
+    end
+  end
+
   def live_component do
     quote do
       use Phoenix.LiveComponent

@@ -4,9 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.6.0 - 2026-10-17
 
 ### Added
+
+- **Admin and public API tools** (#93), offered to a PhoenixKit core that carries
+  the shop API (they stay off on an older core):
+  - admin tools `ecommerce.get_prices`, `set_prices`, `set_availability`,
+    `attach_images` and `detach_images`, catalogue source only, with a
+    confirmation gate for large price moves, row-level locking and writes
+    limited to the `data` paths a row changes;
+  - public read tools over a new search index (full-text per language,
+    typo-tolerant with `pg_trgm`, facets, product cards, category tree,
+    similar products), kept fresh by `Search.Subscriber` and the
+    `SearchReindexWorker` / `SearchRebuildWorker` on the `shop_search` queue;
+  - an assistant cart: seven anonymous write tools that fill a cart and hand
+    the buyer to the site's checkout through a one-time claim link
+    (`/checkout/claim/:token`), with three cron workers on `default`
+    (`ApiCartSweepWorker`, `ApiCartPruneWorker`, `ApiClaimPruneWorker`);
+  - the `shop_order` source kind offered to Warehouse.
+- **Migrations V4 and V5**: `phoenix_kit_shop_search_index` and
+  `phoenix_kit_shop_cart_claims` (run `mix phoenix_kit.update`; the `shop_search`
+  queue must be configured in the host).
+- The image downloader connects to the address its private-network guard
+  checked, through a per-request Mint connection (`Services.PinnedAdapter`).
+- New settings `api_cart_idle_days`, `api_checkout_claim_ttl_minutes`,
+  `api_signal_per_cart_per_hour`, `api_signal_global_per_hour` and
+  `api_confirm_price_change_pct`, edited on the shop settings page.
 
 - **`Migrations.up/1` honours `:version`** (#90): `up(version: N)` applies V1
   through VN and stamps N, leaves a database already past N alone, and raises
@@ -31,6 +55,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `"selected_spec_keys"`. Existing cart lines keep their stored selection and
   price.
 - The `compat/` namespace is marked `@deprecated` with each replacement (#90).
+
+### Fixed
+
+- **Review of #93**: deleting one category now rebuilds the search index (its
+  products' category is set to NULL, so the subtree job found nothing), and a
+  committed currency change rebuilds it too (the index held old-base prices);
+  merged assistant carts are pruned with the abandoned ones; the pinned image
+  downloader no longer retries on a 429/503 (Req slept for an uncapped
+  `Retry-After`); `set_prices` refuses a row while neither the shop nor the
+  product has a currency; `set_availability` writes under the item lock and
+  re-plans the row, like `set_prices`; the list-item output schema requires only
+  `id` (the `fields` option drops the rest); the warehouse source kind queries
+  the catalogue table under the schema prefix; a partly written assistant-cart
+  settings form audits what was stored and shows the stored values.
+- **Second review of #93**: the admin write tools also require the key owner's
+  live `catalogue` permission (as the catalogue editor does), a slow image
+  origin can no longer renew the download timeout indefinitely (one deadline
+  covers headers and body), a non-finite stored price no longer aborts a search
+  rebuild, and the catalogue test-dependency bridge overrides transitive paths.
 
 ## 0.5.24 - 2026-10-13
 

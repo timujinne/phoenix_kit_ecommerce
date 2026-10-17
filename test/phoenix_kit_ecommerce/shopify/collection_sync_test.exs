@@ -600,4 +600,46 @@ defmodule PhoenixKitEcommerce.Shopify.CollectionSyncTest do
       assert result.categories_created == 2
     end
   end
+
+  describe "run/1 — the change log names the sync" do
+    @describetag :catalogue_api
+
+    setup do
+      set_product_source("catalogue")
+      :ok
+    end
+
+    test "a reposition inside a category is logged as the sync's write", %{catalogue: catalogue} do
+      {:ok, frames} =
+        Catalogue.create_category(%{
+          name: "Frames",
+          catalogue_uuid: catalogue.uuid,
+          slug: %{"en" => "frames"},
+          position: 0
+        })
+
+      item =
+        create_item(catalogue.uuid, "Frame A", 111, %{category_uuid: frames.uuid, position: 5})
+
+      assert {:ok, %{items_repositioned: 1}} =
+               CollectionSync.run(client: Stub, catalogue_uuid: catalogue.uuid)
+
+      assert_activity_logged("item.updated",
+        resource_uuid: item.uuid,
+        metadata_has: %{"via" => "shopify_sync"}
+      )
+    end
+
+    test "an assignment to a category is logged as the sync's write", %{catalogue: catalogue} do
+      item = create_item(catalogue.uuid, "Gift A", 222)
+
+      assert {:ok, %{items_assigned: 1}} =
+               CollectionSync.run(client: Stub, catalogue_uuid: catalogue.uuid)
+
+      assert_activity_logged("item.updated",
+        resource_uuid: item.uuid,
+        metadata_has: %{"via" => "shopify_sync"}
+      )
+    end
+  end
 end

@@ -48,6 +48,7 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   alias PhoenixKitCatalogue.Catalogue.AttributeSets
   alias PhoenixKitCatalogue.Schemas.Item
   alias PhoenixKitEcommerce.Catalogue.ItemCommerce
+  alias PhoenixKitEcommerce.Catalogue.ShopifyAttribution
   alias PhoenixKitEcommerce.Catalogue.ValueResolver
   alias PhoenixKitEcommerce.HtmlToMarkdown
   alias PhoenixKitEcommerce.ProductSource
@@ -81,18 +82,19 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   replacing that sub-map wholesale. `Shopify.Sync.apply_change/2` sets
   both on every applied `Change`, backfilling identity even when the
   caller only asked for a subset of the diffed fields.
-  """
-  @spec update_from_shopify(Item.t(), map(), String.t()) ::
-          {:ok, Item.t()} | {:error, Ecto.Changeset.t() | [{atom(), String.t()}]}
-  def update_from_shopify(item, change_fields, base_locale)
-      when is_map(item) and is_map(change_fields) and is_binary(base_locale) do
-    current_ecommerce = get_in(item.data || %{}, ["ecommerce"])
 
-    with {:ok, cast_ecommerce} <-
-           ItemCommerce.cast(
-             ecommerce_params(change_fields, current_ecommerce),
-             current_ecommerce
-           ) do
+  The write names the sync in the item's change log and is limited to the
+  `data` paths it changes (see `PhoenixKitEcommerce.Catalogue.ShopifyAttribution`).
+  `opts` takes `:actor_uuid`.
+  """
+  @spec update_from_shopify(Item.t(), map(), String.t(), keyword()) ::
+          {:ok, Item.t()} | {:error, Ecto.Changeset.t() | [{atom(), String.t()}]}
+  def update_from_shopify(item, change_fields, base_locale, opts \\ [])
+      when is_map(item) and is_map(change_fields) and is_binary(base_locale) and is_list(opts) do
+    current_ecommerce = get_in(item.data || %{}, ["ecommerce"])
+    params = ecommerce_params(change_fields, current_ecommerce)
+
+    with {:ok, cast_ecommerce} <- ItemCommerce.cast(params, current_ecommerce) do
       # `ItemCommerce.cast/2` returns ONLY its own embedded-schema fields —
       # `to_storage_map/1` builds the map from `Map.from_struct/1`, so a
       # non-schema key such as `legacy_metadata` (the migration snapshot
@@ -102,10 +104,19 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
       # `data["ecommerce"]` carried survives a sync write.
       ecommerce = Map.merge(current_ecommerce || %{}, cast_ecommerce)
 
-      data =
-        (item.data || %{})
-        |> apply_translation_fields(change_fields, base_locale)
-        |> Map.put("ecommerce", ecommerce)
+      translated = apply_translation_fields(item.data || %{}, change_fields, base_locale)
+      data = Map.put(translated, "ecommerce", ecommerce)
+
+      # `cast_ecommerce` also carries a default for every field the sync did
+      # not touch. Those defaults are stored, as they always were, but the
+      # sync's own changes are only the fields it passed in `params`: the
+      # write is limited to those (see `ShopifyAttribution`).
+      intended =
+        Map.put(
+          translated,
+          "ecommerce",
+          Map.merge(current_ecommerce || %{}, Map.take(cast_ecommerce, Map.keys(params)))
+        )
 
       attrs =
         %{data: data}
@@ -113,8 +124,24 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
         |> maybe_put_primary_column(:description, :body_html, change_fields, base_locale, item)
         |> maybe_put_base_price(change_fields)
 
-      Catalogue.update_item(item, attrs)
+      write_item(item, attrs, intended, opts)
     end
+  end
+
+  # Every write of the Shopify sync into an item's `data` goes through here:
+  # the item's change log names the sync and shows the `data` sub-paths that
+  # changed, and the write is limited to those paths, so a value written by
+  # someone else since the item was read is kept.
+  # `intended` is the `data` the writer meant to write (see
+  # `ShopifyAttribution.prepare/3`).
+  defp write_item(item, %{data: new_data} = attrs, intended, opts) do
+    {data, write_opts} =
+      ShopifyAttribution.prepare(item.data, new_data,
+        intended: intended,
+        actor_uuid: Keyword.get(opts, :actor_uuid)
+      )
+
+    Catalogue.update_item(item, %{attrs | data: data}, write_opts)
   end
 
   @doc """
@@ -265,7 +292,13 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     |> case do
       {:ok, results, values_created} ->
         with {:ok, summary} <-
-               finalize_variant_sync(item, Enum.reverse(results), values_created, fit) do
+               finalize_variant_sync(
+                 item,
+                 Enum.reverse(results),
+                 values_created,
+                 fit,
+                 create_opts
+               ) do
           {:ok, summary |> Map.put(:fit, fit) |> Map.put(:warnings, warnings)}
         end
 
@@ -327,7 +360,7 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     end)
   end
 
-  defp finalize_variant_sync(item, results, values_created, fit) do
+  defp finalize_variant_sync(item, results, values_created, fit, write_opts) do
     new_slugs = Enum.map(results, & &1.slug)
     new_modifiers = Map.new(results, &{&1.slug, &1.value_amounts})
 
@@ -360,7 +393,7 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
 
     data = Map.put(item.data || %{}, "ecommerce", ecommerce)
 
-    case Catalogue.update_item(item, %{data: data}) do
+    case write_item(item, %{data: data}, data, write_opts) do
       {:ok, _updated} -> {:ok, %{sets: length(results), values_created: values_created}}
       {:error, reason} -> {:error, reason}
     end
@@ -516,7 +549,7 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     file_uuids = file_uuids |> Enum.reverse() |> Enum.uniq()
     errors = Enum.reverse(errors)
 
-    with {:ok, item_with_ids} <- put_image_ids(item, image_ids),
+    with {:ok, item_with_ids} <- put_image_ids(item, image_ids, user_uuid),
          {:ok, _final_item} <- attach_images(item_with_ids, file_uuids) do
       {:ok,
        %{
@@ -628,13 +661,13 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
     {image_ids, file_uuids, downloaded, reused, [{id, reason} | errors], fresh}
   end
 
-  defp put_image_ids(item, image_ids) do
+  defp put_image_ids(item, image_ids, actor_uuid) do
     ecommerce = get_in(item.data || %{}, ["ecommerce"]) || %{}
     shopify = Map.put(ecommerce["shopify"] || %{}, "image_ids", image_ids)
     ecommerce = Map.put(ecommerce, "shopify", shopify)
     data = Map.put(item.data || %{}, "ecommerce", ecommerce)
 
-    Catalogue.update_item(item, %{data: data})
+    write_item(item, %{data: data}, data, actor_uuid: actor_uuid)
   end
 
   defp attach_images(item, []), do: {:ok, item}
@@ -680,19 +713,52 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
   `opts[:active_uuids]`; `sync_images/3`'s result carries both, merged
   with whatever that product just downloaded, for the next product in
   the run.
+
+  With a list of query-stripped keys (`ImageDownloader.source_key/1`) only
+  the files that answer to one of those keys are read: those whose own
+  `source_url`, query stripped, is a key, and those that list a key in
+  `source_url_aliases`. The index is built by the same `source_url_index/1`,
+  and `active_uuids` then holds the uuids of those files only. The admin
+  API's `attach_images` uses this form, so one call does not read the whole
+  media library.
+
+  The lookup compares the stored string as it is, so it finds a file stored
+  under the canonical form `source_key/1` produces. A file stored under a
+  non-canonical spelling (an upper-case scheme, an explicit default port) is
+  found by `:all` only; with a list of keys it is missed, and the picture is
+  downloaded again and then reused by its checksum.
   """
-  @spec build_reuse_index() :: %{
+  @spec build_reuse_index(:all | [String.t()]) :: %{
           url_index: %{optional(String.t()) => String.t()},
           active_uuids: MapSet.t(String.t())
         }
-  def build_reuse_index do
-    files =
-      from(f in StorageFile,
-        where: f.status == "active" and fragment("?->>'source_url' IS NOT NULL", f.metadata)
-      )
-      |> RepoHelper.repo().all()
+  def build_reuse_index(keys \\ :all) do
+    files = keys |> reuse_files_query() |> RepoHelper.repo().all()
 
     %{url_index: source_url_index(files), active_uuids: MapSet.new(files, & &1.uuid)}
+  end
+
+  @doc "Which of the files `uuids` are active in Storage now."
+  @spec active_file_uuids([String.t()]) :: [String.t()]
+  def active_file_uuids(uuids) when is_list(uuids) do
+    RepoHelper.repo().all(
+      from(f in StorageFile, where: f.uuid in ^uuids and f.status == "active", select: f.uuid)
+    )
+  end
+
+  defp reuse_files_query(:all) do
+    from(f in StorageFile,
+      where: f.status == "active" and fragment("?->>'source_url' IS NOT NULL", f.metadata)
+    )
+  end
+
+  defp reuse_files_query(keys) when is_list(keys) do
+    from(f in StorageFile,
+      where:
+        f.status == "active" and
+          (fragment("split_part(?->>'source_url', chr(63), 1) = ANY(?)", f.metadata, ^keys) or
+             fragment("jsonb_exists_any(?->'source_url_aliases', ?)", f.metadata, ^keys))
+    )
   end
 
   # Indexes files by their (query-stripped) download source URL. When
@@ -925,7 +991,9 @@ defmodule PhoenixKitEcommerce.Catalogue.Writer do
        when attempt <= @max_slug_attempts do
     slug_value = if attempt == 1, do: base_slug, else: "#{base_slug}-#{attempt}"
 
-    case Catalogue.create_item(Map.put(attrs, :slug, %{base_locale => slug_value})) do
+    attrs = Map.put(attrs, :slug, %{base_locale => slug_value})
+
+    case Catalogue.create_item(attrs, ShopifyAttribution.metadata_opts()) do
       {:ok, item} ->
         {:ok, item}
 
