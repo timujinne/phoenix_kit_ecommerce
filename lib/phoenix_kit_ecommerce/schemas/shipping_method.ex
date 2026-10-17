@@ -155,7 +155,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
       }) do
     weight_ok?(method, weight) &&
       amount_ok?(method, subtotal) &&
-      country_ok?(method, country)
+      serves_country?(method, country)
   end
 
   def available_for?(%__MODULE__{} = method, params) when is_map(params) do
@@ -276,6 +276,25 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     Enum.reduce([:countries, :excluded_countries], changeset, fn field, acc ->
       update_change(acc, field, &Codec.countries/1)
     end)
+  end
+
+  @doc """
+  Whether the method delivers to `country`: one of its `countries` (empty =
+  every one), not one of its `excluded_countries`, and one its shipping
+  provider serves (`Shipping.serves_country?/2`). A `nil` country (not known
+  yet) is never refused.
+  """
+  @spec serves_country?(t(), term()) :: boolean()
+  def serves_country?(%__MODULE__{} = method, country),
+    do: country_ok?(method, country) and provider_serves?(method, country)
+
+  defp provider_serves?(method, country) do
+    with %{provider: key} when is_binary(key) <- shipping_config(method),
+         {:ok, module} <- PhoenixKitEcommerce.Shipping.provider(key) do
+      PhoenixKitEcommerce.Shipping.serves_country?(module, country)
+    else
+      _ -> true
+    end
   end
 
   defp country_ok?(%{countries: [], excluded_countries: []}, _country), do: true
