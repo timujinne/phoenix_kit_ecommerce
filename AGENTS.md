@@ -576,6 +576,9 @@ different server) and turns events into Oban jobs; it never indexes inline.
 returns `PhoenixKitEcommerce.API.tools/0`: `ecommerce.get_prices`,
 `ecommerce.set_prices`, `ecommerce.set_availability`, `ecommerce.attach_images`,
 `ecommerce.detach_images`.
+`api_tools/0` adds `PhoenixKitEcommerce.API.OrderTools.tools/0` (list_orders,
+get_orders, get_order_customers, set_order_sync), which is `[]` unless the
+loaded billing exports `PhoenixKitBilling.put_order_sync/2`.
 Rules that must hold:
 
 - **The write tools are offered only when core enforces the confirmation
@@ -706,6 +709,19 @@ Rules that must hold:
   `api_` prefix of core's other API settings (`api_confirm_batch_over`).
   Changing it takes `shop.manage_settings` **and** core's `api` permission
   (`Web.Authz.can_manage_api?/1`).
+- **The order tools** (`API.OrderTools`) read `PhoenixKitBilling.Order` only.
+  The revision, the mark (`metadata["sync"]`) and the `sync` filter belong to
+  billing (`Order.revision/1`, `Order.sync/1`, `Order.where_sync/2`,
+  `put_order_sync/2`); nothing here writes an order. The buyer's contacts are
+  part of an answer only when `ctx.scopes` holds `ecommerce.orders:customer`
+  (`OrderTools.contacts?/1`); the serializer (`API.OrderExport`) takes them
+  only through its `:contacts` option, so a caller that sends the order to the
+  external system passes `contacts: true` on purpose. A scope is granted
+  through the tools that declare it (core's `Keys.allowed_scopes_for/1`), which
+  is why `ecommerce.get_order_customers` exists. `set_order_sync` is an admin
+  write like the others: a batch above `api_confirm_batch_over` is held for
+  confirmation by core, and the handler answers a dry run with a preview and
+  no write. The order feed leaves out `draft` orders unless `statuses` names them.
 - `PhoenixKitEcommerce.warehouse_source_kinds/0` offers the `shop_order` kind
   to Warehouse (`WarehouseSourceKind`); only orders placed by the storefront
   checkout count, and no label shows the customer.

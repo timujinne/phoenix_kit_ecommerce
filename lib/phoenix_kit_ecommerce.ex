@@ -61,6 +61,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce.API.CartTools
+  alias PhoenixKitEcommerce.API.OrderTools
   alias PhoenixKitEcommerce.API.PublicTools
   alias PhoenixKitEcommerce.Cart
   alias PhoenixKitEcommerce.CartItem
@@ -936,6 +937,12 @@ defmodule PhoenixKitEcommerce do
           description: "Create, edit and delete products and categories"
         },
         %{
+          key: "manage_orders",
+          label: "Manage orders",
+          description:
+            "Mark orders as taken by an external system and read their buyers' contact details through the API"
+        },
+        %{
           key: "manage_carts",
           label: "Manage carts",
           description: "View and act on customer carts (includes their contact details)"
@@ -1224,8 +1231,10 @@ defmodule PhoenixKitEcommerce do
   against cores that predate it. A core without the tool registry gets `[]`
   from each group.
   """
-  def api_tools,
-    do: PhoenixKitEcommerce.API.tools() ++ PublicTools.tools() ++ CartTools.tools()
+  def api_tools do
+    PhoenixKitEcommerce.API.tools() ++
+      OrderTools.tools() ++ PublicTools.tools() ++ CartTools.tools()
+  end
 
   @doc """
   PhoenixKitAI translation adapters (duck-typed discovery — see
