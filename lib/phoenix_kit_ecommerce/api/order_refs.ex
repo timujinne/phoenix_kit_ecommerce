@@ -30,23 +30,29 @@ defmodule PhoenixKitEcommerce.API.OrderRefs do
       for key <- ["id", "number"], value = Map.get(ref, key), not is_nil(value), do: {key, value}
 
     case given do
-      [{"id", id}] when is_binary(id) ->
-        case Ecto.UUID.cast(id) do
-          {:ok, uuid} -> {:ok, {:id, uuid}}
-          :error -> {:error, "id must be a UUID"}
-        end
-
-      [{"number", number}] when is_binary(number) ->
-        if String.trim(number) == "",
-          do: {:error, "number must not be empty"},
-          else: {:ok, {:number, number}}
-
-      _ ->
-        {:error, "give exactly one of id or number"}
+      [{"id", id}] when is_binary(id) -> check_id(id)
+      [{"number", number}] when is_binary(number) -> check_number(number)
+      _ -> {:error, "give exactly one of id or number"}
     end
   end
 
   defp check(_other), do: {:error, "a reference must be an object"}
+
+  defp check_id(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, uuid} -> {:ok, {:id, uuid}}
+      :error -> {:error, "id must be a UUID"}
+    end
+  end
+
+  defp check_number(number) do
+    cond do
+      String.trim(number) == "" -> {:error, "number must not be empty"}
+      # Postgres text cannot hold a NUL byte; the query would fail for the whole batch.
+      String.contains?(number, <<0>>) -> {:error, "number must not contain a NUL byte"}
+      true -> {:ok, {:number, number}}
+    end
+  end
 
   defp load([]), do: %{}
 

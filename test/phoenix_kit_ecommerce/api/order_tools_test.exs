@@ -441,6 +441,18 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
       assert full["order"]["customer"]["last_name"] == "Petrenko"
     end
 
+    test "a number with a NUL byte is a row error, not a failed query", %{user: user} do
+      order = order!()
+      refs = [%{"number" => "ORD\u0000X"}, %{"id" => order.uuid}]
+
+      {:ok, answer} = call("ecommerce.get_orders", %{"refs" => refs}, user)
+
+      assert [%{"error" => %{"code" => "validation_failed"}}, %{"order" => %{"id" => id}}] =
+               answer["results"]
+
+      assert id == order.uuid
+    end
+
     test "narrows the sections", %{user: user} do
       order = order!()
 
@@ -467,6 +479,21 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
   end
 
   describe "ecommerce.get_order_customers" do
+    test "a number with a NUL byte is a row error, not a failed query", %{user: user} do
+      order = order!()
+
+      {:ok, answer} =
+        call(
+          "ecommerce.get_order_customers",
+          %{"refs" => [%{"number" => "ORD\u0000X"}, %{"id" => order.uuid}]},
+          user,
+          [@customer]
+        )
+
+      assert [%{"error" => %{"code" => "validation_failed"}}, %{"id" => id}] = answer["results"]
+      assert id == order.uuid
+    end
+
     test "answers the buyer with contacts", %{user: user} do
       order = order!()
 
@@ -693,21 +720,36 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
       refute Map.has_key?(Billing.get_order(fine.uuid).metadata, "sync")
     end
 
-    test "a failure that is not the request's fault is a retryable row, not a crash" do
-      alias PhoenixKitEcommerce.API.SetOrderSync
+    test "a database failure of one row is a retryable row error and the others are written", %{
+      user: user
+    } do
+      [first, broken, last] = for _ <- 1..3, do: order!()
 
-      for cause <- [
-            %Postgrex.Error{postgres: %{code: :deadlock_detected, message: "secret value"}},
-            %DBConnection.ConnectionError{message: "connection lost"}
-          ] do
-        assert %{"code" => "validation_failed", "context" => %{"reason" => "database_error"}} =
-                 error = SetOrderSync.failure(cause)
+      # Postgres cannot store a NUL byte in a JSON string: the write of this row fails.
+      rows = [
+        mark(first, %{"external_id" => "G-1"}),
+        mark(broken, %{"external_id" => "bad\u0000id"}),
+        mark(last, %{"external_id" => "G-3"})
+      ]
 
-        refute inspect(error) =~ "secret value"
-      end
+      {:ok, answer} = call("ecommerce.set_order_sync", %{"orders" => rows}, user)
 
-      assert %{"code" => "validation_failed", "context" => %{"reason" => "unexpected"}} =
-               SetOrderSync.failure(:something_else)
+      assert [%{"action" => "marked"}, failed, %{"action" => "marked"}] = answer["results"]
+
+      assert %{
+               "action" => "error",
+               "error" => %{
+                 "code" => "validation_failed",
+                 "context" => %{"reason" => "database_error"}
+               }
+             } = failed
+
+      refute inspect(failed) =~ "bad"
+      assert answer["summary"] == %{"marked" => 2, "error" => 1}
+
+      assert Billing.get_order(first.uuid).metadata["sync"]["external_id"] == "G-1"
+      assert Billing.get_order(last.uuid).metadata["sync"]["external_id"] == "G-3"
+      refute Map.has_key?(Billing.get_order(broken.uuid).metadata, "sync")
     end
 
     test "refuses rows the schema does not accept", %{user: user} do

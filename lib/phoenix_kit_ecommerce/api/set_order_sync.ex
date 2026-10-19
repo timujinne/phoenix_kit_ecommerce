@@ -78,32 +78,22 @@ defmodule PhoenixKitEcommerce.API.SetOrderSync do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         error(row, Rows.invalid(changeset_errors(changeset)))
-
-      {:error, other} ->
-        error(row, failure(other))
     end
   rescue
     exception in [DBConnection.ConnectionError, Postgrex.Error] -> error(row, failure(exception))
   end
 
-  # A failure that is not the request's fault is a `validation_failed` row with
-  # `context.reason` `database_error` or `unexpected`, which a client may retry;
-  # it never takes the other rows of the batch down. The log gets the class of
-  # the cause, never its text, which can carry submitted values.
-  @doc false
-  @spec failure(term()) :: Rows.t()
-  def failure(cause) do
-    reason = if database_error?(cause), do: "database_error", else: "unexpected"
-
+  # A database failure is not the request's fault: the row is a
+  # `validation_failed` with `context.reason` `database_error`, which a client
+  # may retry, and the other rows of the batch are not touched. The log gets the
+  # class of the cause, never its text, which can carry submitted values.
+  defp failure(cause) do
     Logger.error("[API.SetOrderSync] a row failed: " <> Meta.term_class(cause))
 
-    Rows.error(:validation_failed, "The mark could not be saved.", %{"reason" => reason})
+    Rows.error(:validation_failed, "The mark could not be saved.", %{
+      "reason" => "database_error"
+    })
   end
-
-  defp database_error?(%module{}) when module in [DBConnection.ConnectionError, Postgrex.Error],
-    do: true
-
-  defp database_error?(_cause), do: false
 
   defp ok(row, order) do
     %{
