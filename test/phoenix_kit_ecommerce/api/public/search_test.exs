@@ -345,6 +345,38 @@ defmodule PhoenixKitEcommerce.API.Public.SearchTest do
 
       assert item_url(block, t.product) =~ "https://shop.test/en/shop/product/"
     end
+
+    @tag :requires_core_canonical_urls
+    test "search_products links to a language that has a domain on that domain, whoever asks",
+         t do
+      put_canonical_host_resolver!()
+
+      from_the_other_domain = search!(%{"q" => "Vase", "language" => "de"}, language: "en")
+      from_its_own_domain = search!(%{"q" => "Vase"}, language: "de")
+
+      for out <- [from_the_other_domain, from_its_own_domain] do
+        url = item_url(out, t.product)
+        assert url =~ "https://shop.example.de/shop/product/"
+        refute url =~ "/de/"
+      end
+    end
+
+    @tag :requires_core_canonical_urls
+    test "search_products_batch links to a language that has a domain on that domain", t do
+      put_canonical_host_resolver!()
+
+      assert %{"results" => [from_the_other_domain]} =
+               batch!(%{"language" => "de", "queries" => [%{"q" => "Vase"}]}, language: "en")
+
+      assert %{"results" => [from_its_own_domain]} =
+               batch!(%{"queries" => [%{"q" => "Vase"}]}, language: "de")
+
+      for block <- [from_the_other_domain, from_its_own_domain] do
+        url = item_url(block, t.product)
+        assert url =~ "https://shop.example.de/shop/product/"
+        refute url =~ "/de/"
+      end
+    end
   end
 
   test "fields takes at most as many names as an item has fields" do
