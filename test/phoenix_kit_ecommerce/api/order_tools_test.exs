@@ -201,9 +201,15 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
       refused = dated!(30)
       changed = dated!(40)
 
-      {:ok, _} = Billing.put_order_sync(taken, %{state: "synced", external_id: "e-1"})
-      {:ok, _} = Billing.put_order_sync(refused, %{state: "failed", error: "unknown item"})
-      {:ok, changed} = Billing.put_order_sync(changed, %{state: "synced", external_id: "e-2"})
+      {:ok, _} =
+        Billing.put_order_sync(taken, %{revision: 1, state: "synced", external_id: "e-1"})
+
+      {:ok, _} =
+        Billing.put_order_sync(refused, %{revision: 1, state: "failed", error: "unknown item"})
+
+      {:ok, changed} =
+        Billing.put_order_sync(changed, %{revision: 1, state: "synced", external_id: "e-2"})
+
       {:ok, _} = Billing.update_order(changed, %{"notes" => "edited after the mark"})
 
       Repo.update_all(from(o in Order, where: o.uuid == ^changed.uuid),
@@ -227,7 +233,7 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
       a = dated!(10)
       b = dated!(20)
 
-      {:ok, _} = Billing.put_order_sync(a, %{state: "synced"})
+      {:ok, _} = Billing.put_order_sync(a, %{revision: 1, state: "synced"})
 
       answer = list(%{}, user)
       assert ids(answer) == [a.uuid, b.uuid]
@@ -241,6 +247,7 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
 
       {:ok, order} =
         Billing.put_order_sync(order, %{
+          revision: 1,
           state: "synced",
           external_id: "e-1",
           external_number: "N-1"

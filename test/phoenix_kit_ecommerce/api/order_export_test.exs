@@ -69,7 +69,9 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
 
     test "the sync block follows the mark and reopens when the order changes" do
       order = order!()
-      {:ok, order} = Billing.put_order_sync(order, %{state: "synced", external_id: "ext-1"})
+
+      {:ok, order} =
+        Billing.put_order_sync(order, %{revision: 1, state: "synced", external_id: "ext-1"})
 
       assert %{"state" => "synced", "external_id" => "ext-1", "revision" => 1} =
                OrderExport.serialize(order)["sync"]
