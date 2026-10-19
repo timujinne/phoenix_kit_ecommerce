@@ -21,6 +21,7 @@ defmodule PhoenixKitEcommerce.API.Cards do
   alias PhoenixKitEcommerce.API.PlainText
   alias PhoenixKitEcommerce.API.Record
   alias PhoenixKitEcommerce.HtmlToMarkdown
+  alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.Search.OptionKeys
   alias PhoenixKitEcommerce.Translations
@@ -135,7 +136,7 @@ defmodule PhoenixKitEcommerce.API.Cards do
     |> Map.merge(%{
       "description" => description(product, context.language, Keyword.get(opts, :format, "text")),
       "tags" => product.tags |> List.wrap() |> Enum.filter(&is_binary/1),
-      "options" => Enum.map(OptionKeys.extract(product), &option/1),
+      "options" => options(product, context, lookup),
       "images" => images(product, context, lookup)
     })
     |> compact()
@@ -228,14 +229,64 @@ defmodule PhoenixKitEcommerce.API.Cards do
       else: Translations.get(product, :description, language)
   end
 
-  defp option(option) do
+  defp options(product, context, lookup) do
+    options = OptionKeys.extract(product)
+    quote? = Enum.any?(options, & &1.affects_price) and not PriceDisplay.on_request?(product)
+    specs = if quote?, do: price_specs(product, lookup), else: []
+
+    Enum.map(options, fn option ->
+      option(option, product, context, if(option.affects_price, do: specs, else: []))
+    end)
+  end
+
+  defp price_specs(product, lookup) do
+    case CardLookup.schema(lookup, product) do
+      nil -> Options.get_price_affecting_specs_for_product(product)
+      schema -> Options.get_price_affecting_specs_for_product(product, schema)
+    end
+  end
+
+  defp option(option, product, context, specs) do
     %{
       "key" => option.key,
       "label" => option.label,
       "affects_price" => option.affects_price,
-      "values" => Enum.map(option.values, &%{"key" => &1.key, "label" => &1.label})
+      "values" => Enum.map(option.values, &value(&1, option, product, context, specs))
     }
   end
+
+  # `price` is the product's price with this value chosen and no other option:
+  # a percent modifier or an override has no delta that adds up, a price does.
+  defp value(value, option, product, context, specs) do
+    base = %{"key" => value.key, "label" => value.label}
+
+    case value_price(value, option, product, specs) do
+      nil -> base
+      price -> Map.put(base, "price", Context.money(context, price))
+    end
+  end
+
+  defp value_price(_value, _option, _product, []), do: nil
+
+  defp value_price(value, option, product, specs) do
+    Enum.find_value(specs, fn %{"key" => raw_key} = spec ->
+      with true <- OptionKeys.neutral_key(raw_key) == option.key,
+           raw when is_binary(raw) <- raw_value(spec, value.key, product) do
+        Options.calculate_final_price(specs, %{raw_key => raw}, product.price, product.metadata)
+      else
+        _other -> nil
+      end
+    end)
+  end
+
+  defp raw_value(%{"key" => raw_key, "options" => raw_values}, value_key, product)
+       when is_list(raw_values) do
+    Enum.find(raw_values, fn raw ->
+      is_binary(raw) and OptionKeys.product_value_key(product, raw_key, raw) == value_key
+    end)
+  end
+
+  defp raw_value(_spec, _value_key, _product), do: nil
 
   defp images(product, context, lookup) do
     stored = Enum.map(image_uuids(product), &CardLookup.url(lookup, &1, "medium"))

@@ -26,7 +26,7 @@ defmodule PhoenixKitEcommerce.API.CartTools do
   alias PhoenixKitEcommerce.API.Public.Schemas
   alias PhoenixKitEcommerce.API.PublicTools
 
-  @compile {:no_warn_undefined, PhoenixKit.API.Tool}
+  @compile {:no_warn_undefined, [PhoenixKit.API.Tool, PhoenixKit.API.ControlFields]}
 
   @handlers PhoenixKitEcommerce.API.CartHandlers
 
@@ -66,7 +66,27 @@ defmodule PhoenixKitEcommerce.API.CartTools do
           "properties" => %{
             "product_id" => %{"type" => "string"},
             "title" => %{"type" => "string"},
-            "options" => %{"type" => "array"},
+            "options" => %{
+              "type" => "array",
+              "description" =>
+                "The chosen options: the keys to send back, and the labels to show a buyer, in the language of the request.",
+              "items" => %{
+                "type" => "object",
+                "required" => ["attribute_key", "value_key", "attribute_label", "value_label"],
+                "properties" => %{
+                  "attribute_key" => %{"type" => "string"},
+                  "value_key" => %{"type" => "string"},
+                  "attribute_label" => %{
+                    "type" => "string",
+                    "description" => "The option's name, e.g. \"Size\"."
+                  },
+                  "value_label" => %{
+                    "type" => "string",
+                    "description" => "What the value is shown as, e.g. \"5 inches (13 cm)\"."
+                  }
+                }
+              }
+            },
             "quantity" => %{"type" => "integer"},
             "unit_price" => @money,
             "line_total" => @money,
@@ -86,18 +106,23 @@ defmodule PhoenixKitEcommerce.API.CartTools do
   @doc """
   The seven cart tools, in a fixed order. `shop.clear_cart` (the only `danger`
   tool) is left out unless `gate?` is true; the default asks `gate_available?/0`.
+  `shop.create_cart` (it has no cart to key a replay by) and `shop.get_checkout_link`
+  (its answer carries a credential, so core never stores it for replay) declare
+  `replay: false`, so core offers neither an `idempotency_key`, only when `replay?`
+  is true; the default asks `replay_available?/0`, because a core without the field
+  refuses the tool.
   """
-  @spec tools(boolean()) :: [struct()]
-  def tools(gate? \\ gate_available?()) do
+  @spec tools(boolean(), boolean()) :: [struct()]
+  def tools(gate? \\ gate_available?(), replay? \\ replay_available?()) do
     if Code.ensure_loaded?(Tool) do
       all = [
-        create_cart(),
+        create_cart(replay?),
         get_cart(),
         set_cart_items(),
         clear_cart(),
         get_shipping_options(),
         set_shipping(),
-        get_checkout_link()
+        get_checkout_link(replay?)
       ]
 
       specs = if gate?, do: all, else: Enum.reject(all, &(not is_nil(&1[:danger])))
@@ -121,13 +146,25 @@ defmodule PhoenixKitEcommerce.API.CartTools do
       function_exported?(PhoenixKit.API.Keys, :active?, 1)
   end
 
-  defp create_cart do
+  @doc """
+  True when the loaded core lets a tool give up replay (`:replay` of
+  `PhoenixKit.API.Tool`), judged by the exported marker function
+  `PhoenixKit.API.ControlFields.replay_tool?/1`, not by a version number.
+  """
+  @spec replay_available?() :: boolean()
+  def replay_available? do
+    Code.ensure_loaded?(PhoenixKit.API.ControlFields) and
+      function_exported?(PhoenixKit.API.ControlFields, :replay_tool?, 1)
+  end
+
+  defp create_cart(replay?) do
     [
       name: "shop.create_cart",
       audience: :public,
       title: "Create a cart",
       description:
         "Returns a new cart token. Nothing is stored until the first shop.set_cart_items, so an unused token costs nothing. " <>
+          "Not idempotent: every call returns a new token; a retry after a timeout is harmless, nothing is stored until the first shop.set_cart_items. " <>
           "Keep the token secret: whoever holds it can read and change the cart.",
       input_schema: object([], %{}),
       output_schema: %{
@@ -142,7 +179,7 @@ defmodule PhoenixKitEcommerce.API.CartTools do
       },
       handler: {@handlers, :create_cart},
       annotations: %{read_only: false, destructive: false, idempotent: false, open_world: false}
-    ]
+    ] ++ if(replay?, do: [replay: false], else: [])
   end
 
   defp get_cart do
@@ -203,7 +240,8 @@ defmodule PhoenixKitEcommerce.API.CartTools do
                 },
                 "quantity" => %{
                   "description" =>
-                    "Final quantity: a whole number from 0 to 99. 0 removes the line."
+                    "Final quantity: a whole number from 0 to 99; 0 removes the line. " <>
+                      "A line with any other value is refused on its own with quantity_invalid while the other lines apply."
                 }
               }
             }
@@ -295,14 +333,14 @@ defmodule PhoenixKitEcommerce.API.CartTools do
     ]
   end
 
-  defp get_checkout_link do
+  defp get_checkout_link(replay?) do
     [
       name: "shop.get_checkout_link",
       audience: :public,
       title: "Checkout link",
       description:
         "Returns a one-time link where the buyer reviews the cart and continues to checkout on the site. Payment and personal details never pass through this API. " <>
-          "The link expires (see expires_in_seconds); asking again replaces the earlier link. Opening the link changes nothing; the cart is locked when the buyer confirms on the page, and a change made to the cart after the page was shown makes the page ask the buyer again.",
+          "Each call issues a new link and replaces the earlier one; the link expires (see expires_in_seconds). Opening the link changes nothing; the cart is locked when the buyer confirms on the page, and a change made to the cart after the page was shown makes the page ask the buyer again.",
       input_schema: object(["cart_token"], %{"cart_token" => @token}),
       output_schema: %{
         "type" => "object",
@@ -314,7 +352,7 @@ defmodule PhoenixKitEcommerce.API.CartTools do
       },
       handler: {@handlers, :get_checkout_link},
       annotations: %{read_only: false, destructive: false, idempotent: false, open_world: false}
-    ]
+    ] ++ if(replay?, do: [replay: false], else: [])
   end
 
   # An object schema with the shared control fields (`language`, `currency`)

@@ -376,6 +376,26 @@ defmodule PhoenixKitEcommerce.Search.QueryTest do
            ]
   end
 
+  test "facets: false skips the facets and changes nothing else", t do
+    lean = run(%{facets: false})
+    full = run(%{})
+
+    assert lean.facets == nil
+    refute lean.truncated?
+    assert Map.drop(lean, [:facets]) == Map.drop(full, [:facets])
+    assert run(%{}).facets == run(%{facets: true}).facets
+    assert t.vases in Map.keys(full.facets.categories)
+  end
+
+  test "option_vocabulary lists the option keys and values the index holds in a language" do
+    assert Query.option_vocabulary("en") == %{
+             "colour" => ["red"],
+             "size" => ["large", "small"]
+           }
+
+    assert Query.option_vocabulary("de") == %{}
+  end
+
   test "option facets are ordered by key, then by count (highest first), then by value" do
     cup =
       legacy_product!(%{"en" => "Small Cup"}, %{

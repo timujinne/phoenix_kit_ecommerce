@@ -86,7 +86,8 @@ defmodule PhoenixKitEcommerce.API.Public.Schemas do
 
   @doc """
   The full card of `shop.get_products`: a list item plus description, tags,
-  options and images. The stub of a discontinued product (`id`, `title` and
+  options (a value of an option that changes the price carries `price`) and
+  images. The stub of a discontinued product (`id`, `title` and
   `status`) satisfies it too.
   """
   @spec card() :: map()
@@ -111,7 +112,11 @@ defmodule PhoenixKitEcommerce.API.Public.Schemas do
               "items" => %{
                 "type" => "object",
                 "required" => ["key", "label"],
-                "properties" => %{"key" => @string, "label" => @string}
+                "properties" => %{
+                  "key" => @string,
+                  "label" => @string,
+                  "price" => money()
+                }
               }
             }
           }

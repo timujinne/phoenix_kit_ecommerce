@@ -27,12 +27,15 @@ defmodule PhoenixKitEcommerce.API.CartView do
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.ShippingMethod
 
-  @doc "The view of an active cart."
-  @spec build(Cart.t()) :: map()
-  def build(%Cart{} = cart) do
+  @doc """
+  The view of an active cart. `language` is the one the option labels of the
+  lines are written in (`nil`: the product source's default).
+  """
+  @spec build(Cart.t(), String.t() | nil) :: map()
+  def build(%Cart{} = cart, language \\ nil) do
     ensure_loaded!(cart)
     items = sorted_items(cart)
-    records = records_by_id(items)
+    records = records_by_id(items, language)
 
     %{
       status: "open",
@@ -247,10 +250,30 @@ defmodule PhoenixKitEcommerce.API.CartView do
   # One batch read through the public API's loader, so a line is "ok" exactly
   # when `shop.get_products` would list its product and the cart would accept
   # it again (the one visibility rule, `API.Visibility`).
-  defp records_by_id(items) do
+  defp records_by_id(items, language) do
     ids = items |> Enum.map(&line_product_id/1) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
-    Loader.load(ids)
+    Loader.load(ids, if(language, do: [language: language], else: []))
+  end
+
+  @doc """
+  The options of each line of `cart` with their labels in `language`, by item
+  uuid: what the claim page shows. See `build/2` and `CartOptions.labelled/3`.
+  """
+  @spec labelled_options(Cart.t(), String.t() | nil) :: %{String.t() => [CartOptions.labelled()]}
+  def labelled_options(%Cart{} = cart, language) do
+    ensure_loaded!(cart)
+    items = sorted_items(cart)
+    records = records_by_id(items, language)
+
+    Map.new(items, fn item ->
+      record = Map.get(records, Loader.canonical_uuid(line_product_id(item)))
+      {item.uuid, labelled(item, record && record.product)}
+    end)
+  end
+
+  defp labelled(%CartItem{} = item, product) do
+    item |> CartOptions.from_item(product) |> CartOptions.labelled(product, item.selected_specs)
   end
 
   defp line(%CartItem{} = item, %Cart{} = cart, records) do
@@ -262,7 +285,7 @@ defmodule PhoenixKitEcommerce.API.CartView do
     %{
       product_id: product_id,
       title: item.product_title,
-      options: CartOptions.from_item(item, product),
+      options: labelled(item, product),
       quantity: item.quantity,
       price_on_request: on_request?,
       unit_price: line_money(on_request?, item.unit_price, cart.currency),

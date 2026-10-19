@@ -225,6 +225,55 @@ defmodule PhoenixKitEcommerce.API.Public.SearchTest do
                filtered(%{"options" => %{"size" => ["small"], "colour" => ["red"]}})
     end
 
+    test "options: an unknown key or value is named in a warning with the valid ones", t do
+      out = search!(%{"options" => %{"sise" => ["large"], "size" => ["large", "huge"]}})
+
+      assert out["count"] == 0
+      assert item_ids(out) == []
+
+      assert [
+               %{
+                 "code" => "unknown_option_key",
+                 "key" => "sise",
+                 "valid_keys" => ["colour", "size"]
+               },
+               %{
+                 "code" => "unknown_option_value",
+                 "key" => "size",
+                 "values" => ["huge"],
+                 "valid_values" => ["large", "small"]
+               }
+             ] = warnings = out["warnings"]
+
+      assert Enum.all?(warnings, &is_binary(&1["message"]))
+      assert {:ok, _} = Validator.validate(Search.search_output_schema(), out)
+
+      # A typo among alternatives still finds the rest.
+      out = search!(%{"options" => %{"size" => ["large", "huge"]}})
+      assert item_ids(out) == [t.a]
+      assert [%{"code" => "unknown_option_value", "values" => ["huge"]}] = out["warnings"]
+    end
+
+    test "options: known keys and values, an empty result among them included, add no warning" do
+      assert {[], 0} = filtered(%{"options" => %{"size" => ["small"], "colour" => ["red"]}})
+      refute Map.has_key?(search!(%{"options" => %{"size" => ["small"]}}), "warnings")
+      refute Map.has_key?(search!(%{}), "warnings")
+    end
+
+    test "options: the valid keys are those of the answer's language, and the batch warns per query" do
+      out =
+        batch!(%{
+          "queries" => [
+            %{"options" => %{"nope" => ["x"]}},
+            %{"options" => %{"size" => ["small"]}}
+          ]
+        })
+
+      assert [first, second] = out["results"]
+      assert [%{"code" => "unknown_option_key", "key" => "nope"}] = first["warnings"]
+      refute Map.has_key?(second, "warnings")
+    end
+
     test "vendor matches whatever the case", t do
       assert {[id], 1} = filtered(%{"vendor" => "acme"})
       assert id == t.a
@@ -433,6 +482,78 @@ defmodule PhoenixKitEcommerce.API.Public.SearchTest do
     for q <- hostile do
       assert {:ok, %{"count" => count}} = Search.search_products(%{"q" => q}, ctx())
       assert is_integer(count), inspect(q)
+    end
+  end
+
+  describe "facets: false" do
+    test "leaves the facet block out and keeps the rest of the answer", t do
+      full = search!(%{"q" => "vase"})
+      lean = search!(%{"q" => "vase", "facets" => false})
+
+      assert Map.has_key?(full, "facets")
+      refute Map.has_key?(lean, "facets")
+      assert Map.delete(full, "facets") == lean
+      assert item_ids(lean) |> Enum.sort() == Enum.sort([t.a, t.c, t.e])
+    end
+
+    test "true is the default" do
+      assert search!(%{"facets" => true}) == search!(%{})
+    end
+
+    test "does not read the matched rows for the facets" do
+      search!(%{})
+      with_facets = count_queries(fn -> search!(%{"limit" => 1}) end)
+      without = count_queries(fn -> search!(%{"limit" => 1, "facets" => false}) end)
+
+      assert without == with_facets - 1
+    end
+
+    test "limit 1 without facets is a small answer" do
+      full = search!(%{"limit" => 1}) |> JSON.encode!() |> byte_size()
+      lean = search!(%{"limit" => 1, "facets" => false}) |> JSON.encode!() |> byte_size()
+
+      assert lean < full
+      assert lean < 3_000
+    end
+
+    test "the answer satisfies the output schema" do
+      assert {:ok, _} =
+               Validator.validate(
+                 Search.search_output_schema(),
+                 search!(%{"limit" => 1, "facets" => false})
+               )
+    end
+
+    test "is refused when it is not a boolean" do
+      assert {:error, :validation_failed, _, %{errors: [%{path: "facets"}]}} =
+               Search.search_products(%{"facets" => "no"}, ctx())
+
+      assert {:error, [%{path: "facets"}]} =
+               Validator.validate(Search.search_input_schema(), %{"facets" => "no"})
+    end
+
+    test "the batch honours it per query", t do
+      out =
+        batch!(%{
+          "queries" => [
+            %{"q" => "vase", "facets" => false},
+            %{"q" => "vase"},
+            %{"category_id" => t.bowls, "facets" => false}
+          ]
+        })
+
+      assert [lean, full, bowls] = out["results"]
+      refute Map.has_key?(lean, "facets")
+      assert Map.has_key?(full, "facets")
+      refute Map.has_key?(bowls, "facets")
+      assert lean["count"] == 3 and bowls["count"] == 1
+
+      assert {:ok, _} = Validator.validate(Search.batch_output_schema(), out)
+
+      assert {:ok, _} =
+               Validator.validate(Search.batch_input_schema(), %{
+                 "queries" => [%{"facets" => false}]
+               })
     end
   end
 

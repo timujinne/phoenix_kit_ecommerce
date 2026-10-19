@@ -151,7 +151,7 @@ defmodule PhoenixKitEcommerce.API.CartWriter do
       CartStore.put_snapshot!(after_cart, after_snapshot)
     end
 
-    after_view = CartView.build(after_cart)
+    after_view = CartView.build(after_cart, ctx[:language])
 
     result = %{
       results: results,

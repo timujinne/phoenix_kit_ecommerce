@@ -21,7 +21,7 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
   batch, and only for the fields asked for (`fields`), so a page of any size
   runs a fixed handful of queries beside the search itself. Every search, each
   cursor page included, also reads the matched rows (up to 5000) for the
-  facets. That is bounded by the page size (at most 100), the 200 cards of a
+  facets, unless the query says `facets: false`. That is bounded by the page size (at most 100), the 200 cards of a
   batch and the rate limit, and accepted for a catalogue of some thousands of
   products.
   """
@@ -40,6 +40,8 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
   @max_queries 20
   @batch_default_limit 10
   @batch_card_budget 200
+  # The most keys, or values of one key, a warning lists as valid.
+  @valid_listed 100
 
   # --- handlers --------------------------------------------------------------
 
@@ -184,22 +186,71 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
 
     items = Enum.map(listed, &Cards.list_item(&1, context, keys: keys, lookup: lookup))
 
+    warnings = warnings ++ unknown_option_warnings(params, context.language)
     warnings = if result.truncated?, do: warnings ++ [facets_truncated()], else: warnings
 
     %{
       "count" => result.count,
       "items" => items,
-      "facets" => facets(result.facets, context, categories),
       "match_mode" => Atom.to_string(result.mode),
       "language" => context.language,
       "currency" => context.currency.code
     }
+    |> put_unless_nil("facets", result.facets && facets(result.facets, context, categories))
     |> put_unless_nil("next_cursor", Query.next_cursor(params.offset, params.limit, result.count))
     |> put_unless_empty("warnings", warnings)
   end
 
   defp item_keys(fields) when is_list(fields), do: Enum.uniq(["id" | fields])
   defp item_keys(_none), do: nil
+
+  # A key or value the index never saw makes the filter match nothing (a key),
+  # or nothing for that value (a value): say so, with what is valid, so that a
+  # typo reads differently from an empty result.
+  defp unknown_option_warnings(%{options: options}, language) when map_size(options) > 0 do
+    vocabulary = Query.option_vocabulary(language)
+
+    options
+    |> Enum.sort_by(fn {key, _values} -> key end)
+    |> Enum.flat_map(fn {key, values} -> unknown_option(key, values, vocabulary) end)
+  end
+
+  defp unknown_option_warnings(_params, _language), do: []
+
+  defp unknown_option(key, values, vocabulary) do
+    case Map.fetch(vocabulary, key) do
+      :error ->
+        [
+          %{
+            "code" => "unknown_option_key",
+            "message" =>
+              "No product has the option #{inspect(key)}, so this filter matches nothing. " <>
+                "Use a key from valid_keys.",
+            "key" => key,
+            "valid_keys" => vocabulary |> Map.keys() |> Enum.sort() |> Enum.take(@valid_listed)
+          }
+        ]
+
+      {:ok, known} ->
+        case Enum.reject(values, &(&1 in known)) do
+          [] ->
+            []
+
+          unknown ->
+            [
+              %{
+                "code" => "unknown_option_value",
+                "message" =>
+                  "No product has these values of the option #{inspect(key)}. " <>
+                    "Use values from valid_values.",
+                "key" => key,
+                "values" => unknown,
+                "valid_values" => Enum.take(known, @valid_listed)
+              }
+            ]
+        end
+    end
+  end
 
   defp facets_truncated do
     %{
@@ -309,7 +360,8 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
         "type" => "object",
         "description" =>
           "Option filters: attribute key to a list of value keys, as in the facets. " <>
-            "Values of one key are alternatives; several keys must all match.",
+            "Values of one key are alternatives; several keys must all match. " <>
+            "A key or value no product has adds a warning that lists the valid ones.",
         "additionalProperties" => %{
           "type" => "array",
           "minItems" => 1,
@@ -340,6 +392,11 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
         "maxItems" => length(Cards.list_fields()),
         "items" => %{"type" => "string", "enum" => Cards.list_fields()},
         "description" => "Item fields to return; id is always returned."
+      },
+      "facets" => %{
+        "type" => "boolean",
+        "description" =>
+          "false: leave the facets out of the answer (a much smaller answer when you only need the items). Default true."
       }
     }
   end
@@ -390,7 +447,7 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
   def search_output_schema do
     %{
       "type" => "object",
-      "required" => ["count", "items", "facets", "match_mode"],
+      "required" => ["count", "items", "match_mode"],
       "properties" => block_properties()
     }
   end
@@ -434,7 +491,7 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
         "description" => "How many products match, over all pages."
       },
       "items" => %{"type" => "array", "items" => Schemas.list_item()},
-      "facets" => %{"type" => "object"},
+      "facets" => %{"type" => "object", "description" => "Left out when facets is false."},
       "match_mode" => %{"type" => "string", "enum" => ["browse", "fulltext", "typo"]},
       "language" => %{"type" => "string"},
       "currency" => %{"type" => "string"},
