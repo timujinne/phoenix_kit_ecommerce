@@ -362,17 +362,21 @@ system (an accounting or fulfilment system) take the orders:
 |---|---|---|
 | `ecommerce.list_orders` | the feed of orders by cursor, filtered by status, change time and sync state | `ecommerce.orders:read` |
 | `ecommerce.get_orders` | orders by id or number, at most 100 | `ecommerce.orders:read` |
-| `ecommerce.get_order_customers` | the buyer of each order with contacts | `ecommerce.orders:customer` |
+| `ecommerce.get_order_customers` | the buyer of each order with contacts, and the order's notes | `ecommerce.orders:customer` |
 | `ecommerce.set_order_sync` | marks orders as taken (`synced`, with the system's own id and number) or refused (`failed`), at most 100 rows | `ecommerce.orders:sync` |
+
+`set_order_sync` is a write tool like the others of this module and is offered only where core can hold a call for confirmation.
 
 The key owner needs `shop` to read orders and the `shop.manage_orders`
 permission for `ecommerce.orders:sync` and `ecommerce.orders:customer`. The
 order tools answer only with the buyer's `id` and `type` unless the key holds
 `ecommerce.orders:customer`, which adds name, phone, email, company, tax id and
-address, the buyer's delivery address in `shipping.destination` (the city and
-a pickup point are always shown) and the order's `notes`: what the buyer types
-can hold a phone number or an address, so `notes` is gated like the other
-buyer-entered fields and the key is absent without the scope. Internal notes and
+address, the buyer's delivery address in `shipping.destination` (`postcode` and
+`address`, `nil` without the scope; the city `city`/`city_ref` and the pickup
+point `warehouse`, `warehouse_ref`, `warehouse_address`, `warehouse_postcode`
+are always shown) and the order's `notes`: what the buyer types can hold a
+phone number or an address, so `notes` is gated like the other buyer-entered
+fields and the key is absent without the scope. Internal notes and
 session data never leave.
 
 The feed is ordered by `(updated_at, uuid)` and paged by an opaque cursor.

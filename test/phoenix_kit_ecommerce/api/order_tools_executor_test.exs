@@ -198,6 +198,15 @@ defmodule PhoenixKitEcommerce.API.OrderToolsExecutorTest do
       assert json(conn)["code"] == "validation_failed"
     end
 
+    test "a cursor this tool did not issue is 422", %{owner: owner} do
+      bad = Base.url_encode64(~s({"t":123,"u":"#{Ecto.UUID.generate()}"}), padding: false)
+
+      conn = call(token_for(owner, [@read]), "ecommerce.list_orders", %{"cursor" => bad})
+
+      assert conn.status == 422
+      assert json(conn)["code"] == "validation_failed"
+    end
+
     test "a stale revision is a row conflict inside a 200", %{owner: owner} do
       order = order!()
       {:ok, _} = PhoenixKitBilling.update_order(order, %{"notes" => "edited"})

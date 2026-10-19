@@ -1,7 +1,8 @@
 defmodule PhoenixKitEcommerce.API.GetOrderCustomers do
   @moduledoc """
   `ecommerce.get_order_customers`: the buyer of each order, with contacts
-  (name, phone, email, company, tax id, address), by reference. Read only.
+  (name, phone, email, company, tax id, address) and the order's `notes`, which
+  the buyer typed, by reference. Read only.
 
   It exists because a scope is granted through the tools that declare it:
   `ecommerce.orders:customer`, which lets the other order tools include the
@@ -15,12 +16,12 @@ defmodule PhoenixKitEcommerce.API.GetOrderCustomers do
   def run(input, _ctx) do
     answers = OrderRefs.resolve(input["refs"])
 
-    customers =
+    serialized =
       for {:ok, order} <- answers do
         order
       end
       |> OrderExport.serialize_many(include: [:customer], contacts: true)
-      |> Map.new(&{&1["id"], &1["customer"]})
+      |> Map.new(&{&1["id"], &1})
 
     results =
       input["refs"]
@@ -31,7 +32,8 @@ defmodule PhoenixKitEcommerce.API.GetOrderCustomers do
             "ref" => ref,
             "id" => order.uuid,
             "number" => order.order_number,
-            "customer" => Map.fetch!(customers, order.uuid)
+            "customer" => Map.fetch!(serialized, order.uuid)["customer"],
+            "notes" => Map.fetch!(serialized, order.uuid)["notes"]
           }
 
         {ref, {:error, error}} ->

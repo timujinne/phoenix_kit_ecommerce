@@ -10,15 +10,18 @@ defmodule PhoenixKitEcommerce.API.OrderTools do
   | `ecommerce.get_order_customers` | `ecommerce.orders:customer` | `shop.manage_orders` |
   | `ecommerce.set_order_sync` | `ecommerce.orders:sync` | `shop.manage_orders` |
 
-  The order tools answer with the buyer's `id` and `type` only. The contacts
-  (name, phone, email, company, tax id, address) are part of an answer when
-  the key holds `ecommerce.orders:customer`. A key is given a scope through the
+  The order tools answer with the buyer's `id` and `type` only. What the buyer
+  typed (name, phone, email, company, tax id, address, the delivery address and
+  the order's notes) is part of an answer when the key holds
+  `ecommerce.orders:customer`. A key is given a scope through the
   tools that declare it, so `ecommerce.get_order_customers` is the tool that
   declares this one.
 
   The tools are offered only with a billing that keeps the revision and the
   mark of an order (`PhoenixKitBilling.put_order_sync/2`); without it an order
-  has no revision to read or to check.
+  has no revision to read or to check. `ecommerce.set_order_sync` is a write
+  tool like the others of this module and is offered only where core can hold a
+  call for confirmation (`PhoenixKitEcommerce.API.confirmation_available?/0`).
   """
 
   alias PhoenixKit.API.Tool
@@ -54,17 +57,16 @@ defmodule PhoenixKitEcommerce.API.OrderTools do
   The tools for `PhoenixKitEcommerce.api_tools/0`; `[]` on a core without the
   tool registry or a billing without `put_order_sync/2`.
   """
-  @spec tools(boolean()) :: [struct()]
-  def tools(available? \\ available?()) do
+  @spec tools(boolean(), boolean()) :: [struct()]
+  def tools(available? \\ available?(), confirmation? \\ confirmation_available?()) do
     if available? and Code.ensure_loaded?(Tool),
-      do: [
-        list_orders_tool(),
-        get_orders_tool(),
-        get_order_customers_tool(),
-        set_order_sync_tool()
-      ],
+      do:
+        [list_orders_tool(), get_orders_tool(), get_order_customers_tool()] ++
+          if(confirmation?, do: [set_order_sync_tool()], else: []),
       else: []
   end
+
+  defp confirmation_available?, do: PhoenixKitEcommerce.API.confirmation_available?()
 
   @doc "Whether the loaded billing keeps the revision and the mark of an order."
   @spec available?() :: boolean()
@@ -98,7 +100,7 @@ defmodule PhoenixKitEcommerce.API.OrderTools do
           "so a caller that asks for pending needs no cursor of its own; synced the orders it took; any (default) all. " <>
           "Draft orders are left out unless statuses names draft. limit is 1 to 100 (default 50) and a larger one is refused, not cut. " <>
           "Each order has a sync.revision that grows with every change the external system cares about. " <>
-          "The buyer's contacts are included only for a key with the ecommerce.orders:customer scope.",
+          "What the buyer typed (contacts, delivery address, notes) is included only for a key with the ecommerce.orders:customer scope.",
       input_schema: list_orders_input(),
       output_schema: %{
         "type" => "object",
@@ -124,7 +126,7 @@ defmodule PhoenixKitEcommerce.API.OrderTools do
       description:
         "Reads orders by reference, an order id or an order number, at most #{@max_refs} per call. " <>
           "One result per reference, in the order given: the order or an error for that reference. " <>
-          "The buyer's contacts are included only for a key with the ecommerce.orders:customer scope.",
+          "What the buyer typed (contacts, delivery address, notes) is included only for a key with the ecommerce.orders:customer scope.",
       input_schema: get_orders_input(),
       output_schema: Schemas.batch_output(),
       handler: {__MODULE__, :get_orders},
@@ -141,8 +143,8 @@ defmodule PhoenixKitEcommerce.API.OrderTools do
       permission: "shop.manage_orders",
       title: "Get the buyers of orders",
       description:
-        "Reads the buyer of each order, with name, phone, email, company, tax id and address, by order id or number, at most #{@max_refs} per call. " <>
-          "A key with this scope also gets these contacts in ecommerce.list_orders and ecommerce.get_orders.",
+        "Reads the buyer of each order, with name, phone, email, company, tax id and address, and the order's notes, by order id or number, at most #{@max_refs} per call. " <>
+          "A key with this scope also gets these, and the delivery address, in ecommerce.list_orders and ecommerce.get_orders.",
       input_schema: refs_input(),
       output_schema: Schemas.batch_output(),
       handler: {__MODULE__, :get_order_customers},
@@ -229,6 +231,7 @@ defmodule PhoenixKitEcommerce.API.OrderTools do
         "cursor" => %{"type" => "string", "maxLength" => 512},
         "statuses" => %{
           "type" => "array",
+          "minItems" => 1,
           "maxItems" => length(ListOrders.statuses()),
           "items" => %{"type" => "string", "enum" => ListOrders.statuses()}
         },

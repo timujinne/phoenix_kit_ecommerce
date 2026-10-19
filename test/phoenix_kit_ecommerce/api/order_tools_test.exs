@@ -62,7 +62,7 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
     test "are offered with their scopes and permissions, and core's lint passes" do
       table =
         Map.new(
-          OrderTools.tools(true),
+          OrderTools.tools(true, true),
           &{&1.name, {&1.scope, &1.permission, &1.annotations.read_only}}
         )
 
@@ -73,14 +73,25 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
                "ecommerce.set_order_sync" => {@sync, "shop.manage_orders", false}
              }
 
-      assert :ok = ToolLint.check_tools(OrderTools.tools(true))
+      assert :ok = ToolLint.check_tools(OrderTools.tools(true, true))
     end
 
     test "are part of the module's api_tools while billing keeps the order revision" do
       assert OrderTools.available?()
 
       names = for tool <- PhoenixKitEcommerce.api_tools(), do: tool.name
-      assert Enum.all?(OrderTools.tools(true), &(&1.name in names))
+      assert OrderTools.tools() != []
+      assert Enum.all?(OrderTools.tools(), &(&1.name in names))
+    end
+
+    test "the write tool is offered only where core can hold a call for confirmation" do
+      read_only = for tool <- OrderTools.tools(true, false), do: tool.name
+
+      assert Enum.sort(read_only) ==
+               ~w(ecommerce.get_order_customers ecommerce.get_orders ecommerce.list_orders)
+
+      assert "ecommerce.set_order_sync" in Enum.map(OrderTools.tools(true, true), & &1.name)
+      assert OrderTools.tools(false, true) == []
     end
 
     test "are not offered without that billing" do
@@ -98,7 +109,7 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
             "ecommerce.get_order_customers",
             "ecommerce.set_order_sync"
           ] do
-        assert Enum.find(OrderTools.tools(true), &(&1.name == name)).max_items == 100
+        assert Enum.find(OrderTools.tools(true, true), &(&1.name == name)).max_items == 100
       end
     end
   end
@@ -240,6 +251,22 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
       assert hd(answer["orders"])["updated_at"] == "2030-01-01T00:00:10Z"
     end
 
+    test "a refused order stays out of pending until it changes, then comes back", %{user: user} do
+      order = dated!(10)
+
+      {:ok, order} =
+        Billing.put_order_sync(order, %{revision: 1, state: "failed", error: "unknown item"})
+
+      assert list(%{"sync" => "pending"}, user)["orders"] == []
+
+      {:ok, changed} = Billing.update_order(order, %{"notes" => "the item was fixed"})
+      touch!(changed, DateTime.add(@base, 20))
+
+      assert [pending] = list(%{"sync" => "pending"}, user)["orders"]
+      assert pending["id"] == order.uuid
+      assert %{"state" => "pending", "error" => nil, "revision" => 2} = pending["sync"]
+    end
+
     test "an order that changed after a mark is pending again with the ids it already has", %{
       user: user
     } do
@@ -328,6 +355,36 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
 
       assert {:error, :validation_failed, _, %{errors: [%{path: "updated_since"}]}} =
                call("ecommerce.list_orders", %{"updated_since" => "yesterday"}, user)
+    end
+
+    test "an empty statuses list is refused, not read as no orders", %{user: user} do
+      assert {:error, :validation_failed, _, %{errors: [%{path: "statuses"}]}} =
+               call("ecommerce.list_orders", %{"statuses" => []}, user)
+    end
+
+    test "one order with ids that are not UUIDs does not fail the feed", %{user: user} do
+      good = dated!(10)
+
+      broken =
+        dated!(20, %{
+          "metadata" => %{"shipping_method_uuid" => "not-a-uuid"},
+          "line_items" => [
+            %{
+              "name" => "Odd",
+              "quantity" => 1,
+              "unit_price" => "1",
+              "total" => "1",
+              "catalogue_item_uuid" => "not-a-uuid"
+            },
+            shipping_line()
+          ]
+        })
+
+      answer = list(%{}, user)
+
+      assert ids(answer) == [good.uuid, broken.uuid]
+      assert [%{"product_id" => nil}] = List.last(answer["orders"])["lines"]
+      assert List.last(answer["orders"])["shipping"]["method_id"] == nil
     end
 
     test "refuses what the closed schema does not know", %{user: user} do
@@ -424,8 +481,9 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
       assert [found, missing] = answer["results"]
       assert found["id"] == order.uuid
       assert found["number"] == order.order_number
+      assert found["notes"] == "ring twice"
 
-      assert %{"first_name" => "Ivan", "phone" => "+380" <> _, "type" => "user"} =
+      assert %{"first_name" => "Ivan", "phone" => "+380000000000", "type" => "user"} =
                found["customer"]
 
       assert missing["error"]["code"] == "not_found"
@@ -434,6 +492,8 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
   end
 
   describe "ecommerce.set_order_sync" do
+    @describetag :core_confirm
+
     defp mark(order, extra \\ %{}) do
       Map.merge(
         %{"ref" => %{"number" => order.order_number}, "revision" => 1, "state" => "synced"},
@@ -631,6 +691,23 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
       assert preview["requires_confirmation"] == false
 
       refute Map.has_key?(Billing.get_order(fine.uuid).metadata, "sync")
+    end
+
+    test "a failure that is not the request's fault is a retryable row, not a crash" do
+      alias PhoenixKitEcommerce.API.SetOrderSync
+
+      for cause <- [
+            %Postgrex.Error{postgres: %{code: :deadlock_detected, message: "secret value"}},
+            %DBConnection.ConnectionError{message: "connection lost"}
+          ] do
+        assert %{"code" => "validation_failed", "context" => %{"reason" => "database_error"}} =
+                 error = SetOrderSync.failure(cause)
+
+        refute inspect(error) =~ "secret value"
+      end
+
+      assert %{"code" => "validation_failed", "context" => %{"reason" => "unexpected"}} =
+               SetOrderSync.failure(:something_else)
     end
 
     test "refuses rows the schema does not accept", %{user: user} do

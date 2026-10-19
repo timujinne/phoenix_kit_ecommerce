@@ -131,7 +131,7 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
 
       assert Enum.map(lines, &{&1["line"], &1["name"]}) == [{1, "A"}, {2, "B"}]
 
-      assert %{"quantity" => "3", "unit_price" => "5.50", "total" => "16.50", "unit" => "piece"} =
+      assert %{"quantity" => "3", "unit_price" => "5.50", "total" => "16.50", "unit" => nil} =
                Enum.at(lines, 1)
 
       assert Enum.all?(lines, &(&1["price_on_request"] == false))
@@ -202,7 +202,7 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
 
       [gone, free] = OrderExport.serialize(order)["lines"]
 
-      assert %{"sku" => "RECORDED", "external_id" => nil} = gone
+      assert %{"sku" => "RECORDED", "external_id" => nil, "unit" => nil} = gone
       refute Map.has_key?(gone, "sku_at_order")
       assert %{"sku" => nil, "product_id" => nil} = free
     end
@@ -357,8 +357,67 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
           }
         })
 
-      assert %{"warehouse" => "Branch 5", "postcode" => "02002", "address" => "5 Branch St"} =
-               OrderExport.serialize(branch)["shipping"]["destination"]
+      expected_point = %{
+        "warehouse" => "Branch 5",
+        "warehouse_ref" => "wh-ref",
+        "warehouse_address" => "5 Branch St",
+        "warehouse_postcode" => "02002"
+      }
+
+      # Without contacts: the branch is shown, the buyer's address is not.
+      assert %{"postcode" => nil, "address" => nil} =
+               open = OrderExport.serialize(branch)["shipping"]["destination"]
+
+      assert Map.take(open, Map.keys(expected_point)) == expected_point
+
+      # With contacts: the buyer's address and the branch each under their own keys.
+      assert %{"postcode" => nil, "address" => "home address"} =
+               full = OrderExport.serialize(branch, contacts: true)["shipping"]["destination"]
+
+      assert Map.take(full, Map.keys(expected_point)) == expected_point
+    end
+
+    test "a recorded id that is not a UUID is no product and no method, and costs the others nothing" do
+      {:ok, method} =
+        Shop.create_shipping_method(%{
+          "name" => "Courier",
+          "price" => Decimal.new("1"),
+          "active" => true
+        })
+
+      fine =
+        order!(%{
+          "metadata" => %{"shipping_method_uuid" => method.uuid},
+          "line_items" => [shipping_line()]
+        })
+
+      broken =
+        order!(%{
+          "metadata" => %{"shipping_method_uuid" => "not-a-uuid"},
+          "line_items" => [
+            %{
+              "name" => "A",
+              "quantity" => 1,
+              "unit_price" => "1",
+              "total" => "1",
+              "catalogue_item_uuid" => "not-a-uuid"
+            },
+            %{
+              "name" => "B",
+              "quantity" => 1,
+              "unit_price" => "1",
+              "total" => "1",
+              "catalogue_item_uuid" => 42
+            },
+            shipping_line()
+          ]
+        })
+
+      assert [fine_map, broken_map] = OrderExport.serialize_many([fine, broken])
+
+      assert fine_map["shipping"]["method_id"] == method.uuid
+      assert %{"method_id" => nil, "method_code" => nil} = broken_map["shipping"]
+      assert [%{"product_id" => nil}, %{"product_id" => nil}] = broken_map["lines"]
     end
 
     test "falls back to the shipping line when the method was deleted" do
@@ -440,7 +499,7 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
                "first_name" => "Ivan",
                "last_name" => "Petrenko",
                "middle_name" => nil,
-               "phone" => "+380000000" <> _,
+               "phone" => "+380000000000",
                "email" => "buyer" <> _,
                "company" => nil,
                "tax_id" => nil,
@@ -478,7 +537,7 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
           "first_name" => "Olena",
           "last_name" => "Shevchenko",
           "email" => "olena@example.com",
-          "phone" => "+380501234567",
+          "phone" => "+380000000001",
           "address_line1" => "2 Profile St",
           "city" => "Lviv",
           "postal_code" => "79000",

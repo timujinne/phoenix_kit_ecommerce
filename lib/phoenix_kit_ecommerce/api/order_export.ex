@@ -34,7 +34,17 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
   reads as `true`, the product default. `sku`, `external_id` and `unit` come from the catalogue item
   at the time of the call; the `sku` the order line itself recorded at purchase
   is `sku_at_order`, present only when the two differ. A line of a product the
-  catalogue no longer has keeps the recorded `sku`, and has no `external_id`.
+  catalogue no longer has keeps the recorded `sku`, and has no `external_id` and no
+  `unit`. A recorded product or shipping method id that is not a UUID is read as
+  none.
+
+  ## Shipping destination
+
+  `city` and `city_ref` name the locality; `warehouse`, `warehouse_ref`,
+  `warehouse_address` and `warehouse_postcode` the pickup point (a branch or a
+  locker), which is public. `postcode` and `address` are the buyer's own
+  delivery address (the typed line, otherwise street, house and apartment):
+  personal data, so they are `nil` without `contacts: true`.
 
   ## Sync
 
@@ -161,7 +171,7 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
       "external_id" => item && item.external_id,
       "name" => line["name"],
       "quantity" => quantity(line["quantity"]),
-      "unit" => (item && item.unit) || "piece",
+      "unit" => item && item.unit,
       "unit_price" => amount(line["unit_price"]),
       "total" => amount(line["total"]),
       "taxable" => line["taxable"] != false,
@@ -175,12 +185,18 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
 
   defp put_sku_at_order(line, _sku, _recorded_sku), do: line
 
-  defp line_item_uuid(line) do
-    case line["catalogue_item_uuid"] do
-      uuid when is_binary(uuid) -> uuid
-      _ -> nil
+  # A recorded id that is not a UUID is no product: the line has no product_id
+  # and the lookups never see it (a bad value would fail the whole query).
+  defp line_item_uuid(line), do: cast_uuid(line["catalogue_item_uuid"])
+
+  defp cast_uuid(value) when is_binary(value) do
+    case Ecto.UUID.cast(value) do
+      {:ok, uuid} -> uuid
+      :error -> nil
     end
   end
+
+  defp cast_uuid(_value), do: nil
 
   defp quantity(value) do
     case Money.to_decimal(value) do
@@ -223,10 +239,7 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
 
   defp methods_of(orders) do
     uuids =
-      for order <- orders,
-          uuid = metadata(order)["shipping_method_uuid"],
-          is_binary(uuid),
-          uniq: true do
+      for order <- orders, uuid = method_uuid(order), uniq: true do
         uuid
       end
 
@@ -239,9 +252,12 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
     end
   end
 
+  defp method_uuid(order), do: cast_uuid(metadata(order)["shipping_method_uuid"])
+
   defp shipping(order, shipping_lines, methods, contacts?) do
     metadata = metadata(order)
-    method = Map.get(methods, metadata["shipping_method_uuid"])
+    method_id = method_uuid(order)
+    method = Map.get(methods, method_id)
     line = List.first(shipping_lines)
 
     if is_nil(method) and is_nil(line) do
@@ -250,7 +266,7 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
       provider = map_or_empty(metadata["shipping_provider"])
 
       %{
-        "method_id" => metadata["shipping_method_uuid"],
+        "method_id" => method_id,
         "method_code" => method && method.slug,
         "name" => (method && method.name) || (line && line["name"]),
         "provider" => provider["provider"],
@@ -262,8 +278,9 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
     end
   end
 
-  # The city and the pickup point (a branch or a locker) are public places. The
-  # buyer's own delivery address is personal data and goes with the contacts only.
+  # The city and the pickup point (a branch or a locker) are public places, and
+  # have their own keys. The buyer's own delivery address (`postcode` and
+  # `address`) is personal data and goes with the contacts only.
   defp destination(%{} = destination, contacts?) do
     locality = map_or_empty(destination["locality"])
     point = map_or_empty(destination["pickup_point"])
@@ -274,9 +291,11 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
       "city_ref" => locality["id"],
       "warehouse" => point["name"] || point["number"],
       "warehouse_ref" => point["id"],
+      "warehouse_address" => point["address"],
+      "warehouse_postcode" => point["postcode"],
       "country" => locality["country"],
-      "postcode" => address["postcode"] || point["postcode"] || locality["postcode"],
-      "address" => address_line(address) || point["address"]
+      "postcode" => address["postcode"],
+      "address" => address_line(address)
     }
   end
 

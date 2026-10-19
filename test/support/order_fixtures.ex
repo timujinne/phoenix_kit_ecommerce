@@ -32,7 +32,7 @@ defmodule PhoenixKitEcommerce.OrderFixtures do
         "type" => "individual",
         "first_name" => "Ivan",
         "last_name" => "Petrenko",
-        "phone" => "+380000000#{n}",
+        "phone" => "+380000000000",
         "email" => "buyer#{n}@example.com",
         "country" => "UA",
         "city" => "Kyiv",
