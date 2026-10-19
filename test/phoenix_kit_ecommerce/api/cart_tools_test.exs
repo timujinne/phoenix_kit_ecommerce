@@ -9,12 +9,14 @@ defmodule PhoenixKitEcommerce.API.CartToolsTest do
   # at run time only and the tools are matched as plain maps.
   @compile {:no_warn_undefined,
             [
+              PhoenixKit.API.ControlFields,
               PhoenixKit.API.Executor,
               PhoenixKit.API.Registry,
               PhoenixKit.API.ToolLint,
               {PhoenixKit.ModuleRegistry, :all_api_tools, 0}
             ]}
 
+  alias PhoenixKit.API.ControlFields
   alias PhoenixKit.API.Executor
   alias PhoenixKit.API.Registry
   alias PhoenixKit.API.ToolLint
@@ -44,6 +46,61 @@ defmodule PhoenixKitEcommerce.API.CartToolsTest do
     for %{handler: {module, fun}} <- CartTools.tools() do
       assert Code.ensure_loaded?(module) and function_exported?(module, fun, 2),
              "#{inspect(module)}.#{fun}/2 is missing"
+    end
+  end
+
+  describe "the tools that cannot replay and the idempotency key" do
+    @no_replay ~w(shop.create_cart shop.get_checkout_link)
+
+    defp tool_named(name, replay?),
+      do: Enum.find(CartTools.tools(true, replay?), &(&1.name == name))
+
+    test "create_cart says it is not idempotent, get_checkout_link that each call issues a new link" do
+      replay? = CartTools.replay_available?()
+
+      assert tool_named("shop.create_cart", replay?).description =~ "Not idempotent"
+
+      assert tool_named("shop.get_checkout_link", replay?).description =~
+               "Each call issues a new link"
+    end
+
+    @tag :core_replay
+    test "on a core that can give up replay, neither is offered an idempotency_key" do
+      assert CartTools.replay_available?()
+
+      for name <- @no_replay do
+        tool = tool_named(name, true)
+
+        assert tool.replay == false, name
+        refute ControlFields.replay_tool?(tool), name
+        refute Map.has_key?(ControlFields.properties(tool), "idempotency_key"), name
+      end
+    end
+
+    @tag :core_replay
+    test "the other write tools keep their idempotency_key" do
+      assert CartTools.replay_available?()
+
+      for name <- ~w(shop.set_cart_items shop.clear_cart shop.set_shipping) do
+        assert ControlFields.replay_tool?(tool_named(name, true)), name
+      end
+    end
+
+    test "replay_available? follows the core's exported marker, not a version" do
+      core_can? =
+        Code.ensure_loaded?(ControlFields) and
+          function_exported?(ControlFields, :replay_tool?, 1)
+
+      assert CartTools.replay_available?() == core_can?
+    end
+
+    test "a core that does not know :replay still gets both tools, without the field" do
+      for name <- @no_replay do
+        tool = tool_named(name, false)
+
+        assert tool, name
+        assert Map.get(tool, :replay, true) == true, name
+      end
     end
   end
 
@@ -92,7 +149,12 @@ defmodule PhoenixKitEcommerce.API.CartToolsTest do
     items = tool.input_schema["properties"]["items"]
     assert items["maxItems"] == 50 and items["minItems"] == 1
     assert items["items"]["required"] == ["product_id"]
-    refute Map.has_key?(items["items"]["properties"]["quantity"], "type")
+    quantity = items["items"]["properties"]["quantity"]
+    refute Map.has_key?(quantity, "type")
+    refute Map.has_key?(quantity, "minimum")
+    refute Map.has_key?(quantity, "maximum")
+    assert quantity["description"] =~ "whole number from 0 to 99"
+    assert quantity["description"] =~ "quantity_invalid while the other lines apply"
   end
 
   test "set_cart_items costs one unit per ten lines, at most ten, whatever the input" do

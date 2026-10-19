@@ -11,6 +11,8 @@ defmodule PhoenixKitEcommerce.API.CardsTest do
   alias PhoenixKitEcommerce.API.Cards
   alias PhoenixKitEcommerce.API.Context
   alias PhoenixKitEcommerce.API.Loader
+  alias PhoenixKitEcommerce.API.Public.Schemas
+  alias PhoenixKitEcommerce.Options
 
   setup do
     disable_languages!()
@@ -171,6 +173,302 @@ defmodule PhoenixKitEcommerce.API.CardsTest do
            ]
 
     assert card["title"] == "Red Vase"
+  end
+
+  describe "the price of an option value" do
+    defp priced_vase(extra_metadata \\ %{}) do
+      vase(%{
+        metadata:
+          Map.merge(
+            %{
+              "_option_values" => %{"size" => ["Large", "Small"], "colour" => ["Red"]},
+              "_option_labels" => %{"size" => "Size", "colour" => "Colour"},
+              "_price_modifiers" => %{"size" => %{"Large" => "10.00", "Small" => "0"}}
+            },
+            extra_metadata
+          )
+      })
+    end
+
+    defp finish_option do
+      %{
+        "key" => "finish",
+        "label" => "Finish",
+        "type" => "select",
+        "options" => ["Matt", "Gloss"],
+        "affects_price" => true,
+        "modifier_type" => "percent",
+        "price_modifiers" => %{"Matt" => "0", "Gloss" => "20"}
+      }
+    end
+
+    defp global_finish!, do: {:ok, _} = Options.update_global_options([finish_option()])
+
+    defp option(card, key), do: Enum.find(card["options"], &(&1["key"] == key))
+
+    # A Legacy product: no value labels or slugs, so every key is a slugified label.
+    defp many_sizes(count) do
+      values = for n <- 1..count, do: "Size #{n}"
+
+      {product, _root, _leaf} =
+        priced_vase(%{
+          "_option_values" => %{"size" => values},
+          "_price_modifiers" => %{
+            "size" => Map.new(Enum.with_index(values, 1), fn {v, n} -> {v, "#{n}.00"} end)
+          }
+        })
+
+      {product, values}
+    end
+
+    test "an option that affects the price gives each value the product's price with it chosen",
+         %{context: context} do
+      {product, _root, _leaf} = priced_vase()
+
+      card = Cards.card(record(product), context)
+
+      assert %{"affects_price" => true, "values" => values} = option(card, "size")
+
+      assert values == [
+               %{
+                 "key" => "large",
+                 "label" => "Large",
+                 "price" => %{"amount" => "30.00", "currency" => "USD"}
+               },
+               %{
+                 "key" => "small",
+                 "label" => "Small",
+                 "price" => %{"amount" => "20.00", "currency" => "USD"}
+               }
+             ]
+
+      assert card["price"] == %{"amount" => "20.00", "currency" => "USD"}
+    end
+
+    test "an option that does not affect the price has no price on its values",
+         %{context: context} do
+      {product, _root, _leaf} = priced_vase()
+
+      assert %{"affects_price" => false, "values" => [value]} =
+               option(Cards.card(record(product), context), "colour")
+
+      assert value == %{"key" => "red", "label" => "Red"}
+    end
+
+    test "prices are in the response currency", %{} do
+      {product, _root, _leaf} = priced_vase()
+
+      card = Cards.card(record(product), context("en", %{"currency" => "EUR"}))
+
+      assert [%{"price" => large}, %{"price" => small}] = option(card, "size")["values"]
+      assert large == %{"amount" => "27.27", "currency" => "EUR"}
+      assert small == %{"amount" => "18.18", "currency" => "EUR"}
+    end
+
+    test "a percent modifier is a price too, and each value is priced on its own",
+         %{context: context} do
+      {product, _root, _leaf} =
+        priced_vase(%{
+          "_option_values" => %{"size" => ["Large", "Small"], "finish" => ["Matt", "Gloss"]},
+          "_price_modifiers" => %{
+            "size" => %{"Large" => "10.00", "Small" => "0"},
+            "finish" => %{"Gloss" => %{"type" => "percent", "value" => "20"}, "Matt" => "0"}
+          }
+        })
+
+      card = Cards.card(record(product), context)
+
+      prices = Map.new(option(card, "finish")["values"], &{&1["key"], &1["price"]})
+      %{"gloss" => gloss, "matt" => matt} = prices
+
+      assert gloss == %{"amount" => "24.00", "currency" => "USD"}
+      assert matt == %{"amount" => "20.00", "currency" => "USD"}
+
+      # Not the 36.00 of Large with Gloss: one value of one option at a time.
+      assert [%{"price" => %{"amount" => "30.00"}} | _] = option(card, "size")["values"]
+    end
+
+    test "a global option with modifiers prices its values although the product carries none",
+         %{context: context} do
+      global_finish!()
+
+      {product, _root, _leaf} =
+        priced_vase(%{
+          "_option_values" => %{"size" => ["Large", "Small"], "finish" => ["Matt", "Gloss"]}
+        })
+
+      card = Cards.card(record(product), context)
+
+      assert %{"affects_price" => true, "values" => values} = option(card, "finish")
+
+      assert Map.new(values, &{&1["key"], &1["price"]}) == %{
+               "gloss" => %{"amount" => "24.00", "currency" => "USD"},
+               "matt" => %{"amount" => "20.00", "currency" => "USD"}
+             }
+
+      # What the cart charges for the same choice.
+      assert Shop.calculate_product_price(product, %{"finish" => "Gloss"}) == Decimal.new("24.00")
+      assert Enum.all?(option(card, "size")["values"], &Map.has_key?(&1, "price"))
+    end
+
+    test "a category option with modifiers prices its values too", %{context: context} do
+      {product, _root, leaf} =
+        priced_vase(%{"_option_values" => %{"finish" => ["Matt", "Gloss"]}})
+
+      {:ok, _} = Options.update_category_options(leaf, [finish_option()])
+
+      card = Cards.card(record(product), context)
+
+      assert %{"affects_price" => true, "values" => values} = option(card, "finish")
+
+      assert Map.new(values, &{&1["key"], &1["price"]}) == %{
+               "gloss" => %{"amount" => "24.00", "currency" => "USD"},
+               "matt" => %{"amount" => "20.00", "currency" => "USD"}
+             }
+    end
+
+    test "a global option whose modifiers are all zero is not price-affecting", %{
+      context: context
+    } do
+      {:ok, _} =
+        Options.update_global_options([
+          %{finish_option() | "price_modifiers" => %{"Matt" => "0", "Gloss" => "0"}}
+        ])
+
+      {product, _root, _leaf} =
+        priced_vase(%{"_option_values" => %{"finish" => ["Matt", "Gloss"]}})
+
+      card = Cards.card(record(product), context)
+
+      assert %{"affects_price" => false, "values" => values} = option(card, "finish")
+      refute Enum.any?(values, &Map.has_key?(&1, "price"))
+    end
+
+    test "a global option the product has no values for is not announced or priced",
+         %{context: context} do
+      global_finish!()
+      {product, _root, _leaf} = priced_vase()
+
+      card = Cards.card(record(product), context)
+
+      assert option(card, "finish") == nil
+      assert option(card, "size")["affects_price"] == true
+    end
+
+    test "many values of a priced option are priced by the cart's own sum, one by one",
+         %{context: context} do
+      {product, values} = many_sizes(60)
+
+      card = Cards.card(record(product), context)
+      announced = option(card, "size")["values"]
+
+      assert length(announced) == 60
+
+      for {value, index} <- Enum.with_index(values, 1) do
+        entry = Enum.find(announced, &(&1["label"] == value))
+        expected = Shop.calculate_product_price(product, %{"size" => value})
+
+        assert entry["price"]["amount"] == Decimal.to_string(expected, :normal)
+        assert expected == Decimal.add(Decimal.new("20.00"), index)
+      end
+    end
+
+    test "pricing the values of an option slugifies each value a bounded number of times",
+         %{context: context} do
+      {product, _values} = many_sizes(60)
+      record = record(product)
+      mfa = {PhoenixKit.Utils.Slug, :slugify, 2}
+
+      :erlang.trace_pattern(mfa, true, [:call_count])
+
+      try do
+        Cards.card(record, context)
+        {:call_count, calls} = :erlang.trace_info(mfa, :call_count)
+
+        # About two a value (the announced key, the stored value's key). Working
+        # a key back to its stored value one value at a time is 60 x 60.
+        assert calls <= 5 * 60
+      after
+        :erlang.trace_pattern(mfa, false, [:call_count])
+      end
+    end
+
+    test "values keyed by the catalogue's own keys are priced the same way", %{context: context} do
+      keys = for n <- 1..60, do: "v#{n}"
+
+      {product, _root, _leaf} =
+        priced_vase(%{
+          "_option_values" => %{"size" => keys},
+          "_value_labels" => %{"size" => Map.new(keys, &{&1, "Size #{&1}"})},
+          "_price_modifiers" => %{
+            "size" => Map.new(Enum.with_index(keys, 1), fn {key, n} -> {key, "#{n}.00"} end)
+          }
+        })
+
+      announced = option(Cards.card(record(product), context), "size")["values"]
+
+      assert length(announced) == 60
+      assert Enum.all?(announced, &Map.has_key?(&1, "price"))
+
+      for %{"key" => key, "price" => %{"amount" => amount}} <- announced do
+        expected = Shop.calculate_product_price(product, %{"size" => key})
+        assert amount == Decimal.to_string(expected, :normal)
+      end
+    end
+
+    test "two stored values that share a key are priced as the first, which is the one announced",
+         %{context: context} do
+      {product, _root, _leaf} =
+        priced_vase(%{
+          "_option_values" => %{"size" => ["A b", "a-b"]},
+          "_price_modifiers" => %{"size" => %{"A b" => "5.00", "a-b" => "9.00"}}
+        })
+
+      assert %{"values" => [%{"label" => "A b", "price" => price}]} =
+               option(Cards.card(record(product), context), "size")
+
+      assert price == %{"amount" => "25.00", "currency" => "USD"}
+    end
+
+    test "a card built from a lookup that read no schemas prices the same",
+         %{context: context} do
+      global_finish!()
+
+      {product, _root, _leaf} =
+        priced_vase(%{"_option_values" => %{"finish" => ["Matt", "Gloss"]}})
+
+      record = record(product)
+      lookup = Cards.lookup([record], keys: ["id"])
+
+      assert Cards.card(record, context, lookup: lookup) == Cards.card(record, context)
+
+      assert %{"affects_price" => true} =
+               option(Cards.card(record, context, lookup: lookup), "finish")
+    end
+
+    test "a product priced on request quotes no price per value", %{context: context} do
+      {product, _root, _leaf} =
+        priced_vase(%{"_price_display" => %{"on_request" => true}})
+
+      for value <- option(Cards.card(record(product), context), "size")["values"] do
+        refute Map.has_key?(value, "price")
+      end
+    end
+
+    test "the card's schema describes the price as money" do
+      value = Schemas.card()["properties"]["options"]["items"]["properties"]["values"]["items"]
+
+      price = value["properties"]["price"]
+
+      assert Map.delete(price, "description") == Schemas.money()
+      assert price["description"] =~ "only this value chosen"
+
+      assert Schemas.card()["properties"]["options"]["items"]["properties"]["affects_price"][
+               "description"
+             ] =~ "global or category"
+
+      assert value["required"] == ["key", "label"]
+    end
   end
 
   test "card/3 can return the description as Markdown", %{context: context} do

@@ -376,6 +376,36 @@ defmodule PhoenixKitEcommerce.Search.QueryTest do
            ]
   end
 
+  test "facets: false skips the facets and changes nothing else", t do
+    lean = run(%{facets: false})
+    full = run(%{})
+
+    assert lean.facets == nil
+    refute lean.truncated?
+    assert Map.drop(lean, [:facets]) == Map.drop(full, [:facets])
+    assert run(%{}).facets == run(%{facets: true}).facets
+    assert t.vases in Map.keys(full.facets.categories)
+  end
+
+  test "option_vocabulary lists the option keys and values the index holds in a language" do
+    assert Query.option_vocabulary("en") == %{
+             "colour" => ["red"],
+             "size" => ["large", "small"]
+           }
+
+    assert Query.option_vocabulary("de") == %{}
+  end
+
+  test "missing_option_pairs names the pairs no product of the language holds" do
+    assert "en"
+           |> Query.missing_option_pairs(["size:large", "size:huge", "nope:x", "colour:red"])
+           |> Enum.sort() == ["nope:x", "size:huge"]
+
+    assert Query.missing_option_pairs("en", []) == []
+    assert Query.missing_option_pairs("en", ["size:large"]) == []
+    assert Query.missing_option_pairs("de", ["size:large"]) == ["size:large"]
+  end
+
   test "option facets are ordered by key, then by count (highest first), then by value" do
     cup =
       legacy_product!(%{"en" => "Small Cup"}, %{
@@ -409,6 +439,12 @@ defmodule PhoenixKitEcommerce.Search.QueryTest do
     assert length(over.ids) == 1
     # counted over the capped 5 000 rows, not over all 5 001
     assert over.facets.on_sale == 5_000
+
+    # Without facets nothing was cut, so nothing is reported as cut.
+    lean = run(%{limit: 1, facets: false}, "xx")
+    assert lean.count == 5_001
+    assert lean.facets == nil
+    refute lean.truncated?
   end
 
   defp insert_rows!(from, to) do

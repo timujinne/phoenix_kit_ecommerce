@@ -229,6 +229,67 @@ defmodule PhoenixKitEcommerce.API.CartOptionsTest do
     end
   end
 
+  describe "labelled/3" do
+    defp labelled_product do
+      %Product{
+        uuid: Ecto.UUID.generate(),
+        status: "active",
+        metadata: %{
+          "_option_values" => %{"size" => ["5-inches-13-cm", "10-inches-25-cm"]},
+          "_option_labels" => %{"size" => "Größe"},
+          "_value_labels" => %{
+            "size" => %{"5-inches-13-cm" => "5 Zoll (13 cm)", "10-inches-25-cm" => "10 Zoll"}
+          }
+        }
+      }
+    end
+
+    test "adds the option's name and the value's label from the product's own options" do
+      assert CartOptions.labelled(opts([{"size", "5-inches-13-cm"}]), labelled_product()) == [
+               %{
+                 attribute_key: "size",
+                 value_key: "5-inches-13-cm",
+                 attribute_label: "Größe",
+                 value_label: "5 Zoll (13 cm)"
+               }
+             ]
+    end
+
+    test "a legacy product's value is its own label" do
+      product = %Product{
+        uuid: Ecto.UUID.generate(),
+        status: "active",
+        metadata: %{"_option_values" => %{"cup_color" => ["Red Gold"]}}
+      }
+
+      assert [%{attribute_label: "Cup Color", value_label: "Red Gold"}] =
+               CartOptions.labelled(opts([{"cup_color", "red-gold"}]), product)
+    end
+
+    test "a line whose product is gone keeps the name from its key and the value it stored" do
+      options = opts([{"size", "5-inches-13-cm"}])
+
+      assert [%{attribute_label: "Size", value_label: "5 inches"}] =
+               CartOptions.labelled(options, nil, %{"size" => "5 inches"})
+
+      assert [%{attribute_label: "Size", value_label: "5-inches-13-cm"}] =
+               CartOptions.labelled(options, nil)
+    end
+
+    test "a value the product no longer offers falls back the same way" do
+      options = opts([{"size", "20-inches"}])
+
+      assert [%{attribute_label: "Größe", value_label: "20 Zoll"}] =
+               CartOptions.labelled(options, labelled_product(), %{"size" => "20 Zoll"})
+    end
+
+    test "matches the stored value by the neutral key of its attribute" do
+      options = opts([{"a_b", "x"}])
+
+      assert [%{value_label: "X!"}] = CartOptions.labelled(options, nil, %{"a:b" => "X!"})
+    end
+  end
+
   describe "stored_form/1 and canonical/1" do
     test "store string keys, compare as sorted pairs" do
       options = opts([{"size", "M"}, {"color", "red"}])

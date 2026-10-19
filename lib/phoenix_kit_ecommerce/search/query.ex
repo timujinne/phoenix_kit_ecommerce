@@ -48,6 +48,8 @@ defmodule PhoenixKitEcommerce.Search.Query do
       `:discount_desc`, `:newest`; anything else raises `FunctionClauseError`.
     * `limit` - a positive integer, `offset` - a non-negative integer (a
       negative offset raises `Postgrex.Error`).
+    * `facets` - `false` skips the facets (their pass over up to 5000 rows
+      is not run, `facets` is `nil` and `truncated?` is `false`). Default `true`.
 
   `language` is the code exactly as it is indexed (`"de"` finds no `"de-DE"`
   rows). It is not normalized here.
@@ -94,7 +96,8 @@ defmodule PhoenixKitEcommerce.Search.Query do
     made_to_order: nil,
     sort: :relevance,
     limit: 20,
-    offset: 0
+    offset: 0,
+    facets: true
   }
 
   @type params :: %{
@@ -108,14 +111,15 @@ defmodule PhoenixKitEcommerce.Search.Query do
           optional(:made_to_order) => boolean() | nil,
           optional(:sort) => :relevance | :price_asc | :price_desc | :discount_desc | :newest,
           optional(:limit) => pos_integer(),
-          optional(:offset) => non_neg_integer()
+          optional(:offset) => non_neg_integer(),
+          optional(:facets) => boolean()
         }
 
   @type result :: %{
           ids: [String.t()],
           count: non_neg_integer(),
           mode: :browse | :fulltext | :typo,
-          facets: map(),
+          facets: map() | nil,
           truncated?: boolean(),
           refused?: boolean()
         }
@@ -142,14 +146,14 @@ defmodule PhoenixKitEcommerce.Search.Query do
       |> select([e], e.item_uuid)
       |> RepoHelper.repo().all()
 
-    facets = facets(matched)
+    facets = if params.facets, do: facets(matched)
 
     %{
       ids: ids,
       count: count,
       mode: if(mode == :refused, do: :fulltext, else: mode),
       facets: facets,
-      truncated?: count > @facet_cap,
+      truncated?: params.facets and count > @facet_cap,
       refused?: mode == :refused
     }
   end
@@ -211,6 +215,57 @@ defmodule PhoenixKitEcommerce.Search.Query do
     )
     |> RepoHelper.repo().all()
     |> Map.new()
+  end
+
+  @doc """
+  The `key:value` pairs of `pairs` that no product of `language` holds: one
+  index probe (the GIN index on the pairs) per pair. A probe reads the rows that
+  hold its pair as a bitmap before it answers, so it grows with the number of
+  products that hold the pair, not with the catalogue: measured on a 200,000-row
+  index with 8 pairs a row, a pair no row holds 0.1 ms, a pair every row holds
+  15 ms, 500 distinct pairs that exist 97 ms in all (a query carries at most 1,000).
+  """
+  @spec missing_option_pairs(String.t(), [String.t()]) :: [String.t()]
+  def missing_option_pairs(_language, []), do: []
+
+  def missing_option_pairs(language, pairs) when is_binary(language) and is_list(pairs) do
+    held =
+      from(e in Entry,
+        where:
+          e.language == ^language and
+            fragment("? @> ARRAY[?]::text[]", e.option_pairs, parent_as(:pair).pair)
+      )
+
+    from(p in fragment("SELECT unnest(?::text[]) AS pair", ^pairs),
+      as: :pair,
+      where: not exists(held),
+      select: p.pair
+    )
+    |> RepoHelper.repo().all()
+  end
+
+  @doc """
+  The option keys and values the index holds in one language, sorted:
+  `%{"size" => ["large", "small"]}`. What an `options` filter can match. It
+  reads every row of the language (the GIN index cannot help), so a caller
+  asks for it only once a filter has matched nothing.
+  """
+  @spec option_vocabulary(String.t()) :: %{String.t() => [String.t()]}
+  def option_vocabulary(language) when is_binary(language) do
+    from(e in Entry,
+      where: e.language == ^language,
+      distinct: true,
+      select: fragment("unnest(?)", e.option_pairs)
+    )
+    |> RepoHelper.repo().all()
+    |> Enum.flat_map(fn pair ->
+      case String.split(pair, ":", parts: 2) do
+        [key, value] -> [{key, value}]
+        _malformed -> []
+      end
+    end)
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    |> Map.new(fn {key, values} -> {key, Enum.sort(values)} end)
   end
 
   @doc "The index row of one product in one language, or `nil`. `item_uuid` must be a valid UUID."

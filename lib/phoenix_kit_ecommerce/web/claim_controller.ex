@@ -64,6 +64,7 @@ defmodule PhoenixKitEcommerce.Web.ClaimController do
         |> assign(:content_language, claim.language)
         |> render(:interstitial,
           cart: cart,
+          options: CartView.labelled_options(cart, claim.language),
           existing: existing_cart(browser),
           action: Claims.path(token),
           revision: CartView.revision(cart),
