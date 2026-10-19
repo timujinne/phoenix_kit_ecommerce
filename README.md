@@ -369,10 +369,11 @@ The key owner needs `shop` to read orders and the `shop.manage_orders`
 permission for `ecommerce.orders:sync` and `ecommerce.orders:customer`. The
 order tools answer only with the buyer's `id` and `type` unless the key holds
 `ecommerce.orders:customer`, which adds name, phone, email, company, tax id and
-address, and the buyer's delivery address in `shipping.destination` (the city and
-a pickup point are always shown). Internal notes and session data never leave;
-the order's `notes` are the buyer's own comment, returned as written, and can
-hold contact details if the buyer typed them.
+address, the buyer's delivery address in `shipping.destination` (the city and
+a pickup point are always shown) and the order's `notes`: what the buyer types
+can hold a phone number or an address, so `notes` is gated like the other
+buyer-entered fields and the key is absent without the scope. Internal notes and
+session data never leave.
 
 The feed is ordered by `(updated_at, uuid)` and paged by an opaque cursor.
 `sync: "pending"` returns the orders the system has not taken, or that changed

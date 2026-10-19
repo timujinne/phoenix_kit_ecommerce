@@ -30,7 +30,7 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
       assert %{"confirmed_at" => nil, "paid_at" => nil, "cancelled_at" => nil} = map
       assert map["currency"] == "UAH"
       refute Map.has_key?(map, "tax_included")
-      assert map["notes"] == "ring twice"
+      refute Map.has_key?(map, "notes")
 
       assert map["totals"] == %{
                "subtotal" => "900.00",
@@ -412,6 +412,16 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
                "type" => "user",
                "id" => order.user_uuid
              }
+    end
+
+    test "the buyer's notes go with the contacts; without them the key is absent" do
+      order = order!(%{"notes" => "call +380000000000, flat 5"})
+
+      refute Map.has_key?(OrderExport.serialize(order), "notes")
+      refute Map.has_key?(OrderExport.serialize(order, include: [:lines]), "notes")
+      refute Jason.encode!(OrderExport.serialize(order)) =~ "+380000000000"
+
+      assert OrderExport.serialize(order, contacts: true)["notes"] == "call +380000000000, flat 5"
     end
 
     test "a guest checkout is a guest" do

@@ -278,11 +278,14 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
 
       [without] = list(%{}, user)["orders"]
       assert Map.keys(without["customer"]) |> Enum.sort() == ["id", "type"]
+      refute Map.has_key?(without, "notes")
 
       [with] = list(%{}, user, [@read, @customer])["orders"]
 
       assert %{"first_name" => "Ivan", "email" => "buyer" <> _, "address" => %{"city" => "Kyiv"}} =
                with["customer"]
+
+      assert with["notes"] == "ring twice"
     end
 
     test "refuses a limit above 100 instead of cutting it", %{user: user} do

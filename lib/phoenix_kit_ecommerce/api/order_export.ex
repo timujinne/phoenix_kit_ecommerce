@@ -8,8 +8,8 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
       OrderExport.serialize_many(orders, include: [:lines, :payment])
 
   The map holds `id`, `number`, `status`, the timestamps, `currency`, `totals`
-  (`subtotal`, `discount`, `shipping`, `tax`, `total`), `notes`, `sync` and the
-  sections `lines`, `shipping`, `payment` and `customer`.
+  (`subtotal`, `discount`, `shipping`, `tax`, `total`), `sync`, `notes` (with
+  contacts only) and the sections `lines`, `shipping`, `payment` and `customer`.
 
   There is no flag saying whether prices include tax: the shop has no such
   setting, it works out `tax` from its tax rate and adds it to `total`. A caller
@@ -19,10 +19,12 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
 
     * `:include` - the sections to build, any of `:lines`, `:shipping`,
       `:payment`, `:customer`; all four by default.
-    * `:contacts` - whether `customer` carries the buyer's name, phone, email,
-      company, tax id and address. Without it the block holds only the buyer's
-      `id` and `type`, so a caller without the right to personal data cannot
-      get it by asking for the section. Default `false`.
+    * `:contacts` - whether the buyer-entered data is included: in `customer`
+      the name, phone, email, company, tax id and address, in `shipping` the
+      delivery address, and the order's `notes`. Without it `customer` holds
+      only the buyer's `id` and `type`, the delivery address is `nil` and
+      `notes` is absent, so a caller without the right to personal data cannot
+      get it by asking for a section. Default `false`.
 
   ## Lines
 
@@ -96,9 +98,9 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
       "cancelled_at" => time(order.cancelled_at),
       "currency" => order.currency,
       "totals" => totals(order, shipping_lines),
-      "notes" => order.notes,
       "sync" => Order.sync(order)
     }
+    |> put_notes(order, contacts?)
     |> put_section(:lines, include, fn -> lines(order, lookups.items) end)
     |> put_section(:shipping, include, fn ->
       shipping(order, shipping_lines, lookups.methods, contacts?)
@@ -106,6 +108,11 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
     |> put_section(:payment, include, fn -> payment(order) end)
     |> put_section(:customer, include, fn -> customer(order, contacts?) end)
   end
+
+  # The buyer types the notes, and what they type is often a phone number or an
+  # address: they go with the contacts, and without them the key is absent.
+  defp put_notes(map, order, true), do: Map.put(map, "notes", order.notes)
+  defp put_notes(map, _order, false), do: map
 
   defp put_section(map, section, include, build) do
     if section in include, do: Map.put(map, Atom.to_string(section), build.()), else: map
