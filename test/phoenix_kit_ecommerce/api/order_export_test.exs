@@ -29,7 +29,7 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
       assert {:ok, _, 0} = DateTime.from_iso8601(map["updated_at"])
       assert %{"confirmed_at" => nil, "paid_at" => nil, "cancelled_at" => nil} = map
       assert map["currency"] == "UAH"
-      assert map["tax_included"] == false
+      refute Map.has_key?(map, "tax_included")
       assert map["notes"] == "ring twice"
 
       assert map["totals"] == %{
@@ -205,6 +205,36 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
       assert %{"sku" => nil, "product_id" => nil} = free
     end
 
+    test "say whether each line was taxable; a line that does not say reads as taxable" do
+      order =
+        order!(%{
+          "tax_amount" => Decimal.new("18.00"),
+          "line_items" => [
+            %{
+              "name" => "Taxed",
+              "quantity" => 1,
+              "unit_price" => "10",
+              "total" => "10",
+              "taxable" => true
+            },
+            %{
+              "name" => "Zero rated",
+              "quantity" => 1,
+              "unit_price" => "5",
+              "total" => "5",
+              "taxable" => false
+            },
+            %{"name" => "Old line", "quantity" => 1, "unit_price" => "1", "total" => "1"}
+          ]
+        })
+
+      map = OrderExport.serialize(order)
+
+      assert Enum.map(map["lines"], & &1["taxable"]) == [true, false, true]
+      assert map["totals"]["tax"] == "18.00"
+      refute Map.has_key?(map, "tax_included")
+    end
+
     test "flag a line sold at a price on request" do
       order =
         order!(%{
@@ -269,6 +299,64 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
              } = OrderExport.serialize(order)["shipping"]
 
       assert method_id == method.uuid
+    end
+
+    test "the buyer's delivery address goes with the contacts only; the pickup point is public" do
+      courier =
+        order!(%{
+          "line_items" => [shipping_line()],
+          "metadata" => %{
+            "shipping_destination" => %{
+              "locality" => %{"id" => "city-ref", "name" => "Kyiv", "country" => "UA"},
+              "address" => %{
+                "postcode" => "01001",
+                "street" => "Khreshchatyk",
+                "house" => "1",
+                "apartment" => "5"
+              }
+            }
+          }
+        })
+
+      assert %{"city" => "Kyiv", "postcode" => nil, "address" => nil} =
+               OrderExport.serialize(courier)["shipping"]["destination"]
+
+      assert %{"city" => "Kyiv", "postcode" => "01001", "address" => "Khreshchatyk 1 5"} =
+               OrderExport.serialize(courier, contacts: true)["shipping"]["destination"]
+
+      typed =
+        order!(%{
+          "line_items" => [shipping_line()],
+          "metadata" => %{
+            "shipping_destination" => %{
+              "address" => %{"line" => "1 Free Text St", "street" => "ignored"}
+            }
+          }
+        })
+
+      assert %{"address" => nil} = OrderExport.serialize(typed)["shipping"]["destination"]
+
+      assert %{"address" => "1 Free Text St"} =
+               OrderExport.serialize(typed, contacts: true)["shipping"]["destination"]
+
+      branch =
+        order!(%{
+          "line_items" => [shipping_line()],
+          "metadata" => %{
+            "shipping_destination" => %{
+              "pickup_point" => %{
+                "id" => "wh-ref",
+                "name" => "Branch 5",
+                "postcode" => "02002",
+                "address" => "5 Branch St"
+              },
+              "address" => %{"line" => "home address"}
+            }
+          }
+        })
+
+      assert %{"warehouse" => "Branch 5", "postcode" => "02002", "address" => "5 Branch St"} =
+               OrderExport.serialize(branch)["shipping"]["destination"]
     end
 
     test "falls back to the shipping line when the method was deleted" do

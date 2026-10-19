@@ -302,7 +302,16 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
       assert {:error, :validation_failed, _, %{errors: [%{path: "limit"}]}} =
                call("ecommerce.list_orders", %{"limit" => 0}, user)
 
-      for cursor <- ["garbage", Base.url_encode64(~s({"t":"x","u":"y"}), padding: false), "e30"] do
+      broken = fn json -> Base.url_encode64(json, padding: false) end
+
+      for cursor <- [
+            "garbage",
+            broken.(~s({"t":"x","u":"y"})),
+            broken.(~s({"t":123,"u":"#{Ecto.UUID.generate()}"})),
+            broken.(~s({"t":null,"u":"#{Ecto.UUID.generate()}"})),
+            broken.(~s({"t":"2030-01-01T00:00:00Z","u":123})),
+            "e30"
+          ] do
         assert {:error, :validation_failed, _, %{errors: [%{path: "cursor"}]}} =
                  call("ecommerce.list_orders", %{"cursor" => cursor}, user)
       end
@@ -577,6 +586,16 @@ defmodule PhoenixKitEcommerce.API.OrderToolsTest do
       assert entry.metadata["tool"] == "ecommerce.set_order_sync"
       refute inspect(entry.metadata) =~ "N-1"
       refute inspect(entry.metadata) =~ order.billing_snapshot["email"]
+    end
+
+    test "repeating a row writes no second activity entry", %{user: user} do
+      order = order!()
+      input = %{"orders" => [mark(order, %{"external_id" => "GUID-1"})]}
+
+      {:ok, _} = call("ecommerce.set_order_sync", input, user)
+      {:ok, _} = call("ecommerce.set_order_sync", input, user)
+
+      assert_activity_logged("shop.api_order_sync_marked", resource_uuid: order.uuid)
     end
 
     test "a dry run reports what it would do and writes nothing", %{user: user} do

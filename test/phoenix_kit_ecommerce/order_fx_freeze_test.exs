@@ -95,6 +95,8 @@ defmodule PhoenixKitEcommerce.OrderFxFreezeTest do
     [line] = order.line_items
     assert line["base_unit_price"] == "138.00"
     assert line["unit_price"] == "125.45"
+    # The order line keeps whether the product was taxable when it was bought.
+    assert line["taxable"] == true
 
     order_uuid = order.uuid
 

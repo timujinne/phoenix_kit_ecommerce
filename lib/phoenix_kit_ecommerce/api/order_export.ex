@@ -8,9 +8,12 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
       OrderExport.serialize_many(orders, include: [:lines, :payment])
 
   The map holds `id`, `number`, `status`, the timestamps, `currency`, `totals`
-  (`subtotal`, `discount`, `shipping`, `tax`, `total`), `tax_included` (always
-  `false`: the shop adds tax on top of the prices), `notes`, `sync` and the
+  (`subtotal`, `discount`, `shipping`, `tax`, `total`), `notes`, `sync` and the
   sections `lines`, `shipping`, `payment` and `customer`.
+
+  There is no flag saying whether prices include tax: the shop has no such
+  setting, it works out `tax` from its tax rate and adds it to `total`. A caller
+  reads `totals.tax` and the `taxable` flag of each line.
 
   ## Options
 
@@ -24,7 +27,9 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
   ## Lines
 
   A product line is any order line that is not the shipping charge, numbered
-  from 1 in order. `sku`, `external_id` and `unit` come from the catalogue item
+  from 1 in order. `taxable` is whether the product was subject to tax when it
+  was bought; a line recorded before the shop kept that (or written by hand)
+  reads as `true`, the product default. `sku`, `external_id` and `unit` come from the catalogue item
   at the time of the call; the `sku` the order line itself recorded at purchase
   is `sku_at_order`, present only when the two differ. A line of a product the
   catalogue no longer has keeps the recorded `sku`, and has no `external_id`.
@@ -91,12 +96,13 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
       "cancelled_at" => time(order.cancelled_at),
       "currency" => order.currency,
       "totals" => totals(order, shipping_lines),
-      "tax_included" => false,
       "notes" => order.notes,
       "sync" => Order.sync(order)
     }
     |> put_section(:lines, include, fn -> lines(order, lookups.items) end)
-    |> put_section(:shipping, include, fn -> shipping(order, shipping_lines, lookups.methods) end)
+    |> put_section(:shipping, include, fn ->
+      shipping(order, shipping_lines, lookups.methods, contacts?)
+    end)
     |> put_section(:payment, include, fn -> payment(order) end)
     |> put_section(:customer, include, fn -> customer(order, contacts?) end)
   end
@@ -151,6 +157,7 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
       "unit" => (item && item.unit) || "piece",
       "unit_price" => amount(line["unit_price"]),
       "total" => amount(line["total"]),
+      "taxable" => line["taxable"] != false,
       "price_on_request" => line["price_on_request"] == true
     }
     |> put_sku_at_order(sku, recorded_sku)
@@ -225,7 +232,7 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
     end
   end
 
-  defp shipping(order, shipping_lines, methods) do
+  defp shipping(order, shipping_lines, methods, contacts?) do
     metadata = metadata(order)
     method = Map.get(methods, metadata["shipping_method_uuid"])
     line = List.first(shipping_lines)
@@ -241,17 +248,19 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
         "name" => (method && method.name) || (line && line["name"]),
         "provider" => provider["provider"],
         "service" => provider["service"],
-        "destination" => destination(metadata["shipping_destination"]),
+        "destination" => destination(metadata["shipping_destination"], contacts?),
         "pay_on_delivery" => metadata["shipping_pay_on_delivery"] == true,
         "amount" => line && amount(line["total"])
       }
     end
   end
 
-  defp destination(%{} = destination) do
+  # The city and the pickup point (a branch or a locker) are public places. The
+  # buyer's own delivery address is personal data and goes with the contacts only.
+  defp destination(%{} = destination, contacts?) do
     locality = map_or_empty(destination["locality"])
     point = map_or_empty(destination["pickup_point"])
-    address = map_or_empty(destination["address"])
+    address = if contacts?, do: map_or_empty(destination["address"]), else: %{}
 
     %{
       "city" => locality["name"],
@@ -260,11 +269,27 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
       "warehouse_ref" => point["id"],
       "country" => locality["country"],
       "postcode" => address["postcode"] || point["postcode"] || locality["postcode"],
-      "address" => address["line"] || point["address"]
+      "address" => address_line(address) || point["address"]
     }
   end
 
-  defp destination(_other), do: nil
+  defp destination(_other, _contacts?), do: nil
+
+  # A free-text line when the buyer typed one, otherwise street, house and
+  # apartment joined, as the shop shows it.
+  defp address_line(address) do
+    case blank_to_nil(address["line"]) do
+      nil ->
+        [address["street"], address["house"], address["apartment"]]
+        |> Enum.map(&blank_to_nil/1)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.join(" ")
+        |> blank_to_nil()
+
+      line ->
+        line
+    end
+  end
 
   # -- payment ----------------------------------------------------------------
 
@@ -287,12 +312,14 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
 
   defp customer(order, contacts?) do
     base = %{
-      "type" => if(metadata(order)["guest_checkout"] == true, do: "guest", else: "user"),
+      "type" => if(guest?(order), do: "guest", else: "user"),
       "id" => order.user_uuid
     }
 
     if contacts?, do: Map.merge(base, contact_details(order)), else: base
   end
+
+  defp guest?(order), do: metadata(order)["guest_checkout"] == true or is_nil(order.user_uuid)
 
   defp contact_details(order) do
     snapshot = map_or_empty(order.billing_snapshot)

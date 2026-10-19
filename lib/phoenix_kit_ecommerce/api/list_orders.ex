@@ -122,7 +122,7 @@ defmodule PhoenixKitEcommerce.API.ListOrders do
 
   defp position(cursor) when is_binary(cursor) do
     with {:ok, json} <- Base.url_decode64(cursor, padding: false),
-         {:ok, %{"t" => time, "u" => uuid}} <- Jason.decode(json),
+         {:ok, %{"t" => time, "u" => uuid}} when is_binary(time) <- Jason.decode(json),
          {:ok, updated_at, _offset} <- DateTime.from_iso8601(time),
          {:ok, uuid} <- Ecto.UUID.cast(uuid) do
       {:ok, {updated_at, uuid}}

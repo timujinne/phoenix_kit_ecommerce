@@ -369,7 +369,10 @@ The key owner needs `shop` to read orders and the `shop.manage_orders`
 permission for `ecommerce.orders:sync` and `ecommerce.orders:customer`. The
 order tools answer only with the buyer's `id` and `type` unless the key holds
 `ecommerce.orders:customer`, which adds name, phone, email, company, tax id and
-address. Internal notes and session data never leave.
+address, and the buyer's delivery address in `shipping.destination` (the city and
+a pickup point are always shown). Internal notes and session data never leave;
+the order's `notes` are the buyer's own comment, returned as written, and can
+hold contact details if the buyer typed them.
 
 The feed is ordered by `(updated_at, uuid)` and paged by an opaque cursor.
 `sync: "pending"` returns the orders the system has not taken, or that changed
@@ -380,6 +383,10 @@ system read, and a row whose revision is out of date answers `conflict` with
 `context.reason` `stale_revision` and leaves the order `pending`. A mark does
 not change the order's `updated_at`. `limit` is 1 to 100; a larger value is
 `validation_failed`, never cut.
+
+The order map has no "prices include tax" flag, because the shop has no such
+setting: it works out `totals.tax` from the tax rate (over the lines marked
+`taxable`) and adds it to `total`.
 
 `PhoenixKitEcommerce.API.OrderExport.serialize/2` builds the same order map for
 code that sends an order to the external system itself.

@@ -5851,7 +5851,11 @@ defmodule PhoenixKitEcommerce do
       # customer agreed as "Price on request" reads "0.00" on a COMMITTED
       # order. The cart line snapshots this; the conversion has to forward it
       # or the snapshot dies at the cart/order boundary.
-      "price_on_request" => metadata["price_on_request"] == true
+      "price_on_request" => metadata["price_on_request"] == true,
+      # Whether the product was subject to tax when it was bought, as the
+      # cart line snapshotted it; the tax of the order was worked out over the
+      # taxable lines only.
+      "taxable" => item.taxable != false
     }
     |> put_selected_spec_keys(item)
   end

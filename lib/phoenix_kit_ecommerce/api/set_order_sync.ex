@@ -62,7 +62,7 @@ defmodule PhoenixKitEcommerce.API.SetOrderSync do
 
     case PhoenixKitBilling.put_order_sync(order, attrs) do
       {:ok, marked} ->
-        log(marked, row, ctx)
+        if marked.metadata["sync"] != order.metadata["sync"], do: log(marked, row, ctx)
         ok(row, marked)
 
       {:error, :stale_revision} ->
@@ -102,7 +102,10 @@ defmodule PhoenixKitEcommerce.API.SetOrderSync do
   # The order as it was resolved is as old as the batch; a row refused for its
   # revision reports the revision stored now.
   defp current_revision(order) do
-    order.uuid |> PhoenixKitBilling.get_order() |> Order.revision()
+    case PhoenixKitBilling.get_order(order.uuid) do
+      nil -> nil
+      current -> Order.revision(current)
+    end
   end
 
   defp changeset_errors(changeset) do
