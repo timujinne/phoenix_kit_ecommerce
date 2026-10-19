@@ -54,5 +54,19 @@
   {"lib/phoenix_kit_ecommerce/api/catalogue_writes.ex",
    "Call to missing or private function PhoenixKitCatalogue.Catalogue.broadcast_item_batch_change/3."},
   {"lib/phoenix_kit_ecommerce/api/batch.ex",
-   "Function PhoenixKit.API.FlowConfig.confirm_batch_over/0 does not exist."}
+   "Function PhoenixKit.API.FlowConfig.confirm_batch_over/0 does not exist."},
+  # The order tools read the revision and the external system's mark of an order
+  # through the billing release that ships `put_order_sync/2`; an older billing
+  # lacks these, and the tools are not offered there (`OrderTools.available?/0`).
+  # Each entry names the one missing function.
+  {"lib/phoenix_kit_ecommerce/api/order_export.ex",
+   "Call to missing or private function PhoenixKitBilling.Order.sync/1."},
+  {"lib/phoenix_kit_ecommerce/api/list_orders.ex",
+   "Call to missing or private function PhoenixKitBilling.Order.where_sync/2."},
+  {"lib/phoenix_kit_ecommerce/api/set_order_sync.ex",
+   "Call to missing or private function PhoenixKitBilling.put_order_sync/2."},
+  {"lib/phoenix_kit_ecommerce/api/set_order_sync.ex",
+   "Call to missing or private function PhoenixKitBilling.Order.sync/1."},
+  {"lib/phoenix_kit_ecommerce/api/set_order_sync.ex",
+   "Call to missing or private function PhoenixKitBilling.Order.revision/1."}
 ]

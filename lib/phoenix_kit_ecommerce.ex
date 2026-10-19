@@ -61,6 +61,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce.API.CartTools
+  alias PhoenixKitEcommerce.API.OrderTools
   alias PhoenixKitEcommerce.API.PublicTools
   alias PhoenixKitEcommerce.Cart
   alias PhoenixKitEcommerce.CartItem
@@ -942,6 +943,12 @@ defmodule PhoenixKitEcommerce do
           description: "Create, edit and delete products and categories"
         },
         %{
+          key: "manage_orders",
+          label: "Manage orders",
+          description:
+            "Mark orders as taken by an external system and read their buyers' contact details through the API"
+        },
+        %{
           key: "manage_carts",
           label: "Manage carts",
           description: "View and act on customer carts (includes their contact details)"
@@ -1230,8 +1237,10 @@ defmodule PhoenixKitEcommerce do
   against cores that predate it. A core without the tool registry gets `[]`
   from each group.
   """
-  def api_tools,
-    do: PhoenixKitEcommerce.API.tools() ++ PublicTools.tools() ++ CartTools.tools()
+  def api_tools do
+    PhoenixKitEcommerce.API.tools() ++
+      OrderTools.tools() ++ PublicTools.tools() ++ CartTools.tools()
+  end
 
   @doc """
   PhoenixKitAI translation adapters (duck-typed discovery — see
@@ -5848,7 +5857,11 @@ defmodule PhoenixKitEcommerce do
       # customer agreed as "Price on request" reads "0.00" on a COMMITTED
       # order. The cart line snapshots this; the conversion has to forward it
       # or the snapshot dies at the cart/order boundary.
-      "price_on_request" => metadata["price_on_request"] == true
+      "price_on_request" => metadata["price_on_request"] == true,
+      # Whether the product was subject to tax when it was bought, as the
+      # cart line snapshotted it; the tax of the order was worked out over the
+      # taxable lines only.
+      "taxable" => item.taxable != false
     }
     |> put_selected_spec_keys(item)
   end

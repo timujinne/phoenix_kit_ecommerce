@@ -21,6 +21,7 @@ defmodule PhoenixKitEcommerce.ModuleCallbacksTest do
   defp groups,
     do: [
       PhoenixKitEcommerce.API,
+      PhoenixKitEcommerce.API.OrderTools,
       PhoenixKitEcommerce.API.PublicTools,
       PhoenixKitEcommerce.API.CartTools
     ]
@@ -70,7 +71,9 @@ defmodule PhoenixKitEcommerce.ModuleCallbacksTest do
   test "on a core with the shop API every group of tools is offered" do
     names = Enum.map(PhoenixKitEcommerce.api_tools(), & &1.name)
 
-    for group <- groups() do
+    # The order tools need a billing that keeps the order revision.
+    for group <- groups(),
+        group != PhoenixKitEcommerce.API.OrderTools or group.available?() do
       tools = group.tools()
       assert tools != [], "#{inspect(group)} offers no tool"
       assert Enum.all?(tools, &(&1.name in names)), "#{inspect(group)} is missing"
@@ -114,10 +117,16 @@ defmodule PhoenixKitEcommerce.ModuleCallbacksTest do
       Path.wildcard("lib/phoenix_kit_ecommerce/web/*.ex")
       |> Enum.map_join("\n", &File.read!/1)
 
+    # An API tool names the permission its key's owner must hold; core enforces it.
+    api_sources =
+      Path.wildcard("lib/phoenix_kit_ecommerce/api/*.ex")
+      |> Enum.map_join("\n", &File.read!/1)
+
     for %{key: key} <- subs do
       full = "shop.#{key}"
 
-      assert MapSet.member?(tab_keys, full) or authz_sources =~ ":#{key}",
+      assert MapSet.member?(tab_keys, full) or authz_sources =~ ":#{key}" or
+               api_sources =~ ~s(permission: "#{full}"),
              "sub-permission #{inspect(full)} is declared but never enforced"
     end
   end
