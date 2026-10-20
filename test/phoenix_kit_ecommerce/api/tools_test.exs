@@ -25,11 +25,16 @@ defmodule PhoenixKitEcommerce.API.ToolsTest do
   @uuid "0192a7c0-0000-7000-8000-000000000001"
   @row %{"ref" => %{"sku" => "A"}}
 
+  # The order tools have their own tests (`order_tools_test.exs`) and appear
+  # only with a billing that keeps the order revision.
+  @order_tools ~w(ecommerce.list_orders ecommerce.get_orders ecommerce.get_order_customers ecommerce.set_order_sync)
+
   # The e-commerce (admin) tools as `api_tools/0` hands them over: it carries
   # the public read and cart tools next to them.
   defp tools do
     for tool <- PhoenixKitEcommerce.api_tools(),
         String.starts_with?(tool.name, "ecommerce."),
+        tool.name not in @order_tools,
         into: %{},
         do: {tool.name, tool}
   end
