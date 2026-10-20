@@ -723,7 +723,7 @@ defmodule PhoenixKitEcommerce.API.CartWriterTest do
     end
 
     test "a wrong revision does not spend a row slot of the network", %{token: token, p1: p1} do
-      put_setting!("api_public_cart_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       ctx = ctx_for(token)
 
       assert {:error, :revision_mismatch, _message, _context} =
@@ -797,7 +797,7 @@ defmodule PhoenixKitEcommerce.API.CartWriterTest do
       hash: hash,
       p1: p1
     } do
-      put_setting!("api_public_cart_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       dry = ctx_for(token, %{dry_run?: true})
 
       assert {:preview, result, fingerprint} = set(token, [line(p1, 2)], ctx: dry)
@@ -873,26 +873,28 @@ defmodule PhoenixKitEcommerce.API.CartWriterTest do
     end
 
     test "the row limit answers rate_limited with a retry time", %{token: token, p1: p1} do
-      put_setting!("api_public_cart_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       shared = ctx()
       other = new_token!()
 
       assert {:ok, _} =
                set(other, [line(p1, 1)],
                  ctx:
-                   Map.put(shared, :actor, %{
-                     shared.actor
-                     | cart_token_hash: CartToken.digest(other)
-                   })
+                   Map.put(
+                     shared,
+                     :actor,
+                     put_token_hash(shared.actor, CartToken.digest(other))
+                   )
                )
 
       assert {:error, :rate_limited, _message, %{retry_after: retry}} =
                set(token, [line(p1, 1)],
                  ctx:
-                   Map.put(shared, :actor, %{
-                     shared.actor
-                     | cart_token_hash: CartToken.digest(token)
-                   })
+                   Map.put(
+                     shared,
+                     :actor,
+                     put_token_hash(shared.actor, CartToken.digest(token))
+                   )
                )
 
       assert is_integer(retry) and retry > 0

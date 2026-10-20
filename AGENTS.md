@@ -1133,11 +1133,11 @@ then `"en"`, not the stored default). The single-language link tests
 run them against a core with the policy too (`PHOENIX_KIT_PATH=…`).
 
 Four more are excluded the same way: `:requires_core_api` (core without
-`PhoenixKit.API.Tool` or `PhoenixKit.ObanCrons`, i.e. without the shop API; it
+`PhoenixKit.API.Tool` or `PhoenixKit.ObanCrons`, i.e. without the public API; it
 gates every test of the public read and cart tools, a few hundred of them),
 `:mcp` (core without the MCP plug), `:analytics` (no `phoenix_kit_web_analytics`)
 and `:requires_pg_trgm` (a database without the `pg_trgm` extension). To run the
-API tests, point `PHOENIX_KIT_PATH` at a core checkout that carries the shop API;
+API tests, point `PHOENIX_KIT_PATH` at a core checkout that carries the public API;
 against a released core without it they show up in the `excluded` count.
 
 Two tags split the language-domain API links by core: `:requires_core_canonical_urls`

@@ -46,7 +46,7 @@ defmodule PhoenixKitEcommerce.API.Public.SearchCatalogueTest do
 
     Map.merge(
       %{
-        actor: struct(Actor, kind: :anonymous, ip: ip, cart_token_hash: nil),
+        actor: struct(Actor, kind: :anonymous, ip: ip),
         scopes: [],
         audience: :public,
         language: "en",

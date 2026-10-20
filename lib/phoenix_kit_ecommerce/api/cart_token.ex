@@ -10,8 +10,9 @@ defmodule PhoenixKitEcommerce.API.CartToken do
   one nothing is minted and nothing is believed.
 
   `digest/1` is the same function core's executor applies to the raw token to
-  fill `actor.cart_token_hash`; the cart row's identity is `"api:" <> digest`
-  (47 characters, so it fits `phoenix_kit_shop_carts.session_id`, which is
+  fill `actor.client_token_hash` (`cart_token_hash` in a core before the
+  module-neutral API); the cart row's identity is `"api:" <> digest` (47
+  characters, so it fits `phoenix_kit_shop_carts.session_id`, which is
   `varchar(64)`).
   """
 

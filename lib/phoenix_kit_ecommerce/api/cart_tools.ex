@@ -1,8 +1,10 @@
 defmodule PhoenixKitEcommerce.API.CartTools do
   @moduledoc """
   Definitions of the seven public cart tools. Audience `:public`: no key, no
-  scope, no permission; the cart token in the input identifies the cart. Names
-  are dotted here; core derives the underscored MCP names.
+  scope, no permission; the cart token in the input identifies the cart, and is
+  the module's client token (`client_token: "cart_token"`, declared on a core
+  whose `PhoenixKit.API.Tool` has the field): core hashes it for the caller's
+  rate limit, idempotency scope and confirmation, and never keeps it in clear. Names are dotted here; core derives the underscored MCP names.
 
   Every tool also accepts the shared control fields `language` and `currency`
   (`API.Public.Schemas.control_fields/0`): core closes every schema and adds
@@ -129,10 +131,35 @@ defmodule PhoenixKitEcommerce.API.CartTools do
 
       # A tool that core refuses is left out and logged once; it never takes
       # the other tools (or the module's other API tools) down with it.
-      PublicTools.build_all(specs)
+      client_fields? = Map.has_key?(struct(Tool), :client_token)
+
+      specs
+      |> Enum.map(&declare_client_fields(&1, client_fields?))
+      |> PublicTools.build_all()
     else
       []
     end
+  end
+
+  # A core with the module-neutral API reads the caller's identity from the input
+  # field a public tool declares as its `client_token`, and redacts the output fields
+  # named in `credentials` from stored replays. An older core rejects a `Tool` with
+  # fields it does not know, and finds the cart token by name; so the fields are
+  # declared only where `Tool` has them.
+  defp declare_client_fields(spec, true),
+    do: Keyword.merge(spec, client_token_field(spec) ++ credentials_field(spec))
+
+  defp declare_client_fields(spec, false), do: spec
+
+  defp client_token_field(spec) do
+    if Map.has_key?(spec[:input_schema]["properties"], "cart_token"),
+      do: [client_token: "cart_token"],
+      else: []
+  end
+
+  # The checkout link is the one place a tool hands out a secret: its url carries the claim token.
+  defp credentials_field(spec) do
+    if spec[:name] == "shop.get_checkout_link", do: [credentials: ["url"]], else: []
   end
 
   @doc """

@@ -24,7 +24,7 @@
    "Function PhoenixKit.API.Tool.new/1 does not exist."},
   # The cart store names `PhoenixKit.API.RateLimit` too (same reason).
   {"lib/phoenix_kit_ecommerce/api/cart_store.ex",
-   "Function PhoenixKit.API.RateLimit.check_cart_rows/1 does not exist."},
+   "Function PhoenixKit.API.RateLimit.check_new_rows/1 does not exist."},
   # `PhoenixKitWebAnalytics.Config` is an optional dependency: the claim-path
   # exclusion step of the migration reads its default list when it is loaded.
   {"lib/phoenix_kit_ecommerce/migrations.ex",

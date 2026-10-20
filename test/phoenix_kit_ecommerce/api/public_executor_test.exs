@@ -36,7 +36,7 @@ defmodule PhoenixKitEcommerce.API.PublicExecutorTest do
 
     conn =
       :post
-      |> Plug.Test.conn("/api/shop/v1/" <> tool)
+      |> Plug.Test.conn("/api/public/v1/" <> tool)
       |> Map.put(:remote_ip, ip)
       |> Executor.call(:public, tool, input)
 
@@ -362,7 +362,7 @@ defmodule PhoenixKitEcommerce.API.PublicExecutorTest do
   test "GET discovery lists the read tools with their schemas" do
     conn =
       :get
-      |> Plug.Test.conn("/api/shop/v1/")
+      |> Plug.Test.conn("/api/public/v1/")
       |> Map.put(:remote_ip, {10, 1, 2, 3})
       |> Executor.list(:public)
 
