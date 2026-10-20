@@ -61,6 +61,7 @@ defmodule PhoenixKitEcommerce do
   alias PhoenixKitBilling, as: Billing
   alias PhoenixKitBilling.Currency
   alias PhoenixKitEcommerce.API.CartTools
+  alias PhoenixKitEcommerce.API.OrderTools
   alias PhoenixKitEcommerce.API.PublicTools
   alias PhoenixKitEcommerce.Cart
   alias PhoenixKitEcommerce.CartItem
@@ -926,20 +927,29 @@ defmodule PhoenixKitEcommerce do
       icon: "hero-shopping-cart",
       description: "Product catalog, orders, and e-commerce management",
       # Base "shop" is admin-area READ access. Each sub-permission is a
-      # capability this module checks itself (core enforces sub-implies-base).
+      # capability (core enforces sub-implies-base): this module checks most
+      # of them itself, while "manage_orders" is checked by core through the
+      # `permission` of each order tool of the API.
       #
       # ⚠️ Upgrade note: core auto-grants newly discovered sub-permissions to
       # the Admin system role only, so a CUSTOM role that holds base "shop"
-      # keeps its read access but loses every mutation until an operator
-      # re-grants the subs. That is deliberate - secure by default, and the
-      # operator decides who gets what rather than inheriting a blanket
-      # grant - but it IS a breaking authorization change on upgrade and is
-      # called out in the PR body and AGENTS.md.
+      # keeps its admin-area read access but loses every mutation until an
+      # operator re-grants the subs (reading orders through the API is not
+      # a kept read: it needs "manage_orders"). That is deliberate - secure
+      # by default, and the operator decides who gets what rather than
+      # inheriting a blanket grant - but it IS a breaking authorization
+      # change on upgrade and is called out in the PR body and AGENTS.md.
       sub_permissions: [
         %{
           key: "manage_catalog",
           label: "Manage catalog",
           description: "Create, edit and delete products and categories"
+        },
+        %{
+          key: "manage_orders",
+          label: "Manage orders",
+          description:
+            "Read orders, mark them as taken by an external system and read their buyers' contact details through the API"
         },
         %{
           key: "manage_carts",
@@ -1230,8 +1240,10 @@ defmodule PhoenixKitEcommerce do
   against cores that predate it. A core without the tool registry gets `[]`
   from each group.
   """
-  def api_tools,
-    do: PhoenixKitEcommerce.API.tools() ++ PublicTools.tools() ++ CartTools.tools()
+  def api_tools do
+    PhoenixKitEcommerce.API.tools() ++
+      OrderTools.tools() ++ PublicTools.tools() ++ CartTools.tools()
+  end
 
   @doc """
   PhoenixKitAI translation adapters (duck-typed discovery — see
@@ -5848,7 +5860,11 @@ defmodule PhoenixKitEcommerce do
       # customer agreed as "Price on request" reads "0.00" on a COMMITTED
       # order. The cart line snapshots this; the conversion has to forward it
       # or the snapshot dies at the cart/order boundary.
-      "price_on_request" => metadata["price_on_request"] == true
+      "price_on_request" => metadata["price_on_request"] == true,
+      # Whether the product was subject to tax when it was bought, as the
+      # cart line snapshotted it; the tax of the order was worked out over the
+      # taxable lines only.
+      "taxable" => item.taxable != false
     }
     |> put_selected_spec_keys(item)
   end
