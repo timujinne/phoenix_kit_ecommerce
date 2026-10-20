@@ -138,7 +138,7 @@ defmodule PhoenixKitEcommerce.API.CartWriter do
 
   defp run(hash, cart, origin, plans, input, ctx, dry?) do
     before_snapshot = CartView.snapshot(cart)
-    before_view = CartView.build(cart)
+    before_view = CartView.build(cart, ctx[:language])
 
     check_currency!(cart, origin, input)
     check_revision!(cart, input, before_view)
@@ -151,7 +151,7 @@ defmodule PhoenixKitEcommerce.API.CartWriter do
       CartStore.put_snapshot!(after_cart, after_snapshot)
     end
 
-    after_view = CartView.build(after_cart)
+    after_view = CartView.build(after_cart, ctx[:language])
 
     result = %{
       results: results,

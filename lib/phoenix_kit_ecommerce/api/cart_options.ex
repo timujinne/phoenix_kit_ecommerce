@@ -31,6 +31,12 @@ defmodule PhoenixKitEcommerce.API.CartOptions do
   alias PhoenixKitEcommerce.Search.OptionKeys
 
   @type option :: %{attribute_key: String.t(), value_key: String.t()}
+  @type labelled :: %{
+          attribute_key: String.t(),
+          value_key: String.t(),
+          attribute_label: String.t(),
+          value_label: String.t()
+        }
 
   @doc """
   Normalizes the caller's `options` (string-keyed maps from JSON, or
@@ -185,6 +191,43 @@ defmodule PhoenixKitEcommerce.API.CartOptions do
       [] -> to_options(product || %{metadata: %{}}, item.selected_specs || %{})
     end
   end
+
+  @doc """
+  `options` with the labels a buyer reads, in the language `product` was loaded
+  for: `attribute_label` (the option's name) and `value_label` (what the value
+  is shown as). They come from the product's own options
+  (`Search.OptionKeys.extract/1`), the ones its card announces.
+
+  A line whose product is gone (`nil`), or no longer offers that option or value,
+  keeps what it can: the option's name from its key (`Options.humanize_key/1`) and
+  the value as the line shows it, `stored` (`SelectedSpecs.labels/1`: the label
+  snapshot taken when a catalogue line was added, or the label a legacy line was
+  added under), else the key.
+  """
+  @spec labelled([option()], Product.t() | map() | nil, %{String.t() => String.t()} | nil) ::
+          [labelled()]
+  def labelled(options, product, stored \\ %{}) do
+    offered = if product, do: OptionKeys.extract(product), else: []
+    stored = stored_values(stored)
+
+    Enum.map(options, fn %{attribute_key: key, value_key: value_key} = option ->
+      found = Enum.find(offered, &(&1.key == key))
+      value = found && Enum.find(found.values, &(&1.key == value_key))
+
+      Map.merge(option, %{
+        attribute_label: (found && found.label) || Options.humanize_key(key),
+        value_label: (value && value.label) || Map.get(stored, key, value_key)
+      })
+    end)
+  end
+
+  defp stored_values(specs) when is_map(specs),
+    do:
+      Map.new(specs, fn {key, value} ->
+        {OptionKeys.neutral_key(to_string(key)), to_string(value)}
+      end)
+
+  defp stored_values(_none), do: %{}
 
   @doc "The neutral options the API stored on a line (`metadata[\"api_options\"]`), or `[]`."
   @spec stored(CartItem.t()) :: [option()]

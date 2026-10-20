@@ -5,7 +5,8 @@ defmodule PhoenixKitEcommerce.Web.ClaimHTML do
   the CSRF token); `offer` tells the server what the page showed (`none`, or the
   uuid of the buyer's own cart) and `revision` tells it which lines of the
   assistant's cart were shown, so a change to those lines in between is noticed.
-  The buyer's own cart is bound by its uuid only.
+  The buyer's own cart is bound by its uuid only. A line's options are shown as
+  the labels of the claim's language (`options`, by item uuid), never as keys.
   """
 
   use PhoenixKitEcommerce.Web, :html
@@ -15,6 +16,7 @@ defmodule PhoenixKitEcommerce.Web.ClaimHTML do
   alias PhoenixKitEcommerce.Web.Helpers
 
   attr :cart, :map, required: true
+  attr :options, :map, default: %{}
   attr :existing, :map, default: nil
   attr :action, :string, required: true
   attr :revision, :string, required: true
@@ -55,12 +57,13 @@ defmodule PhoenixKitEcommerce.Web.ClaimHTML do
                 {NamePrefix.strip(item.product_title)}
                 <span class="text-base-content/60">×{item.quantity}</span>
                 <span
-                  :if={item.selected_specs not in [nil, %{}]}
+                  :if={Map.get(@options, item.uuid, []) != []}
+                  id={"claim-line-#{item.uuid}-options"}
                   class="block text-xs text-base-content/60"
                 >
-                  <span :for={{key, value} <- item.selected_specs} class="inline-block mr-2">
-                    <span class="font-medium">{Helpers.humanize_key(key)}:</span>
-                    <span>{value}</span>
+                  <span :for={option <- Map.fetch!(@options, item.uuid)} class="inline-block mr-2">
+                    <span class="font-medium">{option.attribute_label}:</span>
+                    <span>{option.value_label}</span>
                   </span>
                 </span>
               </span>

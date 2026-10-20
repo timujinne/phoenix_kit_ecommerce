@@ -118,8 +118,18 @@ defmodule PhoenixKitEcommerce.API.CartWriterCatalogueTest do
     assert line.line_total == %{amount: "135.04", currency: "USD"}
 
     assert Enum.sort_by(line.options, & &1.attribute_key) == [
-             %{attribute_key: "cup_color", value_key: "gold"},
-             %{attribute_key: "liquid_color", value_key: "blue"}
+             %{
+               attribute_key: "cup_color",
+               value_key: "gold",
+               attribute_label: "Cup Color",
+               value_label: "Gold"
+             },
+             %{
+               attribute_key: "liquid_color",
+               value_key: "blue",
+               attribute_label: "Liquid Color",
+               value_label: "Blue"
+             }
            ]
 
     {:ok, hash} = CartToken.verify(t.token)
