@@ -1154,6 +1154,39 @@ defmodule PhoenixKitEcommerce do
     do: PhoenixKitEcommerce.API.tools() ++ PublicTools.tools() ++ CartTools.tools()
 
   @doc """
+  The error codes the cart tools answer with, for core's `Problem` and the MCP
+  advice an agent reads after an error. The wire values (`code`, `status`,
+  `title`) are a contract with clients. Core answered with these four before a
+  module could declare codes (`PhoenixKit.API.Legacy`); from the neutral API on,
+  they are this module's. Defined without `@impl`, like `api_tools/0`: the
+  callback is optional, and a core that predates it never calls it.
+  """
+  def api_problems do
+    %{
+      cart_not_found: %{
+        status: 404,
+        title: "Cart not found",
+        advice: "Create a new cart and try again."
+      },
+      cart_locked: %{
+        status: 409,
+        title: "Cart locked",
+        advice: "The cart is already in checkout; start a new cart."
+      },
+      unsupported_source: %{
+        status: 422,
+        title: "Unsupported source",
+        advice: "This product source cannot be changed through the API."
+      },
+      insufficient_stock: %{
+        status: 422,
+        title: "Insufficient stock",
+        advice: "Reduce the quantities listed in context.lines; nothing was posted."
+      }
+    }
+  end
+
+  @doc """
   PhoenixKitAI translation adapters (duck-typed discovery — see
   `PhoenixKitAI.Translatables`).
 
