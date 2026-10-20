@@ -13,7 +13,8 @@ defmodule PhoenixKitEcommerce.API.CartStore do
   otherwise: the locks they take would protect nothing).
 
   Every `hash` argument trusts its caller: it must be the digest that
-  `CartToken.verify/1` returned. Never pass `ctx.actor.cart_token_hash` -
+  `CartToken.verify/1` returned. Never pass `ctx.actor.client_token_hash` (`cart_token_hash` in a core before the
+  module-neutral API) -
   core's executor fills that from the raw token string without checking its
   signature, so any string would then create `api:` rows and read counters.
   """
@@ -228,10 +229,21 @@ defmodule PhoenixKitEcommerce.API.CartStore do
   defp charge_row(ctx, true) do
     ip = (ctx[:actor] && ctx[:actor].ip) || "unknown"
 
-    case RateLimit.check_cart_rows(ip) do
+    case check_new_rows(ip) do
       :ok -> :ok
       {:error, retry_after} -> {:error, :rate_limited, retry_after}
     end
+  end
+
+  # `check_new_rows/1` is the shared new-rows quota of a core with the module-neutral API;
+  # an older core has it as `check_cart_rows/1`, which a newer one deprecates, so the old
+  # name is called dynamically (no deprecation warning on the new core). Either way the
+  # quota is core's, with core's settings keys.
+  defp check_new_rows(ip) do
+    if Code.ensure_loaded?(RateLimit) and function_exported?(RateLimit, :check_new_rows, 1),
+      do: RateLimit.check_new_rows(ip),
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      else: apply(RateLimit, :check_cart_rows, [ip])
   end
 
   # `create_cart/1` freezes the request's display currency into the cart. The

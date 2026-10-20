@@ -262,9 +262,22 @@ defmodule PhoenixKitEcommerce.CartApiFixtures do
     ctx(Map.put(overrides, :actor, build_actor(unique_ip(), CartToken.digest(token))))
   end
 
-  @doc "A public caller, built without naming the struct at compile time."
-  def build_actor(ip, cart_token_hash) do
-    struct!(PhoenixKit.API.Actor, kind: :anonymous, ip: ip, cart_token_hash: cart_token_hash)
+  @doc """
+  A public caller, built without naming the struct at compile time. The hash
+  lives in `client_token_hash` of a core with the module-neutral API and in
+  `cart_token_hash` of an older one.
+  """
+  def build_actor(ip, token_hash) do
+    struct!(PhoenixKit.API.Actor, [{:kind, :anonymous}, {:ip, ip}, {token_field(), token_hash}])
+  end
+
+  @doc "The same caller with another client token hash."
+  def put_token_hash(actor, token_hash), do: Map.put(actor, token_field(), token_hash)
+
+  defp token_field do
+    if Map.has_key?(struct(PhoenixKit.API.Actor), :client_token_hash),
+      do: :client_token_hash,
+      else: :cart_token_hash
   end
 
   @doc "Writes a setting the way the admin pages do (string value)."
@@ -289,7 +302,7 @@ defmodule PhoenixKitEcommerce.CartApiFixtures do
 
     conn =
       :post
-      |> Plug.Test.conn(origin <> "/api/shop/v1/#{name}", "")
+      |> Plug.Test.conn(origin <> "/api/public/v1/#{name}", "")
       |> Plug.Conn.put_req_header("x-forwarded-for", ip)
       |> Plug.Conn.put_req_header("content-type", "application/json")
 
@@ -306,7 +319,7 @@ defmodule PhoenixKitEcommerce.CartApiFixtures do
 
   @doc """
   Sends one JSON-RPC request to core's MCP plug for the public audience
-  (`POST /mcp/shop`) and returns `{status, decoded_body, conn}`. Core's own
+  (`POST /mcp/public`) and returns `{status, decoded_body, conn}`. Core's own
   `McpHarness` is core test support and is not available here, so the
   connection is built by hand the way that harness builds it: the parsed body as
   `body_params`, the client address through `X-Forwarded-For` (believed because

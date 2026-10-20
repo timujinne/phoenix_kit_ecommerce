@@ -264,7 +264,7 @@ defmodule PhoenixKitEcommerce.API.CartStoreTest do
     end
 
     test "the first write of a new cart is charged to the per-network row limit", %{hash: hash} do
-      put_setting!("api_public_cart_rows_per_ip_hour", 1)
+      put_setting!("api_public_new_rows_per_ip_hour", 1)
       ctx = ctx()
       second = new_token!()
       {:ok, second_hash} = CartToken.verify(second)
@@ -276,8 +276,21 @@ defmodule PhoenixKitEcommerce.API.CartStoreTest do
       assert count_carts("api:" <> second_hash) == 0
     end
 
+    test "the deprecated key of the per-network limit still applies when the new one is unset", %{
+      hash: hash
+    } do
+      # Core's fallback (until 3.0.0): a limit whose new key holds no number reads its old key.
+      put_setting!("api_public_cart_rows_per_ip_hour", 1)
+      ctx = ctx()
+      second = new_token!()
+      {:ok, second_hash} = CartToken.verify(second)
+
+      assert {:ok, _cart, :created} = write(hash, ctx)
+      assert {:error, :rate_limited, _retry} = write(second_hash, ctx)
+    end
+
     test "the same charge counts against the global limit, whatever the network", %{hash: hash} do
-      put_setting!("api_public_cart_rows_global_hour", 1)
+      put_setting!("api_public_new_rows_global_hour", 1)
       second = new_token!()
       {:ok, second_hash} = CartToken.verify(second)
 
@@ -293,7 +306,7 @@ defmodule PhoenixKitEcommerce.API.CartStoreTest do
     end
 
     test "an existing cart is not charged", %{hash: hash} do
-      put_setting!("api_public_cart_rows_per_ip_hour", 1)
+      put_setting!("api_public_new_rows_per_ip_hour", 1)
       ctx = ctx()
 
       assert {:ok, _, :created} = write(hash, ctx)
@@ -302,7 +315,7 @@ defmodule PhoenixKitEcommerce.API.CartStoreTest do
     end
 
     test "count_row: false creates the row without charging the limit (dry runs)", %{hash: hash} do
-      put_setting!("api_public_cart_rows_per_ip_hour", 1)
+      put_setting!("api_public_new_rows_per_ip_hour", 1)
       ctx = ctx()
 
       assert {:ok, _, :created} = write(hash, ctx, count_row: false)
