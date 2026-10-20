@@ -320,6 +320,10 @@ Repo-local aliases:
   wrapper emits `/de/shop/...` links where the canonical link has no `/de/`
   segment, and the host answers each of them with a redirect. Each public
   handler has a test that checks the `url` of its items on such a domain.
+  A product or category `url` goes through `API.Context.absolute/3` with the
+  answer's language, which puts a language with a domain of its own on that
+  domain (core's `Routes.canonical_absolute_or_nil/2`, one resolver call); `absolute/2` keeps the
+  request's host.
 - **One lock order for "the active cart of this identity".**
   `Shop.lock_cart_identity!/2` takes the user key, then the session key
   (`pg_advisory_xact_lock`). The claim POST, the lazy creation of an `api:`
@@ -1135,6 +1139,12 @@ gates every test of the public read and cart tools, a few hundred of them),
 and `:requires_pg_trgm` (a database without the `pg_trgm` extension). To run the
 API tests, point `PHOENIX_KIT_PATH` at a core checkout that carries the shop API;
 against a released core without it they show up in the `excluded` count.
+
+Two tags split the language-domain API links by core: `:requires_core_canonical_urls`
+(excluded when core lacks `Routes.canonical_absolute_or_nil/2`) and its inverse
+`:core_without_canonical_urls` (excluded when core has it; it runs only on an older
+core and pins the request's-host fallback, so it is not a skipped test). Run both
+sides, a core with the helper and a released one, as `test/test_helper.exs` says.
 
 The admin API's tests need a core with the tool registry, a catalogue with the
 admin API and `phoenix_kit_warehouse` with source kinds, none of which this
