@@ -236,6 +236,11 @@ defmodule PhoenixKitEcommerce.MixProject do
       # HTTP client for downloading product images.
       {:req, "~> 0.7"},
 
+      # `Services.PinnedAdapter` calls `Mint.HTTP` directly (the `:hostname`,
+      # `:mode`, `:protocols` and `:transport_opts` connect options), so it is
+      # a requirement of its own and not left to arrive through Req and Finch.
+      {:mint, "~> 1.6"},
+
       # JSON encoding/decoding.
       {:jason, "~> 1.4"},
 

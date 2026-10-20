@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Changed
+
+- `mint ~> 1.6` is a declared requirement: `Services.PinnedAdapter` calls
+  `Mint.HTTP` directly and had relied on it arriving through Req and Finch.
+
 ## 0.6.0 - 2026-10-17
 
 ### Added

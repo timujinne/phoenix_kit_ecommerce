@@ -123,6 +123,18 @@ defmodule PhoenixKitEcommerce.DependencyFloorTest do
     assert Version.match?("0.21.0", requirement)
   end
 
+  test "mint is a declared requirement, because PinnedAdapter calls it directly" do
+    # It resolves through Req and Finch today; a release of either that stops
+    # depending on it would leave the adapter without its HTTP client.
+    assert [_, requirement] = Regex.run(~r/\{:mint,\s*"([^"]+)"/, File.read!("mix.exs"))
+
+    refute Version.match?("2.0.0", requirement)
+    assert Version.match?("1.6.0", requirement)
+    assert Code.ensure_loaded?(Mint.HTTP)
+    assert function_exported?(Mint.HTTP, :connect, 4)
+    assert function_exported?(Mint.HTTP, :recv, 3)
+  end
+
   test "the declared req requirement excludes releases without adapter modules" do
     # `PinnedAdapter` is an adapter MODULE and calls `Req.Plug.run/1`; both
     # arrived in Req 0.7 (before it an adapter is a function and
