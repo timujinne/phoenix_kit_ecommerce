@@ -13,8 +13,9 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
   - `free_above_amount` - Free shipping threshold
   - `min_weight_grams`, `max_weight_grams` - Weight limits
   - `min_order_amount`, `max_order_amount` - Order amount limits
-  - `countries` - Allowed countries (empty = all)
-  - `excluded_countries` - Excluded countries
+  - `countries` - Allowed countries, ISO 3166-1 alpha-2 (empty = all)
+  - `excluded_countries` - Excluded countries; a country in both lists is
+    excluded
   - `active` - Enabled/disabled
   - `position` - Sort order
   - `estimated_days_min`, `estimated_days_max` - Delivery estimate
@@ -33,9 +34,10 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
   use PhoenixKit.SchemaPrefix
   import Ecto.Changeset
 
+  alias PhoenixKit.Utils.CountryData
   alias PhoenixKit.Utils.Slug
   alias PhoenixKitEcommerce.LocalizedSlug
-  alias PhoenixKitEcommerce.Shipping.{MethodConfig, MethodParams}
+  alias PhoenixKitEcommerce.Shipping.{Codec, MethodConfig, MethodParams}
 
   @primary_key {:uuid, UUIDv7, autogenerate: true}
 
@@ -110,6 +112,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
 
     method
     |> cast(attrs, @required_fields ++ @optional_fields)
+    |> normalize_countries()
     |> put_pay_on_delivery(pay_on_delivery)
     |> put_shipping_provider(shipping_provider, opts)
     |> zero_pay_on_delivery_price()
@@ -266,6 +269,37 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     max_ok = is_nil(max) or Decimal.compare(amount, max) != :gt
     min_ok and max_ok
   end
+
+  # Each code is stored upcased and once; what is not a known ISO 3166-1
+  # alpha-2 code is dropped. The admin form submits a blank entry with the
+  # lists, so that a list can be emptied: that blank is dropped here as well.
+  # A list made only of wrong codes is an error, not an empty list: empty
+  # means "every country".
+  defp normalize_countries(changeset) do
+    Enum.reduce([:countries, :excluded_countries], changeset, &normalize_country_list(&2, &1))
+  end
+
+  defp normalize_country_list(changeset, field) do
+    case fetch_change(changeset, field) do
+      {:ok, entries} when is_list(entries) ->
+        codes = entries |> Codec.countries() |> Enum.filter(&CountryData.get_country/1)
+
+        if codes == [] and Enum.any?(entries, &(not blank_entry?(&1))),
+          do: add_error(changeset, field, "has no valid country code"),
+          else: put_change(changeset, field, codes)
+
+      # The columns accept NULL, but a NULL list breaks `country_ok?/2` and the
+      # methods list: nothing means the empty list, which is "every country".
+      {:ok, nil} ->
+        put_change(changeset, field, [])
+
+      _ ->
+        changeset
+    end
+  end
+
+  defp blank_entry?(entry) when is_binary(entry), do: String.trim(entry) == ""
+  defp blank_entry?(entry), do: is_nil(entry)
 
   defp country_ok?(%{countries: [], excluded_countries: []}, _country), do: true
 
