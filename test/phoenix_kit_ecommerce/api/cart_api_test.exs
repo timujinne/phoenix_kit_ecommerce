@@ -248,8 +248,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
                   %{"error" => %{"code" => "quantity_invalid"}},
                   %{"action" => "created"}
                 ]
-              },
-              _} =
+              }, _} =
                call("shop.set_cart_items", %{
                  "cart_token" => token,
                  "items" => [
@@ -323,8 +322,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
                 "executed" => false,
                 "dry_run" => true,
                 "preview" => %{"results" => [%{"action" => "unchanged"}]}
-              },
-              _} =
+              }, _} =
                call("shop.set_cart_items", %{
                  "cart_token" => token,
                  "dry_run" => true,
@@ -336,8 +334,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
                 "executed" => false,
                 "dry_run" => true,
                 "preview" => %{"results" => [%{"action" => "created"}]}
-              },
-              _} =
+              }, _} =
                call("shop.set_cart_items", %{
                  "cart_token" => token,
                  "dry_run" => true,
@@ -348,7 +345,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
     end
 
     test "the first write is limited per network", %{p1: p1} do
-      put_setting!("api_public_new_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       ip = unique_ip()
 
       first = new_cart_token()
@@ -369,7 +366,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
     end
 
     test "the first write is limited globally, whatever the network", %{p1: p1} do
-      put_setting!("api_public_new_rows_global_hour", 1)
+      put_setting!(new_rows_key(:global_hour), 1)
       first = new_cart_token()
       second = new_cart_token()
 
@@ -436,8 +433,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
               %{
                 "code" => "validation_failed",
                 "context" => %{"errors" => [%{"path" => "currency"}]}
-              },
-              _} =
+              }, _} =
                call("shop.get_cart", %{"cart_token" => token, "currency" => "XYZ"})
     end
   end
@@ -623,8 +619,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
               %{
                 "shipping" => %{"country" => "DE", "method" => %{"id" => id}},
                 "revision" => after_revision
-              },
-              _} =
+              }, _} =
                call("shop.set_shipping", %{
                  "cart_token" => token,
                  "country" => "DE",
@@ -647,8 +642,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
               %{
                 "code" => "validation_failed",
                 "context" => %{"errors" => [%{"path" => "method_id"}]}
-              },
-              _} =
+              }, _} =
                call("shop.set_shipping", %{
                  "cart_token" => token,
                  "country" => "DE",
@@ -707,8 +701,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
                 "executed" => false,
                 "dry_run" => true,
                 "preview" => %{"method" => ^method_id, "country" => "DE"}
-              },
-              _} =
+              }, _} =
                call("shop.set_shipping", Map.put(shipping_input(token, method), "dry_run", true))
 
       {:ok, after_dry_runs} = CartStore.resolve(hash)
@@ -1301,9 +1294,8 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
         id,
         [:phoenix_kit_ecommerce, :test, :repo, :query],
         fn _event, _measurements, meta, _config ->
-          if meta.source == "phoenix_kit_shop_carts" and
-               String.starts_with?(meta.query, "SELECT"),
-             do: deactivate_on_second_read(reads, session)
+          if meta.source == "phoenix_kit_shop_carts" and String.starts_with?(meta.query, "SELECT"),
+            do: deactivate_on_second_read(reads, session)
         end,
         nil
       )

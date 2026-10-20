@@ -36,7 +36,7 @@ defmodule PhoenixKitEcommerce.API.Public.SearchTest do
       %{
         # struct/2, not a %Actor{} literal: a literal is expanded at compile time
         # and fails the whole test run on a core without PhoenixKit.API.Actor.
-        actor: struct(Actor, kind: :anonymous, ip: ip, cart_token_hash: nil),
+        actor: struct(Actor, kind: :anonymous, ip: ip),
         scopes: [],
         audience: :public,
         language: "en",

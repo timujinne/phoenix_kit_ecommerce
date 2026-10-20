@@ -13,10 +13,10 @@ defmodule PhoenixKitEcommerce.API.CartStore do
   otherwise: the locks they take would protect nothing).
 
   Every `hash` argument trusts its caller: it must be the digest that
-  `CartToken.verify/1` returned. Never pass `ctx.actor.client_token_hash` (`cart_token_hash` in a core before the
-  module-neutral API) -
-  core's executor fills that from the raw token string without checking its
-  signature, so any string would then create `api:` rows and read counters.
+  `CartToken.verify/1` returned. Never pass `ctx.actor.client_token_hash`
+  (`cart_token_hash` in a core before the module-neutral API) - core's executor
+  fills that from the raw token string without checking its signature, so any
+  string would then create `api:` rows and read counters.
   """
 
   import Ecto.Query, warn: false

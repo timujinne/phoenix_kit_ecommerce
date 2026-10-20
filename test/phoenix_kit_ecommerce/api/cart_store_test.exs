@@ -264,7 +264,7 @@ defmodule PhoenixKitEcommerce.API.CartStoreTest do
     end
 
     test "the first write of a new cart is charged to the per-network row limit", %{hash: hash} do
-      put_setting!("api_public_new_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       ctx = ctx()
       second = new_token!()
       {:ok, second_hash} = CartToken.verify(second)
@@ -290,7 +290,7 @@ defmodule PhoenixKitEcommerce.API.CartStoreTest do
     end
 
     test "the same charge counts against the global limit, whatever the network", %{hash: hash} do
-      put_setting!("api_public_new_rows_global_hour", 1)
+      put_setting!(new_rows_key(:global_hour), 1)
       second = new_token!()
       {:ok, second_hash} = CartToken.verify(second)
 
@@ -306,7 +306,7 @@ defmodule PhoenixKitEcommerce.API.CartStoreTest do
     end
 
     test "an existing cart is not charged", %{hash: hash} do
-      put_setting!("api_public_new_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       ctx = ctx()
 
       assert {:ok, _, :created} = write(hash, ctx)
@@ -315,7 +315,7 @@ defmodule PhoenixKitEcommerce.API.CartStoreTest do
     end
 
     test "count_row: false creates the row without charging the limit (dry runs)", %{hash: hash} do
-      put_setting!("api_public_new_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       ctx = ctx()
 
       assert {:ok, _, :created} = write(hash, ctx, count_row: false)

@@ -723,7 +723,7 @@ defmodule PhoenixKitEcommerce.API.CartWriterTest do
     end
 
     test "a wrong revision does not spend a row slot of the network", %{token: token, p1: p1} do
-      put_setting!("api_public_new_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       ctx = ctx_for(token)
 
       assert {:error, :revision_mismatch, _message, _context} =
@@ -797,7 +797,7 @@ defmodule PhoenixKitEcommerce.API.CartWriterTest do
       hash: hash,
       p1: p1
     } do
-      put_setting!("api_public_new_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       dry = ctx_for(token, %{dry_run?: true})
 
       assert {:preview, result, fingerprint} = set(token, [line(p1, 2)], ctx: dry)
@@ -873,7 +873,7 @@ defmodule PhoenixKitEcommerce.API.CartWriterTest do
     end
 
     test "the row limit answers rate_limited with a retry time", %{token: token, p1: p1} do
-      put_setting!("api_public_new_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       shared = ctx()
       other = new_token!()
 

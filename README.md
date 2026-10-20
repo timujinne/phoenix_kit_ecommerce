@@ -18,7 +18,7 @@ E-commerce module for [PhoenixKit](https://github.com/BeamLabEU/phoenix_kit). Pr
 - **Real-time updates** — PubSub events for carts, products, categories, and inventory changes
 - **Admin dashboard** — LiveViews for managing products, categories, shipping, carts, imports, and settings
 - **User pages** — catalog, product detail, cart, checkout, order history, and order details
-- **Public read API** — full-text product search (PostgreSQL, per language, typo-tolerant with `pg_trgm`), product cards, category tree and similar products for AI agents and scripts, as REST and MCP tools of PhoenixKit core (needs a core with the machine API; off until `api_public_enabled` is on)
+- **Public read API** — full-text product search (PostgreSQL, per language, typo-tolerant with `pg_trgm`), product cards, category tree and similar products for AI agents and scripts, as REST and MCP tools of PhoenixKit core (needs a core with the public API; off until `api_public_enabled` is on)
 - **Public cart API** — seven anonymous *write* tools that let a buyer's AI agent fill a cart and hand it to the site's checkout through a one-time link; no order, payment or address passes through the API (same switch, `api_public_enabled`)
 - **Auto-discovery** — implements `PhoenixKit.Module` behaviour; PhoenixKit finds it at startup with zero config
 
@@ -200,7 +200,7 @@ methods = Shop.get_available_shipping_methods(cart)
 
 ### Public API: search and product tools
 
-With PhoenixKit core's machine API switched on (`api_public_enabled`), this module offers five read-only
+With PhoenixKit core's public API switched on (`api_public_enabled`), this module offers five read-only
 search and product tools to anonymous callers (the cart tools, which write, are described below), over REST (`POST /api/public/v1/<tool>`) and MCP (`/mcp/public`):
 
 | Tool | What it does |
@@ -236,7 +236,7 @@ Oban config). Without the `pg_trgm` extension search still works and only skips 
 
 `/api/shop/v1` and `/mcp/shop` were the paths of these tools before core made its public API
 module-neutral. They are still served, as deprecated aliases of `/api/public/v1` and `/mcp/public`
-(every answer on them carries a `Deprecation` header and a `Link` to the canonical path), until core
+(every answer the API itself gives on them carries a `Deprecation` header and a `Link` to the canonical path), until core
 3.0.0 removes them. Point clients at the canonical paths. The tool names (`shop.*`) do not change.
 
 ### Public API: cart tools

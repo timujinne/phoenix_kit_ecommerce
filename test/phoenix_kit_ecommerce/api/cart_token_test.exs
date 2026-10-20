@@ -24,7 +24,7 @@ defmodule PhoenixKitEcommerce.API.CartTokenTest do
     assert CartToken.verify(token) == {:ok, hash}
   end
 
-  test "the hash is core's cart_token_hash formula" do
+  test "the hash is core's client_token_hash formula" do
     {:ok, token} = CartToken.mint()
 
     assert CartToken.digest(token) ==

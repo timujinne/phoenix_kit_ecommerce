@@ -2,9 +2,9 @@ defmodule PhoenixKitEcommerce.API.CartTools do
   @moduledoc """
   Definitions of the seven public cart tools. Audience `:public`: no key, no
   scope, no permission; the cart token in the input identifies the cart, and is
-  the module's client token (`client_token: "cart_token"`): core hashes it for
-  the caller's rate limit, idempotency scope and confirmation, and never keeps
-  it in clear. Names are dotted here; core derives the underscored MCP names.
+  the module's client token (`client_token: "cart_token"`, declared on a core
+  whose `PhoenixKit.API.Tool` has the field): core hashes it for the caller's
+  rate limit, idempotency scope and confirmation, and never keeps it in clear. Names are dotted here; core derives the underscored MCP names.
 
   Every tool also accepts the shared control fields `language` and `currency`
   (`API.Public.Schemas.control_fields/0`): core closes every schema and adds
@@ -106,7 +106,11 @@ defmodule PhoenixKitEcommerce.API.CartTools do
 
       # A tool that core refuses is left out and logged once; it never takes
       # the other tools (or the module's other API tools) down with it.
-      specs |> Enum.map(&declare_client_fields/1) |> PublicTools.build_all()
+      client_fields? = Map.has_key?(struct(Tool), :client_token)
+
+      specs
+      |> Enum.map(&declare_client_fields(&1, client_fields?))
+      |> PublicTools.build_all()
     else
       []
     end
@@ -117,13 +121,10 @@ defmodule PhoenixKitEcommerce.API.CartTools do
   # named in `credentials` from stored replays. An older core rejects a `Tool` with
   # fields it does not know, and finds the cart token by name; so the fields are
   # declared only where `Tool` has them.
-  defp declare_client_fields(spec) do
-    if Map.has_key?(struct(Tool), :client_token) do
-      Keyword.merge(spec, client_token_field(spec) ++ credentials_field(spec))
-    else
-      spec
-    end
-  end
+  defp declare_client_fields(spec, true),
+    do: Keyword.merge(spec, client_token_field(spec) ++ credentials_field(spec))
+
+  defp declare_client_fields(spec, false), do: spec
 
   defp client_token_field(spec) do
     if Map.has_key?(spec[:input_schema]["properties"], "cart_token"),

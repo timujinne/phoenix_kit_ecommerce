@@ -18,7 +18,7 @@ defmodule PhoenixKitEcommerce.CartApiFixtures do
   alias PhoenixKitEcommerce.SearchFixtures
 
   # This module is loaded by `test_helper.exs` on every run, also against a core
-  # that does not have the shop API (the tests that need it carry
+  # that does not have the public API (the tests that need it carry
   # `@moduletag :requires_core_api` and are excluded then). Core's API modules are
   # therefore only named at run time here: no struct literal, no compile-time
   # reference.
@@ -278,6 +278,18 @@ defmodule PhoenixKitEcommerce.CartApiFixtures do
     if Map.has_key?(struct(PhoenixKit.API.Actor), :client_token_hash),
       do: :client_token_hash,
       else: :cart_token_hash
+  end
+
+  @doc """
+  The setting key of one new-rows limit (`:per_ip_hour` or `:global_hour`). A core with the
+  module-neutral API reads `api_public_new_rows_*` and falls back to the old
+  `api_public_cart_rows_*`; a core from before `check_new_rows/1` reads only the old one.
+  """
+  def new_rows_key(limit) when limit in [:per_ip_hour, :global_hour] do
+    if Code.ensure_loaded?(PhoenixKit.API.RateLimit) and
+         function_exported?(PhoenixKit.API.RateLimit, :check_new_rows, 1),
+       do: "api_public_new_rows_#{limit}",
+       else: "api_public_cart_rows_#{limit}"
   end
 
   @doc "Writes a setting the way the admin pages do (string value)."

@@ -16,7 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   new-rows quota (`RateLimit.check_new_rows/1`, falling back to `check_cart_rows/1`; keys
   `api_public_new_rows_*`, the old `api_public_cart_rows_*` read as a fallback).
   `api_problems/0` declares `cart_not_found`, `cart_locked`, `unsupported_source` and
-  `insufficient_stock`, which core no longer knows.
+  `insufficient_stock`, which core's canonical table no longer has (it still answers with them until
+  3.0.0 when no module declares them).
 - `mint ~> 1.6` is a declared requirement: `Services.PinnedAdapter` calls
   `Mint.HTTP` directly and had relied on it arriving through Req and Finch.
 
