@@ -218,6 +218,15 @@ defmodule PhoenixKitEcommerce.API.SearchParamsTest do
              errors(%{"on_sale" => "yes", "made_to_order" => 1})
   end
 
+  test "facets is passed on only when the query names it" do
+    assert {%{facets: false}, []} = ok(%{"facets" => false})
+    assert {%{facets: true}, []} = ok(%{"facets" => true})
+    assert {params, []} = ok(%{})
+    refute Map.has_key?(params, :facets)
+    assert [%{path: "facets"}] = errors(%{"facets" => "no"})
+    assert [%{path: "queries[2].facets"}] = errors(%{"facets" => 0}, context(), "queries[2].")
+  end
+
   test "sort maps to an atom and refuses anything else with the allowed list" do
     assert {%{sort: :price_desc}, []} = ok(%{"sort" => "price_desc"})
     assert {%{sort: :relevance}, []} = ok(%{})

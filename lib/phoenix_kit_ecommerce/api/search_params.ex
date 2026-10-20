@@ -64,6 +64,7 @@ defmodule PhoenixKitEcommerce.API.SearchParams do
       |> put_options(input)
       |> put_vendor(input)
       |> put_flags(input)
+      |> put_facets(input)
       |> put_sort(input)
       |> put_limit(input)
       |> put_offset(input)
@@ -265,6 +266,15 @@ defmodule PhoenixKitEcommerce.API.SearchParams do
         _other -> error(acc, name, "must be true or false")
       end
     end)
+  end
+
+  # Passed on only when the query names it; `Query.run/2` defaults to true.
+  defp put_facets(state, input) do
+    case Map.get(input, "facets") do
+      nil -> state
+      value when is_boolean(value) -> put(state, :facets, value)
+      _other -> error(state, "facets", "must be true or false")
+    end
   end
 
   defp put_sort(state, input) do

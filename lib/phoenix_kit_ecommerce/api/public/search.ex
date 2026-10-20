@@ -21,9 +21,14 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
   batch, and only for the fields asked for (`fields`), so a page of any size
   runs a fixed handful of queries beside the search itself. Every search, each
   cursor page included, also reads the matched rows (up to 5000) for the
-  facets. That is bounded by the page size (at most 100), the 200 cards of a
-  batch and the rate limit, and accepted for a catalogue of some thousands of
-  products.
+  facets, unless the query says `facets: false`. An `options` filter adds one
+  index probe per requested pair; only when a probe finds a pair no product has,
+  the warning that names the valid keys reads every row of the language once
+  (once per batch). A probe costs by the products that hold its pair, not by
+  the catalogue (a pair every row holds: 15 ms at 200,000 rows; the 1,000 pairs
+  a query may carry: about 200 ms), the read by the catalogue. The rest is
+  bounded by the page size (at most 100), the 200 cards of a batch and the rate
+  limit, and accepted for a catalogue of some thousands of products.
   """
 
   require Logger
@@ -40,6 +45,10 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
   @max_queries 20
   @batch_default_limit 10
   @batch_card_budget 200
+  # The most keys, or values of one key, a warning lists as valid.
+  @valid_listed 100
+  # The process dictionary key of the vocabulary a batch has read.
+  @vocabulary_memo {__MODULE__, :vocabulary}
 
   # --- handlers --------------------------------------------------------------
 
@@ -83,15 +92,21 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
   defp batch_blocks(queries, context, budget) do
     categories = Loader.categories()
 
-    {blocks, _left} =
-      queries
-      |> Enum.with_index()
-      |> Enum.map_reduce(budget, fn {query, index}, left ->
-        block = batch_block(query, index, context, categories, left)
-        {block, max(left - length(Map.get(block, "items", [])), 0)}
-      end)
+    Process.put(@vocabulary_memo, %{})
 
-    blocks
+    try do
+      {blocks, _left} =
+        queries
+        |> Enum.with_index()
+        |> Enum.map_reduce(budget, fn {query, index}, left ->
+          block = batch_block(query, index, context, categories, left)
+          {block, max(left - length(Map.get(block, "items", [])), 0)}
+        end)
+
+      blocks
+    after
+      Process.delete(@vocabulary_memo)
+    end
   end
 
   @doc false
@@ -184,22 +199,134 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
 
     items = Enum.map(listed, &Cards.list_item(&1, context, keys: keys, lookup: lookup))
 
+    warnings = warnings ++ unknown_option_warnings(params, context.language)
     warnings = if result.truncated?, do: warnings ++ [facets_truncated()], else: warnings
 
     %{
       "count" => result.count,
       "items" => items,
-      "facets" => facets(result.facets, context, categories),
       "match_mode" => Atom.to_string(result.mode),
       "language" => context.language,
       "currency" => context.currency.code
     }
+    |> put_unless_nil("facets", result.facets && facets(result.facets, context, categories))
     |> put_unless_nil("next_cursor", Query.next_cursor(params.offset, params.limit, result.count))
     |> put_unless_empty("warnings", warnings)
   end
 
   defp item_keys(fields) when is_list(fields), do: Enum.uniq(["id" | fields])
   defp item_keys(_none), do: nil
+
+  # A key or value the index never saw makes the filter match nothing (a key),
+  # or nothing for that value (a value): say so, with what is valid, so that a
+  # typo reads differently from an empty result. Each requested pair is first
+  # probed through the index; the vocabulary (a read of every row of the
+  # language) is read only when one is missing.
+  defp unknown_option_warnings(%{options: options}, language) when map_size(options) > 0 do
+    pairs = for {key, values} <- options, value <- values, do: "#{key}:#{value}"
+
+    case Query.missing_option_pairs(language, pairs) do
+      [] -> []
+      _missing -> option_warnings(Enum.sort_by(options, &elem(&1, 0)), vocabulary(language))
+    end
+  end
+
+  defp unknown_option_warnings(_params, _language), do: []
+
+  defp option_warnings(_options, vocabulary) when map_size(vocabulary) == 0 do
+    [
+      %{
+        "code" => "option_index_empty",
+        "message" =>
+          "The search index holds no product options in this language, so an options filter " <>
+            "matches nothing. Leave options out; the filter matches once products with options are indexed."
+      }
+    ]
+  end
+
+  # `valid_keys` is listed once, on the first unknown key: the others point at it.
+  defp option_warnings(options, vocabulary) do
+    {warnings, _keys_listed?} =
+      Enum.flat_map_reduce(options, false, fn {key, values}, keys_listed? ->
+        case unknown_option(key, values, vocabulary, keys_listed?) do
+          [%{"code" => "unknown_option_key"}] = warning -> {warning, true}
+          warning -> {warning, keys_listed?}
+        end
+      end)
+
+    warnings
+  end
+
+  defp unknown_option(key, values, vocabulary, keys_listed?) do
+    case Map.fetch(vocabulary, key) do
+      :error -> [unknown_key(key, vocabulary, keys_listed?)]
+      {:ok, known} -> unknown_values(key, values, known)
+    end
+  end
+
+  defp unknown_key(key, vocabulary, keys_listed?) do
+    warning = %{
+      "code" => "unknown_option_key",
+      "key" => key,
+      "message" =>
+        "No product has the option #{inspect(key)}, so this filter matches nothing. " <>
+          if(keys_listed?,
+            do: "Use a key from the valid_keys of the first unknown_option_key warning.",
+            else: "Use a key from valid_keys."
+          )
+    }
+
+    if keys_listed?,
+      do: warning,
+      else: listed(warning, "valid_keys", vocabulary |> Map.keys() |> Enum.sort())
+  end
+
+  defp unknown_values(key, values, known) do
+    case Enum.reject(values, &(&1 in known)) do
+      [] ->
+        []
+
+      unknown ->
+        [
+          listed(
+            %{
+              "code" => "unknown_option_value",
+              "message" =>
+                "No product has these values of the option #{inspect(key)}. " <>
+                  "Use values from valid_values.",
+              "key" => key,
+              "values" => unknown
+            },
+            "valid_values",
+            known
+          )
+        ]
+    end
+  end
+
+  # At most @valid_listed entries; `truncated` says when the list was cut.
+  defp listed(warning, field, entries) do
+    warning
+    |> Map.put(field, Enum.take(entries, @valid_listed))
+    |> then(&if(length(entries) > @valid_listed, do: Map.put(&1, "truncated", true), else: &1))
+  end
+
+  # One batch asks the index once, however many of its queries filter by
+  # options a product does not have.
+  defp vocabulary(language) do
+    case Process.get(@vocabulary_memo) do
+      %{^language => vocabulary} ->
+        vocabulary
+
+      memo when is_map(memo) ->
+        vocabulary = Query.option_vocabulary(language)
+        Process.put(@vocabulary_memo, Map.put(memo, language, vocabulary))
+        vocabulary
+
+      nil ->
+        Query.option_vocabulary(language)
+    end
+  end
 
   defp facets_truncated do
     %{
@@ -309,7 +436,8 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
         "type" => "object",
         "description" =>
           "Option filters: attribute key to a list of value keys, as in the facets. " <>
-            "Values of one key are alternatives; several keys must all match.",
+            "Values of one key are alternatives; several keys must all match. " <>
+            "A key or value no product has adds a warning that lists the valid ones.",
         "additionalProperties" => %{
           "type" => "array",
           "minItems" => 1,
@@ -340,6 +468,11 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
         "maxItems" => length(Cards.list_fields()),
         "items" => %{"type" => "string", "enum" => Cards.list_fields()},
         "description" => "Item fields to return; id is always returned."
+      },
+      "facets" => %{
+        "type" => "boolean",
+        "description" =>
+          "false: leave the facets out of the answer (a much smaller answer when you only need the items). Default true."
       }
     }
   end
@@ -390,7 +523,7 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
   def search_output_schema do
     %{
       "type" => "object",
-      "required" => ["count", "items", "facets", "match_mode"],
+      "required" => ["count", "items", "match_mode"],
       "properties" => block_properties()
     }
   end
@@ -434,7 +567,7 @@ defmodule PhoenixKitEcommerce.API.Public.Search do
         "description" => "How many products match, over all pages."
       },
       "items" => %{"type" => "array", "items" => Schemas.list_item()},
-      "facets" => %{"type" => "object"},
+      "facets" => %{"type" => "object", "description" => "Left out when facets is false."},
       "match_mode" => %{"type" => "string", "enum" => ["browse", "fulltext", "typo"]},
       "language" => %{"type" => "string"},
       "currency" => %{"type" => "string"},
