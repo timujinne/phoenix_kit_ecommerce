@@ -458,7 +458,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
     end
 
     test "the first write is limited per network", %{p1: p1} do
-      put_setting!("api_public_cart_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       ip = unique_ip()
 
       first = new_cart_token()
@@ -479,7 +479,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
     end
 
     test "the first write is limited globally, whatever the network", %{p1: p1} do
-      put_setting!("api_public_cart_rows_global_hour", 1)
+      put_setting!(new_rows_key(:global_hour), 1)
       first = new_cart_token()
       second = new_cart_token()
 
@@ -1529,7 +1529,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
     end
   end
 
-  # Every tool through both transports. REST is above; this is MCP (`POST /mcp/shop`).
+  # Every tool through both transports. REST is above; this is MCP (`POST /mcp/public`).
   # Excluded when the core in use has no MCP plug.
   describe "through MCP" do
     @describetag :mcp

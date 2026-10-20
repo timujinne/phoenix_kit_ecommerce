@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Module-neutral public API.** The tools are served under core's `/api/public/v1` and
+  `/mcp/public`; `/api/shop/v1` and `/mcp/shop` stay as deprecated aliases until core 3.0.0.
+  The cart tools declare `cart_token` as their `client_token` and `shop.get_checkout_link`
+  its `url` as a credential (only against a core whose `PhoenixKit.API.Tool` has the fields,
+  so the package still builds against an older one). A new cart is charged to core's shared
+  new-rows quota (`RateLimit.check_new_rows/1`, falling back to `check_cart_rows/1`; keys
+  `api_public_new_rows_*`, the old `api_public_cart_rows_*` read as a fallback).
+  `api_problems/0` declares `cart_not_found`, `cart_locked`, `unsupported_source` and
+  `insufficient_stock`, which core's canonical table no longer has (it still answers with them until
+  3.0.0 when no module declares them).
 - `mint ~> 1.6` is a declared requirement: `Services.PinnedAdapter` calls
   `Mint.HTTP` directly and had relied on it arriving through Req and Finch.
 

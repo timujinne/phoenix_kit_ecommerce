@@ -13,7 +13,8 @@ defmodule PhoenixKitEcommerce.API.CartToolsTest do
               PhoenixKit.API.Executor,
               PhoenixKit.API.Registry,
               PhoenixKit.API.ToolLint,
-              {PhoenixKit.ModuleRegistry, :all_api_tools, 0}
+              {PhoenixKit.ModuleRegistry, :all_api_tools, 0},
+              {PhoenixKit.ModuleRegistry, :all_api_problems, 0}
             ]}
 
   alias PhoenixKit.API.ControlFields
@@ -181,6 +182,26 @@ defmodule PhoenixKitEcommerce.API.CartToolsTest do
     end
   end
 
+  test "the tools that take the cart token declare it as the client token, the checkout link as a credential" do
+    tools = Map.new(CartTools.tools(), &{&1.name, &1})
+
+    if Map.has_key?(struct(PhoenixKit.API.Tool), :client_token) do
+      for {name, tool} <- tools, name != "shop.create_cart" do
+        assert tool.client_token == "cart_token", name
+      end
+
+      assert tools["shop.create_cart"].client_token == nil
+      assert tools["shop.get_checkout_link"].credentials == ["url"]
+
+      for {name, tool} <- tools, name != "shop.get_checkout_link" do
+        assert tool.credentials == [], name
+      end
+    else
+      # A core before the module-neutral API rejects the fields, so the tools carry neither.
+      for {_name, tool} <- tools, do: refute(Map.has_key?(tool, :client_token))
+    end
+  end
+
   test "every cart tool declares the shared language and currency control fields" do
     for tool <- CartTools.tools() do
       properties = tool.input_schema["properties"]
@@ -207,6 +228,32 @@ defmodule PhoenixKitEcommerce.API.CartToolsTest do
              Registry.find("shop.get_cart", :public)
 
     assert {:error, :not_found} = Registry.find("shop.get_cart", :admin)
+  end
+
+  test "the module declares the error codes of the cart API, with core's advice texts" do
+    problems = PhoenixKitEcommerce.api_problems()
+
+    assert Map.keys(problems) |> Enum.sort() ==
+             [:cart_locked, :cart_not_found, :insufficient_stock, :unsupported_source]
+
+    assert %{status: 404, title: "Cart not found"} = problems.cart_not_found
+    assert %{status: 409, title: "Cart locked"} = problems.cart_locked
+    assert %{status: 422, title: "Unsupported source"} = problems.unsupported_source
+    assert %{status: 422, title: "Insufficient stock"} = problems.insufficient_stock
+
+    for {code, problem} <- problems do
+      assert is_binary(problem.advice) and problem.advice != "", inspect(code)
+    end
+  end
+
+  test "core collects them from the module while it is enabled" do
+    if function_exported?(ModuleRegistry, :all_api_problems, 0) do
+      declared = ModuleRegistry.all_api_problems()
+
+      for {code, problem} <- PhoenixKitEcommerce.api_problems() do
+        assert declared[code] == problem, inspect(code)
+      end
+    end
   end
 
   defp keys_in(schema) when is_map(schema) do
