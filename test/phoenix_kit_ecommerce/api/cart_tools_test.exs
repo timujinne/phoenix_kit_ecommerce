@@ -12,7 +12,8 @@ defmodule PhoenixKitEcommerce.API.CartToolsTest do
               PhoenixKit.API.Executor,
               PhoenixKit.API.Registry,
               PhoenixKit.API.ToolLint,
-              {PhoenixKit.ModuleRegistry, :all_api_tools, 0}
+              {PhoenixKit.ModuleRegistry, :all_api_tools, 0},
+              {PhoenixKit.ModuleRegistry, :all_api_problems, 0}
             ]}
 
   alias PhoenixKit.API.Executor
