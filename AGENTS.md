@@ -580,6 +580,9 @@ different server) and turns events into Oban jobs; it never indexes inline.
 returns `PhoenixKitEcommerce.API.tools/0`: `ecommerce.get_prices`,
 `ecommerce.set_prices`, `ecommerce.set_availability`, `ecommerce.attach_images`,
 `ecommerce.detach_images`.
+`api_tools/0` adds `PhoenixKitEcommerce.API.OrderTools.tools/0` (list_orders,
+get_orders, get_order_customers, set_order_sync), which is `[]` unless the
+loaded billing exports `PhoenixKitBilling.put_order_sync/2`.
 Rules that must hold:
 
 - **Admin write handlers require the key owner's live `"catalogue"` permission**
@@ -715,6 +718,22 @@ Rules that must hold:
   `api_` prefix of core's other API settings (`api_confirm_batch_over`).
   Changing it takes `shop.manage_settings` **and** core's `api` permission
   (`Web.Authz.can_manage_api?/1`).
+- **The order tools** (`API.OrderTools`) read `PhoenixKitBilling.Order` only.
+  The revision, the mark (`metadata["sync"]`) and the `sync` filter belong to
+  billing (`Order.revision/1`, `Order.sync/1`, `Order.where_sync/2`,
+  `put_order_sync/2`); nothing here writes an order. The buyer's contacts are
+  part of an answer only when `ctx.scopes` holds `ecommerce.orders:customer`
+  (`OrderTools.contacts?/1`); the serializer (`API.OrderExport`) takes them
+  only through its `:contacts` option, so a caller that sends the order to the
+  external system passes `contacts: true` on purpose. A scope is granted
+  through the tools that declare it (core's `Keys.allowed_scopes_for/1`), which
+  is why `ecommerce.get_order_customers` exists. All four order tools declare
+  `shop.manage_orders`, so `contacts?/1` (scope only) is reached only by an
+  owner who holds it: on every call core drops from a key the scopes whose
+  tools' permission the owner no longer holds. `set_order_sync` is an admin
+  write like the others: a batch above `api_confirm_batch_over` is held for
+  confirmation by core, and the handler answers a dry run with a preview and
+  no write. The order feed leaves out `draft` orders unless `statuses` names them.
 - `PhoenixKitEcommerce.warehouse_source_kinds/0` offers the `shop_order` kind
   to Warehouse (`WarehouseSourceKind`); only orders placed by the storefront
   checkout count, and no label shows the customer.
@@ -729,20 +748,23 @@ once per build and read the excluded count each time.
 
 ### Permissions
 
-The `"shop"` key is admin-area READ access. Four sub-permissions carry the
+The `"shop"` key is admin-area READ access. Five sub-permissions carry the
 capabilities (core enforces sub-implies-base):
 
 | Key | Covers |
 |-----|--------|
 | `shop.manage_catalog` | products + categories (list, form and detail pages); viewing the translations page |
+| `shop.manage_orders` | every order tool of the API, reads included: orders carry the buyers' data and the totals |
 | `shop.manage_carts` | the carts admin — **read included**, the rows carry customer contact details |
 | `shop.manage_settings` | settings, security policy, product options, shipping methods; every translations-page action (translate, stamp, reset, stop, run sweep, sweep settings) |
 | `shop.run_imports` | CSV imports, import configurations, Shopify sync |
 
 ⚠️ Core auto-grants a newly discovered sub-permission to the Admin system
-role only. A CUSTOM role holding base `"shop"` keeps its reads but loses every
-mutation until an operator re-grants — secure by default and deliberate, but a
-breaking authorization change on upgrade.
+role only. A CUSTOM role holding base `"shop"` keeps its admin-area reads but
+loses every mutation until an operator re-grants — secure by default and
+deliberate, but a breaking authorization change on upgrade. Reading orders
+through the API is not among the kept reads: it needs `shop.manage_orders`,
+which no custom role has until an operator grants it.
 
 ### Notifications and the audit trail
 

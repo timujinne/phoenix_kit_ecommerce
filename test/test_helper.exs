@@ -38,7 +38,8 @@ support_dir = Path.expand("support", __DIR__)
   "live_case.ex",
   "cart_api_fixtures.ex",
   "api_fixtures.ex",
-  "api_case.ex"
+  "api_case.ex",
+  "order_fixtures.ex"
 ]
 |> Enum.each(&Code.require_file(&1, support_dir))
 
@@ -352,6 +353,23 @@ billing_user_menu_exclude =
     [:requires_billing_user_menu]
   end
 
+# The order tools read the revision and the external system's mark of an order,
+# which billing keeps from the release that has `put_order_sync/2`. Tests of
+# them are tagged :billing_order_sync and excluded on an older billing.
+billing_order_sync_exclude =
+  if Code.ensure_loaded?(PhoenixKitBilling) and
+       function_exported?(PhoenixKitBilling, :put_order_sync, 2) do
+    []
+  else
+    Logger.info(
+      "[test_helper] PhoenixKitBilling.put_order_sync/2 not available - the order tool " <>
+        "tests (:billing_order_sync) excluded. They run once `phoenix_kit_billing` is " <>
+        "upgraded to a release that ships it."
+    )
+
+    [:billing_order_sync]
+  end
+
 # The shop API registers tools and cron entries through callbacks that exist only in
 # a core with the shop API (`PhoenixKit.API.*`, `PhoenixKit.ObanCrons`). Tests of
 # those are tagged :requires_core_api and are EXCLUDED AT RUN TIME on a core
@@ -458,6 +476,7 @@ ExUnit.start(
       admin_api_exclude ++
       user_menu_exclude ++
       billing_user_menu_exclude ++
+      billing_order_sync_exclude ++
       api_exclude ++
       canonical_urls_exclude ++ trigram_exclude ++ analytics_exclude ++ mcp_exclude ++ replay_exclude
 )

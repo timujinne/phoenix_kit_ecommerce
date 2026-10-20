@@ -61,5 +61,19 @@
   # request's host there. Remove this entry when the minimum core requirement in
   # mix.exs carries it; dialyzer then reports it as an unnecessary skip.
   {"lib/phoenix_kit_ecommerce/api/context.ex",
-   "Call to missing or private function PhoenixKit.Utils.Routes.canonical_absolute_or_nil/2."}
+   "Call to missing or private function PhoenixKit.Utils.Routes.canonical_absolute_or_nil/2."},
+  # The order tools read the revision and the external system's mark of an order
+  # through the billing release that ships `put_order_sync/2`; an older billing
+  # lacks these, and the tools are not offered there (`OrderTools.available?/0`).
+  # Each entry names the one missing function.
+  {"lib/phoenix_kit_ecommerce/api/order_export.ex",
+   "Call to missing or private function PhoenixKitBilling.Order.sync/1."},
+  {"lib/phoenix_kit_ecommerce/api/list_orders.ex",
+   "Call to missing or private function PhoenixKitBilling.Order.where_sync/2."},
+  {"lib/phoenix_kit_ecommerce/api/set_order_sync.ex",
+   "Call to missing or private function PhoenixKitBilling.put_order_sync/2."},
+  {"lib/phoenix_kit_ecommerce/api/set_order_sync.ex",
+   "Call to missing or private function PhoenixKitBilling.Order.sync/1."},
+  {"lib/phoenix_kit_ecommerce/api/set_order_sync.ex",
+   "Call to missing or private function PhoenixKitBilling.Order.revision/1."}
 ]

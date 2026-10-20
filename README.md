@@ -367,6 +367,51 @@ A `validation_failed` answer with `context.reason` `database_error`,
 `storage_error` or `unexpected` is not a problem with the request and is worth
 retrying; any other `validation_failed` should be fixed first.
 
+### Order tools
+
+With a `phoenix_kit_billing` that keeps the revision and the mark of an order
+(`PhoenixKitBilling.put_order_sync/2`), four more admin tools let an external
+system (an accounting or fulfilment system) take the orders:
+
+| Tool | Does | Scope |
+|---|---|---|
+| `ecommerce.list_orders` | the feed of orders by cursor, filtered by status, change time and sync state | `ecommerce.orders:read` |
+| `ecommerce.get_orders` | orders by id or number, at most 100 | `ecommerce.orders:read` |
+| `ecommerce.get_order_customers` | the buyer of each order with contacts, and the order's notes | `ecommerce.orders:customer` |
+| `ecommerce.set_order_sync` | marks orders as taken (`synced`, with the system's own id and number) or refused (`failed`), at most 100 rows | `ecommerce.orders:sync` |
+
+`set_order_sync` is a write tool like the others of this module and is offered only where core can hold a call for confirmation.
+
+The key owner needs the `shop.manage_orders` permission for every order scope:
+`ecommerce.orders:read`, `ecommerce.orders:sync` and `ecommerce.orders:customer`
+(`shop` alone is not enough to read orders).
+The order tools answer only with the buyer's `id` and `type` unless the key holds
+`ecommerce.orders:customer`, which adds name, phone, email, company, tax id and
+address, the buyer's delivery address in `shipping.destination` (`postcode` and
+`address`, `nil` without the scope; the city `city`/`city_ref` and the pickup
+point `warehouse`, `warehouse_ref`, `warehouse_address`, `warehouse_postcode`
+are always shown) and the order's `notes`: what the buyer types can hold a
+phone number or an address, so `notes` is gated like the other buyer-entered
+fields and the key is absent without the scope. Internal notes and
+session data never leave.
+
+The feed is ordered by `(updated_at, uuid)` and paged by an opaque cursor.
+`sync: "pending"` returns the orders the system has not taken, or that changed
+after it took them, so a caller needs no cursor of its own to find what is
+outstanding. `sync.revision` of an order counts the changes the system cares
+about (see `PhoenixKitBilling.Order`); `set_order_sync` takes the revision the
+system read, and a row whose revision is out of date answers `conflict` with
+`context.reason` `stale_revision` and leaves the order `pending`. A mark does
+not change the order's `updated_at`. `limit` is 1 to 100; a larger value is
+`validation_failed`, never cut.
+
+The order map has no "prices include tax" flag, because the shop has no such
+setting: it works out `totals.tax` from the tax rate (over the lines marked
+`taxable`) and adds it to `total`.
+
+`PhoenixKitEcommerce.API.OrderExport.serialize/2` builds the same order map for
+code that sends an order to the external system itself.
+
 The module also offers the `shop_order` kind to Warehouse, so a shop order can
 be the basis of a goods issue. This needs the Warehouse module 0.5.3 or later,
 the first release where modules can declare source kinds.
