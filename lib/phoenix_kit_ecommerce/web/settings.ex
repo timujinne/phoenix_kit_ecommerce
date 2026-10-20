@@ -1297,13 +1297,16 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                 )}
               </p>
               <%!-- `novalidate`: the browser must not stop an out-of-range number before
-                   the server can say which ranges apply (min/max still steer the spinner). --%>
+                   the server can say which ranges apply (min/max still steer the spinner).
+                   daisyUI's `label` does not wrap, so these long labels ran into the next
+                   column: let them wrap, and line the fields up at the bottom of a row
+                   whose labels take a different number of lines. --%>
               <.form
                 for={@api_cart_form}
                 id="shop-api-carts-form"
                 phx-submit="save_api_cart_settings"
                 novalidate
-                class="grid gap-3 sm:grid-cols-2 max-w-2xl"
+                class="grid gap-3 sm:grid-cols-2 max-w-2xl items-end [&_.label]:whitespace-normal"
               >
                 <.input
                   field={@api_cart_form[:idle_days]}
