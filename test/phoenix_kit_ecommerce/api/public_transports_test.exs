@@ -3,7 +3,7 @@ if Code.ensure_loaded?(PhoenixKit.API.MCP) do
     @moduledoc """
     Every public tool through both transports, one success and one error
     each. The two transports are called at plug level (the router's
-    `forward` leaves them the path after `/api/shop/v1` and `/mcp/shop`), the
+    `forward` leaves them the path after `/api/public/v1` and `/mcp/public`), the
     way core's own transport tests call them, with a real rate limiter and the
     real settings. A request without an `Origin` header passes the MCP Origin
     check (a browser always sends one; a native client does not).
