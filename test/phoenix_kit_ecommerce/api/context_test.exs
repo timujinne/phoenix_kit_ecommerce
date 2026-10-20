@@ -196,6 +196,101 @@ defmodule PhoenixKitEcommerce.API.ContextTest do
     assert Context.absolute(context, "") == nil
   end
 
+  describe "absolute/3, the link to a page of a language" do
+    test "keeps the request's host and the path when no host app maps languages to domains" do
+      context = build!()
+
+      assert Context.absolute(context, "/de/shop/product/vase", "de-DE") ==
+               "https://shop.test/de/shop/product/vase"
+
+      assert Context.absolute(context, "/shop/product/vase", "en-US") ==
+               "https://shop.test/shop/product/vase"
+
+      assert Context.absolute(context, "https://cdn.example/x.jpg", "de-DE") ==
+               "https://cdn.example/x.jpg"
+
+      assert Context.absolute(context, nil, "de-DE") == nil
+      assert Context.absolute(context, "", "de-DE") == nil
+    end
+
+    @tag :core_without_canonical_urls
+    test "ignores the host resolver on a core that has no language-domain helpers" do
+      put_canonical_host_resolver!()
+
+      assert Context.absolute(build!(), "/de/shop/product/vase", "de-DE") ==
+               "https://shop.test/de/shop/product/vase"
+    end
+
+    @tag :requires_core_canonical_urls
+    test "puts a language that has a domain on it, without the language segment" do
+      put_canonical_host_resolver!()
+      context = build!()
+
+      for language <- ["de", "de-DE", "de-AT"] do
+        assert Context.absolute(context, "/de/shop/product/vase", language) ==
+                 "https://shop.example.de/shop/product/vase"
+      end
+
+      assert Context.absolute(context, "/fr/shop/category/lampes", "fr-FR") ==
+               "https://shop.example.fr/shop/category/lampes"
+    end
+
+    @tag :requires_core_canonical_urls
+    test "a path that the request's own domain serves without a segment is left as it is" do
+      put_canonical_host_resolver!()
+
+      assert Context.absolute(build!(), "/shop/product/vase", "de-DE") ==
+               "https://shop.example.de/shop/product/vase"
+    end
+
+    @tag :requires_core_canonical_urls
+    test "a page named like the language is not mistaken for the language segment" do
+      put_canonical_host_resolver!()
+
+      assert Context.absolute(build!(), "/shop/product/de", "de-DE") ==
+               "https://shop.example.de/shop/product/de"
+    end
+
+    @tag :requires_core_canonical_urls
+    test "a language without a domain keeps the request's host and its segment" do
+      put_canonical_host_resolver!()
+      context = build!()
+
+      assert Context.absolute(context, "/uk/shop/product/vase", "uk-UA") ==
+               "https://shop.test/uk/shop/product/vase"
+
+      assert Context.absolute(context, "/shop/product/vase", "en-US") ==
+               "https://shop.test/shop/product/vase"
+    end
+
+    @tag :requires_core_canonical_urls
+    test "the resolver is asked once per link, with a domain or without" do
+      put_canonical_host_resolver!(:host_counted)
+      context = build!()
+
+      for {path, language} <- [
+            {"/de/shop/product/vase", "de-DE"},
+            {"/uk/shop/product/vase", "uk-UA"}
+          ] do
+        Process.put(:resolver_calls, 0)
+        Context.absolute(context, path, language)
+        assert Process.get(:resolver_calls) == 1
+      end
+    end
+
+    @tag :requires_core_canonical_urls
+    test "a URL and nil are left alone whatever the resolver says" do
+      put_canonical_host_resolver!()
+      context = build!()
+
+      assert Context.absolute(context, "https://cdn.example/x.jpg", "de-DE") ==
+               "https://cdn.example/x.jpg"
+
+      assert Context.absolute(context, nil, "de-DE") == nil
+      assert Context.absolute(context, "", "de-DE") == nil
+    end
+  end
+
   test "a shop with no currency at all is an internal error, not a crash" do
     Repo.delete_all(Currency)
     PhoenixKit.Cache.clear(:billing_currencies)

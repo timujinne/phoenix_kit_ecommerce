@@ -98,6 +98,51 @@ defmodule PhoenixKitEcommerce.API.Public.CatalogTest do
       assert [%{"url" => url}] = out["items"]
       assert url =~ "https://shop.test/en/shop/product/"
     end
+
+    @tag :requires_core_canonical_urls
+    test "get_products links to a language that has a domain on that domain, whoever asks", t do
+      put_canonical_host_resolver!()
+
+      from_the_other_domain = get!(%{"ids" => [t.product.uuid], "language" => "de"})
+      from_its_own_domain = get!(%{"ids" => [t.product.uuid]}, language: "de")
+
+      for out <- [from_the_other_domain, from_its_own_domain] do
+        url = hd(out["results"])["product"]["url"]
+        assert url =~ "https://shop.example.de/shop/product/"
+        refute url =~ "/de/"
+      end
+    end
+
+    @tag :requires_core_canonical_urls
+    test "get_products keeps the request's host for a language without a domain", t do
+      put_canonical_host_resolver!()
+      out = get!(%{"ids" => [t.product.uuid], "language" => "en"}, language: "de")
+
+      assert hd(out["results"])["product"]["url"] =~ "https://shop.test/en/shop/product/"
+    end
+
+    @tag :requires_core_canonical_urls
+    test "list_categories links to a language that has a domain on that domain", t do
+      put_canonical_host_resolver!()
+
+      assert {:ok, out} =
+               Catalog.list_categories(%{"language" => "de"}, public_ctx(language: "en"))
+
+      node = Enum.find(out["categories"], &(&1["id"] == t.category.uuid))
+
+      assert node["url"] =~ "https://shop.example.de/shop/category/"
+      refute node["url"] =~ "/de/"
+    end
+
+    @tag :requires_core_canonical_urls
+    test "similar_products links to a language that has a domain on that domain", t do
+      put_canonical_host_resolver!()
+      out = similar!(%{"id" => t.product.uuid, "language" => "de"}, language: "en")
+
+      assert [%{"url" => url}] = out["items"]
+      assert url =~ "https://shop.example.de/shop/product/"
+      refute url =~ "/de/"
+    end
   end
 
   describe "get_products/2" do

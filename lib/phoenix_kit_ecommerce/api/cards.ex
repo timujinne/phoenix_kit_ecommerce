@@ -84,7 +84,9 @@ defmodule PhoenixKitEcommerce.API.Cards do
       "id" => fn -> record.id end,
       "title" => fn -> Translations.get_display(product, :title, language) end,
       "slug" => fn -> slug end,
-      "url" => fn -> slug && Context.absolute(context, Shop.product_url(product, language)) end,
+      "url" => fn ->
+        slug && Context.absolute(context, Shop.product_url(product, language), language)
+      end,
       "price" => fn -> priced(on_request?, fn -> Context.money(context, product.price) end) end,
       "price_from" => fn ->
         priced(on_request?, fn -> lowest_price(context, product, lookup) end)

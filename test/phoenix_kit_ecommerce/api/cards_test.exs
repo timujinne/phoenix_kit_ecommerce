@@ -219,6 +219,44 @@ defmodule PhoenixKitEcommerce.API.CardsTest do
     assert Enum.map(item["category_path"], & &1["name"]) == ["Visible Child"]
   end
 
+  @tag :requires_core_canonical_urls
+  test "list_item/2 puts the url on the domain of the language of the answer" do
+    enable_languages!(["en-US", "de-DE"])
+    put_canonical_host_resolver!()
+    product = legacy_product!(%{"en-US" => "Red Vase", "de-DE" => "Rote Vase"})
+    record = record(product)
+
+    german = context("de-DE")
+    url = Context.with_request_currency(german, fn -> Cards.list_item(record, german)["url"] end)
+
+    assert url == "https://shop.example.de/shop/product/#{Cards.link_slug(product, "de-DE")}"
+
+    english = context("en-US")
+
+    url =
+      Context.with_request_currency(english, fn -> Cards.list_item(record, english)["url"] end)
+
+    assert url == "https://shop.test" <> Shop.product_url(product, "en-US")
+  end
+
+  @tag :requires_core_canonical_urls
+  test "list_item/2 takes the domain from the answer's language, not the request's default" do
+    enable_languages!(["en-US", "de-DE"])
+    put_canonical_host_resolver!()
+    product = legacy_product!(%{"en-US" => "Red Vase", "de-DE" => "Rote Vase"})
+    asked_in_german = context("en-US", %{"language" => "de-DE"})
+
+    assert asked_in_german.language == "de-DE"
+    assert asked_in_german.default_language == "en-US"
+
+    url =
+      Context.with_request_currency(asked_in_german, fn ->
+        Cards.list_item(record(product), asked_in_german)["url"]
+      end)
+
+    assert url == "https://shop.example.de/shop/product/#{Cards.link_slug(product, "de-DE")}"
+  end
+
   test "list_item/2 leaves out url and slug when the product has no slug", %{context: context} do
     {product, _root, _leaf} = vase()
     record = record(product)

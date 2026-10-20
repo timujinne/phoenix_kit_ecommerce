@@ -166,7 +166,7 @@ defmodule PhoenixKitEcommerce.API.Public.Catalog do
       "id" => category.uuid,
       "name" => Translations.get_display(category, :name, language) || "",
       "slug" => slug,
-      "url" => slug && Context.absolute(context, Shop.category_url(category, language)),
+      "url" => slug && Context.absolute(context, Shop.category_url(category, language), language),
       "product_count" => own,
       "total_count" => own + Enum.sum(Enum.map(children, & &1["total_count"])),
       "children" => children

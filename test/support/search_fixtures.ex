@@ -49,6 +49,29 @@ defmodule PhoenixKitEcommerce.SearchFixtures do
     :ok
   end
 
+  @doc """
+  Points core's `:canonical_host_resolver` at `PhoenixKitEcommerce.Test.CanonicalHostStub`
+  (`de` and `fr` have a domain of their own, every other language none) for the
+  rest of the test. `fun` is `:host_counted` to count the calls in the process
+  dictionary (`:resolver_calls`).
+  """
+  def put_canonical_host_resolver!(fun \\ :host) do
+    previous = Application.fetch_env(:phoenix_kit, :canonical_host_resolver)
+
+    Application.put_env(
+      :phoenix_kit,
+      :canonical_host_resolver,
+      {PhoenixKitEcommerce.Test.CanonicalHostStub, fun}
+    )
+
+    ExUnit.Callbacks.on_exit(fn ->
+      case previous do
+        {:ok, value} -> Application.put_env(:phoenix_kit, :canonical_host_resolver, value)
+        :error -> Application.delete_env(:phoenix_kit, :canonical_host_resolver)
+      end
+    end)
+  end
+
   @doc ~s|A legacy category; `names` is the localized map, e.g. `%{"en" => "Vases"}`.|
   def legacy_category!(names, attrs \\ %{}) when is_map(names) do
     {:ok, category} = Shop.create_category(Map.merge(%{name: names}, attrs))
