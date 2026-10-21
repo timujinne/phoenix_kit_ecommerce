@@ -230,6 +230,36 @@ defmodule PhoenixKitEcommerce.Web.ShippingPointFieldTest do
     end
   end
 
+  describe "when the same city is picked again" do
+    test "the chosen branch stays", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view)
+      pick_city(view)
+      view |> element("#shipping-locality-option-sender_point-1") |> render_click()
+      assert has_element?(view, "#shipping-locality-selected-sender_point", "Branch 2")
+
+      pick_city(view, 0)
+
+      assert has_element?(view, "#shipping-locality-selected-sender_point", "Branch 2")
+      assert has_element?(view, "#shipping-provider-setting-sender_point-id[value='b-2']")
+    end
+  end
+
+  describe "the label of a field that waits for its city" do
+    test "points at no input until the input is there", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view)
+
+      assert has_element?(view, "#shipping-locality-waiting-sender_point")
+      refute has_element?(view, "label[for='shipping-locality-query-sender_point']")
+
+      pick_city(view)
+
+      assert has_element?(view, "label[for='shipping-locality-query-sender_point']")
+      assert has_element?(view, "#shipping-locality-query-sender_point")
+    end
+  end
+
   describe "editing a method that has a city but no branch" do
     test "the branches are listed once the services are known", %{conn: conn} do
       {:ok, method} =

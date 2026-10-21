@@ -195,7 +195,7 @@ msgstr "Tegevused"
 #: lib/phoenix_kit_ecommerce/web/import_configs.ex:425
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:931
 #: lib/phoenix_kit_ecommerce/web/products.ex:323
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:573
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:586
 #: lib/phoenix_kit_ecommerce/web/status_labels.ex:37
 #: lib/phoenix_kit_ecommerce/web/status_labels.ex:43
 #: lib/phoenix_kit_ecommerce/web/status_labels.ex:44
@@ -394,7 +394,7 @@ msgid "Base price:"
 msgstr "Põhihind:"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:413
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:318
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:331
 #, elixir-autogen, elixir-format
 msgid "Basic Information"
 msgstr "Põhiandmed"
@@ -460,7 +460,7 @@ msgstr "CSV-impordi filtrid"
 #: lib/phoenix_kit_ecommerce/web/products.ex:723
 #: lib/phoenix_kit_ecommerce/web/products.ex:751
 #: lib/phoenix_kit_ecommerce/web/products.ex:777
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:594
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:607
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr "Tühista"
@@ -637,7 +637,7 @@ msgstr "Seadista valikute kaardistus"
 msgid "Configure keyword filters and category rules for CSV product imports"
 msgstr "Seadistage CSV-tooteimpordi märksõnafiltrid ja kategooriareeglit"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:305
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:318
 #, elixir-autogen, elixir-format
 msgid "Configure shipping method details"
 msgstr "Seadista tarneviisi üksikasjad"
@@ -657,7 +657,7 @@ msgstr "Kinnita"
 msgid "Confirm Import"
 msgstr "Kinnita import"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:446
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:459
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:120
 #, elixir-autogen, elixir-format
 msgid "Constraints"
@@ -691,7 +691,7 @@ msgstr "Kauba omahind"
 msgid "Create Category"
 msgstr "Loo kategooria"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:598
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:611
 #, elixir-autogen, elixir-format
 msgid "Create Method"
 msgstr "Loo meetod"
@@ -727,7 +727,7 @@ msgid "Created:"
 msgstr "Loodud:"
 
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:160
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:373
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:386
 #, elixir-autogen, elixir-format
 msgid "Currency"
 msgstr "Valuuta"
@@ -859,12 +859,12 @@ msgstr "Kohale toimetatud"
 msgid "Delivery"
 msgstr "Tarne"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:528
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:541
 #, elixir-autogen, elixir-format
 msgid "Delivery & Status"
 msgstr "Tarne ja olek"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:344
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:357
 #, elixir-autogen, elixir-format
 msgid "Delivery in 3-5 business days"
 msgstr "Tarne 3–5 tööpäeva jooksul"
@@ -874,7 +874,7 @@ msgstr "Tarne 3–5 tööpäeva jooksul"
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:686
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:986
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1217
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:343
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:356
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1677
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1464
 #, elixir-autogen, elixir-format
@@ -969,7 +969,7 @@ msgstr "E-kaubanduse seaded"
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:151
 #: lib/phoenix_kit_ecommerce/web/products.ex:480
 #: lib/phoenix_kit_ecommerce/web/products.ex:608
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:73
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:75
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:101
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:212
 #, elixir-autogen, elixir-format
@@ -977,7 +977,7 @@ msgid "Edit"
 msgstr "Muuda"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:110
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:74
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:76
 #, elixir-autogen, elixir-format
 msgid "Edit %{name}"
 msgstr "Muuda %{name}"
@@ -1030,12 +1030,12 @@ msgstr "Viga"
 msgid "Errors"
 msgstr "Vead"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:545
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:558
 #, elixir-autogen, elixir-format
 msgid "Est. days (max)"
 msgstr "Tähtaeg (maks, päevades)"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:535
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:548
 #, elixir-autogen, elixir-format
 msgid "Est. days (min)"
 msgstr "Tähtaeg (min, päevades)"
@@ -1201,7 +1201,7 @@ msgstr "Lõpphind"
 msgid "Folder icon"
 msgstr "Kausta ikoon"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:398
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:411
 #, elixir-autogen, elixir-format
 msgid "Free above"
 msgstr "Tasuta alates"
@@ -1429,12 +1429,12 @@ msgstr "Tee juurkategooriaks"
 msgid "Manage your e-commerce store"
 msgstr "Halda oma e-poodi"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:484
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:497
 #, elixir-autogen, elixir-format
 msgid "Max order"
 msgstr "Maks. tellimus"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:463
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:476
 #, elixir-autogen, elixir-format
 msgid "Max weight (g)"
 msgstr "Maks. kaal (g)"
@@ -1465,12 +1465,12 @@ msgstr "Migreerige toote pildid välistest CDN-URL-idest Storage moodulisse pare
 msgid "Migrated"
 msgstr "Migreeritud"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:473
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:486
 #, elixir-autogen, elixir-format
 msgid "Min order"
 msgstr "Min. tellimus"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:453
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:466
 #, elixir-autogen, elixir-format
 msgid "Min weight (g)"
 msgstr "Min. kaal (g)"
@@ -1503,7 +1503,7 @@ msgstr "Minu tellimused"
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:673
 #: lib/phoenix_kit_ecommerce/web/import_configs.ex:274
 #: lib/phoenix_kit_ecommerce/web/import_configs.ex:402
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:325
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:338
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1468
 #, elixir-autogen, elixir-format
 msgid "Name"
@@ -1582,7 +1582,7 @@ msgstr "Pilt puudub"
 msgid "No imports yet"
 msgstr "Importe pole veel"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:465
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:478
 #, elixir-autogen, elixir-format
 msgid "No limit"
 msgstr "Piiranguta"
@@ -1592,12 +1592,12 @@ msgstr "Piiranguta"
 msgid "No limits"
 msgstr "Piiranguta"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:487
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:500
 #, elixir-autogen, elixir-format
 msgid "No max"
 msgstr "Maks. piiranguta"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:476
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:489
 #, elixir-autogen, elixir-format
 msgid "No min"
 msgstr "Min. piiranguta"
@@ -1633,7 +1633,7 @@ msgstr "Selles kategoorias pole piltidega tooteid. Lisa toote pildid selle valik
 msgid "No shipping methods"
 msgstr "Tarneviisid puuduvad"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:401
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:414
 #, elixir-autogen, elixir-format
 msgid "No threshold"
 msgstr "Piiranguta"
@@ -1812,7 +1812,7 @@ msgstr "Vali esmalt CSV-fail"
 #: lib/phoenix_kit_ecommerce/web/categories.ex:403
 #: lib/phoenix_kit_ecommerce/web/categories.ex:444
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:476
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:555
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:568
 #, elixir-autogen, elixir-format
 msgid "Position"
 msgstr "Positsioon"
@@ -1842,7 +1842,7 @@ msgstr "Eelmine"
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:431
 #: lib/phoenix_kit_ecommerce/web/products.ex:439
 #: lib/phoenix_kit_ecommerce/web/products.ex:500
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:362
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:375
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:73
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:119
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1681
@@ -1867,7 +1867,7 @@ msgstr "Hinna alistamine seadistatakse iga valiku kohta valikute seadetes."
 
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:425
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1006
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:355
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:368
 #, elixir-autogen, elixir-format
 msgid "Pricing"
 msgstr "Hinnad"
@@ -2121,7 +2121,7 @@ msgstr "Saadetud"
 msgid "Shipping Methods"
 msgstr "Tarneviisid"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:159
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:162
 #, elixir-autogen, elixir-format
 msgid "Shipping method created"
 msgstr "Tarneviis loodud"
@@ -2131,7 +2131,7 @@ msgstr "Tarneviis loodud"
 msgid "Shipping method deleted"
 msgstr "Tarneviis kustutatud"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:185
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:188
 #, elixir-autogen, elixir-format
 msgid "Shipping method updated"
 msgstr "Tarneviis uuendatud"
@@ -2195,7 +2195,7 @@ msgstr "Pesa võti"
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:447
 #: lib/phoenix_kit_ecommerce/web/import_show.ex:167
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:940
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:335
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:348
 #, elixir-autogen, elixir-format
 msgid "Slug"
 msgstr "Slug"
@@ -2213,7 +2213,7 @@ msgstr "Midagi läks valesti. Proovi uuesti."
 msgid "Specifications"
 msgstr "Omadused"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:326
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:339
 #, elixir-autogen, elixir-format
 msgid "Standard Shipping"
 msgstr "Standardtarne"
@@ -2253,7 +2253,7 @@ msgstr "Alustati migreerimist %{count} toote jaoks"
 #: lib/phoenix_kit_ecommerce/web/products.ex:319
 #: lib/phoenix_kit_ecommerce/web/products.ex:429
 #: lib/phoenix_kit_ecommerce/web/products.ex:497
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:562
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:575
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:122
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1680
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2657
@@ -2369,7 +2369,7 @@ msgstr "Kokku"
 msgid "Total Products"
 msgstr "Tooteid kokku"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:585
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:598
 #, elixir-autogen, elixir-format
 msgid "Tracking supported"
 msgstr "Jälgimine toetatud"
@@ -2464,7 +2464,7 @@ msgstr "Uuenda"
 msgid "Update Category"
 msgstr "Uuenda kategooriat"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:598
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:611
 #, elixir-autogen, elixir-format
 msgid "Update Method"
 msgstr "Uuenda meetodit"
@@ -2612,7 +2612,7 @@ msgstr "Teie tellimus on kohale toimetatud."
 msgid "Your order is on its way!"
 msgstr "Teie tellimus on teel!"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:336
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:349
 #, elixir-autogen, elixir-format
 msgid "auto-generated if empty"
 msgstr "genereeritakse automaatselt, kui tühi"
@@ -3935,7 +3935,7 @@ msgstr "Arveldusandmed"
 msgid "Change"
 msgstr "Muuda"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:299
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:302
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2508
 #: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:48
 #, elixir-autogen, elixir-format
@@ -4719,7 +4719,7 @@ msgstr "Pealkirjad"
 msgid "Vendors"
 msgstr "Tarnijad"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:379
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:392
 #, elixir-autogen, elixir-format
 msgid "No default currency configured"
 msgstr "Vaikimisi valuutat ei ole seadistatud"
@@ -6062,7 +6062,7 @@ msgstr "Käib…"
 #: lib/phoenix_kit_ecommerce/web/settings.ex:647
 #: lib/phoenix_kit_ecommerce/web/settings.ex:912
 #: lib/phoenix_kit_ecommerce/web/settings.ex:1371
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:596
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:609
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2940
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1808
 #, elixir-autogen, elixir-format
@@ -6101,8 +6101,8 @@ msgstr "Uus kategooria"
 msgid "New product"
 msgstr "Uus toode"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:56
 #: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:57
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:58
 #, elixir-autogen, elixir-format
 msgid "New shipping method"
 msgstr "Uus tarneviis"
@@ -6131,7 +6131,7 @@ msgstr "Vedaja hinnakirja järgi, tasumine kättesaamisel"
 msgid "Paid on delivery"
 msgstr "Tasumine kättesaamisel"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:415
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:428
 #, elixir-autogen, elixir-format
 msgid "Paid on delivery at carrier rates"
 msgstr "Tasumine kättesaamisel vedaja hinnakirja järgi"
@@ -6144,7 +6144,7 @@ msgstr "Tasumine kättesaamisel vedaja hinnakirja järgi"
 msgid "Shipping is not included in this total: you pay the carrier at their rates on delivery."
 msgstr "Tarne ei sisaldu selles summas: tasute selle vedajale tema hinnakirja järgi kättesaamisel."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:418
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:431
 #, elixir-autogen, elixir-format
 msgid "The customer pays the carrier at their rates on delivery. The shop charges nothing for shipping: the price is saved as 0 and the free-shipping threshold is cleared."
 msgstr "Klient tasub vedajale tema hinnakirja järgi kättesaamisel. Pood tarne eest tasu ei võta: hind salvestatakse nullina ja tasuta tarne lävi eemaldatakse."
@@ -6184,12 +6184,12 @@ msgstr "%{name}: ühendatud"
 msgid "%{name}: not connected"
 msgstr "%{name}: pole ühendatud"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:702
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:715
 #, elixir-autogen, elixir-format
 msgid "%{provider} (not installed)"
 msgstr "%{provider} (pole paigaldatud)"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:719
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:732
 #, elixir-autogen, elixir-format
 msgid "%{service} (unavailable)"
 msgstr "%{service} (pole saadaval)"
@@ -6448,7 +6448,7 @@ msgstr "Pole saadaval"
 msgid "Nothing"
 msgstr "Mitte midagi"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:352
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:355
 #, elixir-autogen, elixir-format
 msgid "Nothing found."
 msgstr "Midagi ei leitud."
@@ -6464,7 +6464,7 @@ msgid "One band per line: up to kg, price. For example: 0,5 90"
 msgstr "Üks vahemik rea kohta: kuni kg, hind. Näiteks: 0,5 90"
 
 #: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1190
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:380
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:383
 #, elixir-autogen, elixir-format
 msgid "Only the first %{count} points are shown. Narrow the search to see others."
 msgstr "Näidatakse ainult esimest %{count} punkti. Täpsusta otsingut, et näha teisi."
@@ -6533,12 +6533,12 @@ msgid "Round up to a multiple of"
 msgstr "Ümardatakse üles kordseks arvuga"
 
 #: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1137
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:525
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:528
 #, elixir-autogen, elixir-format
 msgid "Search by number, name or address"
 msgstr "Otsi numbri, nime või aadressi järgi"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:346
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:349
 #, elixir-autogen, elixir-format
 msgid "Searching"
 msgstr "Otsin"
@@ -6573,7 +6573,7 @@ msgstr "Mõõtmed ja kaal, mida eeldatakse selle kategooria kirjete puhul, mille
 msgid "Size and weight assumed for products of this category that have none of their own. Leave empty to use the shop's defaults."
 msgstr "Mõõtmed ja kaal, mida eeldatakse selle kategooria toodete puhul, millel oma väärtusi pole. Jäta tühjaks, et kasutada poe vaikeväärtusi."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:526
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:529
 #, elixir-autogen, elixir-format
 msgid "Start typing a city"
 msgstr "Hakka linna sisestama"
@@ -6665,7 +6665,7 @@ msgstr "Teenusepakkuja %{provider} pole paigaldatud"
 msgid "The provider does not offer the service %{service}"
 msgstr "Teenusepakkuja ei paku teenust %{service}"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:349
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:352
 #, elixir-autogen, elixir-format
 msgid "The search is unavailable right now."
 msgstr "Otsing pole praegu saadaval."
@@ -7734,37 +7734,37 @@ msgstr "Sisestage täisarvud näidatud vahemikes."
 msgid "A price change larger than this percentage of the current price is held until it is confirmed. A price set to zero is always held; any other first price is not. From 100 percent on, only increases are held, as a cut cannot exceed 100 percent."
 msgstr "Hinnamuutus, mis ületab seda protsenti praegusest hinnast, ootab kinnitust. Nulliks seatud hind peetakse alati kinni; muud esimest hinda ei peeta kinni. 100 protsendist alates peetakse kinni ainult tõuse, sest langus ei saa ületada 100 protsenti."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:519
-#, elixir-autogen, elixir-format
-msgid "A country in both lists is not delivered to."
-msgstr "Riiki, mis on mõlemas nimekirjas, ei tarnita."
-
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:322
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:325
 #, elixir-autogen, elixir-format
 msgid "Choose the city first."
 msgstr "Vali esmalt linn."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:511
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:524
 #, elixir-autogen, elixir-format
 msgid "Deliver only to"
 msgstr "Tarni ainult"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:512
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:525
 #, elixir-autogen, elixir-format
 msgid "Leave empty for every country the provider serves."
 msgstr "Jäta tühjaks, et tarnida kõikidesse riikidesse, mida teenusepakkuja teenindab."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:499
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:512
 #, elixir-autogen, elixir-format
 msgid "Limit by country"
 msgstr "Piira riigi järgi"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:518
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:531
 #, elixir-autogen, elixir-format
 msgid "Never deliver to"
 msgstr "Ära kunagi tarni"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:248
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:258
 #, elixir-autogen, elixir-format
 msgid "Selected: %{countries}"
 msgstr "Valitud: %{countries}"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:532
+#, elixir-autogen, elixir-format
+msgid "This method is never offered to these countries."
+msgstr "Seda tarneviisi neis riikides kunagi ei pakuta."

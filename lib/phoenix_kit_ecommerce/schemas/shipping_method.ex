@@ -173,8 +173,9 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
 
   Codes are compared upcased, on both sides, so a lower case code in a cart or
   in a row stored before the lists were normalised still matches. An empty
-  `countries` list means every country; a country in `excluded_countries` is
-  always out. A blank or missing `country` (the cart page leaves it unset
+  `countries` list means every country; a list that holds only values that are
+  not country codes does not (it serves nobody, as it always did); a country
+  in `excluded_countries` is always out. A blank or missing `country` (the cart page leaves it unset
   until checkout, and the method list is country-blind until then) is let
   through by every method.
   """
@@ -185,8 +186,8 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
         true
 
       code ->
-        allowed = Codec.countries(allowed)
-        (allowed == [] or code in allowed) and code not in Codec.countries(excluded)
+        (List.wrap(allowed) == [] or code in Codec.countries(allowed)) and
+          code not in Codec.countries(excluded)
     end
   end
 
@@ -311,7 +312,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
           do: add_error(changeset, field, "has no valid country code"),
           else: put_change(changeset, field, codes)
 
-      # The columns accept NULL, but a NULL list breaks `country_ok?/2` and the
+      # The columns accept NULL, but a NULL list breaks `serves_country?/2` and the
       # methods list: nothing means the empty list, which is "every country".
       {:ok, nil} ->
         put_change(changeset, field, [])
@@ -337,12 +338,17 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
 
   # Allowing and excluding the same country says two things at once. Excluding
   # wins when such a row is read (`serves_country?/2`), but it is a mistake in
-  # the form, so a save that sets either list is refused. A row that already
+  # the form, so a save that sets either list is refused. Codes are compared
+  # as `serves_country?/2` reads them, so a stored `ua` meets a new `UA`. A
+  # list that is already an error is left alone, and a row that already
   # overlaps stays editable for anything else.
   defp validate_disjoint_countries(changeset) do
-    if changed?(changeset, :countries) or changed?(changeset, :excluded_countries) do
-      excluded = List.wrap(get_field(changeset, :excluded_countries))
-      both = Enum.filter(List.wrap(get_field(changeset, :countries)), &(&1 in excluded))
+    if (changed?(changeset, :countries) or changed?(changeset, :excluded_countries)) and
+         not list_error?(changeset) do
+      excluded = changeset |> get_field(:excluded_countries) |> Codec.countries()
+
+      both =
+        changeset |> get_field(:countries) |> Codec.countries() |> Enum.filter(&(&1 in excluded))
 
       if both == [],
         do: changeset,
@@ -357,6 +363,11 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
       changeset
     end
   end
+
+  defp list_error?(changeset),
+    do:
+      Keyword.has_key?(changeset.errors, :countries) or
+        Keyword.has_key?(changeset.errors, :excluded_countries)
 
   # The admin form submits the flag as a top-level `pay_on_delivery` param:
   # rendering it as `shipping_method[metadata][pay_on_delivery]` would make

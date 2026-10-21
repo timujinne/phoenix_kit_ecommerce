@@ -175,6 +175,15 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
       assert message =~ "PL"
     end
 
+    test "a stored list of values that are not country codes serves nobody" do
+      for list <- [["USA"], ["Ukraine"], ["", "x1"]] do
+        method = %ShippingMethod{active: true, countries: list, excluded_countries: []}
+
+        refute ShippingMethod.available_for?(method, %{country: "US"}),
+               "expected #{inspect(list)} to serve nobody"
+      end
+    end
+
     test "a stored row with a country in both lists is not delivered to that country" do
       method = %ShippingMethod{
         active: true,
@@ -511,6 +520,46 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
       assert Shop.get_shipping_method!(method.uuid).excluded_countries == []
     end
 
+    test "the excluded list's hint says what the list does", %{conn: conn} do
+      method = method!(%{"countries" => ["UA"]})
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+
+      assert has_element?(
+               view,
+               "#shipping_method_excluded_countries-hint",
+               "This method is never offered to these countries."
+             )
+    end
+
+    test "a list with an error is described by its hint and its error, and marked invalid",
+         %{conn: conn} do
+      method = method!(%{"countries" => ["UA"]})
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+
+      # Without an error the fieldset points at its hint only.
+      assert has_element?(
+               view,
+               "fieldset[aria-describedby='shipping_method_countries-hint']"
+             )
+
+      refute has_element?(view, "#shipping-method-countries input[aria-invalid]")
+
+      view
+      |> element(@form)
+      |> render_submit(%{"shipping_method" => %{"countries" => ["", "XX"]}})
+
+      assert has_element?(
+               view,
+               "fieldset[aria-describedby='shipping_method_countries-hint shipping_method_countries-error']"
+             )
+
+      assert has_element?(view, "#shipping_method_countries-error p", "has no valid country code")
+      assert has_element?(view, "#shipping_method_countries input[aria-invalid='true']")
+      refute has_element?(view, "#shipping_method_excluded_countries input[aria-invalid]")
+    end
+
     test "a stored value that is not a two-letter code is shown ticked and kept", %{conn: conn} do
       method = method!(%{"countries" => ["UA"]})
 
@@ -578,7 +627,9 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
 
       view |> form(@form, shipping_method: %{name: "Renamed"}) |> render_submit()
 
-      assert Shop.get_shipping_method!(method.uuid).countries == ["UA"]
+      reloaded = Shop.get_shipping_method!(method.uuid)
+      assert reloaded.name == "Renamed"
+      assert reloaded.countries == ["UA"]
     end
 
     test "a method with stored countries saved from the form keeps them", %{conn: conn} do
@@ -602,6 +653,25 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
 
       assert html =~ "UA, PL, DE +2"
       assert html =~ "RU"
+    end
+  end
+
+  describe "the list of methods" do
+    setup %{conn: conn}, do: %{conn: put_test_scope(conn, fake_scope())}
+
+    test "shows a method whose lists are NULL as having no limits", %{conn: conn} do
+      method = method!(%{"name" => "Nulls"})
+
+      {1, _} =
+        TestRepo.update_all(
+          from(m in ShippingMethod, where: m.uuid == ^method.uuid),
+          set: [countries: nil, excluded_countries: nil]
+        )
+
+      {:ok, _view, html} = live(conn, "/en/admin/shop/shipping")
+
+      assert html =~ "Nulls"
+      assert html =~ "No limits"
     end
   end
 

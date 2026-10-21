@@ -112,6 +112,19 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodTest do
       assert ShippingMethod.serves_country?(%ShippingMethod{}, "DE")
     end
 
+    test "an allow-list with no valid code serves nobody, not every country" do
+      for list <- [["USA"], ["Ukraine"], ["x1", " "]] do
+        method = %ShippingMethod{countries: list, excluded_countries: []}
+        refute ShippingMethod.serves_country?(method, "US"), inspect(list)
+        refute ShippingMethod.serves_country?(method, "UA"), inspect(list)
+      end
+    end
+
+    test "a NULL list is no limit" do
+      method = %ShippingMethod{countries: nil, excluded_countries: nil}
+      assert ShippingMethod.serves_country?(method, "DE")
+    end
+
     test "a country that is not a code never matches an allow-list" do
       allowed = %ShippingMethod{countries: ["UA"], excluded_countries: []}
       refute ShippingMethod.serves_country?(allowed, "ukraine")
@@ -153,6 +166,27 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodTest do
       assert message =~ "PL"
       refute message =~ "UA"
       refute message =~ "RU"
+    end
+
+    test "a stored lower case code meets the same code posted upcased" do
+      method = %ShippingMethod{name: "Old", countries: ["ua"], excluded_countries: []}
+
+      cs = ShippingMethod.changeset(method, %{"excluded_countries" => ["UA"]})
+
+      refute cs.valid?
+      assert %{excluded_countries: [message]} = errors_on(cs)
+      assert message =~ "UA"
+    end
+
+    test "a list that is already an error brings no overlap error with it" do
+      cs =
+        ShippingMethod.changeset(
+          %ShippingMethod{},
+          Map.merge(@valid, %{"countries" => ["XX"], "excluded_countries" => ["PL"]})
+        )
+
+      assert %{countries: [_]} = errors_on(cs)
+      refute Map.has_key?(errors_on(cs), :excluded_countries)
     end
 
     test "disjoint lists are valid" do

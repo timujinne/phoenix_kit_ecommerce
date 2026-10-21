@@ -15,6 +15,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.ShippingProviderState, as: ProviderState
+  alias PhoenixKitWeb.Components.Core.Input
 
   import PhoenixKitEcommerce.Web.Components.ShippingProviderCard,
     only: [shipping_provider_card: 1, locality_search_forms: 1]
@@ -61,6 +62,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> assign(:default_currency, default_currency)
     |> assign_form(changeset)
     |> assign_provider_state(method)
+    |> assign_country_view()
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
@@ -78,6 +80,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> assign(:default_currency, default_currency)
     |> assign_form(changeset)
     |> assign_provider_state(method)
+    |> assign_country_view()
   end
 
   @impl true
@@ -99,7 +102,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   end
 
   def handle_event("open_countries", _params, socket) do
-    {:noreply, assign(socket, :countries_open, true)}
+    {:noreply, socket |> assign(:countries_open, true) |> assign_country_view()}
   end
 
   def handle_event("search_locality", params, socket) do
@@ -212,14 +215,20 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     known = MapSet.new(assigns.options, fn {_name, code} -> code end)
     extra = for code <- selected, not MapSet.member?(known, code), do: {code, code}
 
+    errors =
+      for error <- assigns.field.errors,
+          do: Input.translate_error(error)
+
     assigns =
       assigns
       |> assign(:selected, selected)
       |> assign(:rows, extra ++ assigns.options)
+      |> assign(:errors, errors)
+      |> assign(:describedby, describedby(assigns.field.id, errors))
 
     ~H"""
-    <fieldset class="fieldset w-full" aria-describedby={@field.id <> "-hint"}>
-      <legend class="label">{@label}</legend>
+    <fieldset class="fieldset w-full" aria-describedby={@describedby}>
+      <legend class="fieldset-legend">{@label}</legend>
       <input type="hidden" name={@field.name <> "[]"} value="" />
       <div
         id={@field.id}
@@ -234,6 +243,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
             name={@field.name <> "[]"}
             value={code}
             checked={code in @selected}
+            aria-invalid={@errors != [] && "true"}
             class="checkbox checkbox-sm"
           />
           <span class="flex-1 text-sm">{name}</span>
@@ -247,16 +257,24 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
       >
         {gettext("Selected: %{countries}", countries: Enum.join(@selected, ", "))}
       </p>
-      <p
-        :for={error <- @field.errors}
-        id={@field.id <> "-error"}
-        class="text-xs text-error mt-1"
-      >
-        {PhoenixKitWeb.Components.Core.Input.translate_error(error)}
-      </p>
+      <div :if={@errors != []} id={@field.id <> "-error"}>
+        <p :for={error <- @errors} class="text-xs text-error mt-1">{error}</p>
+      </div>
       <p id={@field.id <> "-hint"} class="label text-xs text-base-content/60">{@hint}</p>
     </fieldset>
     """
+  end
+
+  # The hint, and the errors when there are any.
+  defp describedby(id, []), do: id <> "-hint"
+  defp describedby(id, _errors), do: id <> "-hint " <> id <> "-error"
+
+  # Both are worked out when the form, the provider or the opened state
+  # change, not on every render: they walk the country list.
+  defp assign_country_view(socket) do
+    socket
+    |> assign(:countries_mode, countries_mode(socket.assigns))
+    |> assign(:country_choices, country_choices(socket.assigns))
   end
 
   # Where the country lists are shown. Lists already filled in, or opened
@@ -292,11 +310,6 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   @impl true
   def render(assigns) do
-    assigns =
-      assigns
-      |> assign(:countries_mode, countries_mode(assigns))
-      |> assign(:country_choices, country_choices(assigns))
-
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
         <.admin_page_header
@@ -516,7 +529,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                   field={@form[:excluded_countries]}
                   options={@country_choices}
                   label={gettext("Never deliver to")}
-                  hint={gettext("A country in both lists is not delivered to.")}
+                  hint={gettext("This method is never offered to these countries.")}
                 />
               </div>
             </div>
@@ -991,6 +1004,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   end
 
   defp put_locality(socket, key, value) do
+    previous = Map.get(socket.assigns.sp.settings, key)
+
     settings =
       if value,
         do: Map.put(socket.assigns.sp.settings, key, value),
@@ -1001,9 +1016,16 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> cancel_async({:locality_search, key})
     |> update(:locality_results, &Map.delete(&1, key))
     |> update(:locality_loading, &Map.delete(&1, key))
-    |> reset_dependent_points(key)
+    |> reset_dependent_points_unless_same(key, previous, value)
     |> recheck_provider_errors(key)
   end
+
+  # Picking the city that is already chosen changes nothing for its branches.
+  defp reset_dependent_points_unless_same(socket, _key, %{"id" => id}, %{"id" => id}),
+    do: socket
+
+  defp reset_dependent_points_unless_same(socket, key, _previous, _value),
+    do: reset_dependent_points(socket, key)
 
   # The points belong to the city they were listed for: another city, or none,
   # leaves them without a point, and the new city's list is loaded. A point
@@ -1056,7 +1078,10 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
         do: for({:shipping_provider, error} <- changeset.errors, do: error),
         else: []
 
-    socket |> assign_form(changeset) |> assign_provider_errors(raw)
+    socket
+    |> assign_form(changeset)
+    |> assign_provider_errors(raw)
+    |> assign_country_view()
   end
 
   defp assign_provider_errors(socket, raw) do
