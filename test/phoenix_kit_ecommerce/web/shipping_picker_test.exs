@@ -1588,6 +1588,49 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       assert reload(cart).metadata["shipping_service"] == nil
     end
 
+    test "a stale cart with several services left clears the choice by clicking the one shown",
+         %{conn: conn} do
+      stub!(%{
+        services: [
+          %Service{key: "branch", label: "Branch", destination: :pickup_point, lookup: :search},
+          %Service{key: "locker", label: "Locker", destination: :pickup_point, lookup: :search},
+          %Service{key: "courier", label: "Courier", destination: :address, lookup: :manual}
+        ]
+      })
+
+      {conn, cart, method} = cart_session(conn, services: ["branch", "locker", "courier"])
+      {:ok, cart} = Shop.set_cart_shipping_service(cart, "locker")
+
+      {:ok, cart} =
+        Shop.set_cart_shipping_destination(cart, %Destination{
+          locality: @springfield,
+          pickup_point: %PickupPoint{id: "P9", name: "Locker 9"}
+        })
+
+      block = Map.put(method.metadata["shipping_provider"], "services", ["branch", "courier"])
+      metadata = Map.put(method.metadata, "shipping_provider", block)
+      {:ok, _method} = Shop.update_shipping_method(method, %{metadata: metadata})
+
+      {:ok, view, _html} = live(conn, "/cart")
+      settle(view)
+
+      # The default service is shown selected, the old place is refused.
+      assert has_element?(view, "#{ps("service-branch")}[checked]")
+      assert has_element?(view, ps("editor"))
+      assert reload(cart).metadata["shipping_service"] == "locker"
+
+      view |> element(ps("service-branch")) |> render_click()
+      settle(view)
+
+      assert reload(cart).metadata["shipping_service"] == "branch"
+
+      view |> element(ps("point-P1")) |> render_click()
+      settle(view)
+
+      assert has_element?(view, ps("quote-price"), "100")
+      assert Shop.shipping_quote_status(reload(cart)) == :ok
+    end
+
     test "an event for a service that is not on offer stores nothing", %{conn: conn} do
       {conn, cart, _method} = cart_session(conn, services: ["branch", "courier"])
       {:ok, _view, _html} = live(conn, "/cart")
