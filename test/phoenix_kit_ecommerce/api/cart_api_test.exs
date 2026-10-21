@@ -685,6 +685,33 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
       assert by_id[open.uuid]["price"] == %{"amount" => "4.00", "currency" => "USD"}
     end
 
+    test "a method whose stored list is lower case still serves the country", %{
+      physical: physical
+    } do
+      token = new_cart_token()
+      {200, _, _} = write(token, [{physical, 1}])
+      legacy = method!(%{"name" => "Legacy", "countries" => ["DE"]})
+
+      # Rows written before the lists were normalised may hold lower case codes.
+      {1, _} =
+        Repo.update_all(
+          from(m in PhoenixKitEcommerce.ShippingMethod, where: m.uuid == ^legacy.uuid),
+          set: [countries: ["de"], excluded_countries: ["fr"]]
+        )
+
+      assert {200, %{"methods" => methods}, _} =
+               call("shop.get_shipping_options", %{"cart_token" => token, "country" => "DE"})
+
+      assert [%{"available" => true} = served] = Enum.filter(methods, &(&1["id"] == legacy.uuid))
+      assert served["reason"] == nil
+
+      assert {200, %{"methods" => methods}, _} =
+               call("shop.get_shipping_options", %{"cart_token" => token, "country" => "FR"})
+
+      assert [%{"available" => false, "reason" => "country_not_served"}] =
+               Enum.filter(methods, &(&1["id"] == legacy.uuid))
+    end
+
     test "a method below the order minimum says so", %{physical: physical} do
       token = new_cart_token()
       {200, _, _} = write(token, [{physical, 1}])

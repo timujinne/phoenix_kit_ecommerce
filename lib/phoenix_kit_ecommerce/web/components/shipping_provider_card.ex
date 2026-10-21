@@ -277,7 +277,10 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
 
     ~H"""
     <div id={"shipping-provider-setting-#{@field.key}"} class="fieldset w-full">
-      <label class="label mb-2" for={"shipping-locality-query-#{@field.key}"}>
+      <label
+        class="label mb-2"
+        for={if @waiting?, do: nil, else: "shipping-locality-query-#{@field.key}"}
+      >
         <span class="font-semibold">{@field.label}</span>
         <span :if={@field.required} class="text-error ml-0.5" aria-hidden="true">*</span>
       </label>

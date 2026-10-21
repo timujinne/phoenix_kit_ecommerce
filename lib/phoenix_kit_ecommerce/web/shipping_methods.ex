@@ -171,17 +171,17 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
                           Max {format_weight(method.max_weight_grams)}
                         </span>
                       <% end %>
-                      <%= if method.countries != [] do %>
+                      <%= if List.wrap(method.countries) != [] do %>
                         <span class="badge badge-outline badge-sm">
                           {country_codes(method.countries)}
                         </span>
                       <% end %>
-                      <%= if method.excluded_countries != [] do %>
+                      <%= if List.wrap(method.excluded_countries) != [] do %>
                         <span class="badge badge-outline badge-sm">
                           &minus; {country_codes(method.excluded_countries)}
                         </span>
                       <% end %>
-                      <%= if method.countries == [] && method.excluded_countries == [] &&
+                      <%= if List.wrap(method.countries) == [] && List.wrap(method.excluded_countries) == [] &&
                                is_nil(method.max_weight_grams) do %>
                         <span class="text-base-content/50 text-sm">{gettext("No limits")}</span>
                       <% end %>
@@ -246,7 +246,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
 
   # The codes of a country list, a few of them in full: "UA, PL, DE +2".
   defp country_codes(codes) do
-    case Enum.split(codes, 3) do
+    case codes |> List.wrap() |> Enum.split(3) do
       {shown, []} -> Enum.join(shown, ", ")
       {shown, rest} -> Enum.join(shown, ", ") <> " +#{length(rest)}"
     end

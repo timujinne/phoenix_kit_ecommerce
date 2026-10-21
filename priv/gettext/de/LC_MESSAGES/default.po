@@ -197,7 +197,7 @@ msgstr "Aktionen"
 #: lib/phoenix_kit_ecommerce/web/import_configs.ex:425
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:931
 #: lib/phoenix_kit_ecommerce/web/products.ex:323
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:573
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:586
 #: lib/phoenix_kit_ecommerce/web/status_labels.ex:37
 #: lib/phoenix_kit_ecommerce/web/status_labels.ex:43
 #: lib/phoenix_kit_ecommerce/web/status_labels.ex:44
@@ -396,7 +396,7 @@ msgid "Base price:"
 msgstr "Grundpreis:"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:413
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:318
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:331
 #, elixir-autogen, elixir-format
 msgid "Basic Information"
 msgstr "Grundlegende Informationen"
@@ -462,7 +462,7 @@ msgstr "CSV-Import-Filter"
 #: lib/phoenix_kit_ecommerce/web/products.ex:723
 #: lib/phoenix_kit_ecommerce/web/products.ex:751
 #: lib/phoenix_kit_ecommerce/web/products.ex:777
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:594
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:607
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr "Abbrechen"
@@ -639,7 +639,7 @@ msgstr "Optionszuordnungen konfigurieren"
 msgid "Configure keyword filters and category rules for CSV product imports"
 msgstr "Konfigurieren Sie Schlüsselwortfilter und Kategorieregeln für CSV-Produktimporte"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:305
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:318
 #, elixir-autogen, elixir-format
 msgid "Configure shipping method details"
 msgstr "Details der Versandmethode konfigurieren"
@@ -659,7 +659,7 @@ msgstr "Bestätigen"
 msgid "Confirm Import"
 msgstr "Import bestätigen"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:446
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:459
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:120
 #, elixir-autogen, elixir-format
 msgid "Constraints"
@@ -693,7 +693,7 @@ msgstr "Kosten pro Artikel"
 msgid "Create Category"
 msgstr "Kategorie erstellen"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:598
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:611
 #, elixir-autogen, elixir-format
 msgid "Create Method"
 msgstr "Methode erstellen"
@@ -729,7 +729,7 @@ msgid "Created:"
 msgstr "Erstellt:"
 
 #: lib/phoenix_kit_ecommerce/catalogue/shop_sections.ex:160
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:373
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:386
 #, elixir-autogen, elixir-format
 msgid "Currency"
 msgstr "Währung"
@@ -861,12 +861,12 @@ msgstr "Geliefert"
 msgid "Delivery"
 msgstr "Lieferung"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:528
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:541
 #, elixir-autogen, elixir-format
 msgid "Delivery & Status"
 msgstr "Lieferung & Status"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:344
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:357
 #, elixir-autogen, elixir-format
 msgid "Delivery in 3-5 business days"
 msgstr "Lieferung in 3–5 Werktagen"
@@ -876,7 +876,7 @@ msgstr "Lieferung in 3–5 Werktagen"
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:686
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:986
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1217
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:343
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:356
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1677
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1464
 #, elixir-autogen, elixir-format
@@ -971,7 +971,7 @@ msgstr "E-Commerce-Einstellungen"
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:151
 #: lib/phoenix_kit_ecommerce/web/products.ex:480
 #: lib/phoenix_kit_ecommerce/web/products.ex:608
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:73
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:75
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:101
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:212
 #, elixir-autogen, elixir-format
@@ -979,7 +979,7 @@ msgid "Edit"
 msgstr "Bearbeiten"
 
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:110
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:74
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:76
 #, elixir-autogen, elixir-format
 msgid "Edit %{name}"
 msgstr "%{name} bearbeiten"
@@ -1032,12 +1032,12 @@ msgstr "Fehler"
 msgid "Errors"
 msgstr "Fehler"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:545
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:558
 #, elixir-autogen, elixir-format
 msgid "Est. days (max)"
 msgstr "Geschätzte Tage (max.)"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:535
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:548
 #, elixir-autogen, elixir-format
 msgid "Est. days (min)"
 msgstr "Geschätzte Tage (min.)"
@@ -1203,7 +1203,7 @@ msgstr "Endpreis"
 msgid "Folder icon"
 msgstr "Ordnersymbol"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:398
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:411
 #, elixir-autogen, elixir-format
 msgid "Free above"
 msgstr "Kostenlos ab"
@@ -1431,12 +1431,12 @@ msgstr "Als Stammkategorie festlegen (ohne übergeordnete Kategorie)"
 msgid "Manage your e-commerce store"
 msgstr "Verwalten Sie Ihren Online-Shop"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:484
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:497
 #, elixir-autogen, elixir-format
 msgid "Max order"
 msgstr "Max. Bestellung"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:463
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:476
 #, elixir-autogen, elixir-format
 msgid "Max weight (g)"
 msgstr "Max. Gewicht (g)"
@@ -1467,12 +1467,12 @@ msgstr "Migrieren Sie Produktbilder von externen CDN-URLs in das Speicher-Modul 
 msgid "Migrated"
 msgstr "Migriert"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:473
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:486
 #, elixir-autogen, elixir-format
 msgid "Min order"
 msgstr "Min. Bestellung"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:453
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:466
 #, elixir-autogen, elixir-format
 msgid "Min weight (g)"
 msgstr "Min. Gewicht (g)"
@@ -1505,7 +1505,7 @@ msgstr "Meine Bestellungen"
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:673
 #: lib/phoenix_kit_ecommerce/web/import_configs.ex:274
 #: lib/phoenix_kit_ecommerce/web/import_configs.ex:402
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:325
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:338
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1468
 #, elixir-autogen, elixir-format
 msgid "Name"
@@ -1584,7 +1584,7 @@ msgstr "Kein Bild"
 msgid "No imports yet"
 msgstr "Noch keine Importe"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:465
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:478
 #, elixir-autogen, elixir-format
 msgid "No limit"
 msgstr "Kein Limit"
@@ -1594,12 +1594,12 @@ msgstr "Kein Limit"
 msgid "No limits"
 msgstr "Keine Limits"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:487
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:500
 #, elixir-autogen, elixir-format
 msgid "No max"
 msgstr "Kein Max."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:476
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:489
 #, elixir-autogen, elixir-format
 msgid "No min"
 msgstr "Kein Min."
@@ -1635,7 +1635,7 @@ msgstr "Keine Produkte mit Bildern in dieser Kategorie. Fügen Sie Produktbilder
 msgid "No shipping methods"
 msgstr "Keine Versandmethoden"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:401
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:414
 #, elixir-autogen, elixir-format
 msgid "No threshold"
 msgstr "Kein Schwellenwert"
@@ -1814,7 +1814,7 @@ msgstr "Bitte wählen Sie zuerst eine CSV-Datei aus"
 #: lib/phoenix_kit_ecommerce/web/categories.ex:403
 #: lib/phoenix_kit_ecommerce/web/categories.ex:444
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:476
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:555
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:568
 #, elixir-autogen, elixir-format
 msgid "Position"
 msgstr "Position"
@@ -1844,7 +1844,7 @@ msgstr "Zurück"
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:431
 #: lib/phoenix_kit_ecommerce/web/products.ex:439
 #: lib/phoenix_kit_ecommerce/web/products.ex:500
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:362
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:375
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:73
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:119
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1681
@@ -1869,7 +1869,7 @@ msgstr "Die Preisüberschreibung wird pro Option in den Optionseinstellungen kon
 
 #: lib/phoenix_kit_ecommerce/web/product_detail.ex:425
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:1006
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:355
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:368
 #, elixir-autogen, elixir-format
 msgid "Pricing"
 msgstr "Preisgestaltung"
@@ -2123,7 +2123,7 @@ msgstr "Versandt"
 msgid "Shipping Methods"
 msgstr "Versandmethoden"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:159
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:162
 #, elixir-autogen, elixir-format
 msgid "Shipping method created"
 msgstr "Versandmethode erstellt"
@@ -2133,7 +2133,7 @@ msgstr "Versandmethode erstellt"
 msgid "Shipping method deleted"
 msgstr "Versandmethode gelöscht"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:185
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:188
 #, elixir-autogen, elixir-format
 msgid "Shipping method updated"
 msgstr "Versandmethode aktualisiert"
@@ -2197,7 +2197,7 @@ msgstr "Slot-Schlüssel"
 #: lib/phoenix_kit_ecommerce/web/category_form.ex:447
 #: lib/phoenix_kit_ecommerce/web/import_show.ex:167
 #: lib/phoenix_kit_ecommerce/web/product_form.ex:940
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:335
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:348
 #, elixir-autogen, elixir-format
 msgid "Slug"
 msgstr "Slug"
@@ -2215,7 +2215,7 @@ msgstr "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut."
 msgid "Specifications"
 msgstr "Spezifikationen"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:326
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:339
 #, elixir-autogen, elixir-format
 msgid "Standard Shipping"
 msgstr "Standardversand"
@@ -2255,7 +2255,7 @@ msgstr "Migration für %{count} Produkte gestartet"
 #: lib/phoenix_kit_ecommerce/web/products.ex:319
 #: lib/phoenix_kit_ecommerce/web/products.ex:429
 #: lib/phoenix_kit_ecommerce/web/products.ex:497
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:562
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:575
 #: lib/phoenix_kit_ecommerce/web/shipping_methods.ex:122
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:1680
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2657
@@ -2371,7 +2371,7 @@ msgstr "Gesamt"
 msgid "Total Products"
 msgstr "Produkte insgesamt"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:585
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:598
 #, elixir-autogen, elixir-format
 msgid "Tracking supported"
 msgstr "Sendungsverfolgung unterstützt"
@@ -2466,7 +2466,7 @@ msgstr "Aktualisieren"
 msgid "Update Category"
 msgstr "Kategorie aktualisieren"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:598
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:611
 #, elixir-autogen, elixir-format
 msgid "Update Method"
 msgstr "Methode aktualisieren"
@@ -2614,7 +2614,7 @@ msgstr "Ihre Bestellung wurde zugestellt."
 msgid "Your order is on its way!"
 msgstr "Ihre Bestellung ist unterwegs!"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:336
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:349
 #, elixir-autogen, elixir-format
 msgid "auto-generated if empty"
 msgstr "automatisch generiert, wenn leer"
@@ -3937,7 +3937,7 @@ msgstr "Rechnungsdaten"
 msgid "Change"
 msgstr "Ändern"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:299
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:302
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2508
 #: lib/phoenix_kit_ecommerce/web/user_orders.html.heex:48
 #, elixir-autogen, elixir-format
@@ -4721,7 +4721,7 @@ msgstr "Titel"
 msgid "Vendors"
 msgstr "Anbieter"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:379
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:392
 #, elixir-autogen, elixir-format
 msgid "No default currency configured"
 msgstr "Keine Standardwährung konfiguriert"
@@ -6064,7 +6064,7 @@ msgstr "Läuft…"
 #: lib/phoenix_kit_ecommerce/web/settings.ex:647
 #: lib/phoenix_kit_ecommerce/web/settings.ex:912
 #: lib/phoenix_kit_ecommerce/web/settings.ex:1371
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:596
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:609
 #: lib/phoenix_kit_ecommerce/web/shopify_sync.ex:2940
 #: lib/phoenix_kit_ecommerce/web/translations.ex:1808
 #, elixir-autogen, elixir-format
@@ -6103,8 +6103,8 @@ msgstr "Neue Kategorie"
 msgid "New product"
 msgstr "Neues Produkt"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:56
 #: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:57
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:58
 #, elixir-autogen, elixir-format
 msgid "New shipping method"
 msgstr "Neue Versandmethode"
@@ -6133,7 +6133,7 @@ msgstr "Zum Tarif des Versanddienstleisters, Zahlung bei Lieferung"
 msgid "Paid on delivery"
 msgstr "Zahlung bei Lieferung"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:415
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:428
 #, elixir-autogen, elixir-format
 msgid "Paid on delivery at carrier rates"
 msgstr "Zahlung bei Lieferung zum Tarif des Versanddienstleisters"
@@ -6146,7 +6146,7 @@ msgstr "Zahlung bei Lieferung zum Tarif des Versanddienstleisters"
 msgid "Shipping is not included in this total: you pay the carrier at their rates on delivery."
 msgstr "Der Versand ist in dieser Summe nicht enthalten: Sie bezahlen ihn bei Lieferung zum Tarif des Versanddienstleisters."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:418
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:431
 #, elixir-autogen, elixir-format
 msgid "The customer pays the carrier at their rates on delivery. The shop charges nothing for shipping: the price is saved as 0 and the free-shipping threshold is cleared."
 msgstr "Der Kunde bezahlt den Versanddienstleister bei Lieferung zu dessen Tarifen. Der Shop berechnet nichts für den Versand: Der Preis wird als 0 gespeichert und die Schwelle für kostenlosen Versand entfernt."
@@ -6186,12 +6186,12 @@ msgstr "%{name}: verbunden"
 msgid "%{name}: not connected"
 msgstr "%{name}: nicht verbunden"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:702
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:715
 #, elixir-autogen, elixir-format
 msgid "%{provider} (not installed)"
 msgstr "%{provider} (nicht installiert)"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:719
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:732
 #, elixir-autogen, elixir-format
 msgid "%{service} (unavailable)"
 msgstr "%{service} (nicht verfügbar)"
@@ -6450,7 +6450,7 @@ msgstr "Nicht verfügbar"
 msgid "Nothing"
 msgstr "Nichts"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:352
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:355
 #, elixir-autogen, elixir-format
 msgid "Nothing found."
 msgstr "Nichts gefunden."
@@ -6466,7 +6466,7 @@ msgid "One band per line: up to kg, price. For example: 0,5 90"
 msgstr "Eine Stufe pro Zeile: bis kg, Preis. Zum Beispiel: 0,5 90"
 
 #: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1190
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:380
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:383
 #, elixir-autogen, elixir-format
 msgid "Only the first %{count} points are shown. Narrow the search to see others."
 msgstr "Es werden nur die ersten %{count} Abholstellen angezeigt. Verfeinern Sie die Suche, um weitere zu sehen."
@@ -6535,12 +6535,12 @@ msgid "Round up to a multiple of"
 msgstr "Aufrunden auf ein Vielfaches von"
 
 #: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1137
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:525
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:528
 #, elixir-autogen, elixir-format
 msgid "Search by number, name or address"
 msgstr "Suche nach Nummer, Name oder Adresse"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:346
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:349
 #, elixir-autogen, elixir-format
 msgid "Searching"
 msgstr "Suche läuft"
@@ -6575,7 +6575,7 @@ msgstr "Größe und Gewicht, die für Artikel dieser Kategorie angenommen werden
 msgid "Size and weight assumed for products of this category that have none of their own. Leave empty to use the shop's defaults."
 msgstr "Größe und Gewicht, die für Produkte dieser Kategorie angenommen werden, die keine eigenen haben. Leer lassen, um die Standardwerte des Shops zu verwenden."
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:526
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:529
 #, elixir-autogen, elixir-format
 msgid "Start typing a city"
 msgstr "Beginnen Sie, eine Stadt einzugeben"
@@ -6667,7 +6667,7 @@ msgstr "Der Anbieter %{provider} ist nicht installiert"
 msgid "The provider does not offer the service %{service}"
 msgstr "Der Anbieter bietet den Dienst %{service} nicht an"
 
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:349
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:352
 #, elixir-autogen, elixir-format
 msgid "The search is unavailable right now."
 msgstr "Die Suche ist derzeit nicht verfügbar."
@@ -7736,37 +7736,37 @@ msgstr "Geben Sie ganze Zahlen innerhalb der angezeigten Bereiche ein."
 msgid "A price change larger than this percentage of the current price is held until it is confirmed. A price set to zero is always held; any other first price is not. From 100 percent on, only increases are held, as a cut cannot exceed 100 percent."
 msgstr "Eine Preisänderung, die diesen Prozentsatz des aktuellen Preises überschreitet, wird bis zur Bestätigung zurückgehalten. Ein auf null gesetzter Preis wird immer zurückgehalten; jeder andere erste Preis nicht. Ab 100 Prozent werden nur Erhöhungen zurückgehalten, da eine Senkung 100 Prozent nicht übersteigen kann."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:519
-#, elixir-autogen, elixir-format
-msgid "A country in both lists is not delivered to."
-msgstr "In ein Land, das in beiden Listen steht, wird nicht geliefert."
-
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:322
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:325
 #, elixir-autogen, elixir-format
 msgid "Choose the city first."
 msgstr "Wählen Sie zuerst die Stadt."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:511
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:524
 #, elixir-autogen, elixir-format
 msgid "Deliver only to"
 msgstr "Nur liefern nach"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:512
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:525
 #, elixir-autogen, elixir-format
 msgid "Leave empty for every country the provider serves."
 msgstr "Leer lassen für alle Länder, die der Anbieter bedient."
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:499
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:512
 #, elixir-autogen, elixir-format
 msgid "Limit by country"
 msgstr "Nach Land einschränken"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:518
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:531
 #, elixir-autogen, elixir-format
 msgid "Never deliver to"
 msgstr "Nie liefern nach"
 
-#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:248
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:258
 #, elixir-autogen, elixir-format
 msgid "Selected: %{countries}"
 msgstr "Ausgewählt: %{countries}"
+
+#: lib/phoenix_kit_ecommerce/web/shipping_method_form.ex:532
+#, elixir-autogen, elixir-format
+msgid "This method is never offered to these countries."
+msgstr "Diese Versandart wird für diese Länder nie angeboten."
