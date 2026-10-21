@@ -4,7 +4,8 @@ defmodule PhoenixKitEcommerce.Shipping.Context do
 
     * `method` - the `PhoenixKitEcommerce.ShippingMethod`, or `nil`
     * `provider` - the provider module, or `nil` when the configured key is unknown
-    * `service` - the selected service key
+    * `service` - the service key in effect: the one the shopper chose, else
+      the default of the method
     * `settings` - the provider settings of the method (string keys)
     * `credentials` - the Integrations data of the provider, or `nil`
     * `locale` / `currency` - the shopper locale and the currency of the order

@@ -2,7 +2,8 @@ defmodule PhoenixKitEcommerce.Shipping.RateRequest do
   @moduledoc """
   A request for the price of one delivery.
 
-    * `service` - the service key
+    * `service` - the service key: the one the shopper chose among those the
+      method allows
     * `origin` - the sender settings of the shipping method (a map)
     * `destination` - where the parcels go
     * `parcels` - what is sent

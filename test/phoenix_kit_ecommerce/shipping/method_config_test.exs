@@ -44,6 +44,66 @@ defmodule PhoenixKitEcommerce.Shipping.MethodConfigTest do
       assert Decimal.equal?(config.pricing.round_to, 5)
     end
 
+    test "a block with one service is read as the list of that service" do
+      config =
+        MethodConfig.from_method(method(%{"provider" => "acme_post", "service" => "branch"}))
+
+      assert config.services == ["branch"]
+      assert config.service == "branch"
+    end
+
+    test "reads the allowed services, the first of them is the default" do
+      config =
+        MethodConfig.from_method(
+          method(%{"provider" => "acme_post", "services" => ["branch", "locker", "courier"]})
+        )
+
+      assert config.services == ["branch", "locker", "courier"]
+      assert config.service == "branch"
+    end
+
+    test "the stored default service is kept when it is allowed" do
+      config =
+        MethodConfig.from_method(
+          method(%{
+            "provider" => "acme_post",
+            "service" => "locker",
+            "services" => ["branch", "locker"]
+          })
+        )
+
+      assert config.service == "locker"
+    end
+
+    test "a default service that is not allowed gives way to the first allowed one" do
+      config =
+        MethodConfig.from_method(
+          method(%{
+            "provider" => "acme_post",
+            "service" => "courier",
+            "services" => ["branch", "locker"]
+          })
+        )
+
+      assert config.service == "branch"
+    end
+
+    test "services are trimmed, deduplicated and cleaned of garbage" do
+      config =
+        MethodConfig.from_method(
+          method(%{"provider" => "acme_post", "services" => [" branch ", "branch", "", nil, %{}]})
+        )
+
+      assert config.services == ["branch"]
+    end
+
+    test "no service at all is an empty list" do
+      config = MethodConfig.from_method(method(%{"provider" => "acme_post"}))
+
+      assert config.services == []
+      assert config.service == nil
+    end
+
     test "pricing defaults to no markup and no rounding" do
       %{pricing: pricing} = MethodConfig.from_method(method(%{"provider" => "table"}))
 

@@ -1445,6 +1445,185 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
     end
   end
 
+  describe "choosing the service" do
+    test "a method with one service offers no choice", %{conn: conn} do
+      {conn, _cart, _method} = cart_session(conn)
+      {:ok, view, _html} = live(conn, "/cart")
+
+      assert has_element?(view, ps("editor"))
+      refute has_element?(view, ps("service-choice"))
+    end
+
+    test "the cart page offers the services; the choice changes what is asked", %{conn: conn} do
+      {conn, cart, _method} = cart_session(conn, services: ["branch", "courier"])
+      {:ok, view, _html} = live(conn, "/cart")
+
+      assert has_element?(view, ps("service-choice"))
+      assert has_element?(view, "#{ps("service-branch")}[checked]")
+      assert has_element?(view, ps("service-courier"))
+      refute has_element?(view, "#{ps("service-courier")}[checked]")
+      assert has_element?(view, ps("locality-input"))
+      refute has_element?(view, ps("address-form"))
+
+      view |> element(ps("service-courier")) |> render_click()
+      settle(view)
+
+      assert has_element?(view, "#{ps("service-courier")}[checked]")
+      refute has_element?(view, "#{ps("service-branch")}[checked]")
+      assert has_element?(view, ps("address-form"))
+      refute has_element?(view, ps("locality-input"))
+      assert reload(cart).metadata["shipping_service"] == "courier"
+    end
+
+    test "the price is asked for the service chosen", %{conn: conn} do
+      stub!(%{
+        notify: nil,
+        quote: fn request, ctx ->
+          amount = if request.service == "courier", do: "250", else: "100"
+          {:ok, %Quote{amount: Decimal.new(amount), currency: ctx.currency, source: :api}}
+        end
+      })
+
+      {conn, cart, _method} = cart_session(conn, services: ["branch", "courier"])
+      {:ok, view, _html} = live(conn, "/cart")
+
+      view |> element(ps("service-courier")) |> render_click()
+      settle(view)
+
+      view
+      |> form(ps("address-form"), %{
+        "address" => %{"locality" => "Springfield", "street" => "Main", "house" => "1"}
+      })
+      |> render_submit()
+
+      settle(view)
+
+      assert has_element?(view, ps("quote-price"), "250")
+      assert has_element?(view, "#cart-summary-shipping", "250")
+      assert Shop.cart_shipping_service_key(reload(cart)) == "courier"
+    end
+
+    test "the checkout shipping step offers it too", %{conn: conn} do
+      {conn, _cart, method} = cart_session(conn, services: ["branch", "courier"])
+      {:ok, view, _html} = live(conn, "/checkout")
+
+      to_shipping_step(view)
+
+      assert has_element?(view, "#checkout-shipping-step #shipping-picker-#{method.uuid}")
+      assert has_element?(view, ps("service-choice"))
+
+      view |> element(ps("service-courier")) |> render_click()
+      settle(view)
+
+      assert has_element?(view, "#{ps("service-courier")}[checked]")
+      assert has_element?(view, ps("address-form"))
+    end
+
+    test "the city and point lookups are for the service chosen", %{conn: conn} do
+      test_pid = self()
+
+      services = [
+        %Service{key: "branch", label: "Branch", destination: :pickup_point, lookup: :search},
+        %Service{key: "locker", label: "Locker", destination: :pickup_point, lookup: :search}
+      ]
+
+      stub!(%{
+        services: services,
+        localities: fn _query, ctx ->
+          send(test_pid, {:searched_for, ctx.service})
+          {:ok, [@springfield]}
+        end
+      })
+
+      {conn, _cart, _method} = cart_session(conn, services: ["branch", "locker"])
+      {:ok, view, _html} = live(conn, "/cart")
+
+      view |> element(ps("service-locker")) |> render_click()
+      settle(view)
+
+      view |> form(ps("locality-form"), %{"q" => "Spr"}) |> render_change()
+      settle(view)
+      assert_received {:searched_for, "locker"}
+
+      view |> element(ps("locality-option-L1")) |> render_click()
+      settle(view)
+
+      assert_received {:stub_called, :list_pickup_points, [%Locality{id: "L1"}, "locker", nil]}
+    end
+
+    test "a cart whose chosen service the admin removed can pick a new place", %{conn: conn} do
+      stub!(%{
+        services: [
+          %Service{key: "branch", label: "Branch", destination: :pickup_point, lookup: :search},
+          %Service{key: "locker", label: "Locker", destination: :pickup_point, lookup: :search}
+        ]
+      })
+
+      {conn, cart, method} = cart_session(conn, services: ["branch", "locker"])
+      {:ok, cart} = Shop.set_cart_shipping_service(cart, "locker")
+
+      {:ok, cart} =
+        Shop.set_cart_shipping_destination(cart, %Destination{
+          locality: @springfield,
+          pickup_point: %PickupPoint{id: "P9", name: "Locker 9"}
+        })
+
+      block = Map.put(method.metadata["shipping_provider"], "services", ["branch"])
+      metadata = Map.put(method.metadata, "shipping_provider", block)
+      {:ok, _method} = Shop.update_shipping_method(method, %{metadata: metadata})
+
+      {:ok, view, _html} = live(conn, "/cart")
+      settle(view)
+
+      # One service is left: nothing to choose, and the old place is refused.
+      refute has_element?(view, ps("service-choice"))
+      assert has_element?(view, ps("editor"))
+      refute has_element?(view, ps("quote-price"))
+
+      view |> element(ps("point-P1")) |> render_click()
+      settle(view)
+
+      assert has_element?(view, ps("destination-summary"), "Branch 1")
+      assert has_element?(view, ps("quote-price"), "100")
+      assert reload(cart).metadata["shipping_service"] == nil
+    end
+
+    test "an event for a service that is not on offer stores nothing", %{conn: conn} do
+      {conn, cart, _method} = cart_session(conn, services: ["branch", "courier"])
+      {:ok, _view, _html} = live(conn, "/cart")
+
+      branch = %Service{key: "branch", destination: :pickup_point, lookup: :search}
+      courier = %Service{key: "courier", destination: :address, lookup: :manual}
+
+      socket =
+        socket_with(%{
+          cart: reload(cart),
+          snapshot: %{service: branch, choices: [branch, courier]}
+        })
+
+      for service <- ["teleport", "", 5] do
+        assert {:noreply, %Phoenix.LiveView.Socket{}} =
+                 ShippingDestinationPicker.handle_event(
+                   "choose_service",
+                   %{"service" => service},
+                   socket
+                 )
+
+        assert reload(cart).metadata["shipping_service"] == nil
+      end
+
+      # The same event for a service on offer is taken.
+      assert {:noreply, %Phoenix.LiveView.Socket{}} =
+               ShippingDestinationPicker.handle_event(
+                 "choose_service",
+                 %{"service" => "courier"},
+                 socket
+               )
+
+      assert reload(cart).metadata["shipping_service"] == "courier"
+    end
+  end
+
   # -- helpers ----------------------------------------------------------
 
   defp stub!(overrides \\ %{}) do
@@ -1628,6 +1807,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
         "shipping_provider" => %{
           "provider" => Keyword.get(opts, :provider, "stub"),
           "service" => Keyword.get(opts, :service, "branch"),
+          "services" => Keyword.get(opts, :services),
           "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Springfield"}},
           "pricing" => %{"markup_percent" => "0", "markup_fixed" => "0", "round_to" => "1"}
         }

@@ -1,7 +1,7 @@
 defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
   @moduledoc """
   The "Shipping cost calculation" card of the shipping method form: provider,
-  service, the provider's own settings, markup and the state of its
+  services, the provider's own settings, markup and the state of its
   Integrations connection.
 
   Everything is posted under `shipping_method[shipping_provider]`. The locality
@@ -39,7 +39,9 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
     default: [],
     doc: "ISO 3166-1 alpha-2 codes of the countries the provider delivers to; `[]` for any"
 
-  attr :service_options, :list, default: [], doc: "`[{label, key}]`"
+  attr :service_options, :list,
+    default: [],
+    doc: "`[{label, key}]`: the services to tick, the ones the provider lists first"
 
   attr :services_status, :atom,
     default: :idle,
@@ -90,16 +92,43 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
             </p>
           </div>
 
-          <div :if={@calculated? and @provider_known?} class="fieldset w-full">
-            <.select
-              id="shipping-service-select"
-              name={"#{prefix()}[service]"}
-              value={@state.service}
-              label={gettext("Service")}
-              prompt={gettext("Select a service")}
-              options={@service_options}
-              errors={Map.get(@field_errors, "service", [])}
-            />
+          <fieldset
+            :if={@calculated? and @provider_known?}
+            id="shipping-services"
+            class="fieldset w-full"
+            aria-describedby="shipping-services-hint"
+          >
+            <legend class="fieldset-legend font-medium">
+              {gettext("Services offered to the buyer")}
+            </legend>
+            <input type="hidden" name={"#{prefix()}[services][]"} value="" />
+            <label
+              :for={{label, key} <- @service_options}
+              class="flex items-center gap-3 text-sm leading-6 cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                id={"shipping-service-#{key}"}
+                name={"#{prefix()}[services][]"}
+                value={key}
+                checked={key in @state.services}
+                class="checkbox checkbox-primary checkbox-sm"
+              />
+              <span class="select-none">{label}</span>
+            </label>
+            <p id="shipping-services-hint" class="text-sm text-base-content/60 mt-1">
+              {gettext(
+                "The buyer chooses one of them at checkout. With one service ticked there is nothing to choose."
+              )}
+            </p>
+            <p
+              :for={error <- Map.get(@field_errors, "service", [])}
+              id="shipping-services-invalid"
+              role="alert"
+              class="text-error text-sm mt-1"
+            >
+              {error}
+            </p>
             <p
               :if={@services_status == :loading}
               id="shipping-services-loading"
@@ -119,7 +148,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
                 "The carrier's services could not be loaded. Reload the page to try again; the saved service is kept."
               )}
             </p>
-          </div>
+          </fieldset>
         </div>
 
         <div

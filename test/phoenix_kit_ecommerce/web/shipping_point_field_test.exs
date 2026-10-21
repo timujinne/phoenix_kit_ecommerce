@@ -82,7 +82,9 @@ defmodule PhoenixKitEcommerce.Web.ShippingPointFieldTest do
       choose_provider(view)
 
       view
-      |> form(@form, %{"shipping_method" => %{"shipping_provider" => %{"service" => "courier"}}})
+      |> form(@form, %{
+        "shipping_method" => %{"shipping_provider" => %{"services" => ["courier"]}}
+      })
       |> render_change()
 
       pick_city(view)

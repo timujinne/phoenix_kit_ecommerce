@@ -23,7 +23,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
   - `metadata["pay_on_delivery"]` - The buyer pays the carrier's own rates on
     delivery; the shop charges nothing (see `pay_on_delivery?/1`)
   - `metadata["shipping_provider"]` - Where the price comes from: a shipping
-    provider, its service, settings and markup (see `shipping_config/1` and
+    provider, its services, settings and markup (see `shipping_config/1` and
     `PhoenixKitEcommerce.Shipping.MethodConfig`). Absent means the fixed
     price of the method, which is how shipping methods always worked
   """
