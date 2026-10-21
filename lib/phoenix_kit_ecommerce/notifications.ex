@@ -37,6 +37,8 @@ defmodule PhoenixKitEcommerce.Notifications do
   alias PhoenixKit.Users.Permissions
   alias PhoenixKit.Users.Roles
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitBilling, as: Billing
+  alias PhoenixKitBilling.Paths, as: BillingPaths
   alias PhoenixKitEcommerce.Translations
 
   @order_action "shop.order_placed"
@@ -257,11 +259,12 @@ defmodule PhoenixKitEcommerce.Notifications do
   defp cart_totals(_), do: ""
 
   defp notify_admins_of_order(order) do
+    # A buyer who is also a shop operator stays in the list: the order still
+    # needs confirming on the Billing page, and their own "Your order ... is
+    # confirmed" message (customer-facing copy, a customer link) does not
+    # say so. `admin_recipients/1` only ever holds operators, so a buyer
+    # without shop access is not in it.
     recipients = admin_recipients("shop.manage_carts")
-
-    # Never notify the buyer in the ADMIN fan-out; they get their own
-    # message with customer-facing copy and a link they can open.
-    recipients = Enum.reject(recipients, &(&1 == order.user_uuid))
 
     # `metadata["shipping_skipped"]` is stamped by
     # `PhoenixKitEcommerce.build_order_attrs/5` when the order converted
@@ -274,8 +277,17 @@ defmodule PhoenixKitEcommerce.Notifications do
       action: @order_action,
       text: "New order #{order.order_number} — #{order_total(order)}#{suffix}",
       icon: "hero-shopping-bag",
-      link: Routes.path("/admin/shop/carts")
+      link: order_admin_link(order)
     })
+  end
+
+  # An order is confirmed on its Billing page, so that is where the operator
+  # is sent. With Billing switched off that page does not exist, and the
+  # carts list stays the landing spot.
+  defp order_admin_link(order) do
+    if Billing.enabled?(),
+      do: BillingPaths.order_detail(order.uuid),
+      else: Routes.path("/admin/shop/carts")
   end
 
   # Only a real, confirmed account gets an in-app notification: guest
