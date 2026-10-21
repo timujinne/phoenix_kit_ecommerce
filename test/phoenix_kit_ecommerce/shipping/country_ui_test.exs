@@ -7,6 +7,8 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
 
   use PhoenixKitEcommerce.LiveCase, async: false
 
+  import Ecto.Query, only: [from: 2]
+
   alias PhoenixKit.Integrations.Providers
   alias PhoenixKit.Settings
   alias PhoenixKitEcommerce, as: Shop
@@ -160,11 +162,36 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
       assert updated.excluded_countries == []
     end
 
-    test "a country in both lists is not delivered to" do
-      method = method!(%{"countries" => ["UA", "PL"], "excluded_countries" => ["PL"]})
+    test "a country in both lists is refused on save" do
+      assert {:error, changeset} =
+               Shop.create_shipping_method(%{
+                 "name" => "Overlap",
+                 "price" => "1",
+                 "countries" => ["UA", "PL"],
+                 "excluded_countries" => ["PL"]
+               })
+
+      assert %{excluded_countries: [message]} = errors_on(changeset)
+      assert message =~ "PL"
+    end
+
+    test "a stored row with a country in both lists is not delivered to that country" do
+      method = %ShippingMethod{
+        active: true,
+        countries: ["UA", "PL"],
+        excluded_countries: ["PL"]
+      }
 
       assert ShippingMethod.available_for?(method, %{country: "UA"})
       refute ShippingMethod.available_for?(method, %{country: "PL"})
+    end
+
+    test "a lower case cart country is matched against the lists" do
+      method = method!(%{"countries" => ["UA"], "excluded_countries" => ["RU"]})
+
+      assert ShippingMethod.available_for?(method, %{country: "ua"})
+      refute ShippingMethod.available_for?(method, %{country: "pl"})
+      refute ShippingMethod.available_for?(method, %{country: "ru"})
     end
   end
 
@@ -180,7 +207,15 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
     end
 
     test "puts the countries of the active methods together, less the excluded" do
-      method!(%{"countries" => ["UA", "PL", "DE"], "excluded_countries" => ["DE"]})
+      overlapping = method!(%{"countries" => ["UA", "PL", "DE"]})
+
+      # A row from before the changeset refused a country in both lists.
+      {1, _} =
+        TestRepo.update_all(
+          from(m in ShippingMethod, where: m.uuid == ^overlapping.uuid),
+          set: [excluded_countries: ["DE"]]
+        )
+
       method!(%{"countries" => ["PL", "LT"]})
       method!(%{"countries" => ["FR"], "active" => false})
 
@@ -435,6 +470,45 @@ defmodule PhoenixKitEcommerce.Shipping.CountryUiTest do
 
       assert has_element?(view, "#shipping_method_countries-error", "has no valid country code")
       assert Shop.get_shipping_method!(method.uuid).countries == ["UA"]
+    end
+
+    test "each list is a fieldset named by its legend", %{conn: conn} do
+      method = method!(%{"countries" => ["UA"]})
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+
+      for field <- ["countries", "excluded_countries"] do
+        assert has_element?(
+                 view,
+                 "#shipping-method-countries fieldset[aria-describedby='shipping_method_#{field}-hint'] > legend"
+               )
+
+        assert has_element?(view, "#shipping_method_#{field}-hint")
+      end
+
+      assert has_element?(view, "#shipping-method-countries legend", "Deliver only to")
+      assert has_element?(view, "#shipping-method-countries legend", "Never deliver to")
+    end
+
+    test "a country ticked in both lists shows its error under the excluded list",
+         %{conn: conn} do
+      method = method!(%{"countries" => ["UA"]})
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+
+      view
+      |> element(@form)
+      |> render_submit(%{
+        "shipping_method" => %{
+          "countries" => ["", "UA", "PL"],
+          "excluded_countries" => ["", "PL"]
+        }
+      })
+
+      assert has_element?(view, "#shipping_method_excluded_countries-error", "PL")
+      refute has_element?(view, "#shipping_method_countries-error")
+      assert Shop.get_shipping_method!(method.uuid).countries == ["UA"]
+      assert Shop.get_shipping_method!(method.uuid).excluded_countries == []
     end
 
     test "a stored value that is not a two-letter code is shown ticked and kept", %{conn: conn} do

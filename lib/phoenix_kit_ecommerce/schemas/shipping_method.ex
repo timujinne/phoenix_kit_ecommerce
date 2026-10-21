@@ -14,8 +14,8 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
   - `min_weight_grams`, `max_weight_grams` - Weight limits
   - `min_order_amount`, `max_order_amount` - Order amount limits
   - `countries` - Allowed countries, ISO 3166-1 alpha-2 (empty = all)
-  - `excluded_countries` - Excluded countries; a country in both lists is
-    excluded
+  - `excluded_countries` - Excluded countries; a country cannot be in both
+    lists (the changeset refuses it)
   - `active` - Enabled/disabled
   - `position` - Sort order
   - `estimated_days_min`, `estimated_days_max` - Delivery estimate
@@ -113,6 +113,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     method
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> normalize_countries()
+    |> validate_disjoint_countries()
     |> put_pay_on_delivery(pay_on_delivery)
     |> put_shipping_provider(shipping_provider, opts)
     |> zero_pay_on_delivery_price()
@@ -156,7 +157,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
       }) do
     weight_ok?(method, weight) &&
       amount_ok?(method, subtotal) &&
-      country_ok?(method, country)
+      serves_country?(method, country)
   end
 
   def available_for?(%__MODULE__{} = method, params) when is_map(params) do
@@ -165,6 +166,28 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     country = Map.get(params, :country)
 
     available_for?(method, %{weight_grams: weight, subtotal: subtotal, country: country})
+  end
+
+  @doc """
+  Whether the country lists of the method let `country` through.
+
+  Codes are compared upcased, on both sides, so a lower case code in a cart or
+  in a row stored before the lists were normalised still matches. An empty
+  `countries` list means every country; a country in `excluded_countries` is
+  always out. A blank or missing `country` (the cart page leaves it unset
+  until checkout, and the method list is country-blind until then) is let
+  through by every method.
+  """
+  @spec serves_country?(map(), term()) :: boolean()
+  def serves_country?(%{countries: allowed, excluded_countries: excluded}, country) do
+    case normalize_country(country) do
+      nil ->
+        true
+
+      code ->
+        allowed = Codec.countries(allowed)
+        (allowed == [] or code in allowed) and code not in Codec.countries(excluded)
+    end
   end
 
   @doc """
@@ -301,15 +324,38 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
   defp blank_entry?(entry) when is_binary(entry), do: String.trim(entry) == ""
   defp blank_entry?(entry), do: is_nil(entry)
 
-  defp country_ok?(%{countries: [], excluded_countries: []}, _country), do: true
-
-  defp country_ok?(%{countries: [], excluded_countries: excluded}, country) do
-    is_nil(country) or country not in excluded
+  # A code a country list or a cart carries, as it is compared: trimmed and
+  # upcased. Blank is no country at all.
+  defp normalize_country(country) when is_binary(country) do
+    case country |> String.trim() |> String.upcase() do
+      "" -> nil
+      code -> code
+    end
   end
 
-  defp country_ok?(%{countries: allowed, excluded_countries: excluded}, country) do
-    (is_nil(country) or country in allowed) and
-      (is_nil(country) or country not in excluded)
+  defp normalize_country(_other), do: nil
+
+  # Allowing and excluding the same country says two things at once. Excluding
+  # wins when such a row is read (`serves_country?/2`), but it is a mistake in
+  # the form, so a save that sets either list is refused. A row that already
+  # overlaps stays editable for anything else.
+  defp validate_disjoint_countries(changeset) do
+    if changed?(changeset, :countries) or changed?(changeset, :excluded_countries) do
+      excluded = List.wrap(get_field(changeset, :excluded_countries))
+      both = Enum.filter(List.wrap(get_field(changeset, :countries)), &(&1 in excluded))
+
+      if both == [],
+        do: changeset,
+        else:
+          add_error(
+            changeset,
+            :excluded_countries,
+            "cannot also be allowed: %{countries}",
+            countries: Enum.join(both, ", ")
+          )
+    else
+      changeset
+    end
   end
 
   # The admin form submits the flag as a top-level `pay_on_delivery` param:

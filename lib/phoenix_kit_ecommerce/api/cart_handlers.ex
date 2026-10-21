@@ -271,7 +271,7 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
     weight = cart.total_weight_grams || 0
 
     [
-      {not country_served?(method, country), "country_not_served"},
+      {not ShippingMethod.serves_country?(method, country), "country_not_served"},
       {below?(base_subtotal, method.min_order_amount), "order_below_minimum"},
       {above?(base_subtotal, method.max_order_amount), "order_above_maximum"},
       {is_integer(method.min_weight_grams) and weight < method.min_weight_grams,
@@ -280,13 +280,6 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
        "weight_above_maximum"}
     ]
     |> Enum.find_value("not_available", fn {failed?, code} -> failed? && code end)
-  end
-
-  defp country_served?(method, country) do
-    allowed = method.countries || []
-    excluded = method.excluded_countries || []
-
-    (allowed == [] or country in allowed) and country not in excluded
   end
 
   defp below?(_amount, nil), do: false

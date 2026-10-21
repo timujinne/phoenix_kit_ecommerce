@@ -218,8 +218,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
       |> assign(:rows, extra ++ assigns.options)
 
     ~H"""
-    <div class="fieldset w-full">
-      <span class="label">{@label}</span>
+    <fieldset class="fieldset w-full" aria-describedby={@field.id <> "-hint"}>
+      <legend class="label">{@label}</legend>
       <input type="hidden" name={@field.name <> "[]"} value="" />
       <div
         id={@field.id}
@@ -254,8 +254,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
       >
         {PhoenixKitWeb.Components.Core.Input.translate_error(error)}
       </p>
-      <p class="label text-xs text-base-content/60">{@hint}</p>
-    </div>
+      <p id={@field.id <> "-hint"} class="label text-xs text-base-content/60">{@hint}</p>
+    </fieldset>
     """
   end
 
