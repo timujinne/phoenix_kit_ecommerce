@@ -371,7 +371,7 @@ billing_order_sync_exclude =
   end
 
 # The shop API registers tools and cron entries through callbacks that exist only in
-# a core with the shop API (`PhoenixKit.API.*`, `PhoenixKit.ObanCrons`). Tests of
+# a core with the public API (`PhoenixKit.API.*`, `PhoenixKit.ObanCrons`). Tests of
 # those are tagged :requires_core_api and are EXCLUDED AT RUN TIME on a core
 # without the API. The tag does not stop a test file from being COMPILED, so
 # those files must not use `%PhoenixKit.API.Actor{}` / `%PhoenixKit.API.Tool{}`
@@ -384,7 +384,7 @@ api_exclude =
     Logger.info(
       "[test_helper] PhoenixKit.API.Tool / PhoenixKit.ObanCrons not available - " <>
         "public API tests excluded. They run once `phoenix_kit` resolves to a core " <>
-        "with the shop API."
+        "with the public API."
     )
 
     [:requires_core_api]
@@ -442,7 +442,7 @@ analytics_exclude =
     [:analytics]
   end
 
-# The MCP tests (tagged `:mcp`) need the MCP plug of the shop API as well.
+# The MCP tests (tagged `:mcp`) need the MCP plug of the public API as well.
 mcp_exclude =
   if Code.ensure_loaded?(PhoenixKit.API.MCP) do
     []
