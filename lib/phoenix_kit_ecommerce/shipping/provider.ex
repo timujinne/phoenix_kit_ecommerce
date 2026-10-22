@@ -19,7 +19,10 @@ defmodule PhoenixKitEcommerce.Shipping.Provider do
     * `services/1` - the `PhoenixKitEcommerce.Shipping.Service` list. It takes
       the context because the answer may depend on credentials: a carrier
       without an API key might only support manual pickup point entry
-      (`lookup: :manual`)
+      (`lookup: :manual`). The shop owner ticks which of the services a
+      shipping method offers and the shopper chooses among those at checkout,
+      so `quote/2` and the lookups must work for every service listed
+      (`RateRequest.service` and `Context.service` name the one chosen)
     * `settings_fields/0` - `PhoenixKitEcommerce.Shipping.Field` list for the
       admin form; values arrive in `ctx.settings` with string keys
     * `quote/2` - price a `PhoenixKitEcommerce.Shipping.RateRequest`

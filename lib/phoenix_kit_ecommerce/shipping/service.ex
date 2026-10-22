@@ -3,7 +3,9 @@ defmodule PhoenixKitEcommerce.Shipping.Service do
   One delivery service offered by a shipping provider (for example
   "to a branch" or "courier to the door").
 
-    * `key` - provider-scoped identifier, stored on the shipping method
+    * `key` - provider-scoped identifier, stored on the shipping method (as
+      one of the services it offers) and on the cart and the order (as the
+      one the shopper chose)
     * `label` - human readable name
     * `destination` - what the customer has to give: a pickup point, an
       address, or nothing

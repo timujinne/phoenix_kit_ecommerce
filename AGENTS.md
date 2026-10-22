@@ -885,6 +885,19 @@ All stored via `PhoenixKit.Settings`. Keys are **`shop_`-prefixed**, except `api
   path: it has no settings or service and never asks for a destination, and a
   stored fixed block is read as no block. Price rounding is off unless
   `pricing.round_to` is a positive step.
+- The block's `"services"` are the services the shopper may choose from
+  (`"service"` is the default, the first of them; a block with only
+  `"service"` reads as a list of that one, so older methods need no data
+  migration). The shopper's choice is `cart.metadata["shipping_service"]`
+  (`set_cart_shipping_service/2`); the service in effect is the choice when
+  the method still allows it, else the default (`cart_shipping_service_key/1`).
+  It goes into `RateRequest.service`, so a quote for another service is stale,
+  and into the order's `shipping_provider.service`. Never read
+  `shipping_config(method).service` for a cart: use the service in effect.
+  A choice the admin has since unticked is stale: until a destination is
+  stored (which drops it) or another service is chosen, the destination counts
+  only as its locality (`request_destination/2`, `destination_in_effect/2`), so
+  the shopper is asked for a place again.
 - The limits of a chosen pickup point (weight, size, value) are re-checked
   against the cart whenever its shipping status is worked out
   (`check_destination`): a point that no longer takes the parcels makes the

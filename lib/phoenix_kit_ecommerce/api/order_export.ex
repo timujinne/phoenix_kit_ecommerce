@@ -38,6 +38,14 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
   `unit`. A recorded product or shipping method id that is not a UUID is read as
   none.
 
+  `options` is the option selection the buyer made, as the line recorded it
+  (size, colour): one entry per option with `attribute_key`, `attribute_label`
+  and `value_label`, the labels in the buyer's language. A line sold from the
+  catalogue also has `value_key`, the same in every language; a line of the
+  legacy product source has none (`nil`), its value is its own identity. A line
+  without a selection has `[]`. Without it two lines of one product in two
+  sizes could not be told apart.
+
   ## Shipping destination
 
   `city` and `city_ref` name the locality; `warehouse`, `warehouse_ref`,
@@ -62,6 +70,8 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
   alias PhoenixKit.RepoHelper
   alias PhoenixKitBilling.Order
   alias PhoenixKitEcommerce.API.Money
+  alias PhoenixKitEcommerce.Options
+  alias PhoenixKitEcommerce.Search.OptionKeys
   alias PhoenixKitEcommerce.ShippingMethod
 
   @sections [:lines, :shipping, :payment, :customer]
@@ -172,6 +182,7 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
       "name" => line["name"],
       "quantity" => quantity(line["quantity"]),
       "unit" => item && item.unit,
+      "options" => options(line),
       "unit_price" => amount(line["unit_price"]),
       "total" => amount(line["total"]),
       "taxable" => line["taxable"] != false,
@@ -179,6 +190,28 @@ defmodule PhoenixKitEcommerce.API.OrderExport do
     }
     |> put_sku_at_order(sku, recorded_sku)
   end
+
+  # The selection the line recorded: the labels the buyer saw, and for a keyed
+  # line the value keys beside them (`SelectedSpecs`).
+  defp options(line) do
+    keys = map_or_empty(line["selected_spec_keys"])
+
+    line["selected_specs"]
+    |> map_or_empty()
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Enum.map(fn {key, label} ->
+      %{
+        "attribute_key" => OptionKeys.neutral_key(to_string(key)),
+        "attribute_label" => Options.humanize_key(to_string(key)),
+        "value_key" => if(value = Map.get(keys, key), do: option_text(value)),
+        "value_label" => option_text(label)
+      }
+    end)
+  end
+
+  defp option_text(value) when is_binary(value), do: value
+  defp option_text(values) when is_list(values), do: Enum.map_join(values, ", ", &to_string/1)
+  defp option_text(value), do: to_string(value)
 
   defp put_sku_at_order(line, sku, recorded_sku) when sku != recorded_sku,
     do: Map.put(line, "sku_at_order", recorded_sku)

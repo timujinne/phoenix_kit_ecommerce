@@ -27,6 +27,10 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
 
   ## What it shows
 
+  When the method allows several services (`snapshot.choices`), the shopper
+  chooses among them first ("to a branch", "courier"...), and the rest of the
+  picker follows the service chosen. One service: no choice is offered.
+
   What the service of the method asks for (`Service.destination`, `lookup`):
 
     * `:pickup_point` with `:search` - a city search, then the points of the
@@ -115,7 +119,7 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
      socket
      |> assign(@editor_state)
      |> assign(
-       service_key: nil,
+       method_hash: nil,
        service: nil,
        editing: nil,
        quote_state: :idle,
@@ -141,21 +145,24 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
     {:ok, socket}
   end
 
-  # A new method (or new settings of it) is a new picker: whatever was typed
-  # or looked up belongs to the old one.
+  # A new method (new settings of it, another service of it) is a new picker:
+  # whatever was typed or looked up belongs to the old one.
   defp ensure_method(socket) do
-    %{method: method} = socket.assigns
-    key = :erlang.phash2({method.uuid, method.metadata})
+    %{method: method, snapshot: snapshot} = socket.assigns
+    key = :erlang.phash2({method.uuid, method.metadata, service_key(snapshot)})
 
-    if socket.assigns.service_key == key do
+    if socket.assigns.method_hash == key do
       socket
     else
       socket
       |> cancel_lookups()
       |> assign(@editor_state)
-      |> assign(service_key: key, editing: nil, quote_state: :idle, auto_key: nil, auto_streak: 0)
+      |> assign(method_hash: key, editing: nil, quote_state: :idle, auto_key: nil, auto_streak: 0)
     end
   end
+
+  defp service_key(%{service: %Shipping.Service{key: key}}), do: key
+  defp service_key(_snapshot), do: nil
 
   defp cancel_lookups(socket) do
     socket |> cancel_async(:localities) |> cancel_async(:points)
@@ -335,13 +342,14 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
   defp run_lookup(socket, :localities) do
     %{method: method, locale: locale, locality_query: text, cart: cart} = socket.assigns
     query = String.trim(text)
+    context_opts = lookup_context_opts(socket)
 
     socket
     |> put_lookup(:localities, at: System.monotonic_time(:millisecond), pending: false)
     |> assign(localities_state: :loading, localities_error: nil)
     |> start_async(:localities, fn ->
       method
-      |> Shipping.context(locale: locale, country: cart.shipping_country)
+      |> Shipping.context([locale: locale, country: cart.shipping_country] ++ context_opts)
       |> Shipping.search_localities(query)
     end)
   end
@@ -352,17 +360,27 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
     %{method: method, locale: locale, locality: locality, point_query: query, cart: cart} =
       socket.assigns
 
+    context_opts = lookup_context_opts(socket)
+
     socket
     |> put_lookup(:points, at: System.monotonic_time(:millisecond), pending: false)
     |> assign(points_state: :loading, points_error: nil)
     |> start_async(:points, fn ->
       method
-      |> Shipping.context(locale: locale, country: cart.shipping_country)
+      |> Shipping.context([locale: locale, country: cart.shipping_country] ++ context_opts)
       |> Shipping.list_pickup_points(locality, query,
         parcels: Shop.cart_parcels(cart),
         declared_value: Shop.cart_declared_value(cart)
       )
     end)
+  end
+
+  # The lookups are for the service the shopper chose, not the method's default.
+  defp lookup_context_opts(socket) do
+    case service_key(socket.assigns.snapshot) do
+      nil -> []
+      key -> [service: key]
+    end
   end
 
   # What came back while another, newer request was waiting is asked again.
@@ -543,6 +561,17 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
     end
   end
 
+  def handle_event("choose_service", %{"service" => key}, socket) when is_binary(key) do
+    %{snapshot: snapshot} = socket.assigns
+
+    # Not throttled and not compared with the service shown: it asks the
+    # carrier nothing, a click that is dropped leaves the browser's radio on a
+    # service the server never took, and choosing the one in effect is cheap.
+    if Enum.any?(snapshot.choices, &(&1.key == key)),
+      do: choose_service(socket, key),
+      else: {:noreply, socket}
+  end
+
   def handle_event("pick_locality", %{"id" => id}, socket) when is_binary(id) do
     case Enum.find(socket.assigns.localities, &(&1.id == id)) do
       nil -> {:noreply, socket}
@@ -714,6 +743,16 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
     end
   end
 
+  # The parent passes the new cart down (the shipping broadcast) and the
+  # picker starts over for the new service. A choice that is refused means the
+  # picker went stale (the cart or the method changed): the parent looks again.
+  defp choose_service(socket, key) do
+    case Shop.set_cart_shipping_service(socket.assigns.cart, key) do
+      {:ok, _cart} -> {:noreply, socket}
+      {:error, _reason} -> {:noreply, recheck(socket)}
+    end
+  end
+
   defp pick_locality(socket, locality) do
     case Shop.set_cart_shipping_destination(socket.assigns.cart, %Destination{locality: locality}) do
       {:ok, _cart} ->
@@ -840,6 +879,14 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
   def render(assigns) do
     ~H"""
     <div id={@id} class="rounded-box border border-base-300 bg-base-200/40 p-4 space-y-4 text-sm">
+      <.service_choice
+        :if={@snapshot.choices != []}
+        pid={@id}
+        choices={@snapshot.choices}
+        selected={service_key(@snapshot)}
+        myself={@myself}
+      />
+
       <%= cond do %>
         <% @snapshot.service_error -> %>
           <.service_error
@@ -964,6 +1011,42 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingDestinationPicker do
           />
       <% end %>
     </div>
+    """
+  end
+
+  attr :pid, :string, required: true
+  attr :choices, :list, required: true
+  attr :selected, :string, default: nil
+  attr :myself, :any, required: true
+
+  defp service_choice(assigns) do
+    ~H"""
+    <fieldset id={"#{@pid}-service-choice"} class="space-y-2">
+      <legend class="text-xs text-base-content/60 mb-1">{gettext("Delivery type")}</legend>
+      <label
+        :for={service <- @choices}
+        class={[
+          "flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors",
+          if(service.key == @selected,
+            do: "border-primary bg-primary/5",
+            else: "border-base-300 hover:border-primary/50"
+          )
+        ]}
+      >
+        <input
+          id={"#{@pid}-service-#{service.key}"}
+          type="radio"
+          name={"#{@pid}-service"}
+          value={service.key}
+          checked={service.key == @selected}
+          phx-click="choose_service"
+          phx-value-service={service.key}
+          phx-target={@myself}
+          class="radio radio-primary radio-sm"
+        />
+        <span class="font-medium">{service.label || service.key}</span>
+      </label>
+    </fieldset>
     """
   end
 

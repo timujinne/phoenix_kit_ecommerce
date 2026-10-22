@@ -4,7 +4,8 @@ defmodule PhoenixKitEcommerce.API.CartTools do
   scope, no permission; the cart token in the input identifies the cart, and is
   the module's client token (`client_token: "cart_token"`, declared on a core
   whose `PhoenixKit.API.Tool` has the field): core hashes it for the caller's
-  rate limit, idempotency scope and confirmation, and never keeps it in clear. Names are dotted here; core derives the underscored MCP names.
+  rate limit, idempotency scope and confirmation, and never keeps it in clear.
+  Names are dotted here; core derives the underscored MCP names.
 
   Every tool also accepts the shared control fields `language` and `currency`
   (`API.Public.Schemas.control_fields/0`): core closes every schema and adds
