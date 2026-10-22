@@ -18,6 +18,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
   alias PhoenixKitEcommerce.Activity
   alias PhoenixKitEcommerce.Errors
   alias PhoenixKitEcommerce.Events
+  alias PhoenixKitEcommerce.ItemImage
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.SelectedSpecs
@@ -2214,10 +2215,11 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
             <%= for item <- @cart.items do %>
               <% display_title = NamePrefix.strip(item.product_title) %>
               <div class="flex items-center gap-4">
-                <%= if item.product_image do %>
+                <% item_image = ItemImage.url(item) %>
+    <%= if item_image do %>
                   <div class="w-16 h-16 bg-base-200 rounded-lg overflow-hidden flex-shrink-0">
                     <img
-                      src={item.product_image}
+                      src={item_image}
                       alt={display_title}
                       class="w-full h-full object-cover"
                     />
