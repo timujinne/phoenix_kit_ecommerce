@@ -38,7 +38,8 @@ support_dir = Path.expand("support", __DIR__)
   "live_case.ex",
   "cart_api_fixtures.ex",
   "api_fixtures.ex",
-  "api_case.ex"
+  "api_case.ex",
+  "order_fixtures.ex"
 ]
 |> Enum.each(&Code.require_file(&1, support_dir))
 
@@ -352,8 +353,25 @@ billing_user_menu_exclude =
     [:requires_billing_user_menu]
   end
 
+# The order tools read the revision and the external system's mark of an order,
+# which billing keeps from the release that has `put_order_sync/2`. Tests of
+# them are tagged :billing_order_sync and excluded on an older billing.
+billing_order_sync_exclude =
+  if Code.ensure_loaded?(PhoenixKitBilling) and
+       function_exported?(PhoenixKitBilling, :put_order_sync, 2) do
+    []
+  else
+    Logger.info(
+      "[test_helper] PhoenixKitBilling.put_order_sync/2 not available - the order tool " <>
+        "tests (:billing_order_sync) excluded. They run once `phoenix_kit_billing` is " <>
+        "upgraded to a release that ships it."
+    )
+
+    [:billing_order_sync]
+  end
+
 # The shop API registers tools and cron entries through callbacks that exist only in
-# a core with the shop API (`PhoenixKit.API.*`, `PhoenixKit.ObanCrons`). Tests of
+# a core with the public API (`PhoenixKit.API.*`, `PhoenixKit.ObanCrons`). Tests of
 # those are tagged :requires_core_api and are EXCLUDED AT RUN TIME on a core
 # without the API. The tag does not stop a test file from being COMPILED, so
 # those files must not use `%PhoenixKit.API.Actor{}` / `%PhoenixKit.API.Tool{}`
@@ -366,10 +384,30 @@ api_exclude =
     Logger.info(
       "[test_helper] PhoenixKit.API.Tool / PhoenixKit.ObanCrons not available - " <>
         "public API tests excluded. They run once `phoenix_kit` resolves to a core " <>
-        "with the shop API."
+        "with the public API."
     )
 
     [:requires_core_api]
+  end
+
+# The API links a page of a language that has a domain on that domain through
+# core's `Routes.canonical_absolute_or_nil/2`. A core without it keeps the
+# request's host; the tests of each side run on their own core.
+canonical_urls? =
+  Code.ensure_loaded?(PhoenixKit.Utils.Routes) and
+    function_exported?(PhoenixKit.Utils.Routes, :canonical_absolute_or_nil, 2)
+
+canonical_urls_exclude =
+  if canonical_urls? do
+    [:core_without_canonical_urls]
+  else
+    Logger.info(
+      "[test_helper] PhoenixKit.Utils.Routes.canonical_absolute_or_nil/2 not available - " <>
+        "language-domain API link tests excluded. They run once `phoenix_kit` resolves to a " <>
+        "core with it."
+    )
+
+    [:requires_core_canonical_urls]
   end
 
 # The typo fallback needs the pg_trgm extension. Without it those tests are
@@ -404,13 +442,28 @@ analytics_exclude =
     [:analytics]
   end
 
-# The MCP tests (tagged `:mcp`) need the MCP plug of the shop API as well.
+# The MCP tests (tagged `:mcp`) need the MCP plug of the public API as well.
 mcp_exclude =
   if Code.ensure_loaded?(PhoenixKit.API.MCP) do
     []
   else
     Logger.info("[test_helper] PhoenixKit.API.MCP not loaded - the MCP tests (:mcp) excluded.")
     [:mcp]
+  end
+
+# The tests of `replay: false` (a tool that gives up the idempotency key) need a
+# core that exports `ControlFields.replay_tool?/1`. They are excluded, and so
+# counted, on a core without it; the run never reports them as passed.
+replay_exclude =
+  if PhoenixKitEcommerce.API.CartTools.replay_available?() do
+    []
+  else
+    Logger.info(
+      "[test_helper] PhoenixKit.API.ControlFields.replay_tool?/1 not available - " <>
+        "the replay: false tests (:core_replay) excluded."
+    )
+
+    [:core_replay]
   end
 
 ExUnit.start(
@@ -423,5 +476,7 @@ ExUnit.start(
       admin_api_exclude ++
       user_menu_exclude ++
       billing_user_menu_exclude ++
-      api_exclude ++ trigram_exclude ++ analytics_exclude ++ mcp_exclude
+      billing_order_sync_exclude ++
+      api_exclude ++
+      canonical_urls_exclude ++ trigram_exclude ++ analytics_exclude ++ mcp_exclude
 )

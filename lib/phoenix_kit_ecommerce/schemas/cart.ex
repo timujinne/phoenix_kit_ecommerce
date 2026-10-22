@@ -122,6 +122,7 @@ defmodule PhoenixKitEcommerce.Cart do
     |> validate_required([:currency])
     |> validate_length(:currency, is: 3)
     |> validate_length(:base_currency, is: 3)
+    |> upcase_shipping_country()
     |> validate_length(:shipping_country, max: 2)
     |> validate_identity()
     |> maybe_set_expires_at()
@@ -162,6 +163,7 @@ defmodule PhoenixKitEcommerce.Cart do
       :shipping_country,
       :shipping_amount
     ])
+    |> upcase_shipping_country()
   end
 
   @doc """
@@ -223,6 +225,15 @@ defmodule PhoenixKitEcommerce.Cart do
   def statuses, do: @statuses
 
   # Private helpers
+
+  # The country lists of a shipping method hold upcased codes; a cart that
+  # carries `ua` must match them.
+  defp upcase_shipping_country(changeset) do
+    update_change(changeset, :shipping_country, fn
+      country when is_binary(country) -> country |> String.trim() |> String.upcase()
+      other -> other
+    end)
+  end
 
   defp validate_identity(changeset) do
     user_uuid = get_field(changeset, :user_uuid)

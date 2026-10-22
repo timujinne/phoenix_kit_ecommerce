@@ -121,6 +121,119 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
     end
   end
 
+  describe "option labels on the lines" do
+    setup do
+      cup =
+        product!(%{
+          "metadata" => %{
+            "_option_values" => %{"cup_color" => ["Red Gold"]},
+            "_option_labels" => %{"cup_color" => "Cup colour"}
+          }
+        })
+
+      %{cup: cup}
+    end
+
+    defp cup_line(cup) do
+      %{
+        "product_id" => cup.uuid,
+        "quantity" => 1,
+        "options" => [%{"attribute_key" => "cup_color", "value_key" => "red-gold"}]
+      }
+    end
+
+    test "set_cart_items and get_cart name the option and the value beside their keys, in every language",
+         %{cup: cup} do
+      :ok = PhoenixKitEcommerce.SearchFixtures.enable_languages!(["en", "de", "fr"])
+      token = new_cart_token()
+
+      expected = [
+        %{
+          "attribute_key" => "cup_color",
+          "value_key" => "red-gold",
+          "attribute_label" => "Cup colour",
+          "value_label" => "Red Gold"
+        }
+      ]
+
+      for language <- ["en", "de", "fr"] do
+        assert {200, %{"cart" => %{"lines" => [%{"options" => ^expected}]}}, _} =
+                 call("shop.set_cart_items", %{
+                   "cart_token" => token,
+                   "items" => [cup_line(cup)],
+                   "language" => language
+                 })
+
+        assert {200, %{"lines" => [%{"options" => ^expected}]}, _} =
+                 call("shop.get_cart", %{"cart_token" => token, "language" => language})
+      end
+    end
+
+    test "a line whose product was deleted still reads with labels, never bare keys", %{cup: cup} do
+      token = new_cart_token()
+
+      {200, _, _} =
+        call("shop.set_cart_items", %{"cart_token" => token, "items" => [cup_line(cup)]})
+
+      {:ok, _} = Shop.delete_product(cup)
+
+      assert {200, %{"lines" => [%{"status" => "unavailable", "options" => [option]}]}, _} =
+               call("shop.get_cart", %{"cart_token" => token})
+
+      assert option["attribute_label"] == "Cup Color"
+      assert option["value_label"] == "Red Gold"
+    end
+
+    test "the output schema of the cart describes them" do
+      schema = Enum.find(CartTools.tools(), &(&1.name == "shop.get_cart")).output_schema
+      options = schema["properties"]["lines"]["items"]["properties"]["options"]
+
+      assert options["items"]["properties"] |> Map.keys() |> Enum.sort() ==
+               ["attribute_key", "attribute_label", "value_key", "value_label"]
+    end
+  end
+
+  describe "the price shop.get_products quotes for an option value" do
+    test "is the unit price the cart charges, for an option of the global schema" do
+      {:ok, _} =
+        PhoenixKitEcommerce.Options.update_global_options([
+          %{
+            "key" => "finish",
+            "label" => "Finish",
+            "type" => "select",
+            "options" => ["Matt", "Gloss"],
+            "affects_price" => true,
+            "modifier_type" => "percent",
+            "price_modifiers" => %{"Matt" => "0", "Gloss" => "20"}
+          }
+        ])
+
+      vase = product!(%{"metadata" => %{"_option_values" => %{"finish" => ["Matt", "Gloss"]}}})
+
+      assert {200, %{"results" => [%{"product" => %{"options" => [finish]}}]}, _} =
+               call("shop.get_products", %{"ids" => [vase.uuid]})
+
+      assert finish["affects_price"] == true
+
+      for {value_key, quoted} <- [{"matt", "10.00"}, {"gloss", "12.00"}] do
+        token = new_cart_token()
+
+        line = %{
+          "product_id" => vase.uuid,
+          "quantity" => 1,
+          "options" => [%{"attribute_key" => "finish", "value_key" => value_key}]
+        }
+
+        assert {200, %{"cart" => %{"lines" => [%{"unit_price" => charged}]}}, _} =
+                 call("shop.set_cart_items", %{"cart_token" => token, "items" => [line]})
+
+        card_price = Enum.find(finish["values"], &(&1["key"] == value_key))["price"]
+        assert card_price == %{"amount" => quoted, "currency" => "USD"}
+        assert charged == card_price
+      end
+    end
+  end
+
   describe "every cart tool and a token the server did not issue" do
     test "is cart_not_found over HTTP, never a 500", %{p1: p1} do
       carts_before = Repo.aggregate(Cart, :count)
@@ -345,7 +458,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
     end
 
     test "the first write is limited per network", %{p1: p1} do
-      put_setting!("api_public_cart_rows_per_ip_hour", 1)
+      put_setting!(new_rows_key(:per_ip_hour), 1)
       ip = unique_ip()
 
       first = new_cart_token()
@@ -366,7 +479,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
     end
 
     test "the first write is limited globally, whatever the network", %{p1: p1} do
-      put_setting!("api_public_cart_rows_global_hour", 1)
+      put_setting!(new_rows_key(:global_hour), 1)
       first = new_cart_token()
       second = new_cart_token()
 
@@ -570,6 +683,33 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
       assert by_id[closed.uuid]["available"] == false
       assert by_id[closed.uuid]["reason"] == "country_not_served"
       assert by_id[open.uuid]["price"] == %{"amount" => "4.00", "currency" => "USD"}
+    end
+
+    test "a method whose stored list is lower case still serves the country", %{
+      physical: physical
+    } do
+      token = new_cart_token()
+      {200, _, _} = write(token, [{physical, 1}])
+      legacy = method!(%{"name" => "Legacy", "countries" => ["DE"]})
+
+      # Rows written before the lists were normalised may hold lower case codes.
+      {1, _} =
+        Repo.update_all(
+          from(m in PhoenixKitEcommerce.ShippingMethod, where: m.uuid == ^legacy.uuid),
+          set: [countries: ["de"], excluded_countries: ["fr"]]
+        )
+
+      assert {200, %{"methods" => methods}, _} =
+               call("shop.get_shipping_options", %{"cart_token" => token, "country" => "DE"})
+
+      assert [%{"available" => true} = served] = Enum.filter(methods, &(&1["id"] == legacy.uuid))
+      assert served["reason"] == nil
+
+      assert {200, %{"methods" => methods}, _} =
+               call("shop.get_shipping_options", %{"cart_token" => token, "country" => "FR"})
+
+      assert [%{"available" => false, "reason" => "country_not_served"}] =
+               Enum.filter(methods, &(&1["id"] == legacy.uuid))
     end
 
     test "a method below the order minimum says so", %{physical: physical} do
@@ -1006,6 +1146,28 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
       refute first == second
     end
 
+    @tag :core_replay
+    test "create_cart offers no idempotency_key, so one in the body is refused (core with :replay)" do
+      assert CartTools.replay_available?()
+      key = "create-cart-0123456789"
+
+      assert {422, %{"code" => "validation_failed"}, _} =
+               call("shop.create_cart", %{"idempotency_key" => key})
+    end
+
+    @tag :core_replay
+    test "get_checkout_link offers no idempotency_key either (core with :replay)", %{p1: p1} do
+      assert CartTools.replay_available?()
+      token = new_cart_token()
+      {200, _, _} = write(token, [{p1, 1}])
+
+      assert {422, %{"code" => "validation_failed"}, _} =
+               call("shop.get_checkout_link", %{
+                 "cart_token" => token,
+                 "idempotency_key" => "checkout-link-0123456789"
+               })
+    end
+
     defp stored_responses do
       %{rows: rows} = Repo.query!("SELECT response::text FROM phoenix_kit_api_idempotency")
       for [response] <- rows, is_binary(response), do: response
@@ -1394,7 +1556,7 @@ defmodule PhoenixKitEcommerce.API.CartApiTest do
     end
   end
 
-  # Every tool through both transports. REST is above; this is MCP (`POST /mcp/shop`).
+  # Every tool through both transports. REST is above; this is MCP (`POST /mcp/public`).
   # Excluded when the core in use has no MCP plug.
   describe "through MCP" do
     @describetag :mcp

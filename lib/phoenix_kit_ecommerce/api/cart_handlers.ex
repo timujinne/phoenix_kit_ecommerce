@@ -74,7 +74,7 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
 
   defp do_get_cart(hash, _input, ctx) do
     case CartStore.resolve(hash) do
-      {:ok, cart} -> ok(CartView.build(cart))
+      {:ok, cart} -> ok(CartView.build(cart, ctx[:language]))
       :empty -> ok(CartView.empty(CartStore.display_currency(ctx)))
       {:locked, claim} -> ok(CartView.locked(claimed_currency(claim, ctx)))
       :not_found -> cart_not_found()
@@ -159,8 +159,8 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
     ok(%{lines_removed: 0, cart: CartView.empty(CartStore.display_currency(ctx))})
   end
 
-  defp clear(cart, _hash, %{dry_run?: true}) do
-    view = CartView.build(cart)
+  defp clear(cart, _hash, %{dry_run?: true} = ctx) do
+    view = CartView.build(cart, ctx[:language])
 
     preview(
       %{lines_removed: length(view.lines), cart: view, would_be: CartView.empty(cart.currency)},
@@ -168,7 +168,7 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
     )
   end
 
-  defp clear(cart, hash, _ctx) do
+  defp clear(cart, hash, ctx) do
     result =
       repo().transaction(fn ->
         locked = CartStore.lock_active!(cart.uuid, hash)
@@ -186,8 +186,11 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
       end)
 
     case result do
-      {:ok, {count, fresh}} -> ok(%{lines_removed: count, cart: CartView.build(fresh)})
-      {:error, reason} -> write_failed(reason)
+      {:ok, {count, fresh}} ->
+        ok(%{lines_removed: count, cart: CartView.build(fresh, ctx[:language])})
+
+      {:error, reason} ->
+        write_failed(reason)
     end
   end
 
@@ -268,7 +271,7 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
     weight = cart.total_weight_grams || 0
 
     [
-      {not country_served?(method, country), "country_not_served"},
+      {not ShippingMethod.serves_country?(method, country), "country_not_served"},
       {below?(base_subtotal, method.min_order_amount), "order_below_minimum"},
       {above?(base_subtotal, method.max_order_amount), "order_above_maximum"},
       {is_integer(method.min_weight_grams) and weight < method.min_weight_grams,
@@ -277,13 +280,6 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
        "weight_above_maximum"}
     ]
     |> Enum.find_value("not_available", fn {failed?, code} -> failed? && code end)
-  end
-
-  defp country_served?(method, country) do
-    allowed = method.countries || []
-    excluded = method.excluded_countries || []
-
-    (allowed == [] or country in allowed) and country not in excluded
   end
 
   defp below?(_amount, nil), do: false
@@ -336,12 +332,12 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
 
       ctx[:dry_run?] == true ->
         preview(
-          %{method: method.uuid, country: country, cart: CartView.build(cart)},
+          %{method: method.uuid, country: country, cart: CartView.build(cart, ctx[:language])},
           CartView.revision(cart)
         )
 
       true ->
-        write_shipping(hash, cart, method, country)
+        write_shipping(hash, cart, method, country, ctx)
     end
   end
 
@@ -369,7 +365,7 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
   # The choice was checked on the cart as it was read; another write may have
   # changed the lines (the subtotal, the weight) before the row lock, so the
   # method is checked again on the locked cart.
-  defp write_shipping(hash, cart, method, country) do
+  defp write_shipping(hash, cart, method, country, ctx) do
     result =
       repo().transaction(fn ->
         locked = CartStore.lock_active!(cart.uuid, hash)
@@ -390,7 +386,7 @@ defmodule PhoenixKitEcommerce.API.CartHandlers do
       end)
 
     case result do
-      {:ok, fresh} -> ok(CartView.build(fresh))
+      {:ok, fresh} -> ok(CartView.build(fresh, ctx[:language]))
       {:error, reason} -> write_failed(reason)
     end
   end

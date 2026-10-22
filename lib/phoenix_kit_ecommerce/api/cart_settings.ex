@@ -9,9 +9,12 @@ defmodule PhoenixKitEcommerce.API.CartSettings do
   | `api_signal_per_cart_per_hour` | 3 | 0..1000 |
   | `api_signal_global_per_hour` | 30 | 0..100000 |
 
-  The two cart-row limits (`api_public_cart_rows_per_ip_hour`,
-  `api_public_cart_rows_global_hour`) belong to core: they are read by
-  `PhoenixKit.API.RateLimit.check_cart_rows/1` and edited on Settings -> API.
+  The two new-rows limits (`api_public_new_rows_per_ip_hour`,
+  `api_public_new_rows_global_hour`) belong to core: they are shared by every
+  module that creates rows for a caller without a key, read by
+  `PhoenixKit.API.RateLimit.check_new_rows/1` and edited on Settings -> API.
+  Until core 3.0.0 a limit whose new key holds no number still reads its old
+  key (`api_public_cart_rows_per_ip_hour`, `api_public_cart_rows_global_hour`).
 
   Every reader returns its default for a missing, malformed or out-of-range
   value and when the settings layer fails; none raises. A cap of `0` is valid

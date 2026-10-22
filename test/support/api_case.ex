@@ -28,12 +28,11 @@ defmodule PhoenixKitEcommerce.APICase do
   @compile {:no_warn_undefined, PhoenixKit.API.Executor}
 
   alias PhoenixKit.API.Executor
-  alias PhoenixKitEcommerce.API
 
-  @doc "The tool named `name` as `PhoenixKitEcommerce.API.tools/0` builds it."
+  @doc "The tool named `name` as `PhoenixKitEcommerce.api_tools/0` hands it to core."
   @spec tool!(String.t()) :: struct()
   def tool!(name) do
-    Enum.find(API.tools(), &(&1.name == name)) ||
+    Enum.find(PhoenixKitEcommerce.api_tools(), &(&1.name == name)) ||
       raise ArgumentError,
             "no e-commerce tool named #{inspect(name)}; core needs the tool registry and, " <>
               "for the write tools, the confirmation flow"

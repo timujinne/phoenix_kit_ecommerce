@@ -21,6 +21,7 @@ defmodule PhoenixKitEcommerce.API.Cards do
   alias PhoenixKitEcommerce.API.PlainText
   alias PhoenixKitEcommerce.API.Record
   alias PhoenixKitEcommerce.HtmlToMarkdown
+  alias PhoenixKitEcommerce.Options
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.Search.OptionKeys
   alias PhoenixKitEcommerce.Translations
@@ -84,7 +85,9 @@ defmodule PhoenixKitEcommerce.API.Cards do
       "id" => fn -> record.id end,
       "title" => fn -> Translations.get_display(product, :title, language) end,
       "slug" => fn -> slug end,
-      "url" => fn -> slug && Context.absolute(context, Shop.product_url(product, language)) end,
+      "url" => fn ->
+        slug && Context.absolute(context, Shop.product_url(product, language), language)
+      end,
       "price" => fn -> priced(on_request?, fn -> Context.money(context, product.price) end) end,
       "price_from" => fn ->
         priced(on_request?, fn -> lowest_price(context, product, lookup) end)
@@ -133,7 +136,7 @@ defmodule PhoenixKitEcommerce.API.Cards do
     |> Map.merge(%{
       "description" => description(product, context.language, Keyword.get(opts, :format, "text")),
       "tags" => product.tags |> List.wrap() |> Enum.filter(&is_binary/1),
-      "options" => Enum.map(OptionKeys.extract(product), &option/1),
+      "options" => options(product, context, lookup),
       "images" => images(product, context, lookup)
     })
     |> compact()
@@ -226,13 +229,87 @@ defmodule PhoenixKitEcommerce.API.Cards do
       else: Translations.get(product, :description, language)
   end
 
-  defp option(option) do
+  # The options a card announces, each value priced with the product's own price
+  # function, the one the cart charges by (`Options.calculate_final_price/4` over
+  # `Options.get_price_affecting_specs_for_product/2`): an option changes the
+  # price when the product says so (`affects_price` of `OptionKeys.extract/1`) or
+  # when its schema does, a global or category option with modifiers included.
+  defp options(product, context, lookup) do
+    options = OptionKeys.extract(product)
+
+    specs =
+      if options == [] or PriceDisplay.on_request?(product),
+        do: [],
+        else: price_specs(product, lookup)
+
+    Enum.map(options, &option(&1, product, context, specs))
+  end
+
+  defp price_specs(product, lookup) do
+    case CardLookup.schema(lookup, product) do
+      nil -> Options.get_price_affecting_specs_for_product(product)
+      schema -> Options.get_price_affecting_specs_for_product(product, schema)
+    end
+  end
+
+  defp option(option, product, context, specs) do
+    keys = raw_keys(option, product, specs)
+    prices = Map.new(option.values, &{&1.key, value_price(&1, keys, specs, product)})
+    affects_price? = option.affects_price or Enum.any?(prices, &differs?(&1, product))
+
     %{
       "key" => option.key,
       "label" => option.label,
-      "affects_price" => option.affects_price,
-      "values" => Enum.map(option.values, &%{"key" => &1.key, "label" => &1.label})
+      "affects_price" => affects_price?,
+      "values" => Enum.map(option.values, &value_entry(&1, prices, affects_price?, context))
     }
+  end
+
+  defp differs?({_key, nil}, _product), do: false
+
+  defp differs?({_key, price}, product),
+    do: Decimal.compare(price, product.price || 0) != :eq
+
+  # `price` is the product's price with this value chosen and no other option:
+  # a percent modifier or an override has no delta that adds up, a price does.
+  defp value_entry(value, prices, true, context) do
+    base = %{"key" => value.key, "label" => value.label}
+
+    case Map.fetch!(prices, value.key) do
+      nil -> base
+      price -> Map.put(base, "price", Context.money(context, price))
+    end
+  end
+
+  defp value_entry(value, _prices, false, _context),
+    do: %{"key" => value.key, "label" => value.label}
+
+  defp value_price(_value, _keys, [], _product), do: nil
+
+  defp value_price(value, keys, specs, product) do
+    Enum.find_value(keys, fn {raw_key, raw_by_key} ->
+      with raw when is_binary(raw) <- Map.get(raw_by_key, value.key) do
+        Options.calculate_final_price(specs, %{raw_key => raw}, product.price, product.metadata)
+      end
+    end)
+  end
+
+  # For each spec of this option, the stored value by the key the card announces
+  # for it, built once per option: working a key back to its stored value one
+  # value at a time is quadratic, and slugifies on every step on the Legacy
+  # source. The first stored value wins when two share a key, as `extract/1`.
+  defp raw_keys(option, product, specs) do
+    for %{"key" => raw_key, "options" => raw_values} <- specs,
+        is_list(raw_values),
+        OptionKeys.neutral_key(raw_key) == option.key do
+      raw_by_key =
+        raw_values
+        |> Enum.filter(&is_binary/1)
+        |> Enum.reverse()
+        |> Map.new(&{OptionKeys.product_value_key(product, raw_key, &1), &1})
+
+      {raw_key, raw_by_key}
+    end
   end
 
   defp images(product, context, lookup) do

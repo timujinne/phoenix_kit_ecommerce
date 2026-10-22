@@ -13,8 +13,9 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
   - `free_above_amount` - Free shipping threshold
   - `min_weight_grams`, `max_weight_grams` - Weight limits
   - `min_order_amount`, `max_order_amount` - Order amount limits
-  - `countries` - Allowed countries (empty = all)
-  - `excluded_countries` - Excluded countries
+  - `countries` - Allowed countries, ISO 3166-1 alpha-2 (empty = all)
+  - `excluded_countries` - Excluded countries; a country cannot be in both
+    lists (the changeset refuses it)
   - `active` - Enabled/disabled
   - `position` - Sort order
   - `estimated_days_min`, `estimated_days_max` - Delivery estimate
@@ -33,9 +34,10 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
   use PhoenixKit.SchemaPrefix
   import Ecto.Changeset
 
+  alias PhoenixKit.Utils.CountryData
   alias PhoenixKit.Utils.Slug
   alias PhoenixKitEcommerce.LocalizedSlug
-  alias PhoenixKitEcommerce.Shipping.{MethodConfig, MethodParams}
+  alias PhoenixKitEcommerce.Shipping.{Codec, MethodConfig, MethodParams}
 
   @primary_key {:uuid, UUIDv7, autogenerate: true}
 
@@ -110,6 +112,8 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
 
     method
     |> cast(attrs, @required_fields ++ @optional_fields)
+    |> normalize_countries()
+    |> validate_disjoint_countries()
     |> put_pay_on_delivery(pay_on_delivery)
     |> put_shipping_provider(shipping_provider, opts)
     |> zero_pay_on_delivery_price()
@@ -153,7 +157,7 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
       }) do
     weight_ok?(method, weight) &&
       amount_ok?(method, subtotal) &&
-      country_ok?(method, country)
+      serves_country?(method, country)
   end
 
   def available_for?(%__MODULE__{} = method, params) when is_map(params) do
@@ -162,6 +166,29 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     country = Map.get(params, :country)
 
     available_for?(method, %{weight_grams: weight, subtotal: subtotal, country: country})
+  end
+
+  @doc """
+  Whether the country lists of the method let `country` through.
+
+  Codes are compared upcased, on both sides, so a lower case code in a cart or
+  in a row stored before the lists were normalised still matches. An empty
+  `countries` list means every country; a list that holds only values that are
+  not country codes does not (it serves nobody, as it always did); a country
+  in `excluded_countries` is always out. A blank or missing `country` (the cart page leaves it unset
+  until checkout, and the method list is country-blind until then) is let
+  through by every method.
+  """
+  @spec serves_country?(map(), term()) :: boolean()
+  def serves_country?(%{countries: allowed, excluded_countries: excluded}, country) do
+    case normalize_country(country) do
+      nil ->
+        true
+
+      code ->
+        (List.wrap(allowed) == [] or code in Codec.countries(allowed)) and
+          code not in Codec.countries(excluded)
+    end
   end
 
   @doc """
@@ -267,16 +294,80 @@ defmodule PhoenixKitEcommerce.ShippingMethod do
     min_ok and max_ok
   end
 
-  defp country_ok?(%{countries: [], excluded_countries: []}, _country), do: true
-
-  defp country_ok?(%{countries: [], excluded_countries: excluded}, country) do
-    is_nil(country) or country not in excluded
+  # Each code is stored upcased and once; what is not a known ISO 3166-1
+  # alpha-2 code is dropped. The admin form submits a blank entry with the
+  # lists, so that a list can be emptied: that blank is dropped here as well.
+  # A list made only of wrong codes is an error, not an empty list: empty
+  # means "every country".
+  defp normalize_countries(changeset) do
+    Enum.reduce([:countries, :excluded_countries], changeset, &normalize_country_list(&2, &1))
   end
 
-  defp country_ok?(%{countries: allowed, excluded_countries: excluded}, country) do
-    (is_nil(country) or country in allowed) and
-      (is_nil(country) or country not in excluded)
+  defp normalize_country_list(changeset, field) do
+    case fetch_change(changeset, field) do
+      {:ok, entries} when is_list(entries) ->
+        codes = entries |> Codec.countries() |> Enum.filter(&CountryData.get_country/1)
+
+        if codes == [] and Enum.any?(entries, &(not blank_entry?(&1))),
+          do: add_error(changeset, field, "has no valid country code"),
+          else: put_change(changeset, field, codes)
+
+      # The columns accept NULL, but a NULL list breaks `serves_country?/2` and the
+      # methods list: nothing means the empty list, which is "every country".
+      {:ok, nil} ->
+        put_change(changeset, field, [])
+
+      _ ->
+        changeset
+    end
   end
+
+  defp blank_entry?(entry) when is_binary(entry), do: String.trim(entry) == ""
+  defp blank_entry?(entry), do: is_nil(entry)
+
+  # A code a country list or a cart carries, as it is compared: trimmed and
+  # upcased. Blank is no country at all.
+  defp normalize_country(country) when is_binary(country) do
+    case country |> String.trim() |> String.upcase() do
+      "" -> nil
+      code -> code
+    end
+  end
+
+  defp normalize_country(_other), do: nil
+
+  # Allowing and excluding the same country says two things at once. Excluding
+  # wins when such a row is read (`serves_country?/2`), but it is a mistake in
+  # the form, so a save that sets either list is refused. Codes are compared
+  # as `serves_country?/2` reads them, so a stored `ua` meets a new `UA`. A
+  # list that is already an error is left alone, and a row that already
+  # overlaps stays editable for anything else.
+  defp validate_disjoint_countries(changeset) do
+    if (changed?(changeset, :countries) or changed?(changeset, :excluded_countries)) and
+         not list_error?(changeset) do
+      excluded = changeset |> get_field(:excluded_countries) |> Codec.countries()
+
+      both =
+        changeset |> get_field(:countries) |> Codec.countries() |> Enum.filter(&(&1 in excluded))
+
+      if both == [],
+        do: changeset,
+        else:
+          add_error(
+            changeset,
+            :excluded_countries,
+            "cannot also be allowed: %{countries}",
+            countries: Enum.join(both, ", ")
+          )
+    else
+      changeset
+    end
+  end
+
+  defp list_error?(changeset),
+    do:
+      Keyword.has_key?(changeset.errors, :countries) or
+        Keyword.has_key?(changeset.errors, :excluded_countries)
 
   # The admin form submits the flag as a top-level `pay_on_delivery` param:
   # rendering it as `shipping_method[metadata][pay_on_delivery]` would make

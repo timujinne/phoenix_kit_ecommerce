@@ -73,7 +73,7 @@ defmodule PhoenixKitEcommerce.API.PublicTools do
         description:
           "Search the shop's products by words, category, price, options, vendor and sale status. " <>
             "Returns a page of products with prices, the exact number of matches and facets " <>
-            "(categories, vendors, options, price range) to refine the search. Leave out q to browse. " <>
+            "(categories, vendors, options, price range) to refine the search; facets: false leaves them out and makes the answer much smaller. Leave out q to browse. " <>
             "Use the product ids with shop.get_products for full details.",
         input_schema: Search.search_input_schema(),
         output_schema: Search.search_output_schema(),
@@ -103,7 +103,7 @@ defmodule PhoenixKitEcommerce.API.PublicTools do
         title: "Get product details",
         description:
           "Get the full card of up to 50 products by id: title, description, price and sale price, " <>
-            "options with their keys, tags, images and category path. A product that is no longer " <>
+            "options with their keys (and, for an option that changes the price, the price of each value), tags, images and category path. A product that is no longer " <>
             "sold returns only its id, title and status \"discontinued\"; an id that does not exist " <>
             "or is not for sale returns not_found. Every ten ids count as one request against the rate limit.",
         input_schema: Catalog.get_products_input_schema(),

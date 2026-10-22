@@ -18,7 +18,7 @@ E-commerce module for [PhoenixKit](https://github.com/BeamLabEU/phoenix_kit). Pr
 - **Real-time updates** — PubSub events for carts, products, categories, and inventory changes
 - **Admin dashboard** — LiveViews for managing products, categories, shipping, carts, imports, and settings
 - **User pages** — catalog, product detail, cart, checkout, order history, and order details
-- **Public read API** — full-text product search (PostgreSQL, per language, typo-tolerant with `pg_trgm`), product cards, category tree and similar products for AI agents and scripts, as REST and MCP tools of PhoenixKit core (needs a core with the shop API; off until `api_public_enabled` is on)
+- **Public read API** — full-text product search (PostgreSQL, per language, typo-tolerant with `pg_trgm`), product cards, category tree and similar products for AI agents and scripts, as REST and MCP tools of PhoenixKit core (needs a core with the public API; off until `api_public_enabled` is on)
 - **Public cart API** — seven anonymous *write* tools that let a buyer's AI agent fill a cart and hand it to the site's checkout through a one-time link; no order, payment or address passes through the API (same switch, `api_public_enabled`)
 - **Auto-discovery** — implements `PhoenixKit.Module` behaviour; PhoenixKit finds it at startup with zero config
 
@@ -200,19 +200,19 @@ methods = Shop.get_available_shipping_methods(cart)
 
 ### Public API: search and product tools
 
-With PhoenixKit core's shop API switched on (`api_public_enabled`), this module offers five read-only
-search and product tools to anonymous callers (the cart tools, which write, are described below), over REST (`POST /api/shop/v1/<tool>`) and MCP (`/mcp/shop`):
+With PhoenixKit core's public API switched on (`api_public_enabled`), this module offers five read-only
+search and product tools to anonymous callers (the cart tools, which write, are described below), over REST (`POST /api/public/v1/<tool>`) and MCP (`/mcp/public`):
 
 | Tool | What it does |
 |---|---|
-| `shop.search_products` | Search by words, category branch, price, options, vendor and sale status; facets; exact count; cursor paging |
+| `shop.search_products` | Search by words, category branch, price, options, vendor and sale status; facets (left out with `facets: false`); exact count; cursor paging |
 | `shop.search_products_batch` | Up to 20 searches in one call (one rate-limit unit each) |
-| `shop.get_products` | Full cards for up to 50 ids (one rate-limit unit per ten ids); a discontinued product is a three-field stub; hidden or unknown ids are `not_found` |
+| `shop.get_products` | Full cards for up to 50 ids (one rate-limit unit per ten ids; each option the card announces that changes the price, by a product, global or category modifier, quotes each value as the product's price with only that value chosen; a card announces the options the product lists values for, so a global or category option it lists none for is not announced, although the cart accepts and prices it); a discontinued product is a three-field stub; hidden or unknown ids are `not_found` |
 | `shop.list_categories` | The active categories as a tree with product counts |
 | `shop.similar_products` | Products in the same category or sharing an option value or tag |
 
 ```bash
-curl -s -X POST https://shop.example.com/api/shop/v1/shop.search_products \
+curl -s -X POST https://shop.example.com/api/public/v1/shop.search_products \
   -H 'content-type: application/json' \
   -d '{"q": "ceramic vase", "price_max": 30, "sort": "price_asc", "limit": 5}'
 ```
@@ -228,11 +228,24 @@ sub-category under an unlisted middle category counts towards its listed ancesto
 towards that ancestor's `total_count`. Enabling the shop queues a rebuild; enabling a language does not, so call `PhoenixKitEcommerce.Search.Jobs.enqueue_rebuild/0` or wait for the nightly one (03:40). Prices come in the language and
 currency of the domain the request came to (a host maps domains with
 `config :phoenix_kit, :api_request_context, {Mod, :fun}`); `language` and `currency` inputs override.
+The `url` of a product or a category is on the domain of the language of the answer when the host
+maps that language to a domain with `config :phoenix_kit, :canonical_host_resolver, {Mod, :fun}`
+(no locale segment: the domain is the language), so asking in German from the English domain still
+links the German domain. The resolver receives the language as the answer holds it (`de-DE`, `de-AT`,
+not the base code `de`), so it decides which dialects share a domain; a resolver that knows only base
+codes gives no domain for a dialect and those links keep the request's host. A language with no domain of its own keeps the request's host and its
+locale segment, and so does a core older than `PhoenixKit.Utils.Routes.canonical_absolute_or_nil/2`. Image
+URLs and the cart claim link always use the request's host.
 
 Search reads `phoenix_kit_shop_search_index`, kept fresh by `PhoenixKitEcommerce.Search.Subscriber`
 (catalogue and shop PubSub events, through Oban jobs on the `shop_search` queue) and rebuilt every
 night (`oban_crons/0`; `mix phoenix_kit.update` adds the queue and the cron entry to the host's
 Oban config). Without the `pg_trgm` extension search still works and only skips the typo fallback.
+
+`/api/shop/v1` and `/mcp/shop` were the paths of these tools before core made its public API
+module-neutral. They are still served, as deprecated aliases of `/api/public/v1` and `/mcp/public`
+(every answer the API itself gives on them carries a `Deprecation` header and a `Link` to the canonical path), until core
+3.0.0 removes them. Point clients at the canonical paths. The tool names (`shop.*`) do not change.
 
 ### Public API: cart tools
 
@@ -244,7 +257,7 @@ on the site's own checkout.
 | Tool | What it does |
 |---|---|
 | `shop.create_cart` | Returns a cart token; writes nothing |
-| `shop.get_cart` | The cart: lines, totals, shipping choice and a `revision` |
+| `shop.get_cart` | The cart: lines (each option with its keys and its `attribute_label` and `value_label` in the request's language), totals, shipping choice and a `revision` |
 | `shop.set_cart_items` | Sets lines to final quantities in one transaction, per-line errors, `expected_revision`, `dry_run` |
 | `shop.clear_cart` | Empties the cart; asks for confirmation when it has lines (offered only when core carries the confirmation gate) |
 | `shop.get_shipping_options` | Shipping methods for a country |
@@ -252,8 +265,13 @@ on the site's own checkout.
 | `shop.get_checkout_link` | A one-time link to the checkout hand-off page |
 
 - **Token and row.** A cart token is 32 random bytes plus a short MAC, signed with the host's
-  `secret_key_base` and never stored. The cart row is created by the first write only, under core's
-  per-IP and global cart-row limits (`session_id` starts with `api:`).
+  `secret_key_base` and never stored. It is this module's *client token*: the cart tools declare
+  `cart_token` as their `client_token`, so core hashes it into the caller's identity for the rate
+  limit, the idempotency scope and the confirmation of `shop.clear_cart`, and redacts it from stored
+  replays; `shop.get_checkout_link` declares its `url` (the claim link) as a credential. The cart row
+  is created by the first write only, under core's shared new-rows limits, per client network and
+  global (`session_id` starts with `api:`). Against a core older than the module-neutral API the
+  tools declare neither field and that core finds the token by its name.
 - **Hand-off.** The link opens `/checkout/claim/:token` (no locale prefix). A GET shows the cart and
   consumes nothing; the buyer's confirmation (a CSRF `POST`) consumes it once and moves the cart to
   the buyer's browser session, replaces the cart already there, or merges into it. The old token then
@@ -289,6 +307,9 @@ on the site's own checkout.
   Keep the link lifetime short (the default is 30 minutes). A fix at the source belongs to core
   (skipping the path in `RequestTimer`) and to the host's endpoint (`Plug.Telemetry`'s `log:` option
   can return `false` for these paths).
+- **Errors.** `PhoenixKitEcommerce.api_problems/0` declares the codes `cart_not_found` (404),
+  `cart_locked` (409), `unsupported_source` (422) and `insufficient_stock` (422), with the advice
+  MCP gives an agent after each; they were core's own before modules could declare codes.
 - **Notifications.** An API write sends at most one message ("via assistant") through the two
   existing cart notification actions and toggles, capped per cart and globally per hour.
 - **Settings** (E-Commerce settings page, "Assistant carts" card): `api_cart_idle_days` (7),
@@ -358,6 +379,56 @@ Settings → API page.
 A `validation_failed` answer with `context.reason` `database_error`,
 `storage_error` or `unexpected` is not a problem with the request and is worth
 retrying; any other `validation_failed` should be fixed first.
+
+### Order tools
+
+With a `phoenix_kit_billing` that keeps the revision and the mark of an order
+(`PhoenixKitBilling.put_order_sync/2`), four more admin tools let an external
+system (an accounting or fulfilment system) take the orders:
+
+| Tool | Does | Scope |
+|---|---|---|
+| `ecommerce.list_orders` | the feed of orders by cursor, filtered by status, change time and sync state | `ecommerce.orders:read` |
+| `ecommerce.get_orders` | orders by id or number, at most 100 | `ecommerce.orders:read` |
+| `ecommerce.get_order_customers` | the buyer of each order with contacts, and the order's notes | `ecommerce.orders:customer` |
+| `ecommerce.set_order_sync` | marks orders as taken (`synced`, with the system's own id and number) or refused (`failed`), at most 100 rows | `ecommerce.orders:sync` |
+
+`set_order_sync` is a write tool like the others of this module and is offered only where core can hold a call for confirmation.
+
+The key owner needs the `shop.manage_orders` permission for every order scope:
+`ecommerce.orders:read`, `ecommerce.orders:sync` and `ecommerce.orders:customer`
+(`shop` alone is not enough to read orders).
+The order tools answer only with the buyer's `id` and `type` unless the key holds
+`ecommerce.orders:customer`, which adds name, phone, email, company, tax id and
+address, the buyer's delivery address in `shipping.destination` (`postcode` and
+`address`, `nil` without the scope; the city `city`/`city_ref` and the pickup
+point `warehouse`, `warehouse_ref`, `warehouse_address`, `warehouse_postcode`
+are always shown) and the order's `notes`: what the buyer types can hold a
+phone number or an address, so `notes` is gated like the other buyer-entered
+fields and the key is absent without the scope. Internal notes and
+session data never leave.
+
+The feed is ordered by `(updated_at, uuid)` and paged by an opaque cursor.
+`sync: "pending"` returns the orders the system has not taken, or that changed
+after it took them, so a caller needs no cursor of its own to find what is
+outstanding. `sync.revision` of an order counts the changes the system cares
+about (see `PhoenixKitBilling.Order`); `set_order_sync` takes the revision the
+system read, and a row whose revision is out of date answers `conflict` with
+`context.reason` `stale_revision` and leaves the order `pending`. A mark does
+not change the order's `updated_at`. `limit` is 1 to 100; a larger value is
+`validation_failed`, never cut.
+
+Each product line carries the option selection the buyer made as `options`
+(`attribute_key`, `attribute_label`, `value_label`, and `value_key` for a line
+sold from the catalogue; `[]` when there is none), so two sizes of one product
+are two distinguishable lines.
+
+The order map has no "prices include tax" flag, because the shop has no such
+setting: it works out `totals.tax` from the tax rate (over the lines marked
+`taxable`) and adds it to `total`.
+
+`PhoenixKitEcommerce.API.OrderExport.serialize/2` builds the same order map for
+code that sends an order to the external system itself.
 
 The module also offers the `shop_order` kind to Warehouse, so a shop order can
 be the basis of a goods issue. This needs the Warehouse module 0.5.3 or later,
