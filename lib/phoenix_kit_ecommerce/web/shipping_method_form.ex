@@ -15,6 +15,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   alias PhoenixKitEcommerce.ShippingMethod
   alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.ShippingProviderState, as: ProviderState
+  alias PhoenixKitWeb.Components.Core.Input
 
   import PhoenixKitEcommerce.Web.Components.ShippingProviderCard,
     only: [shipping_provider_card: 1, locality_search_forms: 1]
@@ -61,6 +62,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> assign(:default_currency, default_currency)
     |> assign_form(changeset)
     |> assign_provider_state(method)
+    |> assign_country_view()
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
@@ -78,6 +80,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> assign(:default_currency, default_currency)
     |> assign_form(changeset)
     |> assign_provider_state(method)
+    |> assign_country_view()
   end
 
   @impl true
@@ -99,7 +102,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   end
 
   def handle_event("open_countries", _params, socket) do
-    {:noreply, assign(socket, :countries_open, true)}
+    {:noreply, socket |> assign(:countries_open, true) |> assign_country_view()}
   end
 
   def handle_event("search_locality", params, socket) do
@@ -212,14 +215,20 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     known = MapSet.new(assigns.options, fn {_name, code} -> code end)
     extra = for code <- selected, not MapSet.member?(known, code), do: {code, code}
 
+    errors =
+      for error <- assigns.field.errors,
+          do: Input.translate_error(error)
+
     assigns =
       assigns
       |> assign(:selected, selected)
       |> assign(:rows, extra ++ assigns.options)
+      |> assign(:errors, errors)
+      |> assign(:describedby, describedby(assigns.field.id, errors))
 
     ~H"""
-    <div class="fieldset w-full">
-      <span class="label">{@label}</span>
+    <fieldset class="fieldset w-full" aria-describedby={@describedby}>
+      <legend class="fieldset-legend">{@label}</legend>
       <input type="hidden" name={@field.name <> "[]"} value="" />
       <div
         id={@field.id}
@@ -234,6 +243,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
             name={@field.name <> "[]"}
             value={code}
             checked={code in @selected}
+            aria-invalid={@errors != [] && "true"}
             class="checkbox checkbox-sm"
           />
           <span class="flex-1 text-sm">{name}</span>
@@ -247,16 +257,24 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
       >
         {gettext("Selected: %{countries}", countries: Enum.join(@selected, ", "))}
       </p>
-      <p
-        :for={error <- @field.errors}
-        id={@field.id <> "-error"}
-        class="text-xs text-error mt-1"
-      >
-        {PhoenixKitWeb.Components.Core.Input.translate_error(error)}
-      </p>
-      <p class="label text-xs text-base-content/60">{@hint}</p>
-    </div>
+      <div :if={@errors != []} id={@field.id <> "-error"}>
+        <p :for={error <- @errors} class="text-xs text-error mt-1">{error}</p>
+      </div>
+      <p id={@field.id <> "-hint"} class="label text-xs text-base-content/60">{@hint}</p>
+    </fieldset>
     """
+  end
+
+  # The hint, and the errors when there are any.
+  defp describedby(id, []), do: id <> "-hint"
+  defp describedby(id, _errors), do: id <> "-hint " <> id <> "-error"
+
+  # Both are worked out when the form, the provider or the opened state
+  # change, not on every render: they walk the country list.
+  defp assign_country_view(socket) do
+    socket
+    |> assign(:countries_mode, countries_mode(socket.assigns))
+    |> assign(:country_choices, country_choices(socket.assigns))
   end
 
   # Where the country lists are shown. Lists already filled in, or opened
@@ -292,11 +310,6 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   @impl true
   def render(assigns) do
-    assigns =
-      assigns
-      |> assign(:countries_mode, countries_mode(assigns))
-      |> assign(:country_choices, country_choices(assigns))
-
     ~H"""
       <div class="container flex-col mx-auto px-4 py-6 max-w-5xl">
         <.admin_page_header
@@ -429,7 +442,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
             provider_options={provider_select_options(@provider_options, @sp.provider)}
             provider_known?={@provider_known?}
             countries={@provider_countries}
-            service_options={service_select_options(@services, @sp.service, @services_status)}
+            service_options={service_checkbox_options(@services, @sp.services, @services_status)}
             services_status={@services_status}
             pay_on_delivery={@pay_on_delivery}
             fields={@provider_fields}
@@ -516,7 +529,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
                   field={@form[:excluded_countries]}
                   options={@country_choices}
                   label={gettext("Never deliver to")}
-                  hint={gettext("A country in both lists is not delivered to.")}
+                  hint={gettext("This method is never offered to these countries.")}
                 />
               </div>
             </div>
@@ -702,25 +715,17 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
       else: options ++ [{gettext("%{provider} (not installed)", provider: provider), provider}]
   end
 
-  # The saved service is always offered as the current value. It is called
-  # unavailable only when the carrier answered and does not list it: while the
-  # list loads or the carrier is down nothing is known about it.
-  defp service_select_options(services, service, status) do
+  # The saved services are always offered, ticked. One is called unavailable
+  # only when the carrier answered and does not list it: while the list loads
+  # or the carrier is down nothing is known about it.
+  defp service_checkbox_options(services, selected, status) do
     options = Enum.map(services, &{&1.label || &1.key, &1.key})
 
-    cond do
-      service in ["", nil] ->
-        options
+    missing = Enum.reject(selected, fn key -> Enum.any?(options, &(elem(&1, 1) == key)) end)
 
-      Enum.any?(options, &(elem(&1, 1) == service)) ->
-        options
-
-      status == :ok and options != [] ->
-        options ++ [{gettext("%{service} (unavailable)", service: service), service}]
-
-      true ->
-        options ++ [{service, service}]
-    end
+    if status == :ok and options != [],
+      do: options ++ Enum.map(missing, &{gettext("%{service} (unavailable)", service: &1), &1}),
+      else: options ++ Enum.map(missing, &{&1, &1})
   end
 
   # Folds the posted provider card into the state and reloads what depends on
@@ -744,13 +749,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     end
   end
 
-  defp provider_context(state), do: provider_context(state, state.service)
+  defp provider_context(state), do: provider_context(state, List.first(state.services))
 
   defp provider_context(state, service) do
     Shipping.context(nil,
       provider: state.provider,
       settings: state.settings,
-      service: if(service == "", do: nil, else: service),
+      service: if(service in [nil, ""], do: nil, else: service),
       timeout: @lookup_timeout
     )
   end
@@ -815,7 +820,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
           socket
           |> assign(:services, services)
           |> assign(:services_status, :ok)
-          |> update(:sp, &pick_service(&1, services))
+          |> update(:sp, &pick_services(&1, services))
           |> load_ready_point_lists()
 
         {:error, _reason} ->
@@ -828,13 +833,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp finish_services(socket, {:exit, _reason}), do: assign(socket, :services_status, :error)
 
-  # No service chosen yet: the first one the provider offers.
-  defp pick_service(%{provider: provider, service: ""} = state, [%{key: key} | _])
+  # No service ticked yet: every one the provider offers.
+  defp pick_services(%{provider: provider, services: []} = state, [_ | _] = services)
        when provider != "fixed" do
-    %{state | service: key}
+    %{state | services: Enum.map(services, & &1.key)}
   end
 
-  defp pick_service(state, _services), do: state
+  defp pick_services(state, _services), do: state
 
   defp integration_status(%{provider: provider} = ctx)
        when is_atom(provider) and provider != nil do
@@ -930,17 +935,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp locality_from_setting(_other), do: nil
 
-  # The branches are listed for the service the shop sells when that one ships
-  # to points, else for the first service that does. Nothing is asked of the
-  # carrier when no service ships to points.
+  # The branches are listed for the first ticked service that ships to
+  # points (ticked services are kept in the provider's order, the admin does
+  # not rank them), else for the first offered service that does: the
+  # sender's branch does not depend on what the shop sells. Nothing is asked
+  # of the carrier when no service ships to points.
   defp point_service(%{sp: sp, services: services}) do
-    pickup = Enum.filter(services, &(&1.destination == :pickup_point))
-
-    cond do
-      Enum.any?(pickup, &(&1.key == sp.service)) -> sp.service
-      pickup != [] -> hd(pickup).key
-      true -> nil
-    end
+    keys = for %{destination: :pickup_point, key: key} <- services, do: key
+    Enum.find(sp.services, &(&1 in keys)) || List.first(keys)
   end
 
   # The lists of the point fields whose city is chosen and which have no point
@@ -948,7 +950,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   defp load_ready_point_lists(socket) do
     settings = socket.assigns.sp.settings
 
-    for %{type: :pickup_point, key: key, locality_key: city_key} <- socket.assigns.provider_fields,
+    for %{type: :pickup_point, key: key, locality_key: city_key} <-
+          socket.assigns.provider_fields,
         not Map.has_key?(settings, key),
         Map.has_key?(settings, city_key),
         reduce: socket do
@@ -991,6 +994,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   end
 
   defp put_locality(socket, key, value) do
+    previous = Map.get(socket.assigns.sp.settings, key)
+
     settings =
       if value,
         do: Map.put(socket.assigns.sp.settings, key, value),
@@ -1001,9 +1006,16 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     |> cancel_async({:locality_search, key})
     |> update(:locality_results, &Map.delete(&1, key))
     |> update(:locality_loading, &Map.delete(&1, key))
-    |> reset_dependent_points(key)
+    |> reset_dependent_points_unless_same(key, previous, value)
     |> recheck_provider_errors(key)
   end
+
+  # Picking the city that is already chosen changes nothing for its branches.
+  defp reset_dependent_points_unless_same(socket, _key, %{"id" => id}, %{"id" => id}),
+    do: socket
+
+  defp reset_dependent_points_unless_same(socket, key, _previous, _value),
+    do: reset_dependent_points(socket, key)
 
   # The points belong to the city they were listed for: another city, or none,
   # leaves them without a point, and the new city's list is loaded. A point
@@ -1056,7 +1068,10 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
         do: for({:shipping_provider, error} <- changeset.errors, do: error),
         else: []
 
-    socket |> assign_form(changeset) |> assign_provider_errors(raw)
+    socket
+    |> assign_form(changeset)
+    |> assign_provider_errors(raw)
+    |> assign_country_view()
   end
 
   defp assign_provider_errors(socket, raw) do

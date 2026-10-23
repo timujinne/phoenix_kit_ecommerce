@@ -8,10 +8,14 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
 
       %{
         "provider" => "acme_post",
-        "service" => "warehouse",
+        "services" => ["warehouse", "locker"],
         "settings" => %{"sender_city" => %{"id" => "c1", "name" => "Springfield"}},
         "pricing" => %{"markup_percent" => "10", "markup_fixed" => "0", "round_to" => "5"}
       }
+
+  `services` are the services the buyer may choose from (the single
+  `"service"` of an older form is read as a list of one). They are stored as
+  `"services"`, and the first of them as the default `"service"`.
 
   `round_to` is the rounding step of the price: empty or `0` means no
   rounding, a positive number rounds up to a multiple of it.
@@ -22,6 +26,9 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
     * a provider whose `services/1` fails is accepted as is, because an outage
       of the carrier must not stop the admin from saving a method
     * so is one that lists no services at all
+    * so, for the same reason, is a method with no service ticked while the
+      provider cannot list its services (a new method has none ticked then):
+      "at least one" is checked only against an answer of the carrier
     * a service the credential-less list does not know is accepted when the
       provider has an `integration/0`, since its credentials may unlock more
       services than we can see here
@@ -30,7 +37,7 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
   require Logger
 
   alias PhoenixKitEcommerce.Shipping
-  alias PhoenixKitEcommerce.Shipping.{Codec, Field}
+  alias PhoenixKitEcommerce.Shipping.{Codec, Field, MethodConfig}
 
   @fixed "fixed"
   @pricing_keys [:markup_percent, :markup_fixed, :round_to]
@@ -43,7 +50,7 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
   Normalises and validates the param.
 
   Option `check_service: false` skips the one check that calls the provider
-  (that the service is offered), for interactive validation: a slow carrier
+  (that the services are offered), for interactive validation: a slow carrier
   must not slow down every keystroke of a form. The shape of the service, the
   settings and the pricing are still checked.
 
@@ -63,28 +70,28 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
 
   def build(param, opts) when is_map(param) do
     provider = param |> Codec.get(:provider) |> Codec.string() |> trim()
-    service = param |> Codec.get(:service) |> Codec.string() |> trim()
+    services = posted_services(param)
     settings = param |> Codec.get(:settings) |> Codec.string_map() |> drop_blank()
     pricing = Codec.get(param, :pricing)
 
     if provider in ["", @fixed] do
       {:ok, nil}
     else
-      validate(provider, service, settings, pricing, opts)
+      validate(provider, services, settings, pricing, opts)
     end
   end
 
   def build(_param, _opts), do: {:error, [{"must be a map", []}]}
 
-  defp validate(key, service, settings, pricing, opts) do
+  defp validate(key, services, settings, pricing, opts) do
     case find_provider(key) do
       {:ok, module} ->
         {pricing_block, pricing_errors} = pricing_block(pricing)
 
         case pricing_errors ++
                settings_errors(module, settings) ++
-               service_errors(module, service, settings, opts) do
-          [] -> {:ok, block(key, service, settings, pricing_block)}
+               service_errors(module, services, settings, opts) do
+          [] -> {:ok, block(key, services, settings, pricing_block)}
           errors -> {:error, errors}
         end
 
@@ -100,47 +107,60 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
     end
   end
 
-  defp block(key, service, settings, pricing) do
+  defp block(key, services, settings, pricing) do
     %{"provider" => key, "settings" => settings}
-    |> put_present("service", service)
+    |> put_present("service", List.first(services))
+    |> put_present("services", services)
     |> put_present("pricing", pricing)
   end
 
-  defp put_present(map, _key, value) when value in [nil, "", %{}], do: map
+  defp put_present(map, _key, value) when value in [nil, "", %{}, []], do: map
   defp put_present(map, key, value), do: Map.put(map, key, value)
 
-  # -- service -----------------------------------------------------------
+  # -- services ----------------------------------------------------------
 
-  defp service_errors(module, service, settings, opts) do
+  # `"services"` when the param has it, else the single `"service"`.
+  defp posted_services(param) do
+    case param |> Codec.get(:services) |> MethodConfig.normalize_services() do
+      [] -> param |> Codec.get(:service) |> List.wrap() |> MethodConfig.normalize_services()
+      services -> services
+    end
+  end
+
+  defp service_errors(module, services, settings, opts) do
     if Keyword.get(opts, :check_service, true),
-      do: check_service_offered(module, service, settings),
+      do: check_services_offered(module, services, settings),
       else: []
   end
 
-  defp check_service_offered(module, service, settings) do
+  defp check_services_offered(module, services, settings) do
     ctx =
       Shipping.context(nil,
         provider: module,
         settings: settings,
-        service: nilify(service),
+        service: List.first(services),
         credentials: nil,
         timeout: @services_timeout
       )
 
     case Shipping.services(ctx) do
       {:ok, []} -> []
-      {:ok, services} -> check_service(module, services, service)
+      {:ok, offered} -> check_services(module, offered, services)
       {:error, _reason} -> []
     end
   end
 
-  defp check_service(_module, _services, "") do
+  defp check_services(_module, _offered, []) do
     [{"service is required", []}]
   end
 
-  defp check_service(module, services, service) do
+  defp check_services(module, offered, services) do
+    Enum.flat_map(services, &check_service(module, offered, &1))
+  end
+
+  defp check_service(module, offered, service) do
     cond do
-      Enum.any?(services, &(&1.key == service)) ->
+      Enum.any?(offered, &(&1.key == service)) ->
         []
 
       function_exported?(module, :integration, 0) ->
@@ -238,7 +258,4 @@ defmodule PhoenixKitEcommerce.Shipping.MethodParams do
 
   defp trim(nil), do: ""
   defp trim(value), do: String.trim(value)
-
-  defp nilify(""), do: nil
-  defp nilify(value), do: value
 end

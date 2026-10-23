@@ -6,9 +6,16 @@ defmodule PhoenixKitEcommerce.Shipping.MethodConfig do
       %{
         "provider" => "acme_post",
         "service" => "warehouse",
+        "services" => ["warehouse", "locker"],
         "settings" => %{"sender_city" => %{"id" => "...", "name" => "Springfield"}},
         "pricing" => %{"markup_percent" => "0", "markup_fixed" => "0", "round_to" => "5"}
       }
+
+  `"services"` are the services the buyer may choose from, in the order the
+  provider lists them; `"service"` is the default one (the first allowed one
+  unless a stored default is among them). A block with a `"service"` and no
+  `"services"` (how methods were stored before the buyer could choose) is
+  read as a list of that one service, so it behaves as it always did.
 
   A method without the block uses the `"fixed"` provider, which is the
   behaviour shipping methods always had. `round_to` is `nil` (no rounding)
@@ -22,6 +29,7 @@ defmodule PhoenixKitEcommerce.Shipping.MethodConfig do
 
   defstruct provider: @fixed,
             service: nil,
+            services: [],
             settings: %{},
             pricing: %{
               markup_percent: Decimal.new(0),
@@ -38,6 +46,7 @@ defmodule PhoenixKitEcommerce.Shipping.MethodConfig do
   @type t :: %__MODULE__{
           provider: String.t(),
           service: String.t() | nil,
+          services: [String.t()],
           settings: map(),
           pricing: pricing()
         }
@@ -64,9 +73,13 @@ defmodule PhoenixKitEcommerce.Shipping.MethodConfig do
         %__MODULE__{}
 
       provider ->
+        stored = block |> Codec.get(:service) |> service_key()
+        services = block |> Codec.get(:services) |> allowed_services(stored)
+
         %__MODULE__{
           provider: provider,
-          service: block |> Codec.get(:service) |> service_key(),
+          service: default_service(stored, services),
+          services: services,
           settings: block |> Codec.get(:settings) |> Codec.string_map(),
           pricing: block |> Codec.get(:pricing) |> pricing_from()
         }
@@ -81,6 +94,30 @@ defmodule PhoenixKitEcommerce.Shipping.MethodConfig do
   @spec calculated?(t() | term()) :: boolean()
   def calculated?(%__MODULE__{provider: provider}), do: provider != @fixed
   def calculated?(method), do: method |> from_method() |> calculated?()
+
+  @doc """
+  Cleans a list of service keys: trimmed, no blanks or duplicates, in the
+  given order. Anything that is not a list is an empty list.
+  """
+  @spec normalize_services(term()) :: [String.t()]
+  def normalize_services(list) when is_list(list) do
+    list
+    |> Enum.map(&service_key/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  def normalize_services(_other), do: []
+
+  defp allowed_services(list, stored) do
+    case normalize_services(list) do
+      [] -> normalize_services([stored])
+      services -> services
+    end
+  end
+
+  defp default_service(stored, services),
+    do: if(stored in services, do: stored, else: List.first(services))
 
   defp provider_key(value) do
     case value |> Codec.string() |> trim() do

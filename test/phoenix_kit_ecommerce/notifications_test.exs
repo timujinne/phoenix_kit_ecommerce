@@ -6,8 +6,10 @@ defmodule PhoenixKitEcommerce.NotificationsTest do
 
   use PhoenixKitEcommerce.DataCase, async: false
 
+  alias PhoenixKit.Settings
   alias PhoenixKit.Users.Permissions
   alias PhoenixKit.Users.Roles
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Notifications, as: ShopNotifications
 
@@ -70,6 +72,82 @@ defmodule PhoenixKitEcommerce.NotificationsTest do
       # Import logs predate the user_uuid column; there is nobody to tell.
       assert :ok = ShopNotifications.import_completed(%{user_uuid: nil}, %{created: 1})
       assert :ok = ShopNotifications.import_failed(%{user_uuid: nil}, :boom)
+    end
+  end
+
+  describe "order_placed/2 admin notification link" do
+    setup do
+      create_admin_user()
+      :ok
+    end
+
+    test "leads to the order's Billing page while Billing is enabled" do
+      Settings.update_boolean_setting_with_module("billing_enabled", true, "billing")
+      order = placed_order("ORD-LINK-ON")
+
+      assert :ok = ShopNotifications.order_placed(order)
+
+      assert links = notification_links_mentioning("New order ORD-LINK-ON")
+      assert Enum.uniq(links) == [Routes.path("/admin/billing/orders/#{order.uuid}")]
+    end
+
+    test "stays on the carts list while Billing is disabled" do
+      Settings.update_boolean_setting_with_module("billing_enabled", false, "billing")
+      order = placed_order("ORD-LINK-OFF")
+
+      assert :ok = ShopNotifications.order_placed(order)
+
+      assert links = notification_links_mentioning("New order ORD-LINK-OFF")
+      assert Enum.uniq(links) == [Routes.path("/admin/shop/carts")]
+    end
+
+    test "each operator gets a link they can open, including Owner and wildcard grants" do
+      Settings.update_boolean_setting_with_module("billing_enabled", true, "billing")
+      shop_only = operator_with_permissions(["shop", "shop.manage_carts"])
+      billing_operator = operator_with_permissions(["shop", "shop.manage_carts", "billing"])
+      superadmin = operator_with_permissions(["*"])
+      owner = fixture_user()
+
+      Repo.insert!(%PhoenixKit.Users.RoleAssignment{
+        user_uuid: owner.uuid,
+        role_uuid: Roles.get_role_by_name("Owner").uuid
+      })
+
+      order = placed_order("ORD-LINK-PERMS")
+
+      assert :ok = ShopNotifications.order_placed(order)
+
+      assert order_notification_links_for(shop_only.uuid) == [Routes.path("/admin/shop/carts")]
+
+      for operator <- [billing_operator, superadmin, owner] do
+        assert order_notification_links_for(operator.uuid) ==
+                 [PhoenixKitBilling.Paths.order_detail(order.uuid)]
+      end
+    end
+  end
+
+  describe "order_placed/2 when the buyer is a shop operator" do
+    test "the operator who placed the order gets both the admin and the customer message" do
+      buyer = create_admin_user()
+      confirm_user!(buyer)
+
+      assert :ok = ShopNotifications.order_placed(placed_order("ORD-SELF-1", buyer.uuid))
+
+      texts = notification_texts_for(buyer.uuid)
+      assert Enum.any?(texts, &(&1 =~ "New order ORD-SELF-1"))
+      assert Enum.any?(texts, &(&1 =~ "Your order ORD-SELF-1 is confirmed"))
+    end
+
+    test "a buyer without shop access gets only the customer message" do
+      operator = create_admin_user()
+      buyer = fixture_user()
+      confirm_user!(buyer)
+
+      assert :ok = ShopNotifications.order_placed(placed_order("ORD-SELF-2", buyer.uuid))
+
+      assert [text] = notification_texts_for(buyer.uuid)
+      assert text =~ "Your order ORD-SELF-2 is confirmed"
+      assert Enum.any?(notification_texts_for(operator.uuid), &(&1 =~ "New order ORD-SELF-2"))
     end
   end
 
@@ -318,6 +396,55 @@ defmodule PhoenixKitEcommerce.NotificationsTest do
       assert length(results) == 8
       assert Enum.count(results, & &1) == 1
     end
+  end
+
+  # The fields `order_placed/2` reads, without going through checkout; a guest
+  # order (no buyer account) unless `user_uuid` is given.
+  defp placed_order(order_number, user_uuid \\ nil) do
+    %{
+      uuid: Ecto.UUID.generate(),
+      user_uuid: user_uuid,
+      order_number: order_number,
+      metadata: %{},
+      total: Decimal.new("10.00"),
+      currency: "USD"
+    }
+  end
+
+  # The customer notification goes only to a confirmed account.
+  defp confirm_user!(user) do
+    user
+    |> Ecto.Changeset.change(confirmed_at: DateTime.utc_now() |> DateTime.truncate(:second))
+    |> Repo.update!()
+  end
+
+  defp notification_texts_for(user_uuid) do
+    from(n in "phoenix_kit_notifications",
+      where: n.recipient_uuid == type(^user_uuid, Ecto.UUID),
+      select: n.metadata
+    )
+    |> Repo.all()
+    |> Enum.map(& &1["notification_text"])
+  end
+
+  defp order_notification_links_for(user_uuid) do
+    from(n in "phoenix_kit_notifications",
+      where: n.recipient_uuid == type(^user_uuid, Ecto.UUID),
+      select: n.metadata
+    )
+    |> Repo.all()
+    |> Enum.filter(&String.starts_with?(&1["notification_text"], "New order ORD-LINK-PERMS"))
+    |> Enum.map(& &1["notification_link"])
+  end
+
+  defp operator_with_permissions(keys) do
+    user = fixture_user()
+    {:ok, role} = Roles.create_role(%{name: "ShopNotify#{System.unique_integer([:positive])}"})
+    {:ok, _} = Roles.assign_role(user, role.name)
+
+    for key <- keys, do: {:ok, _} = Permissions.grant_permission(role.uuid, key)
+
+    user
   end
 
   # Builds a real cart (owned by a freshly registered user, so

@@ -34,6 +34,17 @@ defmodule PhoenixKitEcommerce.Schemas.CartTest do
       assert %{shipping_country: [_ | _]} = errors_on(cs)
     end
 
+    test "shipping_country is stored upcased" do
+      cs = Cart.changeset(%Cart{}, %{session_id: "x", currency: "USD", shipping_country: " de "})
+      assert get_change(cs, :shipping_country) == "DE"
+      assert cs.valid?
+    end
+
+    test "shipping_changeset upcases the country too" do
+      cs = Cart.shipping_changeset(%Cart{}, %{shipping_country: "ua"})
+      assert get_change(cs, :shipping_country) == "UA"
+    end
+
     test "guest carts get a default expires_at" do
       cs = Cart.changeset(%Cart{}, %{session_id: "x", currency: "USD"})
       assert get_change(cs, :expires_at)

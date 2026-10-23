@@ -6,10 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+
+- The order export (`ecommerce.list_orders`, `get_orders`,
+  `API.OrderExport.serialize/2`) carries each product line's `options`: the
+  option selection the buyer made, which it left out, so two sizes of one
+  product read as the same line.
+
 ### Changed
 
 - `mint ~> 1.6` is a declared requirement: `Services.PinnedAdapter` calls
   `Mint.HTTP` directly and had relied on it arriving through Req and Finch.
+- `shipping_quote_snapshot/2` no longer asks the carrier for the method's
+  service list a second time (for the `choices`) when the first listing for the
+  cart failed: during a carrier outage every cart change waited out the
+  lookup timeout twice.
 
 ## 0.6.0 - 2026-10-17
 

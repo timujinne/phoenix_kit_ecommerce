@@ -66,12 +66,13 @@ defmodule PhoenixKitEcommerce.Web.AdminEditOriginTest do
   # test that hands out the `"catalogue"` permission has to register the
   # catalogue module and enable it, as a host does.
   defp enable_catalogue_module do
+    registered? = PhoenixKitCatalogue in PhoenixKit.ModuleRegistry.all_modules()
     :ok = PhoenixKit.ModuleRegistry.register(PhoenixKitCatalogue)
     PhoenixKit.Settings.update_setting("catalogue_enabled", "true")
     PhoenixKit.Settings.update_setting("entities_enabled", "true")
 
     on_exit(fn ->
-      PhoenixKit.ModuleRegistry.unregister(PhoenixKitCatalogue)
+      unless registered?, do: PhoenixKit.ModuleRegistry.unregister(PhoenixKitCatalogue)
     end)
   end
 

@@ -89,6 +89,123 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodTest do
     end
   end
 
+  describe "serves_country?/2" do
+    test "compares codes upcased on both sides" do
+      allowed = %ShippingMethod{countries: ["UA"], excluded_countries: []}
+      assert ShippingMethod.serves_country?(allowed, "ua")
+      assert ShippingMethod.serves_country?(allowed, " Ua ")
+      refute ShippingMethod.serves_country?(allowed, "pl")
+
+      excluded = %ShippingMethod{countries: [], excluded_countries: ["RU"]}
+      refute ShippingMethod.serves_country?(excluded, "ru")
+      assert ShippingMethod.serves_country?(excluded, "ua")
+    end
+
+    test "reads lists stored in lower case" do
+      method = %ShippingMethod{countries: ["ua", "pl"], excluded_countries: ["pl"]}
+      assert ShippingMethod.serves_country?(method, "UA")
+      refute ShippingMethod.serves_country?(method, "PL")
+      refute ShippingMethod.serves_country?(method, "DE")
+    end
+
+    test "a method without lists serves every country" do
+      assert ShippingMethod.serves_country?(%ShippingMethod{}, "DE")
+    end
+
+    test "an allow-list with no valid code serves nobody, not every country" do
+      for list <- [["USA"], ["Ukraine"], ["x1", " "]] do
+        method = %ShippingMethod{countries: list, excluded_countries: []}
+        refute ShippingMethod.serves_country?(method, "US"), inspect(list)
+        refute ShippingMethod.serves_country?(method, "UA"), inspect(list)
+      end
+    end
+
+    test "a NULL list is no limit" do
+      method = %ShippingMethod{countries: nil, excluded_countries: nil}
+      assert ShippingMethod.serves_country?(method, "DE")
+    end
+
+    test "a country that is not a code never matches an allow-list" do
+      allowed = %ShippingMethod{countries: ["UA"], excluded_countries: []}
+      refute ShippingMethod.serves_country?(allowed, "ukraine")
+    end
+
+    # The cart page leaves the country unset until checkout and lists methods
+    # country-blind; hiding allow-listed methods there would leave no choice
+    # to make on a shop that picks the method in the cart.
+    test "no country yet is let through, by allow-lists and deny-lists alike" do
+      allowed = %ShippingMethod{countries: ["UA"], excluded_countries: []}
+      excluded = %ShippingMethod{countries: [], excluded_countries: ["RU"]}
+
+      for country <- [nil, "", "  "] do
+        assert ShippingMethod.serves_country?(allowed, country)
+        assert ShippingMethod.serves_country?(excluded, country)
+      end
+    end
+
+    test "available_for? matches a lower case cart country" do
+      method = %ShippingMethod{active: true, countries: ["UA"], excluded_countries: ["RU"]}
+      assert ShippingMethod.available_for?(method, %{country: "ua"})
+      refute ShippingMethod.available_for?(method, %{country: "ru"})
+    end
+  end
+
+  describe "changeset/2 country lists in both" do
+    test "a country in both lists is an error on the excluded list" do
+      cs =
+        ShippingMethod.changeset(
+          %ShippingMethod{},
+          Map.merge(@valid, %{
+            "countries" => ["ua", "PL"],
+            "excluded_countries" => ["pl", "RU"]
+          })
+        )
+
+      refute cs.valid?
+      assert %{excluded_countries: [message]} = errors_on(cs)
+      assert message =~ "PL"
+      refute message =~ "UA"
+      refute message =~ "RU"
+    end
+
+    test "a stored lower case code meets the same code posted upcased" do
+      method = %ShippingMethod{name: "Old", countries: ["ua"], excluded_countries: []}
+
+      cs = ShippingMethod.changeset(method, %{"excluded_countries" => ["UA"]})
+
+      refute cs.valid?
+      assert %{excluded_countries: [message]} = errors_on(cs)
+      assert message =~ "UA"
+    end
+
+    test "a list that is already an error brings no overlap error with it" do
+      cs =
+        ShippingMethod.changeset(
+          %ShippingMethod{},
+          Map.merge(@valid, %{"countries" => ["XX"], "excluded_countries" => ["PL"]})
+        )
+
+      assert %{countries: [_]} = errors_on(cs)
+      refute Map.has_key?(errors_on(cs), :excluded_countries)
+    end
+
+    test "disjoint lists are valid" do
+      cs =
+        ShippingMethod.changeset(
+          %ShippingMethod{},
+          Map.merge(@valid, %{"countries" => ["UA"], "excluded_countries" => ["RU"]})
+        )
+
+      assert cs.valid?
+    end
+
+    test "an update that leaves the lists alone is not blocked by an old overlap" do
+      method = %ShippingMethod{name: "Old", countries: ["UA"], excluded_countries: ["UA"]}
+      assert ShippingMethod.changeset(method, %{"name" => "Renamed"}).valid?
+      refute ShippingMethod.changeset(method, %{"countries" => ["UA", "PL"]}).valid?
+    end
+  end
+
   describe "pay on delivery" do
     test "a top-level form flag is stored as metadata[\"pay_on_delivery\"] = true" do
       cs =

@@ -22,9 +22,17 @@
   # reported.
   {"lib/phoenix_kit_ecommerce/api/public_tools.ex",
    "Function PhoenixKit.API.Tool.new/1 does not exist."},
-  # The cart store names `PhoenixKit.API.RateLimit` too (same reason).
+  # The cart store names `PhoenixKit.API.RateLimit` too (same reason). The module
+  # is loaded on a core with the public API but `check_new_rows/1` is newer than
+  # it, so dialyzer reports a call to a missing function, not a missing module.
   {"lib/phoenix_kit_ecommerce/api/cart_store.ex",
-   "Function PhoenixKit.API.RateLimit.check_new_rows/1 does not exist."},
+   "Call to missing or private function PhoenixKit.API.RateLimit.check_new_rows/1."},
+  # `API.Context.absolute/3` calls `Routes.canonical_absolute_or_nil/2` behind
+  # `function_exported?/3`; a released core does not have it (the compiler is
+  # silenced by `no_warn_undefined`, dialyzer is not). Drop it once the minimum
+  # core requirement carries the helper.
+  {"lib/phoenix_kit_ecommerce/api/context.ex",
+   "Call to missing or private function PhoenixKit.Utils.Routes.canonical_absolute_or_nil/2."},
   # `PhoenixKitWebAnalytics.Config` is an optional dependency: the claim-path
   # exclusion step of the migration reads its default list when it is loaded.
   {"lib/phoenix_kit_ecommerce/migrations.ex",
@@ -55,13 +63,6 @@
    "Call to missing or private function PhoenixKitCatalogue.Catalogue.broadcast_item_batch_change/3."},
   {"lib/phoenix_kit_ecommerce/api/batch.ex",
    "Function PhoenixKit.API.FlowConfig.confirm_batch_over/0 does not exist."},
-  # `Routes.canonical_absolute_or_nil/2` (a page link on the domain of its
-  # language) is in the core that carries the canonical URL helpers; a released
-  # core older than that has no such function and `Context.absolute/3` keeps the
-  # request's host there. Remove this entry when the minimum core requirement in
-  # mix.exs carries it; dialyzer then reports it as an unnecessary skip.
-  {"lib/phoenix_kit_ecommerce/api/context.ex",
-   "Call to missing or private function PhoenixKit.Utils.Routes.canonical_absolute_or_nil/2."},
   # The order tools read the revision and the external system's mark of an order
   # through the billing release that ships `put_order_sync/2`; an older billing
   # lacks these, and the tools are not offered there (`OrderTools.available?/0`).

@@ -3,6 +3,8 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuote do
   What a cart remembers about calculated shipping, kept in `cart.metadata`:
 
     * `"shipping_destination"` - `Destination.to_map/1`
+    * `"shipping_service"` - the key of the service the shopper chose among
+      those the method allows (absent: the method's default service)
     * `"shipping_quote"` - the last answer of the carrier for the cart as it
       was when asked:
 
@@ -30,11 +32,22 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuote do
 
   alias PhoenixKit.Utils.Date, as: UtilsDate
   alias PhoenixKitEcommerce.Shipping
-  alias PhoenixKitEcommerce.Shipping.{Address, Codec, Destination, Locality, PickupPoint, Quote}
+
+  alias PhoenixKitEcommerce.Shipping.{
+    Address,
+    Codec,
+    Destination,
+    Locality,
+    PickupPoint,
+    Quote,
+    Service
+  }
+
   alias PhoenixKitEcommerce.ShippingMethod
 
   @destination_key "shipping_destination"
   @quote_key "shipping_quote"
+  @service_key "shipping_service"
   @statuses [:ok, :fallback, :unavailable]
   @default_max_age :timer.minutes(30)
   @fallback_max_age :timer.minutes(2)
@@ -84,14 +97,66 @@ defmodule PhoenixKitEcommerce.Shipping.CartQuote do
   @spec drop_quote(map()) :: map()
   def drop_quote(metadata), do: Map.delete(metadata, @quote_key)
 
-  @doc "Removes the stored destination and quote."
-  @spec drop_all(map()) :: map()
-  def drop_all(metadata), do: metadata |> drop_quote() |> Map.delete(@destination_key)
+  @doc "The key of the service the shopper chose, or `nil`."
+  @spec service(term()) :: String.t() | nil
+  def service(metadata) do
+    case metadata |> Codec.get(:shipping_service) |> Codec.string() do
+      nil -> nil
+      key -> if String.trim(key) == "", do: nil, else: String.trim(key)
+    end
+  end
 
-  @doc "Whether the metadata holds a destination or a quote."
+  @doc "Stores the chosen service (`nil` removes it)."
+  @spec put_service(map(), String.t() | nil) :: map()
+  def put_service(metadata, nil), do: Map.delete(metadata, @service_key)
+  def put_service(metadata, key) when is_binary(key), do: Map.put(metadata, @service_key, key)
+
+  @doc "Removes the stored destination, service choice and quote."
+  @spec drop_all(map()) :: map()
+  def drop_all(metadata) do
+    metadata |> drop_quote() |> Map.drop([@destination_key, @service_key])
+  end
+
+  @doc "Whether the metadata holds a destination, a service choice or a quote."
   @spec any?(map()) :: boolean()
-  def any?(metadata),
-    do: Map.has_key?(metadata, @destination_key) or Map.has_key?(metadata, @quote_key)
+  def any?(metadata) do
+    Enum.any?([@destination_key, @service_key, @quote_key], &Map.has_key?(metadata, &1))
+  end
+
+  @doc """
+  What of a destination still holds when the shopper moves from the service
+  `from` to the service `to`.
+
+  The whole destination does when both ask for an address, or both for a
+  manually typed pickup point code (the code means the same to either).
+  Otherwise only the locality does: the points of a provider that searches
+  belong to one service, and an address is no pickup point. `nil` when
+  nothing is left.
+  """
+  @spec carry_destination(Destination.t() | nil, Service.t() | nil, Service.t() | nil) ::
+          Destination.t() | nil
+  def carry_destination(nil, _from, _to), do: nil
+
+  def carry_destination(%Destination{} = destination, from, to) do
+    if same_place?(from, to), do: destination, else: locality_only(destination)
+  end
+
+  defp same_place?(%Service{destination: :address}, %Service{destination: :address}), do: true
+
+  defp same_place?(
+         %Service{destination: :pickup_point, lookup: :manual},
+         %Service{destination: :pickup_point, lookup: :manual}
+       ),
+       do: true
+
+  defp same_place?(_from, _to), do: false
+
+  @doc "A destination cut down to its locality, `nil` when there is none."
+  @spec locality_only(Destination.t() | nil) :: Destination.t() | nil
+  def locality_only(%Destination{locality: %Locality{} = locality}),
+    do: %Destination{locality: locality}
+
+  def locality_only(_destination), do: nil
 
   @doc "The stored quote entry, or `nil` when there is none (or it is unreadable)."
   @spec stored(term()) :: stored() | nil

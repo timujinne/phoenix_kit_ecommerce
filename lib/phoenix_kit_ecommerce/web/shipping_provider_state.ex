@@ -3,7 +3,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
   # The "Shipping cost calculation" card of the shipping method form, as data.
   #
   # The card's inputs are posted under
-  # `shipping_method[shipping_provider][provider|service|settings|pricing]`.
+  # `shipping_method[shipping_provider][provider|services|settings|pricing]`.
   # What the admin sees cannot be read back from the changeset: the block only
   # reaches `metadata` when it is valid, and a half-filled one never is. So the
   # form keeps its own state, `t:t/0`, built from the stored method and
@@ -14,7 +14,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
   use Gettext, backend: PhoenixKitEcommerce.Gettext
 
   alias PhoenixKitEcommerce.Shipping
-  alias PhoenixKitEcommerce.Shipping.{Codec, Field}
+  alias PhoenixKitEcommerce.Shipping.{Codec, Field, MethodConfig}
   alias PhoenixKitEcommerce.ShippingMethod
 
   @fixed "fixed"
@@ -22,7 +22,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
 
   @type t :: %{
           provider: String.t(),
-          service: String.t(),
+          services: [String.t()],
           settings: %{optional(String.t()) => term()},
           pricing: %{optional(String.t()) => String.t()},
           queries: %{optional(String.t()) => String.t()}
@@ -43,7 +43,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
 
     %{
       provider: config.provider,
-      service: config.service || "",
+      services: config.services,
       settings: config.settings,
       pricing: stored_pricing(method),
       queries: %{}
@@ -55,8 +55,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
 
   `provider_chosen?` is whether this post is the admin choosing another
   provider in the select (the `_target` of the change event). Then the new
-  provider starts from scratch: no service (the form picks the first one it
-  offers) and the default value of each of its settings; what was typed for
+  provider starts from scratch: no services (the form ticks all it offers) and
+  the default value of each of its settings; what was typed for
   the previous provider means nothing to it. The pricing (markup, rounding) is
   not the provider's, so it stays.
 
@@ -78,14 +78,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
         {%{
            state
            | provider: provider,
-             service: "",
+             services: [],
              settings: defaults(provider),
              pricing: posted_pricing(raw, state.pricing),
              queries: %{}
          }, :provider_chosen}
 
       provider != state.provider ->
-        base = %{state | provider: provider, settings: %{}, service: "", queries: %{}}
+        base = %{state | provider: provider, settings: %{}, services: [], queries: %{}}
         {fold(base, raw), :unchanged}
 
       true ->
@@ -98,7 +98,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
   defp fold(state, raw) do
     %{
       state
-      | service: posted_service(raw, state.service),
+      | services: posted_services(raw, state.services),
         settings: posted_settings(raw, state),
         pricing: posted_pricing(raw, state.pricing)
     }
@@ -107,18 +107,18 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
   @doc """
   The `shipping_provider` param for `ShippingMethod.changeset/2`.
 
-  The fixed provider has no service and no settings and no pricing, so it is
+  The fixed provider has no services and no settings and no pricing, so it is
   sent bare and a plain fixed price stays a method without a block.
   """
   @spec to_param(t()) :: map()
   def to_param(%{provider: @fixed}) do
-    %{"provider" => @fixed, "service" => "", "settings" => %{}, "pricing" => %{}}
+    %{"provider" => @fixed, "services" => [], "settings" => %{}, "pricing" => %{}}
   end
 
   def to_param(state) do
     %{
       "provider" => state.provider,
-      "service" => state.service,
+      "services" => state.services,
       "settings" => state.settings,
       "pricing" => state.pricing
     }
@@ -181,7 +181,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
   end
 
   defp classify({"service is required", _opts}, _fields, acc),
-    do: put_field_error(acc, "service", gettext("Choose a service"))
+    do: put_field_error(acc, "service", gettext("Choose at least one service"))
 
   defp classify({"unknown service %{service}", opts}, _fields, acc) do
     put_field_error(
@@ -238,9 +238,11 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
     end
   end
 
-  defp posted_service(raw, current) do
-    case Map.fetch(raw, "service") do
-      {:ok, value} -> value |> Codec.string() |> trim()
+  # The ticked services; a post that carries none of them (a form that does
+  # not show the services) leaves them as they are.
+  defp posted_services(raw, current) do
+    case Map.fetch(raw, "services") do
+      {:ok, services} -> services |> List.wrap() |> MethodConfig.normalize_services()
       :error -> current
     end
   end

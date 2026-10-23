@@ -418,6 +418,11 @@ system read, and a row whose revision is out of date answers `conflict` with
 not change the order's `updated_at`. `limit` is 1 to 100; a larger value is
 `validation_failed`, never cut.
 
+Each product line carries the option selection the buyer made as `options`
+(`attribute_key`, `attribute_label`, `value_label`, and `value_key` for a line
+sold from the catalogue; `[]` when there is none), so two sizes of one product
+are two distinguishable lines.
+
 The order map has no "prices include tax" flag, because the shop has no such
 setting: it works out `totals.tax` from the tax rate (over the lines marked
 `taxable`) and adds it to `total`.
