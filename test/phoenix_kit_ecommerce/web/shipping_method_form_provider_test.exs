@@ -48,7 +48,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       assert has_element?(view, "#shipping-provider-select option[value='stub']")
 
       # A fixed price asks for no service and no markup.
-      refute has_element?(view, "#shipping-service-select")
+      refute has_element?(view, "#shipping-services")
       refute has_element?(view, "#shipping-provider-pricing")
       refute has_element?(view, "#shipping-provider-fallback-hint")
       refute has_element?(view, "#shipping-provider-setting-destination")
@@ -84,8 +84,9 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
 
       choose_provider(view, "stub")
 
-      assert has_element?(view, "#shipping-service-select option[value='branch'][selected]")
-      assert has_element?(view, "#shipping-service-select option[value='courier']")
+      # Every service the provider offers is ticked to begin with.
+      assert has_element?(view, "#shipping-service-branch[checked]")
+      assert has_element?(view, "#shipping-service-courier[checked]")
       assert has_element?(view, "#shipping-provider-setting-sender_city")
       assert has_element?(view, "#shipping-locality-query-sender_city")
       assert has_element?(view, "#shipping-provider-pricing")
@@ -151,7 +152,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
           "name" => "Recovered",
           "shipping_provider" => %{
             "provider" => "stub",
-            "service" => "courier",
+            "services" => ["courier"],
             "settings" => %{"sender_city" => %{"id" => "c-lviv", "name" => "Lviv"}},
             "pricing" => %{"markup_percent" => "15"}
           }
@@ -161,7 +162,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       render_async(view)
 
       assert has_element?(view, "#shipping-provider-select option[value='stub'][selected]")
-      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
+      assert has_element?(view, "#shipping-service-courier[checked]")
+      refute has_element?(view, "#shipping-service-branch[checked]")
       assert has_element?(view, "#shipping-locality-selected-sender_city", "Lviv")
       assert has_element?(view, "#shipping-pricing-markup_percent[value='15']")
     end
@@ -215,8 +217,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       assert microseconds < 1_500_000
       assert_receive {:stub_called, :services, _}
       assert has_element?(view, "#shipping-services-loading")
-      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
-      refute has_element?(view, "#shipping-service-select", "unavailable")
+      assert has_element?(view, "#shipping-service-courier[checked]")
+      refute has_element?(view, "#shipping-services", "unavailable")
 
       for name <- ["Hung carrier A", "Hung carrier AB"] do
         view
@@ -236,8 +238,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       render_async(view)
 
       assert has_element?(view, "#shipping-services-error")
-      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
-      refute has_element?(view, "#shipping-service-select", "unavailable")
+      assert has_element?(view, "#shipping-service-courier[checked]")
+      refute has_element?(view, "#shipping-services", "unavailable")
     end
 
     test "a service the carrier answered without is called unavailable", %{conn: conn} do
@@ -252,8 +254,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
       render_async(view)
 
-      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
-      assert has_element?(view, "#shipping-service-select", "courier (unavailable)")
+      assert has_element?(view, "#shipping-service-courier[checked]")
+      assert has_element?(view, "#shipping-services", "courier (unavailable)")
     end
 
     test "validating leaves the service check to the save", %{conn: conn} do
@@ -283,6 +285,60 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
     end
   end
 
+  describe "the services offered to the buyer" do
+    test "an existing method shows its allowed services ticked and the rest unticked",
+         %{conn: conn} do
+      method = stub_method!("One service", [])
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+      render_async(view)
+
+      assert has_element?(view, "#shipping-service-courier[checked]")
+      assert has_element?(view, "#shipping-service-branch")
+      refute has_element?(view, "#shipping-service-branch[checked]")
+    end
+
+    test "saving stores the ticked services, the first one is the default", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view, "stub")
+      pick_sender_city(view)
+
+      view
+      |> form(@form, %{
+        "shipping_method" => %{
+          "name" => "Courier only",
+          "price" => "70.00",
+          "shipping_provider" => %{"services" => ["courier"]}
+        }
+      })
+      |> render_submit()
+
+      block = method_named("Courier only").metadata["shipping_provider"]
+
+      assert block["services"] == ["courier"]
+      assert block["service"] == "courier"
+    end
+
+    test "all of them unticked is refused with a message on the card", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/new")
+      choose_provider(view, "stub")
+      pick_sender_city(view)
+
+      view
+      |> form(@form, %{
+        "shipping_method" => %{
+          "name" => "Nothing offered",
+          "price" => "70.00",
+          "shipping_provider" => %{"services" => [""]}
+        }
+      })
+      |> render_submit()
+
+      assert has_element?(view, "#shipping-services-invalid", "at least one service")
+      assert method_named("Nothing offered") == nil
+    end
+  end
+
   describe "locality autocomplete" do
     test "the lookups are made for the service the admin has chosen", %{conn: conn} do
       me = self()
@@ -302,7 +358,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
 
       view
       |> form(@form, %{
-        "shipping_method" => %{"shipping_provider" => %{"service" => "courier"}}
+        "shipping_method" => %{"shipping_provider" => %{"services" => ["courier"]}}
       })
       |> render_change()
 
@@ -356,6 +412,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       assert method.metadata["shipping_provider"] == %{
                "provider" => "stub",
                "service" => "branch",
+               "services" => ["branch", "courier"],
                "settings" => %{
                  "sender_city" => %{"id" => "c-springfield", "name" => "Springfield"}
                },
@@ -538,7 +595,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       render_async(view)
 
       refute has_element?(view, "#shipping-services-loading")
-      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
+      assert has_element?(view, "#shipping-service-courier[checked]")
 
       view |> element("#shipping-locality-search-sender_city") |> render_change(query("Spr"))
       render_async(view)
@@ -567,12 +624,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
 
       assert has_element?(view, "#shipping-provider-select option[value='stub'][selected]")
-      assert has_element?(view, "#shipping-service-select option[value='courier'][selected]")
+      assert has_element?(view, "#shipping-service-courier[checked]")
       assert has_element?(view, "#shipping-locality-selected-sender_city", "Lviv")
       assert has_element?(view, "#shipping-pricing-markup_percent[value='15']")
 
       choose_provider(view, "fixed")
-      refute has_element?(view, "#shipping-service-select")
+      refute has_element?(view, "#shipping-services")
       refute has_element?(view, "#shipping-provider-pricing")
 
       view |> form(@form) |> render_submit()
@@ -735,6 +792,11 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
     |> render_change(%{"locality_query" => %{key => query}})
 
     render_async(view)
+  end
+
+  defp pick_sender_city(view) do
+    search_locality(view, "sender_city", "Spr")
+    view |> element("#shipping-locality-option-sender_city-0") |> render_click()
   end
 
   defp method_named(name),

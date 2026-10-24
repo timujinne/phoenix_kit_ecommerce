@@ -37,6 +37,8 @@ defmodule PhoenixKitEcommerce.Notifications do
   alias PhoenixKit.Users.Permissions
   alias PhoenixKit.Users.Roles
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitBilling, as: Billing
+  alias PhoenixKitBilling.Paths, as: BillingPaths
   alias PhoenixKitEcommerce.Translations
 
   @order_action "shop.order_placed"
@@ -257,11 +259,12 @@ defmodule PhoenixKitEcommerce.Notifications do
   defp cart_totals(_), do: ""
 
   defp notify_admins_of_order(order) do
+    # A buyer who is also a shop operator stays in the list: the order still
+    # needs confirming on the Billing page, and their own "Your order ... is
+    # confirmed" message (customer-facing copy, a customer link) does not
+    # say so. `admin_recipients/1` only ever holds operators, so a buyer
+    # without shop access is not in it.
     recipients = admin_recipients("shop.manage_carts")
-
-    # Never notify the buyer in the ADMIN fan-out; they get their own
-    # message with customer-facing copy and a link they can open.
-    recipients = Enum.reject(recipients, &(&1 == order.user_uuid))
 
     # `metadata["shipping_skipped"]` is stamped by
     # `PhoenixKitEcommerce.build_order_attrs/5` when the order converted
@@ -270,13 +273,31 @@ defmodule PhoenixKitEcommerce.Notifications do
     # nothing else in the admin fan-out flags that.
     suffix = if order.metadata["shipping_skipped"], do: " — shipping pending", else: ""
 
-    Notifications.create_many(recipients, %{
+    attrs = %{
       action: @order_action,
       text: "New order #{order.order_number} — #{order_total(order)}#{suffix}",
-      icon: "hero-shopping-bag",
-      link: Routes.path("/admin/shop/carts")
-    })
+      icon: "hero-shopping-bag"
+    }
+
+    billing_recipients =
+      if(Billing.enabled?(), do: admin_recipients("billing"), else: [])
+      |> MapSet.new()
+
+    recipients
+    |> Enum.group_by(&MapSet.member?(billing_recipients, &1))
+    |> Enum.each(fn {billing_access?, recipients} ->
+      Notifications.create_many(
+        recipients,
+        Map.put(attrs, :link, order_admin_link(order, billing_access?))
+      )
+    end)
   end
+
+  # An order is confirmed on its Billing page, so that is where the operator
+  # is sent when they can open it. The same recipient resolver includes
+  # Owner and wildcard grants, which have no explicit Billing grant.
+  defp order_admin_link(order, true), do: BillingPaths.order_detail(order.uuid)
+  defp order_admin_link(_order, false), do: Routes.path("/admin/shop/carts")
 
   # Only a real, confirmed account gets an in-app notification: guest
   # checkout creates an unconfirmed placeholder user whose channel is the

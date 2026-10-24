@@ -69,6 +69,7 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
       assert block(cs) == %{
                "provider" => "stub",
                "service" => "branch",
+               "services" => ["branch"],
                "settings" => %{"sender_city" => @city}
              }
 
@@ -248,6 +249,73 @@ defmodule PhoenixKitEcommerce.Schemas.ShippingMethodProviderTest do
         end)
 
       assert log =~ "failed"
+    end
+
+    test "several services are stored in order, the first is the default" do
+      cs = changeset(stub(%{"service" => "", "services" => ["courier", "branch"]}))
+
+      assert cs.valid?
+      assert %{"service" => "courier", "services" => ["courier", "branch"]} = block(cs)
+    end
+
+    test "the services param wins over the single service" do
+      cs = changeset(stub(%{"service" => "courier", "services" => ["branch"]}))
+
+      assert cs.valid?
+      assert %{"service" => "branch", "services" => ["branch"]} = block(cs)
+    end
+
+    test "services are trimmed and deduplicated, blanks are dropped" do
+      cs =
+        changeset(stub(%{"service" => "", "services" => ["", " branch ", "branch", "courier"]}))
+
+      assert cs.valid?
+      assert %{"services" => ["branch", "courier"]} = block(cs)
+    end
+
+    test "no service ticked is an error when the provider offers services" do
+      cs = changeset(stub(%{"service" => "", "services" => [""]}))
+
+      assert %{shipping_provider: ["service is required"]} = errors_on(cs)
+    end
+
+    test "every one of the services must be offered" do
+      cs = changeset(%{"provider" => "plain", "services" => ["home", "teleport"]})
+
+      assert [{message, opts}] = Keyword.get_values(cs.errors, :shipping_provider)
+      assert message == "unknown service %{service}"
+      assert opts[:service] == "teleport"
+    end
+
+    test "services the credential-less list lacks are accepted for a provider with credentials" do
+      cs = changeset(stub(%{"services" => ["branch", "teleport"]}))
+
+      assert cs.valid?
+      assert %{"services" => ["branch", "teleport"]} = block(cs)
+    end
+
+    test "validating while typing does not check the services against the carrier" do
+      cs =
+        ShippingMethod.changeset(
+          %ShippingMethod{},
+          Map.merge(@valid, %{
+            "shipping_provider" => %{"provider" => "plain", "services" => ["teleport"]}
+          }),
+          check_service: false
+        )
+
+      assert cs.valid?
+    end
+
+    test "no service ticked is accepted while the carrier cannot list its services" do
+      StubProvider.put(%{mode: :crash})
+
+      capture_log(fn ->
+        cs = changeset(stub(%{"service" => "", "services" => [""]}))
+
+        assert cs.valid?
+        refute Map.has_key?(block(cs), "services")
+      end)
     end
 
     test "a missing required setting is an error" do
