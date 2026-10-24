@@ -14,6 +14,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.CartItem
   alias PhoenixKitEcommerce.Events
+  alias PhoenixKitEcommerce.ItemImage
   alias PhoenixKitEcommerce.NamePrefix
   alias PhoenixKitEcommerce.PriceDisplay
   alias PhoenixKitEcommerce.SelectedSpecs
@@ -462,14 +463,15 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                           <tr>
                             <td>
                               <div class="flex items-center gap-4">
-                                <%= if item.product_image do %>
+                                <% item_image = ItemImage.url(item) %>
+                                <%= if item_image do %>
                                   <%= if item.product_slug do %>
                                     <.link
                                       navigate={product_item_url(item, @current_language)}
                                       class="w-16 h-16 bg-base-200 rounded-lg overflow-hidden flex-shrink-0 block"
                                     >
                                       <img
-                                        src={item.product_image}
+                                        src={item_image}
                                         alt={display_title}
                                         class="w-full h-full object-cover"
                                       />
@@ -477,7 +479,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                                   <% else %>
                                     <div class="w-16 h-16 bg-base-200 rounded-lg overflow-hidden flex-shrink-0">
                                       <img
-                                        src={item.product_image}
+                                        src={item_image}
                                         alt={display_title}
                                         class="w-full h-full object-cover"
                                       />

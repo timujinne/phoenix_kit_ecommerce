@@ -172,6 +172,15 @@ selection with `PhoenixKitEcommerce.SelectedSpecs.labels/1`.
 {:ok, order} = Shop.convert_cart_to_order(cart, billing_data: %{"email" => "a@b.com"})
 ```
 
+A cart or checkout line whose product has no photo shows the module's cube icon.
+A host app with placeholder art of its own can show that instead: point
+`:item_image_fallback` at a function that takes the cart line and returns an
+image URL or `nil` (see `PhoenixKitEcommerce.ItemImage` for the contract):
+
+```elixir
+config :phoenix_kit_ecommerce, :item_image_fallback, {MyAppWeb.Art, :item_url, []}
+```
+
 > Payments (Stripe etc.) are handled by **PhoenixKitBilling**. To configure and
 > test payment providers — including running Stripe webhooks against
 > `localhost` via the Stripe CLI — see **"Testing Stripe locally"** in the
