@@ -477,6 +477,7 @@ lib/phoenix_kit_ecommerce/
 ├── vocabulary.ex     # "products" / "services" / "mixed" storefront wording
 ├── price_display.ex  # units, "From", price on request
 ├── selected_specs.ex # a cart line's option selection: value keys + label snapshot
+├── item_image.ex    # a cart line's picture: product photo, else the host's :item_image_fallback
 ├── notifications.ex  # notification fan-out
 ├── errors.ex         # atom -> gettext-backed message dispatch
 ├── events.ex         # PubSub broadcasts
