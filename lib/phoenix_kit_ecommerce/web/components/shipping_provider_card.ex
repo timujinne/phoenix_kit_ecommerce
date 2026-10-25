@@ -121,14 +121,15 @@ defmodule PhoenixKitEcommerce.Web.Components.ShippingProviderCard do
                 "The buyer chooses one of them at checkout. With one service ticked there is nothing to choose."
               )}
             </p>
-            <p
-              :for={error <- Map.get(@field_errors, "service", [])}
+            <div
+              :if={Map.get(@field_errors, "service", []) != []}
               id="shipping-services-invalid"
               role="alert"
-              class="text-error text-sm mt-1"
             >
-              {error}
-            </p>
+              <p :for={error <- Map.get(@field_errors, "service", [])} class="text-error text-sm mt-1">
+                {error}
+              </p>
+            </div>
             <p
               :if={@services_status == :loading}
               id="shipping-services-loading"

@@ -44,6 +44,60 @@ defmodule PhoenixKitEcommerce.API.OrderExportTest do
                map["sync"]
     end
 
+    test "a line carries the options the buyer chose, with keys when it was sold from the catalogue" do
+      order =
+        order!(%{
+          "line_items" => [
+            %{
+              "name" => "Keyed",
+              "quantity" => 1,
+              "unit_price" => "10",
+              "total" => "10",
+              "type" => "product",
+              "selected_specs" => %{"size" => "5 inches (13 cm)", "color" => "Red"},
+              "selected_spec_keys" => %{"size" => "5-inches-13-cm", "color" => "red"}
+            },
+            %{
+              "name" => "Legacy",
+              "quantity" => 1,
+              "unit_price" => "10",
+              "total" => "10",
+              "type" => "product",
+              "selected_specs" => %{"Size" => "M"}
+            },
+            %{
+              "name" => "Plain",
+              "quantity" => 1,
+              "unit_price" => "10",
+              "total" => "10",
+              "type" => "product"
+            }
+          ]
+        })
+
+      [keyed, legacy, plain] = OrderExport.serialize(order)["lines"]
+
+      assert keyed["options"] == [
+               %{
+                 "attribute_key" => "color",
+                 "attribute_label" => "Color",
+                 "value_key" => "red",
+                 "value_label" => "Red"
+               },
+               %{
+                 "attribute_key" => "size",
+                 "attribute_label" => "Size",
+                 "value_key" => "5-inches-13-cm",
+                 "value_label" => "5 inches (13 cm)"
+               }
+             ]
+
+      assert [%{"attribute_label" => "Size", "value_key" => nil, "value_label" => "M"}] =
+               legacy["options"]
+
+      assert plain["options"] == []
+    end
+
     test "survives a JSON round trip and never carries internal data" do
       order = order!()
 

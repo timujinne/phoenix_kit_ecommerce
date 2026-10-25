@@ -281,6 +281,38 @@ defmodule PhoenixKitEcommerce.Web.ShippingPointFieldTest do
       assert has_element?(view, "#shipping-locality-option-sender_point-0", "Branch 1")
     end
 
+    test "with several services ticked, the branches are listed for the first one that ships to points",
+         %{conn: conn} do
+      stub(%{
+        localities: &city_search/1,
+        points: &points/3,
+        services: [
+          %Service{key: "courier", label: "Courier", destination: :address},
+          %Service{key: "branch", label: "To a branch", destination: :pickup_point},
+          %Service{key: "locker", label: "To a locker", destination: :pickup_point}
+        ]
+      })
+
+      {:ok, method} =
+        Shop.create_shipping_method(%{
+          "name" => "Saved #{System.unique_integer([:positive])}",
+          "price" => "5",
+          "shipping_provider" => %{
+            "provider" => "point_stub",
+            "services" => ["courier", "locker", "branch"],
+            "settings" => %{"sender_city" => %{"id" => "c-springfield", "name" => "Springfield"}}
+          }
+        })
+
+      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+      render_async(view)
+
+      assert has_element?(view, "#shipping-locality-option-sender_point-0", "Branch 1")
+
+      assert_received {:stub_called, :list_pickup_points,
+                       [%Locality{id: "c-springfield"}, "locker", nil]}
+    end
+
     test "a branch that is saved is shown and nothing is asked of the carrier", %{conn: conn} do
       {:ok, method} =
         Shop.create_shipping_method(%{

@@ -466,9 +466,18 @@ replay_exclude =
     [:core_replay]
   end
 
+# The builds-alone test needs `PhoenixKit.TestSupport.ModuleChainCheck`, which
+# ships in the first core release after 2.64.1; against an older core it is
+# excluded.
+chain_check_exclude =
+  if Code.ensure_loaded?(PhoenixKit.TestSupport.ModuleChainCheck),
+    do: [],
+    else: [:requires_module_chain_check]
+
 ExUnit.start(
   exclude:
-    i18n_exclude ++
+    chain_check_exclude ++
+      i18n_exclude ++
       integration_exclude ++
       transliteration_exclude ++
       single_language_exclude ++
@@ -479,8 +488,5 @@ ExUnit.start(
       billing_order_sync_exclude ++
       api_exclude ++
       canonical_urls_exclude ++
-      trigram_exclude ++
-      analytics_exclude ++
-      mcp_exclude ++
-      replay_exclude
+      trigram_exclude ++ analytics_exclude ++ mcp_exclude ++ replay_exclude
 )

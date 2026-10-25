@@ -8,8 +8,96 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Migration V6**: adds `phoenix_kit_shop_carts.base_currency` / `.exchange_rate`
+  and `phoenix_kit_shop_cart_items.base_unit_price` (`ADD COLUMN IF NOT EXISTS`),
+  the columns core's V186 added, so the module's chain builds every shop table
+  without core's. A no-op on existing installs. A builds-alone test checks it
+  against core's chain (runs once the module resolves the next core release).
+
+## 0.7.0 - 2026-10-24
+
+### Added
+
+- **Order tools for an external system** (#95): `ecommerce.list_orders` (a feed
+  in `(updated_at, uuid)` order with an opaque cursor, filtered by status,
+  change time and sync state; a limit above 100 is refused), `get_orders` (by id
+  or number), `get_order_customers` and `set_order_sync` (records the external
+  system's mark per row against the revision it read; an out-of-date row answers
+  `stale_revision` and stays pending). `API.OrderExport.serialize/2` /
+  `serialize_many/2` give an order as one JSON-ready map, with each product
+  line's `options` (the buyer's selection) and `sku_at_order` when the SKU
+  moved; the buyer's contacts only for a key that also holds
+  `ecommerce.orders:customer`, never internal notes or session data. A new
+  `shop.manage_orders` sub-permission guards `get_order_customers` and
+  `set_order_sync`. The tools are offered only with a billing that has
+  `PhoenixKitBilling.put_order_sync/2` and `Order.sync/1`, i.e. `phoenix_kit_billing`
+  0.23.0 or later; with an older billing they are not listed.
+- **Several delivery services per calculated shipping method** (#107): the
+  admin form ticks the services a method offers (the first is the default), and
+  when a method offers two or more the cart and checkout shipping picker lets
+  the shopper choose; the choice (`set_cart_shipping_service/2`,
+  `cart.metadata["shipping_service"]`) drives the rate request, the quote and
+  the order's `shipping_provider.service`. Existing methods with one `service`
+  behave as before, with no data migration.
+- **Shipping method country lists** (#94): "Deliver only to" and "Never deliver
+  to" on the method form (checkboxes in a scrolling box), shown on the methods
+  list; `Shop.checkout_countries/0`, and the default checkout country follows a
+  single served one. A provider setting can be a `:pickup_point` field chosen
+  from the carrier's branch list for the picked city.
+- **Cart line picture fallback** (#108): `config :phoenix_kit_ecommerce,
+  :item_image_fallback, {Mod, :fun, args}` supplies an image URL for a cart or
+  checkout line whose product has no photo (`ItemImage.url/1`). A fallback that
+  raises, exits or throws logs a warning and keeps the icon.
+- **Public API** (#99): `facets: false` on `search_products` /
+  `search_products_batch` leaves the facet block out and skips building it;
+  `unknown_option_key` / `unknown_option_value` warnings for a typo in the
+  options filter; `attribute_label` / `value_label` on every cart line option
+  (in the request's language) and labelled options on the claim page; a `price`
+  per value of an `affects_price` option on the product card.
+
+### Changed
+
+- **The public API is documented under core's neutral paths** (#104):
+  `/api/public/v1` and `/mcp/public`; `/api/shop/v1` and `/mcp/shop` are
+  deprecated aliases until core 3.0.0. The cart tools declare `cart_token` as
+  their client token and the checkout link as a credential, the module declares
+  its four cart error codes (`api_problems/0`), and a new cart is charged to
+  core's shared new-rows quota (`check_new_rows/1`, `check_cart_rows/1` on an
+  older core). Each is set only against a core that supports it.
+- `shop.create_cart` and `shop.get_checkout_link` no longer offer an
+  idempotency key (`replay: false`, where core supports it): neither has
+  anything a replay could return.
+- Product and category URLs in API answers use the domain of the answer's
+  language when the host maps languages to domains (`:canonical_host_resolver`,
+  core's `Routes.canonical_absolute_or_nil/2`); otherwise the request's host
+  (#96).
+- The new-order admin notification links to the order's Billing page for
+  recipients with billing access (the carts list while Billing is off or for
+  others), and an operator who placed the order is notified as an operator too
+  (#106).
 - `mint ~> 1.6` is a declared requirement: `Services.PinnedAdapter` calls
   `Mint.HTTP` directly and had relied on it arriving through Req and Finch.
+- The carriers' integrations are offered only while the shop is switched on.
+- Dependencies refreshed to PhoenixKit 2.64.1 and phoenix_kit_ai 0.26.1. The
+  `phoenix_kit` (`>= 2.43.0`) and `phoenix_kit_billing` (`~> 0.20`)
+  requirements are unchanged; the newer-core and newer-billing features above
+  switch on where they are available.
+
+### Fixed
+
+- `shipping_quote_snapshot/2` no longer asks the carrier for the method's
+  service list a second time (for the `choices`) when the first listing for the
+  cart failed: during a carrier outage every cart change waited out the lookup
+  timeout twice.
+- A picked destination records the service it was picked for, so changing a
+  method's default service cannot reinterpret it; a legacy destination without
+  a recorded service asks to be confirmed again.
+- The product page's thumbnail strip stays inside the gallery column (a product
+  with many pictures widened the page and squeezed the buy box) (#98).
+- A 409 `revision_mismatch` cart carries its option labels in the request's
+  language.
+- The assistant cart settings labels wrap instead of running into the next
+  column (#105).
 
 ## 0.6.0 - 2026-10-17
 

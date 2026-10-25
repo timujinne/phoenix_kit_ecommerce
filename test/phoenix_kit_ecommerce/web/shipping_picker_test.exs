@@ -821,12 +821,17 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       {conn, cart, _method} = cart_session(conn)
       {:ok, view, _html} = live(conn, "/cart")
 
+      # Form encoding turns 42 into the valid search string "42". Push JSON
+      # so these remain malformed values rather than starting a real lookup.
       for q <- [%{"a" => ["b"]}, 42, nil] do
-        view |> element(ps("locality-form")) |> render_change(%{"q" => q})
+        view
+        |> with_target("##{Process.get(:picker_id)}")
+        |> render_hook("locality_search", %{"q" => q})
       end
 
       assert has_element?(view, ps("locality-input"))
       assert Shop.cart_shipping_destination(reload(cart)) == nil
+      refute_received {:stub_called, :search_localities, _}
 
       # The rest of it never comes from a browser: the handlers take it in stride.
       socket =
@@ -1551,6 +1556,37 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
       assert_received {:stub_called, :list_pickup_points, [%Locality{id: "L1"}, "locker", nil]}
     end
 
+    test "a destination for an implicit default is picked again after that service is removed",
+         %{conn: conn} do
+      stub!(%{
+        services: [
+          %Service{key: "branch", label: "Branch", destination: :pickup_point, lookup: :search},
+          %Service{key: "locker", label: "Locker", destination: :pickup_point, lookup: :search}
+        ]
+      })
+
+      {conn, cart, method} =
+        cart_session(conn, services: ["branch", "locker"], destination: branch("P1"))
+
+      block = Map.put(method.metadata["shipping_provider"], "services", ["locker"])
+      metadata = Map.put(method.metadata, "shipping_provider", block)
+      {:ok, _method} = Shop.update_shipping_method(method, %{metadata: metadata})
+
+      {:ok, view, _html} = live(conn, "/cart")
+      settle(view)
+
+      assert has_element?(view, ps("editor"))
+      refute has_element?(view, ps("quote-price"))
+      assert Shop.shipping_quote_status(reload(cart)) == :needs_destination
+
+      view |> element(ps("point-P2")) |> render_click()
+      settle(view)
+
+      assert has_element?(view, ps("destination-summary"), "Locker 2")
+      assert Shop.shipping_quote_status(reload(cart)) == :ok
+      assert reload(cart).metadata["shipping_service"] == "locker"
+    end
+
     test "a cart whose chosen service the admin removed can pick a new place", %{conn: conn} do
       stub!(%{
         services: [
@@ -1585,7 +1621,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingPickerTest do
 
       assert has_element?(view, ps("destination-summary"), "Branch 1")
       assert has_element?(view, ps("quote-price"), "100")
-      assert reload(cart).metadata["shipping_service"] == nil
+      assert reload(cart).metadata["shipping_service"] == "branch"
     end
 
     test "a stale cart with several services left clears the choice by clicking the one shown",

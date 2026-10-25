@@ -7723,6 +7723,26 @@ msgstr "Sisestage täisarvud näidatud vahemikes."
 msgid "A price change larger than this percentage of the current price is held until it is confirmed. A price set to zero is always held; any other first price is not. From 100 percent on, only increases are held, as a cut cannot exceed 100 percent."
 msgstr "Hinnamuutus, mis ületab seda protsenti praegusest hinnast, ootab kinnitust. Nulliks seatud hind peetakse alati kinni; muud esimest hinda ei peeta kinni. 100 protsendist alates peetakse kinni ainult tõuse, sest langus ei saa ületada 100 protsenti."
 
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:184
+#, elixir-autogen, elixir-format
+msgid "Choose at least one service"
+msgstr "Valige vähemalt üks teenus"
+
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1025
+#, elixir-autogen, elixir-format
+msgid "Delivery type"
+msgstr "Tarneviis"
+
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:102
+#, elixir-autogen, elixir-format
+msgid "Services offered to the buyer"
+msgstr "Ostjale pakutavad teenused"
+
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:120
+#, elixir-autogen, elixir-format
+msgid "The buyer chooses one of them at checkout. With one service ticked there is nothing to choose."
+msgstr "Ostja valib neist ühe kassas. Kui on märgitud vaid üks teenus, siis valida pole midagi."
+
 #: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:354
 #, elixir-autogen, elixir-format
 msgid "Choose the city first."
@@ -7757,23 +7777,3 @@ msgstr "Valitud: %{countries}"
 #, elixir-autogen, elixir-format
 msgid "This method is never offered to these countries."
 msgstr "Seda tarneviisi neis riikides kunagi ei pakuta."
-
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:184
-#, elixir-autogen, elixir-format
-msgid "Choose at least one service"
-msgstr "Valige vähemalt üks teenus"
-
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1025
-#, elixir-autogen, elixir-format
-msgid "Delivery type"
-msgstr "Tarneviis"
-
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:102
-#, elixir-autogen, elixir-format
-msgid "Services offered to the buyer"
-msgstr "Ostjale pakutavad teenused"
-
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:120
-#, elixir-autogen, elixir-format
-msgid "The buyer chooses one of them at checkout. With one service ticked there is nothing to choose."
-msgstr "Ostja valib neist ühe kassas. Kui on märgitud vaid üks teenus, siis valida pole midagi."

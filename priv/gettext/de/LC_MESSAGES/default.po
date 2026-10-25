@@ -7725,6 +7725,26 @@ msgstr "Geben Sie ganze Zahlen innerhalb der angezeigten Bereiche ein."
 msgid "A price change larger than this percentage of the current price is held until it is confirmed. A price set to zero is always held; any other first price is not. From 100 percent on, only increases are held, as a cut cannot exceed 100 percent."
 msgstr "Eine Preisänderung, die diesen Prozentsatz des aktuellen Preises überschreitet, wird bis zur Bestätigung zurückgehalten. Ein auf null gesetzter Preis wird immer zurückgehalten; jeder andere erste Preis nicht. Ab 100 Prozent werden nur Erhöhungen zurückgehalten, da eine Senkung 100 Prozent nicht übersteigen kann."
 
+#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:184
+#, elixir-autogen, elixir-format
+msgid "Choose at least one service"
+msgstr "Wählen Sie mindestens einen Service"
+
+#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1025
+#, elixir-autogen, elixir-format
+msgid "Delivery type"
+msgstr "Lieferart"
+
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:102
+#, elixir-autogen, elixir-format
+msgid "Services offered to the buyer"
+msgstr "Dem Käufer angebotene Services"
+
+#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:120
+#, elixir-autogen, elixir-format
+msgid "The buyer chooses one of them at checkout. With one service ticked there is nothing to choose."
+msgstr "Der Käufer wählt beim Checkout einen davon aus. Ist nur ein Service angehakt, gibt es nichts zu wählen."
+
 #: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:354
 #, elixir-autogen, elixir-format
 msgid "Choose the city first."
@@ -7759,23 +7779,3 @@ msgstr "Ausgewählt: %{countries}"
 #, elixir-autogen, elixir-format
 msgid "This method is never offered to these countries."
 msgstr "Diese Versandart wird für diese Länder nie angeboten."
-
-#: lib/phoenix_kit_ecommerce/web/shipping_provider_state.ex:184
-#, elixir-autogen, elixir-format
-msgid "Choose at least one service"
-msgstr "Wählen Sie mindestens einen Service"
-
-#: lib/phoenix_kit_ecommerce/web/components/shipping_destination_picker.ex:1025
-#, elixir-autogen, elixir-format
-msgid "Delivery type"
-msgstr "Lieferart"
-
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:102
-#, elixir-autogen, elixir-format
-msgid "Services offered to the buyer"
-msgstr "Dem Käufer angebotene Services"
-
-#: lib/phoenix_kit_ecommerce/web/components/shipping_provider_card.ex:120
-#, elixir-autogen, elixir-format
-msgid "The buyer chooses one of them at checkout. With one service ticked there is nothing to choose."
-msgstr "Der Käufer wählt beim Checkout einen davon aus. Ist nur ein Service angehakt, gibt es nichts zu wählen."

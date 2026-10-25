@@ -9,11 +9,11 @@ defmodule PhoenixKitEcommerce.MigrationsClaimsTest do
 
   alias PhoenixKitEcommerce.Migrations
 
-  test "the chain is at V5 and stamps the marker last" do
-    assert Migrations.current_version() == 5
+  test "the chain is at V6 and stamps the marker last" do
+    assert Migrations.current_version() == 6
 
     assert List.last(Migrations.up_statements("public")) ==
-             "COMMENT ON TABLE public.phoenix_kit_shop_config IS 'pke_schema:5'"
+             "COMMENT ON TABLE public.phoenix_kit_shop_config IS 'pke_schema:6'"
   end
 
   test "claims_statements creates the table with its keys inline, then three guarded indexes" do
@@ -52,7 +52,9 @@ defmodule PhoenixKitEcommerce.MigrationsClaimsTest do
 
     assert is_integer(table_at) and is_integer(analytics_at)
     assert table_at < analytics_at
-    assert analytics_at == length(stmts) - 2
+    # Followed by V6's three columns, then the marker.
+    assert analytics_at ==
+             length(stmts) - 2 - length(Migrations.v6_base_currency_columns("public"))
   end
 
   test "no V5 statement leaks the public schema under a foreign prefix" do

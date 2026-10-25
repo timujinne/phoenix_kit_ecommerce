@@ -2216,7 +2216,7 @@ defmodule PhoenixKitEcommerce.Web.CheckoutPage do
               <% display_title = NamePrefix.strip(item.product_title) %>
               <div class="flex items-center gap-4">
                 <% item_image = ItemImage.url(item) %>
-    <%= if item_image do %>
+                <%= if item_image do %>
                   <div class="w-16 h-16 bg-base-200 rounded-lg overflow-hidden flex-shrink-0">
                     <img
                       src={item_image}

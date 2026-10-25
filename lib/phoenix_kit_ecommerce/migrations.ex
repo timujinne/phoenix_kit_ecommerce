@@ -84,6 +84,18 @@ defmodule PhoenixKitEcommerce.Migrations do
   treats a pattern ending in `*` as a prefix). `down/1` keeps the table, like
   every table of this chain.
 
+  ## V6 — the base-currency columns core's V186 added
+
+  A chain that runs without core's must still end on the same shape. Core's
+  V186 added `phoenix_kit_shop_carts.base_currency` and `.exchange_rate` and
+  `phoenix_kit_shop_cart_items.base_unit_price` (the cart's frozen conversion
+  into the shop's base currency); V1 adopted the pre-V186 baseline, so a
+  database built by this chain alone lacked them. V6 adds them with
+  `ADD COLUMN IF NOT EXISTS` — a no-op wherever core already did. It does not
+  backfill: core's V186 did that for the rows it found, and a chain-built
+  database has no rows to fill. `down/1` keeps the columns, like every table
+  of this chain.
+
   ## What `down/1` is NOT
 
   `down/1` unstamps the version marker and restores the V2 column
@@ -112,7 +124,7 @@ defmodule PhoenixKitEcommerce.Migrations do
   # has no row yet; the module is optional (see `claim_analytics_statements/1`).
   @compile {:no_warn_undefined, PhoenixKitWebAnalytics.Config}
 
-  @current_version 5
+  @current_version 6
   @marker_prefix "pke_schema:"
   @version_table "phoenix_kit_shop_config"
 
@@ -234,6 +246,23 @@ defmodule PhoenixKitEcommerce.Migrations do
 
   defp version_statements(5, prefix, _p),
     do: claims_statements(prefix) ++ claim_analytics_statements(prefix)
+
+  defp version_statements(6, _prefix, p), do: do_v6_base_currency_columns(p)
+
+  @doc false
+  @spec v6_base_currency_columns(String.t()) :: [String.t()]
+  def v6_base_currency_columns(prefix_or_p) do
+    p = if String.ends_with?(prefix_or_p, "."), do: prefix_or_p, else: prefix_or_p <> "."
+    do_v6_base_currency_columns(p)
+  end
+
+  defp do_v6_base_currency_columns(p) do
+    [
+      "ALTER TABLE #{p}phoenix_kit_shop_carts ADD COLUMN IF NOT EXISTS base_currency character varying(3)",
+      "ALTER TABLE #{p}phoenix_kit_shop_carts ADD COLUMN IF NOT EXISTS exchange_rate numeric(15,6)",
+      "ALTER TABLE #{p}phoenix_kit_shop_cart_items ADD COLUMN IF NOT EXISTS base_unit_price numeric(15,2)"
+    ]
+  end
 
   @doc "The SQL `down/1` executes, as data (marker bookkeeping plus the V2 default restore)."
   @spec down_statements(String.t(), non_neg_integer()) :: [String.t()]

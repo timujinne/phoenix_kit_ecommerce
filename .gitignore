@@ -1,6 +1,7 @@
 /_build/
 /deps/
 /doc/
+/cover/
 /.fetch
 erl_crash.dump
 *.ez
@@ -8,6 +9,7 @@ erl_crash.dump
 /tmp/
 .env
 CLAUDE.local.md
+.claude/settings.local.json
 .expert/
 
 # Core's local storage provider writes to priv/media when a bucket has no

@@ -100,6 +100,30 @@ defmodule PhoenixKitEcommerce.NotificationsTest do
       assert links = notification_links_mentioning("New order ORD-LINK-OFF")
       assert Enum.uniq(links) == [Routes.path("/admin/shop/carts")]
     end
+
+    test "each operator gets a link they can open, including Owner and wildcard grants" do
+      Settings.update_boolean_setting_with_module("billing_enabled", true, "billing")
+      shop_only = operator_with_permissions(["shop", "shop.manage_carts"])
+      billing_operator = operator_with_permissions(["shop", "shop.manage_carts", "billing"])
+      superadmin = operator_with_permissions(["*"])
+      owner = fixture_user()
+
+      Repo.insert!(%PhoenixKit.Users.RoleAssignment{
+        user_uuid: owner.uuid,
+        role_uuid: Roles.get_role_by_name("Owner").uuid
+      })
+
+      order = placed_order("ORD-LINK-PERMS")
+
+      assert :ok = ShopNotifications.order_placed(order)
+
+      assert order_notification_links_for(shop_only.uuid) == [Routes.path("/admin/shop/carts")]
+
+      for operator <- [billing_operator, superadmin, owner] do
+        assert order_notification_links_for(operator.uuid) ==
+                 [PhoenixKitBilling.Paths.order_detail(order.uuid)]
+      end
+    end
   end
 
   describe "order_placed/2 when the buyer is a shop operator" do
@@ -401,6 +425,26 @@ defmodule PhoenixKitEcommerce.NotificationsTest do
     )
     |> Repo.all()
     |> Enum.map(& &1["notification_text"])
+  end
+
+  defp order_notification_links_for(user_uuid) do
+    from(n in "phoenix_kit_notifications",
+      where: n.recipient_uuid == type(^user_uuid, Ecto.UUID),
+      select: n.metadata
+    )
+    |> Repo.all()
+    |> Enum.filter(&String.starts_with?(&1["notification_text"], "New order ORD-LINK-PERMS"))
+    |> Enum.map(& &1["notification_link"])
+  end
+
+  defp operator_with_permissions(keys) do
+    user = fixture_user()
+    {:ok, role} = Roles.create_role(%{name: "ShopNotify#{System.unique_integer([:positive])}"})
+    {:ok, _} = Roles.assign_role(user, role.name)
+
+    for key <- keys, do: {:ok, _} = Permissions.grant_permission(role.uuid, key)
+
+    user
   end
 
   # Builds a real cart (owned by a freshly registered user, so

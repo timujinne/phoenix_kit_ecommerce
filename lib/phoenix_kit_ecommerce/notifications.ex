@@ -273,22 +273,31 @@ defmodule PhoenixKitEcommerce.Notifications do
     # nothing else in the admin fan-out flags that.
     suffix = if order.metadata["shipping_skipped"], do: " — shipping pending", else: ""
 
-    Notifications.create_many(recipients, %{
+    attrs = %{
       action: @order_action,
       text: "New order #{order.order_number} — #{order_total(order)}#{suffix}",
-      icon: "hero-shopping-bag",
-      link: order_admin_link(order)
-    })
+      icon: "hero-shopping-bag"
+    }
+
+    billing_recipients =
+      if(Billing.enabled?(), do: admin_recipients("billing"), else: [])
+      |> MapSet.new()
+
+    recipients
+    |> Enum.group_by(&MapSet.member?(billing_recipients, &1))
+    |> Enum.each(fn {billing_access?, recipients} ->
+      Notifications.create_many(
+        recipients,
+        Map.put(attrs, :link, order_admin_link(order, billing_access?))
+      )
+    end)
   end
 
   # An order is confirmed on its Billing page, so that is where the operator
-  # is sent. With Billing switched off that page does not exist, and the
-  # carts list stays the landing spot.
-  defp order_admin_link(order) do
-    if Billing.enabled?(),
-      do: BillingPaths.order_detail(order.uuid),
-      else: Routes.path("/admin/shop/carts")
-  end
+  # is sent when they can open it. The same recipient resolver includes
+  # Owner and wildcard grants, which have no explicit Billing grant.
+  defp order_admin_link(order, true), do: BillingPaths.order_detail(order.uuid)
+  defp order_admin_link(_order, false), do: Routes.path("/admin/shop/carts")
 
   # Only a real, confirmed account gets an in-app notification: guest
   # checkout creates an unconfirmed placeholder user whose channel is the

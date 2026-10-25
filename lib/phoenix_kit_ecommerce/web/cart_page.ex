@@ -464,7 +464,7 @@ defmodule PhoenixKitEcommerce.Web.CartPage do
                             <td>
                               <div class="flex items-center gap-4">
                                 <% item_image = ItemImage.url(item) %>
-    <%= if item_image do %>
+                                <%= if item_image do %>
                                   <%= if item.product_slug do %>
                                     <.link
                                       navigate={product_item_url(item, @current_language)}

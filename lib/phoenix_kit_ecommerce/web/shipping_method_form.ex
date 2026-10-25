@@ -755,7 +755,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
     Shipping.context(nil,
       provider: state.provider,
       settings: state.settings,
-      service: if(service == "", do: nil, else: service),
+      service: if(service in [nil, ""], do: nil, else: service),
       timeout: @lookup_timeout
     )
   end
@@ -935,17 +935,14 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
 
   defp locality_from_setting(_other), do: nil
 
-  # The branches are listed for the first service the shop offers that ships to
-  # points, else for the first service that does. Nothing is asked of the
-  # carrier when no service ships to points.
+  # The branches are listed for the first ticked service that ships to
+  # points (ticked services are kept in the provider's order, the admin does
+  # not rank them), else for the first offered service that does: the
+  # sender's branch does not depend on what the shop sells. Nothing is asked
+  # of the carrier when no service ships to points.
   defp point_service(%{sp: sp, services: services}) do
-    pickup = Enum.filter(services, &(&1.destination == :pickup_point))
-
-    cond do
-      offered = Enum.find(pickup, &(&1.key in sp.services)) -> offered.key
-      pickup != [] -> hd(pickup).key
-      true -> nil
-    end
+    keys = for %{destination: :pickup_point, key: key} <- services, do: key
+    Enum.find(sp.services, &(&1 in keys)) || List.first(keys)
   end
 
   # The lists of the point fields whose city is chosen and which have no point
@@ -953,7 +950,8 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodForm do
   defp load_ready_point_lists(socket) do
     settings = socket.assigns.sp.settings
 
-    for %{type: :pickup_point, key: key, locality_key: city_key} <- socket.assigns.provider_fields,
+    for %{type: :pickup_point, key: key, locality_key: city_key} <-
+          socket.assigns.provider_fields,
         not Map.has_key?(settings, key),
         Map.has_key?(settings, city_key),
         reduce: socket do

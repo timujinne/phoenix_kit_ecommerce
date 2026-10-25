@@ -477,6 +477,7 @@ lib/phoenix_kit_ecommerce/
 ├── vocabulary.ex     # "products" / "services" / "mixed" storefront wording
 ├── price_display.ex  # units, "From", price on request
 ├── selected_specs.ex # a cart line's option selection: value keys + label snapshot
+├── item_image.ex    # a cart line's picture: product photo, else the host's :item_image_fallback
 ├── notifications.ex  # notification fan-out
 ├── errors.ex         # atom -> gettext-backed message dispatch
 ├── events.ex         # PubSub broadcasts
@@ -895,9 +896,14 @@ All stored via `PhoenixKit.Settings`. Keys are **`shop_`-prefixed**, except `api
   and into the order's `shipping_provider.service`. Never read
   `shipping_config(method).service` for a cart: use the service in effect.
   A choice the admin has since unticked is stale: until a destination is
-  stored (which drops it) or another service is chosen, the destination counts
-  only as its locality (`request_destination/2`, `destination_in_effect/2`), so
-  the shopper is asked for a place again.
+  stored (which records the service now in effect) or another service is chosen,
+  the destination counts only as its locality (`request_destination/2`,
+  `destination_in_effect/2`), so the shopper is asked for a place again.
+  Saving a nonempty destination records
+  its service even when the shopper used the default without clicking its radio:
+  changing the default must not reinterpret an existing pickup point. A legacy
+  destination without a recorded service requires confirmation once, since its
+  historical default is unknown.
 - The limits of a chosen pickup point (weight, size, value) are re-checked
   against the cart whenever its shipping status is worked out
   (`check_destination`): a point that no longer takes the parcels makes the
@@ -1026,7 +1032,7 @@ settings-layer error.
 
 Owns a versioned chain: `PhoenixKitEcommerce.Migrations` via
 `migration_module/0`, marker `pke_schema:<N>` as a COMMENT ON
-`phoenix_kit_shop_config`, currently V5. `mix phoenix_kit.update` applies it
+`phoenix_kit_shop_config`, currently V6. `mix phoenix_kit.update` applies it
 in hosts (and `mix phoenix_kit.status` reports it); tests apply it by running
 `up_statements/1` directly. A marker-less or foreign-comment table reads as
 version 0 — the core-baseline shape from before the chain existed.
@@ -1062,6 +1068,10 @@ language, `expires_at`, `used_at`, `superseded_at`) and, when the analytics
 module's events table exists, appends `<url_prefix>/checkout/claim/*` to
 `web_analytics_exclude_paths` (the trailing `*` matters: analytics matches any
 other pattern as an exact path). `down/1` keeps the table and the setting.
+V6 adds the base-currency columns core's V186 added (`base_currency` and
+`exchange_rate` on `phoenix_kit_shop_carts`, `base_unit_price` on
+`phoenix_kit_shop_cart_items`) with `ADD COLUMN IF NOT EXISTS`, so the chain
+builds the shop tables without core. No backfill; `down/1` keeps the columns.
 
 Rules for the chain, all of which have been broken at least once:
 
@@ -1207,7 +1217,7 @@ publish has succeeded.
 
 ## Pull requests & commits
 
-- Commit messages start with an action verb (`Add`, `Update`, `Fix`, `Remove`, `Merge`). No AI attribution and no `Co-Authored-By` trailers.
+- Commit messages start with an action verb (`Add`, `Update`, `Fix`, `Remove`, `Merge`).
 - Version bumps and CHANGELOG entries land with the release commit on upstream, not in feature PRs.
 - Review files live in `dev_docs/pull_requests/{year}/{pr_number}-{slug}/{AGENT}_REVIEW.md`, one file per reviewing agent, never edited by another agent; `FOLLOW_UP.md` records how each finding was resolved. Severities: `BUG - CRITICAL/HIGH/MEDIUM`, `IMPROVEMENT - HIGH/MEDIUM`, `NITPICK`.
 

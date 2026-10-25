@@ -11,14 +11,21 @@ defmodule PhoenixKitEcommerce.ItemImage do
   It is called with the line (a `PhoenixKitEcommerce.CartItem`, with
   `product_uuid` and `metadata`; a catalogue-backed product's uuid is
   `metadata["catalogue_item_uuid"]`) followed by the extra arguments, and
-  returns an image URL or `nil`. Without it, or when it returns anything
-  else or raises, the line shows the module's own icon.
+  returns an image URL or `nil`. Without it, when the configuration is not
+  an `{module, function, args}` tuple, or when the function returns anything
+  else, raises, exits or throws, the line shows the module's own icon.
+
+  The function runs during render, once for every line without a photo, so
+  it should be a quick, pure URL builder: no queries, no calls to other
+  processes. The URL it returns is placed in `<img src>` as it is, so it must
+  be one the host trusts or builds itself, as with the `product_image`
+  snapshot it stands in for.
   """
 
   require Logger
 
   @doc "The URL of the line's picture, or `nil` for the module's icon."
-  @spec url(map()) :: String.t() | nil
+  @spec url(term()) :: String.t() | nil
   def url(%{product_image: url}) when is_binary(url) and url != "", do: url
   def url(item) when is_map(item), do: fallback(item)
   def url(_item), do: nil
@@ -40,7 +47,19 @@ defmodule PhoenixKitEcommerce.ItemImage do
     end
   rescue
     error ->
-      Logger.warning("Shop: item image fallback failed: #{Exception.message(error)}")
+      Logger.warning(
+        "[Shop] item image fallback #{inspect(module)}.#{function} failed: " <>
+          Exception.message(error)
+      )
+
+      nil
+  catch
+    kind, reason ->
+      Logger.warning(
+        "[Shop] item image fallback #{inspect(module)}.#{function} #{kind}: " <>
+          inspect(reason, limit: 5)
+      )
+
       nil
   end
 end

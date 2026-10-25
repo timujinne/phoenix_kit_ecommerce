@@ -241,15 +241,9 @@ defmodule PhoenixKitEcommerce.Web.ShippingProviderState do
   # The ticked services; a post that carries none of them (a form that does
   # not show the services) leaves them as they are.
   defp posted_services(raw, current) do
-    cond do
-      Map.has_key?(raw, "services") ->
-        raw |> Map.get("services") |> List.wrap() |> MethodConfig.normalize_services()
-
-      Map.has_key?(raw, "service") ->
-        raw |> Map.get("service") |> List.wrap() |> MethodConfig.normalize_services()
-
-      true ->
-        current
+    case Map.fetch(raw, "services") do
+      {:ok, services} -> services |> List.wrap() |> MethodConfig.normalize_services()
+      :error -> current
     end
   end
 
