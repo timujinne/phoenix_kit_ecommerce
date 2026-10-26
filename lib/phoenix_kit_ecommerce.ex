@@ -1207,6 +1207,22 @@ defmodule PhoenixKitEcommerce do
   @impl PhoenixKit.Module
   def migration_module, do: PhoenixKitEcommerce.Migrations
 
+  @doc """
+  The manifest of this module's tables, for `mix phoenix_kit.repair` and
+  `mix phoenix_kit.doctor`; see `PhoenixKitEcommerce.ExpectedSchema`.
+  """
+  # No `@impl`, so this compiles against a core that lacks the callback.
+  def expected_schema, do: PhoenixKitEcommerce.ExpectedSchema
+
+  @doc """
+  The places in this module's tables that point at a stored file; see
+  `PhoenixKitEcommerce.FileReferences`.
+  """
+  # No `@impl`: the callback exists from the first core release after 2.64.1.
+  # Without it this module still compiles against an older core, where core's
+  # own list for these tables stays in force.
+  def file_references, do: PhoenixKitEcommerce.FileReferences.pairs()
+
   # The public search index: reindex and rebuild jobs run on their own small
   # queue, so a nightly rebuild cannot hold up imports or images.
   # `mix phoenix_kit.update` adds the queue to a host's Oban config; it never

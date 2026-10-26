@@ -474,9 +474,19 @@ chain_check_exclude =
     do: [],
     else: [:requires_module_chain_check]
 
+# The file-references test compares against core's own list, which the first
+# core release after 2.64.1 exposes as `Storage.builtin_file_references/0`;
+# against an older core it is excluded.
+file_refs_exclude =
+  if Code.ensure_loaded?(PhoenixKit.Modules.Storage) and
+       function_exported?(PhoenixKit.Modules.Storage, :builtin_file_references, 0),
+     do: [],
+     else: [:requires_core_file_references]
+
 ExUnit.start(
   exclude:
     chain_check_exclude ++
+      file_refs_exclude ++
       i18n_exclude ++
       integration_exclude ++
       transliteration_exclude ++
@@ -490,3 +500,11 @@ ExUnit.start(
       canonical_urls_exclude ++
       trigram_exclude ++ analytics_exclude ++ mcp_exclude ++ replay_exclude
 )
+
+# The manifest test builds the module's tables with `ModuleChainCheck.build_alone/4`
+# and hands the manifest to repair (`PhoenixKit.Module.expected_schema/0`); both
+# arrive in the first core release after 2.64.1.
+unless Code.ensure_loaded?(PhoenixKit.TestSupport.ModuleChainCheck) and
+         function_exported?(PhoenixKit.TestSupport.ModuleChainCheck, :build_alone, 4) do
+  ExUnit.configure(exclude: [:requires_core_expected_schema | ExUnit.configuration()[:exclude]])
+end
