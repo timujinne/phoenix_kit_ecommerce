@@ -11,6 +11,7 @@ defmodule PhoenixKitEcommerce.Web.AuthzTest do
   use PhoenixKitEcommerce.LiveCase, async: false
 
   alias PhoenixKitEcommerce, as: Shop
+  alias PhoenixKitEcommerce.Test.Repo, as: TestRepo
   alias PhoenixKitEcommerce.Web.Authz
 
   defp scope_with(permissions) do
@@ -59,13 +60,20 @@ defmodule PhoenixKitEcommerce.Web.AuthzTest do
     end
   end
 
+  # The pages refuse a scope without their sub-key at mount
+  # (`sub_key_pages_test.exs`), so a denied EVENT is reached the way it
+  # happens for real: the page opens with the key, then the role loses it
+  # and core swaps the narrower scope into the open page.
+  defp mount_then_narrow(conn, path, permissions) do
+    {:ok, view, _html} = live(put_test_scope(conn, fake_scope()), path)
+    swap_scope(view, scope_with(permissions))
+  end
+
   describe "denied mutations do not happen" do
     @tag :integration
     test "a scope without manage_catalog cannot delete a product", %{conn: conn} do
       product = product_fixture()
-      conn = put_test_scope(conn, scope_with(["shop"]))
-
-      {:ok, view, _html} = live(conn, "/en/admin/shop/products")
+      view = mount_then_narrow(conn, "/en/admin/shop/products", ["shop"])
 
       html =
         view
@@ -79,9 +87,7 @@ defmodule PhoenixKitEcommerce.Web.AuthzTest do
     @tag :integration
     test "a scope without manage_catalog cannot delete a category", %{conn: conn} do
       category = category_fixture()
-      conn = put_test_scope(conn, scope_with(["shop"]))
-
-      {:ok, view, _html} = live(conn, "/en/admin/shop/categories")
+      view = mount_then_narrow(conn, "/en/admin/shop/categories", ["shop"])
 
       view |> render_hook("delete", %{"uuid" => category.uuid})
 
@@ -92,9 +98,8 @@ defmodule PhoenixKitEcommerce.Web.AuthzTest do
     test "manage_catalog does not unlock the settings page's mutations", %{conn: conn} do
       PhoenixKit.Settings.update_setting("shop_allow_raw_html_descriptions", "false")
 
-      conn = put_test_scope(conn, scope_with(["shop", "shop.manage_catalog"]))
-
-      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+      view =
+        mount_then_narrow(conn, "/en/admin/shop/settings", ["shop", "shop.manage_catalog"])
 
       view |> render_hook("toggle_allow_raw_html", %{})
 
@@ -126,7 +131,7 @@ defmodule PhoenixKitEcommerce.Web.AuthzTest do
     test "manage_catalog does not unlock turning stock tracking on", %{conn: conn} do
       conn = put_test_scope(conn, scope_with(["shop", "shop.manage_catalog"]))
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+      {:ok, view, _html} = live_narrowed(conn, "/en/admin/shop/settings")
 
       html = render_hook(view, "toggle_shop_stock_tracking", %{})
 
@@ -202,6 +207,27 @@ defmodule PhoenixKitEcommerce.Web.AuthzTest do
 
       assert {:ok, _view, html} = live(conn, "/en/admin/shop/carts")
       assert html =~ "Carts" or html =~ "carts"
+    end
+  end
+
+  describe "the product form's AI-translate modal" do
+    # `AITranslate.Embed` handles these events in a lifecycle hook that checks
+    # no permission; `Authz`'s gate runs first and re-checks the live scope.
+    @tag :integration
+    test "a crafted ai_translate_lang after manage_catalog is revoked is refused", %{conn: conn} do
+      product = product_fixture()
+      jobs = fn -> TestRepo.aggregate(Oban.Job, :count) end
+      before = jobs.()
+
+      view = mount_then_narrow(conn, "/en/admin/shop/products/#{product.uuid}/edit", ["shop"])
+
+      for event <- ~w(ai_toggle_modal ai_generate_prompt) do
+        assert render_click(view, event, %{}) =~ "permission"
+      end
+
+      html = render_click(view, "ai_translate_lang", %{"lang" => "*"})
+      assert html =~ "permission"
+      assert jobs.() == before
     end
   end
 end

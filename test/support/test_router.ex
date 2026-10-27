@@ -133,6 +133,9 @@ defmodule PhoenixKitEcommerce.Test.Router do
 
         # Translations
         live("/translations", Translations, :index, as: :shop_translations)
+
+        # Test shop (diagnostics)
+        live("/test", TestShop, :index, as: :shop_test)
       end
 
       scope "/admin/shop" do
@@ -178,6 +181,7 @@ defmodule PhoenixKitEcommerce.Test.Router do
 
         # Translations
         live("/translations", Translations, :index, as: :shop_translations_prefixless)
+        live("/test", TestShop, :index, as: :shop_test_prefixless)
       end
     end
   end

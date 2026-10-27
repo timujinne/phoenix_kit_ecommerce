@@ -13,12 +13,19 @@ defmodule PhoenixKitEcommerce.Web.ImportShow do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitEcommerce, as: Shop
   alias PhoenixKitEcommerce.Translations
+  alias PhoenixKitEcommerce.Web.Authz
   alias PhoenixKitEcommerce.Web.Helpers
   alias PhoenixKitEcommerce.Web.StatusLabels
   import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
   @impl true
-  def mount(%{"uuid" => uuid}, _session, socket) do
+  # The page needs `shop.run_imports`, not just the base key: core's tab mapping
+  # refuses it too where the page has a tab, but the check does not rely on it.
+  def mount(params, session, socket) do
+    Authz.authorize_mount(socket, :run_imports, fn -> do_mount(params, session, socket) end)
+  end
+
+  defp do_mount(%{"uuid" => uuid}, _session, socket) do
     case Shop.get_import_log(uuid, preload: [:user]) do
       nil ->
         {:ok,

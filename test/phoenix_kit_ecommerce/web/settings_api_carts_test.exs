@@ -179,7 +179,7 @@ defmodule PhoenixKitEcommerce.Web.SettingsApiCartsTest do
     end
 
     test "saving is denied without shop.manage_settings", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+      {:ok, view, _html} = live_narrowed(conn, "/en/admin/shop/settings")
 
       html = render_submit(view, "save_api_cart_settings", form(%{"idle_days" => "30"}))
 

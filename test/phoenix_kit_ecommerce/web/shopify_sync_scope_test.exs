@@ -151,7 +151,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncScopeTest do
     test "denied without shop.run_imports — the scope is left untouched", %{conn: conn} do
       connect_shopify()
       conn = put_test_scope(conn, fake_scope(permissions: ["shop"]))
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=settings")
+      {:ok, view, _html} = live_narrowed(conn, "/en/admin/shop/shopify-sync?tab=settings")
 
       html =
         view

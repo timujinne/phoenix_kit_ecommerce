@@ -1029,6 +1029,13 @@ defmodule PhoenixKitEcommerce do
     ]
   end
 
+  # Every tab gated on a sub-permission names its `live_view:`, so core maps
+  # the page to that key and refuses a base-only scope at mount (without it
+  # core resolves the view through the namespace, to the base `"shop"` key).
+  # Core also generates these pages' routes from the tabs, which is why
+  # `Web.Routes.admin_routes/0` no longer declares them. Each page checks its
+  # key again itself (`Web.Authz.authorize_mount/3`), as do the pages with no
+  # tab.
   @impl PhoenixKit.Module
   def admin_tabs do
     [
@@ -1066,6 +1073,7 @@ defmodule PhoenixKitEcommerce do
         priority: 532,
         level: :admin,
         permission: "shop.manage_catalog",
+        live_view: {PhoenixKitEcommerce.Web.Products, :index},
         parent: :admin_shop,
         gettext_backend: PhoenixKitEcommerce.Gettext
       ),
@@ -1077,6 +1085,7 @@ defmodule PhoenixKitEcommerce do
         priority: 533,
         level: :admin,
         permission: "shop.manage_catalog",
+        live_view: {PhoenixKitEcommerce.Web.Categories, :index},
         parent: :admin_shop,
         gettext_backend: PhoenixKitEcommerce.Gettext
       ),
@@ -1088,6 +1097,7 @@ defmodule PhoenixKitEcommerce do
         priority: 534,
         level: :admin,
         permission: "shop.manage_settings",
+        live_view: {PhoenixKitEcommerce.Web.ShippingMethods, :index},
         parent: :admin_shop,
         gettext_backend: PhoenixKitEcommerce.Gettext
       ),
@@ -1099,6 +1109,7 @@ defmodule PhoenixKitEcommerce do
         priority: 535,
         level: :admin,
         permission: "shop.manage_carts",
+        live_view: {PhoenixKitEcommerce.Web.Carts, :index},
         parent: :admin_shop,
         gettext_backend: PhoenixKitEcommerce.Gettext
       ),
@@ -1110,6 +1121,7 @@ defmodule PhoenixKitEcommerce do
         priority: 536,
         level: :admin,
         permission: "shop.run_imports",
+        live_view: {PhoenixKitEcommerce.Web.Imports, :index},
         parent: :admin_shop,
         gettext_backend: PhoenixKitEcommerce.Gettext
       ),
@@ -1121,6 +1133,7 @@ defmodule PhoenixKitEcommerce do
         priority: 537,
         level: :admin,
         permission: "shop.run_imports",
+        live_view: {PhoenixKitEcommerce.Web.ShopifySync, :index},
         parent: :admin_shop,
         # Design §4.7: `shop_shopify_enabled` gates the entry's mere
         # existence, the same shape as `admin_shop_translations` below —
@@ -1138,6 +1151,7 @@ defmodule PhoenixKitEcommerce do
         priority: 538,
         level: :admin,
         permission: "shop.manage_catalog",
+        live_view: {PhoenixKitEcommerce.Web.Translations, :index},
         parent: :admin_shop,
         # Design §4.6: `shop_translations_enabled` gates the page's mere
         # existence, not just its content — a hidden menu entry rather
@@ -1162,6 +1176,7 @@ defmodule PhoenixKitEcommerce do
         level: :admin,
         parent: :admin_settings,
         permission: "shop.manage_settings",
+        live_view: {PhoenixKitEcommerce.Web.Settings, :index},
         gettext_backend: PhoenixKitEcommerce.Gettext
       )
     ]
@@ -1211,16 +1226,14 @@ defmodule PhoenixKitEcommerce do
   The manifest of this module's tables, for `mix phoenix_kit.repair` and
   `mix phoenix_kit.doctor`; see `PhoenixKitEcommerce.ExpectedSchema`.
   """
-  # No `@impl`, so this compiles against a core that lacks the callback.
+  @impl PhoenixKit.Module
   def expected_schema, do: PhoenixKitEcommerce.ExpectedSchema
 
   @doc """
   The places in this module's tables that point at a stored file; see
   `PhoenixKitEcommerce.FileReferences`.
   """
-  # No `@impl`: the callback exists from the first core release after 2.64.1.
-  # Without it this module still compiles against an older core, where core's
-  # own list for these tables stays in force.
+  @impl PhoenixKit.Module
   def file_references, do: PhoenixKitEcommerce.FileReferences.pairs()
 
   # The public search index: reindex and rebuild jobs run on their own small

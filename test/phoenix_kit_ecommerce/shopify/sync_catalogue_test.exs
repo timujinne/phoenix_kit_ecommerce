@@ -567,7 +567,8 @@ defmodule PhoenixKitEcommerce.Shopify.SyncCatalogueTest do
 
   describe "imports LiveView" do
     test "shows the catalogue-source notice and hides the CSV upload wizard", %{conn: conn} do
-      {:ok, view, html} = live(conn, "/en/admin/shop/imports")
+      # The page needs shop.run_imports; `fake_scope/0` holds every shop key.
+      {:ok, view, html} = live(put_test_scope(conn, fake_scope()), "/en/admin/shop/imports")
 
       assert html =~ "CSV import is disabled"
       assert html =~ "now live in the Catalogues module"

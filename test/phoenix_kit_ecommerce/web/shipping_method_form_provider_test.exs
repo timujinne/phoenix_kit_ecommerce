@@ -591,8 +591,12 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
     end
 
     test "without manage_settings no lookup reaches the carrier", %{conn: conn, method: method} do
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+      # The page itself needs manage_settings now, so it is opened with it
+      # and the grant is lost afterwards; what the opening asked the carrier
+      # is not this test's question.
+      {:ok, view, _html} = live_narrowed(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
       render_async(view)
+      flush_stub_calls()
 
       refute has_element?(view, "#shipping-services-loading")
       assert has_element?(view, "#shipping-service-courier[checked]")
@@ -605,8 +609,16 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethodFormProviderTest do
       assert has_element?(view, "#shipping-locality-selected-sender_city", "Lviv")
     end
 
+    defp flush_stub_calls do
+      receive do
+        {:stub_called, _, _} -> flush_stub_calls()
+      after
+        0 -> :ok
+      end
+    end
+
     test "and saving changes nothing", %{conn: conn, method: method} do
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
+      {:ok, view, _html} = live_narrowed(conn, "/en/admin/shop/shipping/#{method.uuid}/edit")
 
       view
       |> form(@form, %{"shipping_method" => %{"name" => "Renamed"}})

@@ -117,7 +117,7 @@ defmodule PhoenixKitEcommerce.Web.SettingsApiTest do
       conn: conn
     } do
       scope = fake_scope(permissions: ["shop", "shop.manage_catalog", "api"])
-      {:ok, view, _html} = live(put_test_scope(conn, scope), @path)
+      {:ok, view, _html} = live_narrowed(put_test_scope(conn, scope), @path)
 
       render_hook(view, "save_api_confirm_price_change_pct", %{"pct" => "45"})
 

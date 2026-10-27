@@ -15,7 +15,13 @@ defmodule PhoenixKitEcommerce.Web.ImportConfigs do
   alias PhoenixKitEcommerce.Web.Helpers
 
   @impl true
-  def mount(_params, _session, socket) do
+  # The page needs `shop.run_imports`, not just the base key: core's tab mapping
+  # refuses it too where the page has a tab, but the check does not rely on it.
+  def mount(params, session, socket) do
+    Authz.authorize_mount(socket, :run_imports, fn -> do_mount(params, session, socket) end)
+  end
+
+  defp do_mount(_params, _session, socket) do
     # Seed only on the WebSocket mount, not on the dead render.
     #
     # `mount/3` runs TWICE per page load — once for the HTTP render, once

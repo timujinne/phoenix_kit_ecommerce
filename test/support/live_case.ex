@@ -124,6 +124,44 @@ defmodule PhoenixKitEcommerce.LiveCase do
   end
 
   @doc """
+  `live/2` for a test that means to show a capability being refused INSIDE
+  a page: the admin pages refuse a scope without their sub-key at mount, so
+  the page is mounted with the conn's scope widened to every shop key, and
+  the conn's own (narrower) scope is then swapped into the open page — what
+  core does when a role loses a grant mid-session.
+  """
+  defmacro live_narrowed(conn, path) do
+    quote do
+      conn = unquote(conn)
+      narrowed = Plug.Conn.get_session(conn, "phoenix_kit_test_scope")
+
+      widened = %{
+        narrowed
+        | cached_permissions:
+            MapSet.union(
+              narrowed.cached_permissions,
+              MapSet.new(PhoenixKitEcommerce.LiveCase.shop_permissions())
+            )
+      }
+
+      {:ok, view, html} =
+        live(PhoenixKitEcommerce.LiveCase.put_test_scope(conn, widened), unquote(path))
+
+      PhoenixKitEcommerce.LiveCase.swap_scope(view, narrowed)
+      {:ok, view, html}
+    end
+  end
+
+  @doc "Puts `scope` into an open page, as core's live scope refresh does."
+  def swap_scope(view, scope) do
+    :sys.replace_state(view.pid, fn %{socket: socket} = state ->
+      %{state | socket: Phoenix.Component.assign(socket, :phoenix_kit_current_scope, scope)}
+    end)
+
+    view
+  end
+
+  @doc """
   Plugs a fake scope into the test conn's session so the
   `:assign_scope` `on_mount` hook can put it on socket assigns at
   mount time. Pair with `fake_scope/1`.

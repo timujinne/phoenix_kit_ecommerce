@@ -148,9 +148,13 @@ Repo-local aliases:
   which emits quoted `live` declarations: `public_live_routes/0` and
   `public_live_locale_routes/0` for the storefront (spliced into core's
   unified `:phoenix_kit_public` live_session), `admin_routes/0` and
-  `admin_locale_routes/0` for the admin pages; `generate/1` emits the one
-  controller route pair, the checkout claim page. Admin tabs supply the
-  navigation; never hand-register these routes in a host router.
+  `admin_locale_routes/0` for the admin pages that have no tab (forms,
+  detail pages, settings sub-pages, the dashboard); `generate/1` emits the
+  one controller route pair, the checkout claim page. Every page with a tab
+  gets its route from the tab's `live_view:` instead, and must not be
+  declared in `admin_routes/0` as well (two routes at one path;
+  `sub_key_pages_test.exs` pins it). Never hand-register these routes in a
+  host router.
 - **LiveView macro** is this module's own: `use PhoenixKitEcommerce.Web,
   :live_view` (and `:live_component`), defined in `web/shop_web.ex`. It wraps
   `use Phoenix.LiveView`, injects `PhoenixKitEcommerce.Gettext` as the Gettext
@@ -275,10 +279,17 @@ Repo-local aliases:
   `gen_random_uuid()`), and every table-backed schema declares
   `use PhoenixKit.SchemaPrefix` so its queries target the schema core's
   migrations installed into. A conformance test enforces the second.
-- **Authorization pattern.** Core's route gate admits the base `"shop"` key;
-  every mutating admin event handler re-checks its specific capability
-  through `Web.Authz` (fail-closed on a missing scope), and pages showing
-  customer data check on mount. The public `handle_event/3` clause matches the
+- **Authorization pattern.** Every admin page but the dashboard needs a
+  sub-key, checked twice: core's mount gate through the tab's `permission:`
+  + `live_view:` (tabbed pages only — a tab without `live_view:` maps the page
+  to nothing and core falls back to the base key), and the page's own
+  `Authz.authorize_mount/3` in `mount/3` (every page, tab or not). Every
+  mutating admin event handler re-checks its capability through `Web.Authz`
+  against the socket's current scope (fail-closed on a missing scope).
+  The AI-translate modal's events are handled by `phoenix_kit_ai`'s
+  `AITranslate.Embed` hook, which checks no permission, so a form using it
+  declares `on_mount({Web.Authz, {:gate_ai_translate, capability}})` BEFORE
+  `use ...AITranslate.Embed` (hooks run in attach order). The public `handle_event/3` clause matches the
   event name and delegates through `Authz.authorize/3` to a private
   `gated_event/3` clause holding the original body — keeping the body in its
   own clause is what stops the wrapper adding a nesting level to 47 handlers.
@@ -749,23 +760,27 @@ once per build and read the excluded count each time.
 
 ### Permissions
 
-The `"shop"` key is admin-area READ access. Five sub-permissions carry the
-capabilities (core enforces sub-implies-base):
+The `"shop"` key opens the admin area's dashboard and nothing else. Five
+sub-permissions carry the pages and capabilities (core enforces
+sub-implies-base); each page is refused at mount without its key:
 
 | Key | Covers |
 |-----|--------|
-| `shop.manage_catalog` | products + categories (list, form and detail pages); viewing the translations page |
+| `shop.manage_catalog` | products + categories (list, form and detail pages); viewing the translations page; the test shop page |
 | `shop.manage_orders` | every order tool of the API, reads included: orders carry the buyers' data and the totals |
 | `shop.manage_carts` | the carts admin — **read included**, the rows carry customer contact details |
-| `shop.manage_settings` | settings, security policy, product options, shipping methods; every translations-page action (translate, stamp, reset, stop, run sweep, sweep settings) |
-| `shop.run_imports` | CSV imports, import configurations, Shopify sync |
+| `shop.manage_settings` | the settings page (security policy and the rest), product options, shipping methods (list and form); every translations-page action (translate, stamp, reset, stop, run sweep, sweep settings) |
+| `shop.run_imports` | CSV imports and their detail pages, import configurations, Shopify sync |
 
 ⚠️ Core auto-grants a newly discovered sub-permission to the Admin system
-role only. A CUSTOM role holding base `"shop"` keeps its admin-area reads but
-loses every mutation until an operator re-grants — secure by default and
-deliberate, but a breaking authorization change on upgrade. Reading orders
-through the API is not among the kept reads: it needs `shop.manage_orders`,
-which no custom role has until an operator grants it.
+role only. A CUSTOM role holding base `"shop"` keeps the dashboard but loses
+every other page until an operator grants the sub-keys — secure by default
+and deliberate, but a breaking authorization change on upgrade. Reading
+orders through the API needs `shop.manage_orders` the same way.
+
+Tests that show a capability refused inside a page open it with the key and
+then take it away (`LiveCase.live_narrowed/2`, `swap_scope/2`): mounting with
+the narrow scope is now refused before any event can be sent.
 
 ### Notifications and the audit trail
 

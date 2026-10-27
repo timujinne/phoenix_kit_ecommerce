@@ -14,7 +14,13 @@ defmodule PhoenixKitEcommerce.Web.ShippingMethods do
   import PhoenixKitEcommerce.Web.Helpers, only: [format_price: 2]
 
   @impl true
-  def mount(_params, _session, socket) do
+  # The page needs `shop.manage_settings`, not just the base key: core's tab mapping
+  # refuses it too where the page has a tab, but the check does not rely on it.
+  def mount(params, session, socket) do
+    Authz.authorize_mount(socket, :manage_settings, fn -> do_mount(params, session, socket) end)
+  end
+
+  defp do_mount(_params, _session, socket) do
     methods = Shop.list_shipping_methods()
     # A method's price/thresholds are always BASE currency (§4.5), same as
     # a product's own price - not the visitor's display currency.

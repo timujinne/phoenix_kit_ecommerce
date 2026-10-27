@@ -203,7 +203,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncMediaPanelTest do
 
     test "denied without shop.run_imports — no flash success, nothing enqueued", %{conn: conn} do
       conn = put_test_scope(conn, fake_scope(permissions: ["shop"]))
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync?tab=media")
+      {:ok, view, _html} = live_narrowed(conn, "/en/admin/shop/shopify-sync?tab=media")
 
       html = render_click(element(view, "#sync-media-variants"))
 

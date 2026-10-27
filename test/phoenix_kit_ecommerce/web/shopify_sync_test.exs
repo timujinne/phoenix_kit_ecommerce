@@ -249,7 +249,7 @@ defmodule PhoenixKitEcommerce.Web.ShopifySyncTest do
     end
 
     test "check is denied without shop.run_imports", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/shop/shopify-sync")
+      {:ok, view, _html} = live_narrowed(conn, "/en/admin/shop/shopify-sync")
 
       html = render_click(element(view, "#check-shopify-changes"))
 

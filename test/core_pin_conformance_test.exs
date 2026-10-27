@@ -34,7 +34,7 @@ defmodule PhoenixKitEcommerce.CorePinConformanceTest do
   # 2.42.0 is below the ImageMagick helpers; 2.37.5 is the last release
   # without the toolkits; the older rejects are the earlier floors' own
   # boundaries, kept so a regression to any of them is named.
-  @must_admit ["2.43.0", "2.43.1", "2.52.1", "2.99.4"]
+  @must_admit ["2.65.0", "2.65.1", "2.99.4", "3.0.0", "3.9.9"]
   @must_reject [
     "2.38.0",
     "2.42.0",
@@ -45,10 +45,11 @@ defmodule PhoenixKitEcommerce.CorePinConformanceTest do
     "2.16.0",
     "2.22.15",
     "2.37.5",
-    "3.0.0"
+    "2.64.9",
+    "4.0.0"
   ]
 
-  test "the :phoenix_kit requirement admits every core >= 2.43.0 minor and nothing else" do
+  test "the :phoenix_kit requirement admits every core >= 2.65.0 minor and nothing else" do
     requirement = core_requirement()
 
     assert match?({:ok, _parsed}, Version.parse_requirement(requirement)),

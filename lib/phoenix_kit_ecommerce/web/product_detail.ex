@@ -21,7 +21,13 @@ defmodule PhoenixKitEcommerce.Web.ProductDetail do
   alias PhoenixKitEcommerce.Web.StatusLabels
 
   @impl true
-  def mount(%{"id" => id}, _session, socket) do
+  # The page needs `shop.manage_catalog`, not just the base key: core's tab mapping
+  # refuses it too where the page has a tab, but the check does not rely on it.
+  def mount(params, session, socket) do
+    Authz.authorize_mount(socket, :manage_catalog, fn -> do_mount(params, session, socket) end)
+  end
+
+  defp do_mount(%{"id" => id}, _session, socket) do
     product = Shop.get_product!(id, preload: [:category])
     # Admin view: the product's own stored price is a BASE-currency amount,
     # so the admin must always see it in base, never the visitor's display

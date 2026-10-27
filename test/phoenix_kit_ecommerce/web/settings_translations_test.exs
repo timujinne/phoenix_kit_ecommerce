@@ -159,7 +159,7 @@ defmodule PhoenixKitEcommerce.Web.SettingsTranslationsTest do
     end
 
     test "toggling is denied without shop.manage_settings", %{conn: conn} do
-      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+      {:ok, view, _html} = live_narrowed(conn, "/en/admin/shop/settings")
 
       html = render_click(element(view, "#toggle-shop-translations-enabled"))
 

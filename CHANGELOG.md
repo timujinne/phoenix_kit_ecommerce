@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Core pin widened to `>= 2.65.0 and < 4.0.0`:** works with core 3.x (core 3.0 stops creating the module tables; this module's own chain builds its tables). The floor is the first core with the `file_references/0` and `expected_schema/0` callbacks, which now carry `@impl PhoenixKit.Module`.
+
 - **Migration V6**: adds `phoenix_kit_shop_carts.base_currency` / `.exchange_rate`
   and `phoenix_kit_shop_cart_items.base_unit_price` (`ADD COLUMN IF NOT EXISTS`),
   the columns core's V186 added, so the module's chain builds every shop table

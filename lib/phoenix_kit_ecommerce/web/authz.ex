@@ -94,6 +94,34 @@ defmodule PhoenixKitEcommerce.Web.Authz do
     end
   end
 
+  # The AI-translate modal's events. `PhoenixKitAI.Components.AITranslate.Embed`
+  # handles them in a `:handle_event` lifecycle hook with no authorization
+  # callback, and `ai_translate_lang` enqueues translation jobs.
+  @ai_translate_events ~w(ai_translate_lang ai_toggle_modal ai_select_endpoint
+                          ai_select_prompt ai_select_scope ai_generate_prompt)
+
+  @doc """
+  `on_mount({Authz, {:gate_ai_translate, capability}})` — halts the
+  AI-translate modal's events with a denial when the socket's CURRENT scope
+  lacks `capability`.
+
+  The Embed handles those events before the LiveView's own `handle_event/3`
+  can check anything, so declare this BEFORE `use
+  PhoenixKitAI.Components.AITranslate.Embed`: lifecycle hooks run in the
+  order they attach. Checked per event, so a grant revoked while the page
+  is open (core swaps the new scope in) stops the next event.
+  """
+  def on_mount({:gate_ai_translate, capability}, _params, _session, socket) do
+    {:cont,
+     Phoenix.LiveView.attach_hook(socket, :shop_ai_translate_gate, :handle_event, fn
+       event, _params, socket when event in @ai_translate_events ->
+         if can?(socket, capability), do: {:cont, socket}, else: {:halt, deny(socket)}
+
+       _event, _params, socket ->
+         {:cont, socket}
+     end)}
+  end
+
   @doc "Adds the denial flash without navigating."
   def deny(socket) do
     Phoenix.LiveView.put_flash(socket, :error, denial_message())

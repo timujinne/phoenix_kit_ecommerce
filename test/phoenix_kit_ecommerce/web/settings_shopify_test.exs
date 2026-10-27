@@ -142,7 +142,7 @@ defmodule PhoenixKitEcommerce.Web.SettingsShopifyTest do
     test "toggling is denied without shop.manage_settings", %{conn: conn} do
       enable_shopify!()
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+      {:ok, view, _html} = live_narrowed(conn, "/en/admin/shop/settings")
 
       html = render_click(element(view, "#toggle-shop-shopify-enabled"))
 

@@ -257,7 +257,7 @@ defmodule PhoenixKitEcommerce.Web.ShippingParcelFieldsTest do
           fake_scope(permissions: ["shop", "shop.manage_catalog"], roles: ["Employee"])
         )
 
-      {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+      {:ok, view, _html} = live_narrowed(conn, "/en/admin/shop/settings")
 
       view
       |> form("#shipping-parcel-defaults-form", %{
