@@ -25,7 +25,9 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   Once per order: a job is unique per order and email, and a sent email is marked
   in `metadata["_shop_emails"]`, which outlives the job row and changes neither
   the order's revision nor `updated_at`. The mark is written after the send, so
-  a crash between the two can repeat an email; it cannot lose one.
+  a crash between the two can repeat an email; it cannot lose one. The copy of a
+  buyer's email has a mark of its own (`"buyer_placed_copy"`), so a copy that
+  fails is retried without mailing the buyer again.
 
   ## Who
 
@@ -36,8 +38,14 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   opens only in the session that placed the order, so a guest's email carries the
   link only under `:link`.
 
-  The shop's addresses are `shop_recipients/0`, in the site's primary language;
-  with none, nothing is sent. Per-user notification preferences play no part.
+  Each buyer email that goes is also sent, as it is, to `copy_recipients/0`: the
+  same template, language and link, with replies going to the buyer. It is a
+  message of its own rather than a `Bcc:` (core's template sender takes none),
+  and it goes only when the buyer's does.
+
+  The shop's addresses are `shop_recipients/0`, in `shop_email_language/0` (the
+  site's primary language unless one is chosen); with none, nothing is sent.
+  Per-user notification preferences play no part.
   """
 
   import Ecto.Query, only: [from: 2]
@@ -67,6 +75,8 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   @sent_key "_shop_emails"
   @buyer_setting "shop_order_emails_to_buyer"
   @recipients_setting "shop_order_email_recipients"
+  @copy_setting "shop_order_email_copy_recipients"
+  @language_setting "shop_order_email_language"
   @address ~r/\A[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+\z/
 
   @doc """
@@ -99,49 +109,67 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   end
 
   @doc """
-  Sends one email of `order` (`"buyer_placed"`, `"buyer_paid"` or `"shop"`), unless
-  it was sent already or has nobody to go to. Returns `{:error, reason}` for the
-  job to retry; an email that went is marked.
+  Sends one email of `order` (`"buyer_placed"`, `"buyer_paid"` or `"shop"`), and
+  a buyer email's copy, unless it was sent already or has nobody to go to.
+  Returns `{:error, reason}` for the job to retry; an email that went is marked.
   """
   @spec deliver(String.t(), map()) :: :ok | {:error, term()}
-  def deliver(email, order) when is_map_key(@emails, email) do
-    if sent?(order, email), do: :ok, else: send_email(email, order)
-  end
-
-  defp sent?(order, email), do: get_in(order.metadata, [@sent_key, email]) == true
-
-  defp send_email("shop", order) do
+  def deliver("shop", order) do
     case shop_recipients() do
       [] -> :ok
-      recipients -> send_to_shop(order, recipients)
+      recipients -> once(order, "shop", fn -> send_to_shop(order, recipients) end)
     end
   end
 
-  defp send_email(email, order) do
+  def deliver(email, order) when is_map_key(@emails, email) do
     case buyer_emails_enabled?() && buyer_address(order) do
-      address when is_binary(address) -> send_to_buyer(email, order, address)
+      address when is_binary(address) -> deliver_to_buyer(email, order, address)
       _off_or_nobody -> :ok
     end
   end
 
-  defp send_to_buyer(email, order, address) do
+  defp deliver_to_buyer(email, order, address) do
     language = Notifications.buyer_language(order.metadata["checkout_language"])
+    url = order_url(order, language)
 
-    deliver_template(email, order, address, language, order_url(order, language),
-      user_uuid: order.user_uuid
-    )
+    with :ok <- once(order, email, fn -> send_to_buyer(email, order, address, language, url) end) do
+      send_copy(email, order, address, language, url)
+    end
+  end
+
+  defp once(order, mark, send) do
+    if get_in(order.metadata, [@sent_key, mark]) == true, do: :ok, else: send.()
+  end
+
+  defp send_to_buyer(email, order, address, language, url) do
+    deliver_template(email, email, order, address, language, url, user_uuid: order.user_uuid)
+  end
+
+  # The buyer's email as the buyer got it, for the shop to read: replies go to
+  # the buyer, and it is tracked against no account.
+  defp send_copy(email, order, buyer, language, url) do
+    case copy_recipients() do
+      [] ->
+        :ok
+
+      recipients ->
+        once(order, email <> "_copy", fn ->
+          deliver_template(email, email <> "_copy", order, recipients, language, url,
+            reply_to: buyer
+          )
+        end)
+    end
   end
 
   defp send_to_shop(order, recipients) do
-    language = Translations.default_language()
     reply_to = get_in(order.billing_snapshot || %{}, ["email"])
 
-    deliver_template("shop", order, recipients, language, nil,
+    deliver_template("shop", "shop", order, recipients, shop_email_language(), nil,
       reply_to: if(is_binary(reply_to) and reply_to != "", do: reply_to)
     )
   end
 
-  defp deliver_template(email, order, to, language, order_url, opts) do
+  defp deliver_template(email, mark, order, to, language, order_url, opts) do
     template = Map.fetch!(@emails, email)
     locale = base_locale(language)
 
@@ -166,7 +194,7 @@ defmodule PhoenixKitEcommerce.OrderEmails do
       )
 
     case result do
-      {:ok, _delivered} -> mark_sent(order.uuid, email)
+      {:ok, _delivered} -> mark_sent(order.uuid, mark)
       {:error, reason} -> {:error, reason}
     end
   end
@@ -279,12 +307,83 @@ defmodule PhoenixKitEcommerce.OrderEmails do
     end
   end
 
-  defp store_recipients(addresses) do
+  @doc """
+  The addresses that get a copy of each email sent to a buyer. Read like
+  `shop_recipients/0`.
+  """
+  @spec copy_recipients() :: [String.t()]
+  def copy_recipients do
+    @copy_setting
+    |> Settings.get_setting_cached("")
+    |> split_addresses()
+    |> Enum.filter(&Regex.match?(@address, &1))
+  rescue
+    _ -> []
+  end
+
+  @doc "Stores the addresses for the copies, as `set_shop_recipients/1` does."
+  @spec set_copy_recipients(String.t()) ::
+          {:ok, [String.t()]}
+          | {:error, {:invalid_order_email_addresses, [String.t()]} | :update_failed}
+  def set_copy_recipients(text) when is_binary(text) do
+    addresses = text |> split_addresses() |> Enum.uniq()
+
+    case Enum.reject(addresses, &Regex.match?(@address, &1)) do
+      [] -> store_addresses(@copy_setting, addresses)
+      invalid -> {:error, {:invalid_order_email_addresses, invalid}}
+    end
+  end
+
+  defp store_recipients(addresses), do: store_addresses(@recipients_setting, addresses)
+
+  defp store_addresses(key, addresses) do
     value = Enum.join(addresses, ", ")
 
-    case Settings.update_setting_with_module(@recipients_setting, value, "shop") do
+    case Settings.update_setting_with_module(key, value, "shop") do
       {:ok, _} -> {:ok, addresses}
       _error -> {:error, :update_failed}
+    end
+  end
+
+  @doc """
+  The language of the shop's email: the one chosen for it while the site still
+  serves it, the site's primary language otherwise. A read error counts as
+  nothing chosen.
+  """
+  @spec shop_email_language() :: String.t()
+  def shop_email_language do
+    Notifications.buyer_language(chosen_shop_email_language())
+  end
+
+  @doc "The language chosen for the shop's email, `nil` for the site's primary language."
+  @spec chosen_shop_email_language() :: String.t() | nil
+  def chosen_shop_email_language do
+    case Settings.get_setting_cached(@language_setting, "") do
+      code when is_binary(code) and code != "" -> code
+      _none -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  @doc """
+  Chooses the language of the shop's email: one the site serves, or `""` for
+  the site's primary language.
+  """
+  @spec set_shop_email_language(String.t()) ::
+          {:ok, String.t() | nil} | {:error, :unsupported_language | :update_failed}
+  def set_shop_email_language(code) when is_binary(code) do
+    code = String.trim(code)
+
+    cond do
+      code != "" and code not in Translations.enabled_languages() ->
+        {:error, :unsupported_language}
+
+      match?({:ok, _}, Settings.update_setting_with_module(@language_setting, code, "shop")) ->
+        {:ok, if(code == "", do: nil, else: code)}
+
+      true ->
+        {:error, :update_failed}
     end
   end
 

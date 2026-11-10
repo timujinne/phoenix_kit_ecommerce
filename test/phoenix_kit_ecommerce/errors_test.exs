@@ -341,6 +341,11 @@ defmodule PhoenixKitEcommerce.ErrorsTest do
                "Not an email address: x, y"
     end
 
+    test "a language the site does not serve" do
+      assert Errors.message(:unsupported_language) ==
+               "This language is not enabled on the site."
+    end
+
     test "a detail that is not text is shown inspected, not raised on" do
       assert Errors.message({:option_type_invalid, %{"a" => 1}}) =~ ~s(%{"a" => 1})
     end

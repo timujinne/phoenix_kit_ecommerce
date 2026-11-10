@@ -4,6 +4,7 @@ defmodule PhoenixKitEcommerce.Web.SettingsOrderEmailsTest do
   use PhoenixKitEcommerce.LiveCase, async: false
 
   alias PhoenixKitEcommerce.OrderEmails
+  alias PhoenixKitEcommerce.SearchFixtures
 
   @form "#shop-order-email-recipients-form"
 
@@ -33,6 +34,37 @@ defmodule PhoenixKitEcommerce.Web.SettingsOrderEmailsTest do
              view,
              "#shop-order-email-recipients[value='a@example.com, b@example.com']"
            )
+  end
+
+  test "saves the addresses for the copies of the buyer's emails", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+
+    view
+    |> form("#shop-order-email-copy-recipients-form", addresses: "owner@example.com")
+    |> render_submit()
+
+    assert OrderEmails.copy_recipients() == ["owner@example.com"]
+    assert has_element?(view, "#shop-order-email-copy-recipients[value='owner@example.com']")
+  end
+
+  test "offers no language choice on a site with one language", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+
+    refute has_element?(view, "#shop-order-email-language-form")
+  end
+
+  test "chooses the language of the shop's email", %{conn: conn} do
+    SearchFixtures.enable_languages!(["en", "et", "ru"])
+    {:ok, view, _html} = live(conn, "/en/admin/shop/settings")
+
+    view |> form("#shop-order-email-language-form", language: "ru") |> render_change()
+
+    assert OrderEmails.shop_email_language() == "ru"
+    assert has_element?(view, "#shop-order-email-language option[value='ru'][selected]")
+
+    view |> form("#shop-order-email-language-form", language: "") |> render_change()
+
+    assert OrderEmails.chosen_shop_email_language() == nil
   end
 
   test "says which address is wrong and stores nothing", %{conn: conn} do

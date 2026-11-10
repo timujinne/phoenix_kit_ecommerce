@@ -8,6 +8,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   use PhoenixKitEcommerce.Web, :live_view
 
   alias PhoenixKit.Integrations.Providers, as: IntegrationProviders
+  alias PhoenixKit.Modules.Languages
   alias PhoenixKit.Settings
   alias PhoenixKit.Users.Auth
   alias PhoenixKit.Users.Auth.Scope
@@ -24,6 +25,7 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   alias PhoenixKitEcommerce.Policy
   alias PhoenixKitEcommerce.RelatedProducts
   alias PhoenixKitEcommerce.StockTracking
+  alias PhoenixKitEcommerce.Translations
   alias PhoenixKitEcommerce.TranslationSweepSettings
   alias PhoenixKitEcommerce.Vocabulary
   alias PhoenixKitEcommerce.Web.Authz
@@ -105,6 +107,10 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign(:notification_recipients, notification_recipients())
       |> assign(:order_emails_to_buyer, OrderEmails.buyer_emails_enabled?())
       |> assign(:order_email_recipients, Enum.join(OrderEmails.shop_recipients(), ", "))
+      |> assign(:order_email_copy_recipients, Enum.join(OrderEmails.copy_recipients(), ", "))
+      |> assign(:order_email_language, OrderEmails.chosen_shop_email_language() || "")
+      |> assign(:order_email_language_options, order_email_language_options())
+      |> assign(:default_language, Translations.default_language())
       |> assign(:recipient_candidates, load_recipient_candidates())
       |> assign(:shipping_skip_mode, to_string(Shop.shipping_skip_mode()))
       |> assign(:shipping_selection_position, to_string(Shop.shipping_selection_position()))
@@ -119,6 +125,21 @@ defmodule PhoenixKitEcommerce.Web.Settings do
       |> assign_api()
 
     {:ok, socket}
+  end
+
+  # The site's enabled languages by name; with one or none there is nothing
+  # to choose for the shop's email.
+  defp order_email_language_options do
+    if Translations.languages_enabled?() do
+      Enum.map(
+        Languages.get_enabled_languages(),
+        &{&1.name || &1.code, &1.code}
+      )
+    else
+      []
+    end
+  rescue
+    _ -> []
   end
 
   # Guarded the same way `Web.Translations` and `TranslationSweepWorker`
@@ -306,6 +327,20 @@ defmodule PhoenixKitEcommerce.Web.Settings do
   def handle_event("save_order_email_recipients", params, socket) do
     Authz.authorize(socket, :manage_settings, fn ->
       gated_event("save_order_email_recipients", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("save_order_email_copy_recipients", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("save_order_email_copy_recipients", params, socket)
+    end)
+  end
+
+  @impl true
+  def handle_event("save_order_email_language", params, socket) do
+    Authz.authorize(socket, :manage_settings, fn ->
+      gated_event("save_order_email_language", params, socket)
     end)
   end
 
@@ -689,6 +724,59 @@ defmodule PhoenixKitEcommerce.Web.Settings do
                 name="addresses"
                 id="shop-order-email-recipients"
                 value={@order_email_recipients}
+                class="input input-bordered w-full"
+              />
+              <button type="submit" phx-disable-with={gettext("Saving…")} class="btn btn-primary btn-sm mt-3">
+                {gettext("Save addresses")}
+              </button>
+            </form>
+
+            <form
+              :if={length(@order_email_language_options) > 1}
+              phx-change="save_order_email_language"
+              id="shop-order-email-language-form"
+              class="mt-4"
+            >
+              <h3 class="font-medium mb-1">{gettext("Language of the shop's email")}</h3>
+              <p class="text-xs text-base-content/60 mb-2">
+                {gettext(
+                  "The buyer's emails are in the language they checked out in. The shop's email is in this one."
+                )}
+              </p>
+              <select
+                name="language"
+                id="shop-order-email-language"
+                class="select select-bordered w-full max-w-xs"
+              >
+                <option value="" selected={@order_email_language == ""}>
+                  {gettext("Site's primary language (%{language})", language: @default_language)}
+                </option>
+                <option
+                  :for={{name, code} <- @order_email_language_options}
+                  value={code}
+                  selected={@order_email_language == code}
+                >
+                  {name}
+                </option>
+              </select>
+            </form>
+
+            <form
+              phx-submit="save_order_email_copy_recipients"
+              id="shop-order-email-copy-recipients-form"
+              class="mt-4"
+            >
+              <h3 class="font-medium mb-1">{gettext("Copies of the buyer's emails")}</h3>
+              <p class="text-xs text-base-content/60 mb-2">
+                {gettext(
+                  "Each email sent to a buyer is also sent here, exactly as the buyer got it. Separate addresses with commas; leave empty to send no copies."
+                )}
+              </p>
+              <input
+                type="text"
+                name="addresses"
+                id="shop-order-email-copy-recipients"
+                value={@order_email_copy_recipients}
                 class="input input-bordered w-full"
               />
               <button type="submit" phx-disable-with={gettext("Saving…")} class="btn btn-primary btn-sm mt-3">
@@ -1949,6 +2037,38 @@ defmodule PhoenixKitEcommerce.Web.Settings do
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, gettext("Failed to update notification setting"))}
+    end
+  end
+
+  defp gated_event("save_order_email_copy_recipients", params, socket) do
+    case OrderEmails.set_copy_recipients(Map.get(params, "addresses", "")) do
+      {:ok, addresses} ->
+        {:noreply,
+         socket
+         |> assign(:order_email_copy_recipients, Enum.join(addresses, ", "))
+         |> put_flash(:info, gettext("Notification recipients updated"))}
+
+      {:error, :update_failed} ->
+        {:noreply, put_flash(socket, :error, gettext("Failed to update recipients"))}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, Errors.message(reason))}
+    end
+  end
+
+  defp gated_event("save_order_email_language", params, socket) do
+    case OrderEmails.set_shop_email_language(to_string(Map.get(params, "language", ""))) do
+      {:ok, language} ->
+        {:noreply,
+         socket
+         |> assign(:order_email_language, language || "")
+         |> put_flash(:info, gettext("Notification setting updated"))}
+
+      {:error, :update_failed} ->
+        {:noreply, put_flash(socket, :error, gettext("Failed to update notification setting"))}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, Errors.message(reason))}
     end
   end
 

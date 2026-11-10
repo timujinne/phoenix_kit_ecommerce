@@ -713,7 +713,10 @@ preferences say:
 The buyer's are in the language of the checkout; turn them off under **Order
 emails** on the shop settings page. The shop's email adds the buyer's contacts and
 a link to the admin order, and goes to the addresses saved there; with none, it is
-not sent. Each email goes once per order, from a background job on the `default`
+not sent. It is in the site's primary language unless another enabled language is
+chosen for it there. Copy addresses saved on the same card get each buyer email
+too, exactly as the buyer got it (a second message with replies going to the
+buyer, not a `Bcc:`). Each email goes once per order, from a background job on the `default`
 queue, so a mail failure retries on its own and never reaches the checkout.
 
 The templates are overridable like any other (a database template, or files under

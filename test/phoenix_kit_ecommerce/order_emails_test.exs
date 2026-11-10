@@ -361,6 +361,29 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
       assert delivered("shop", order).subject == "New order #{order.order_number}"
     end
 
+    test "is in the language chosen for it", %{user: user} do
+      SearchFixtures.enable_languages!(["en", "de"])
+      mail_to_shop!()
+      {:ok, "de"} = OrderEmails.set_shop_email_language("de")
+
+      order = order(user)
+
+      assert delivered("shop", order).subject == "Neue Bestellung #{order.order_number}"
+    end
+
+    test "falls back to the site's language when the chosen one is no longer served",
+         %{user: user} do
+      SearchFixtures.enable_languages!(["en", "de"])
+      mail_to_shop!()
+      {:ok, "de"} = OrderEmails.set_shop_email_language("de")
+      SearchFixtures.enable_languages!(["en"])
+
+      order = order(user)
+
+      assert OrderEmails.shop_email_language() == "en"
+      assert delivered("shop", order).subject == "New order #{order.order_number}"
+    end
+
     test "goes nowhere without an address", %{user: user} do
       assert :ok = OrderEmails.deliver("shop", order(user))
 
@@ -376,6 +399,119 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
 
       assert :ok = OrderEmails.deliver("shop", Billing.get_order(order.uuid))
       refute_received {:email, _}
+    end
+  end
+
+  describe "the copies of the buyer's emails" do
+    defp copy_to!(addresses \\ "owner@example.com") do
+      {:ok, _} = OrderEmails.set_copy_recipients(addresses)
+    end
+
+    test "go to every copy address, as the buyer got it", %{user: user} do
+      SearchFixtures.enable_languages!(["en", "de"])
+      copy_to!("owner@example.com, sales@example.com")
+
+      order =
+        order(user, %{
+          "metadata" => %{"source" => "shop_checkout", "checkout_language" => "de"}
+        })
+
+      assert :ok = OrderEmails.deliver("buyer_placed", order)
+
+      assert_received {:email, buyer}
+      assert_received {:email, copy}
+
+      assert buyer.to == [{"", "jane@example.com"}]
+      assert copy.to == [{"", "owner@example.com"}, {"", "sales@example.com"}]
+      assert copy.reply_to == {"", "jane@example.com"}
+      assert copy.subject == buyer.subject
+      assert copy.subject == "Ihre Bestellung #{order.order_number}"
+      assert copy.text_body == buyer.text_body
+    end
+
+    test "come with the paid email too", %{user: user} do
+      copy_to!()
+
+      assert :ok = OrderEmails.deliver("buyer_paid", order(user))
+
+      assert_received {:email, %{to: [{"", "jane@example.com"}]}}
+
+      assert_received {:email,
+                       %{to: [{"", "owner@example.com"}], subject: "Payment received" <> _}}
+    end
+
+    test "are not sent for an email the buyer did not get", %{user: user} do
+      copy_to!()
+      {:ok, false} = OrderEmails.set_buyer_emails_enabled(false)
+
+      assert :ok = OrderEmails.deliver("buyer_placed", order(user))
+
+      refute_received {:email, _}
+    end
+
+    test "none without an address", %{user: user} do
+      assert OrderEmails.copy_recipients() == []
+
+      assert :ok = OrderEmails.deliver("buyer_placed", order(user))
+
+      assert_received {:email, %{to: [{"", "jane@example.com"}]}}
+      refute_received {:email, _}
+    end
+
+    test "are sent once, with a mark of their own", %{user: user} do
+      copy_to!()
+      order = order(user)
+
+      assert :ok = OrderEmails.deliver("buyer_placed", order)
+      assert_received {:email, _}
+      assert_received {:email, _}
+
+      assert Billing.get_order(order.uuid).metadata["_shop_emails"] ==
+               %{"buyer_placed" => true, "buyer_placed_copy" => true}
+
+      assert :ok = OrderEmails.deliver("buyer_placed", Billing.get_order(order.uuid))
+      refute_received {:email, _}
+    end
+
+    test "a copy still owed goes without mailing the buyer again", %{user: user} do
+      order = order(user)
+      delivered("buyer_placed", order)
+      copy_to!()
+
+      assert :ok = OrderEmails.deliver("buyer_placed", Billing.get_order(order.uuid))
+
+      assert_received {:email, %{to: [{"", "owner@example.com"}]}}
+      refute_received {:email, _}
+    end
+
+    test "their addresses are stored like the shop's" do
+      assert {:ok, ["a@example.com", "b@example.com"]} =
+               OrderEmails.set_copy_recipients("a@example.com;b@example.com")
+
+      assert OrderEmails.copy_recipients() == ["a@example.com", "b@example.com"]
+
+      assert {:error, {:invalid_order_email_addresses, ["nonsense"]}} =
+               OrderEmails.set_copy_recipients("nonsense")
+
+      assert {:ok, []} = OrderEmails.set_copy_recipients("")
+    end
+  end
+
+  describe "the language of the shop's email" do
+    test "is the site's until one is chosen" do
+      assert OrderEmails.chosen_shop_email_language() == nil
+      assert OrderEmails.shop_email_language() == "en"
+    end
+
+    test "can only be one the site serves" do
+      SearchFixtures.enable_languages!(["en", "ru"])
+
+      assert {:error, :unsupported_language} = OrderEmails.set_shop_email_language("de")
+      assert {:ok, "ru"} = OrderEmails.set_shop_email_language("ru")
+      assert OrderEmails.shop_email_language() == "ru"
+
+      assert {:ok, nil} = OrderEmails.set_shop_email_language("")
+      assert OrderEmails.chosen_shop_email_language() == nil
     end
   end
 

@@ -270,6 +270,9 @@ defmodule PhoenixKitEcommerce.Errors do
     gettext("Not an email address: %{addresses}", addresses: Enum.join(addresses, ", "))
   end
 
+  def message(:unsupported_language),
+    do: gettext("This language is not enabled on the site.")
+
   def message(:payment_unavailable),
     do: gettext("Online payment is not available right now. Please try again later.")
 

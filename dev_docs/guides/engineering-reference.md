@@ -537,14 +537,27 @@ other (`email_templates/0`, layout group `shop`): `shop_order_confirmation` and
   The mark goes in after the send, on the locked order, and changes neither the
   revision nor `updated_at`: a crash between them can repeat an email, never
   lose one.
-- **Language.** The buyer's emails use `metadata["checkout_language"]`, the shop's
-  the primary language. Order lines keep the text the buyer saw.
+- **Copies.** Each buyer email that goes is sent again, unchanged (same template,
+  language and order link, replies to the buyer, no `user_uuid`), to the copy
+  addresses. It is a second message, not a `Bcc:`: core's
+  `Mailer.send_from_template/4` takes no `:bcc`. It runs in the buyer email's job
+  after the buyer's send, with its own mark (`"buyer_placed_copy"`,
+  `"buyer_paid_copy"`), so a failed copy retries without mailing the buyer
+  twice, and an email the buyer did not get (turned off, no address) has no copy.
+- **Language.** The buyer's emails use `metadata["checkout_language"]`. The shop's
+  uses `OrderEmails.shop_email_language/0`: the language chosen for it while the
+  site still serves it, the primary language otherwise. Order lines keep the
+  text the buyer saw.
 - **The order link.** A confirmed account gets `/dashboard/orders/:uuid`. A guest
   gets `/checkout/complete/:uuid` only under the `:link` lookup policy: under
   `:strict` that page opens only in the placing session, so the link is left out.
 - **Settings**, through `OrderEmails`: `shop_order_emails_to_buyer` (default on,
-  a read error counts as off) and `shop_order_email_recipients` (addresses; none
-  means no shop email). An address list with one bad entry is refused whole.
+  a read error counts as off), `shop_order_email_recipients` (addresses; none
+  means no shop email), `shop_order_email_copy_recipients` (addresses; none means
+  no copies) and `shop_order_email_language` (an enabled language code, `""` for
+  the primary language; the selector shows only with two or more languages
+  enabled, and a code the site no longer serves falls back). An address list with
+  one bad entry is refused whole.
 
 ### Settings keys
 
