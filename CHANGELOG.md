@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.11.0 - 2026-11-11
+
+Copies of the buyer's order emails, a language for the shop's own order email,
+and fixes to stock limits and order email delivery.
+
+### Added
+
+- **Copies of the buyer's order emails** (#117): each buyer email can also go,
+  unchanged, to the addresses in `shop_order_email_copy_recipients` (set under
+  **Order emails** on the shop settings page), with replies going to the buyer.
+  A copy has its own once-per-order mark, so a copy that fails is retried
+  without mailing the buyer again.
+- **A language for the shop's order email**: `shop_order_email_language` sends
+  `shop_order_received` in a chosen enabled language instead of the site's
+  primary one.
+
+### Fixed
+
+- `update_cart_item/2` checks stock against the line as stored, read under the
+  cart lock. A cart page left open on an older, larger quantity could raise a
+  line past the stock, or have a raise silently ignored. A stock refusal no
+  longer rolls back a transaction the caller has open.
+- An order email is sent once even when two deliveries overlap or the caller
+  holds an old copy of the order. A delivery claims the email on the stored
+  order before it sends; a second one sends nothing and, as a job, comes back
+  when the claim has run out. `OrderEmails.deliver/2` can now answer
+  `{:snooze, seconds}`.
+- A queued order email is no longer sent once the order is cancelled or
+  refunded, so a refund before the queue ran no longer confirms the order.
+- A Legacy product built in memory is no longer counted against a Warehouse
+  item. Only catalogue products have stock.
+
 ## 0.10.0 - 2026-11-06
 
 The shop no longer carries any one host's data: the default catalogue name and
