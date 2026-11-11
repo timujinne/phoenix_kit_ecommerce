@@ -17,12 +17,14 @@ and checkout hands off to `phoenix_kit_billing` for orders and payment. It
 ships admin LiveViews for the whole workflow plus the public storefront
 pages.
 
-- **Depends on:** `phoenix_kit` `>= 2.43.0 and < 3.0.0` (Hex — the release
-  that carries `ImageProcessor.limit_args/0` and `pinned_input/2`, which
+- **Depends on:** `phoenix_kit` `>= 2.65.0 and < 4.0.0` (Hex — the release
+  with the module callbacks `file_references/0` and `expected_schema/0`, above
+  2.43.0's `ImageProcessor.limit_args/0` and `pinned_input/2`, which
   `ImageFingerprint` runs ImageMagick through, above 2.38.0's
   `PhoenixKitWeb.Actor` and `Activity.log/3`; the compound form
-  keeps the ceiling open across later 2.x minors), `phoenix_kit_billing`
-  `~> 0.20` (hard; 0.20 is the first release that ships
+  keeps the ceiling open across later 2.x minors and core 3.x), `phoenix_kit_billing`
+  `~> 0.25` (hard; 0.25 supplies durable order events for stock write-off and
+  paid-order emails, above 0.20's
   `BillingProfileFields` and `BillingProfile.fields_changeset/3`, which
   checkout renders and validates over),
   `phoenix_kit_ai` `~> 0.27` (optional — the
@@ -132,11 +134,12 @@ pages.
 - **No order, payment or address through the API.** The public cart tools
   only fill a cart and hand the buyer to the site's own checkout.
 - **No JavaScript.** There is no `js_sources/0` and no hook of its own.
-- **No table creation of its own beyond adoption and the API tables.** All
-  ten shop tables are core baseline tables; this module's chain adopts and
-  then owns their evolution. The only tables it creates itself are
-  `phoenix_kit_shop_search_index` (V4) and `phoenix_kit_shop_cart_claims`
-  (V5).
+- **No tables owned by another module.** This module's chain adopts the ten
+  baseline shop tables where core 2.x created them, and builds them itself
+  on core 3.x. It also creates `phoenix_kit_shop_search_index` (V4) and
+  `phoenix_kit_shop_cart_claims` (V5). Billing owns the order tables; the shop's
+  migration entry point runs billing's chain before adding its billing foreign
+  key, so either module's host migration may run first.
 
 ## Architecture
 
@@ -534,9 +537,13 @@ other (`email_templates/0`, layout group `shop`): `shop_order_confirmation` and
   waits for a mail server and a failure cannot reach it.
 - **Once.** A job is unique per order and email, and a sent email is marked in
   `metadata["_shop_emails"]`, which outlives the job row (Oban prunes those).
-  The mark goes in after the send, on the locked order, and changes neither the
-  revision nor `updated_at`: a crash between them can repeat an email, never
-  lose one.
+  Each send re-reads the marker and status under the order's row lock and holds
+  it through sending and marking, so overlapping deliveries cannot both send.
+  Cancelled and refunded orders send nothing, even if a job or caller's snapshot
+  predates the transition. The mark changes neither the revision nor `updated_at`:
+  a crash after the mail server accepts a send but before the marker commits can
+  still repeat an email, never lose one. Buyer and copy sends commit separately,
+  so a failed copy preserves the buyer's marker.
 - **Copies.** Each buyer email that goes is sent again, unchanged (same template,
   language and order link, replies to the buyer, no `user_uuid`), to the copy
   addresses. It is a second message, not a `Bcc:`: core's
@@ -859,9 +866,12 @@ settings-layer error.
   unit. A failed stock read is logged and limits nothing.
 - **Where it is refused.** `add_to_cart/4` and `update_cart_item/2` answer
   `{:error, {:insufficient_stock, [line]}}` counting every line of the item, and
-  lowering a quantity is always allowed. The check runs before their own
-  transaction opens, because `API.CartWriter` and the claim's merge hold one of
-  theirs that a rollback would doom. `convert_cart_to_order/2` decides again on
+  lowering a quantity is always allowed. An add checks before its transaction
+  opens. An update locks the cart and re-reads the line before checking, so an
+  older, larger quantity cannot make an increase look like a decrease or hide
+  an update from Ecto. A refusal returns without rolling back either caller's
+  transaction: `API.CartWriter` and the claim's merge can continue other lines.
+  `convert_cart_to_order/2` decides again on
   the locked cart. `shop.set_cart_items` makes it the line's `insufficient_stock`
   error with `allowed.max`; the claim's merge skips and names the line.
 - **The write-off.** `OrderStockHandler.handle_order_event(:paid, order)` posts

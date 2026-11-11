@@ -175,9 +175,43 @@ defmodule PhoenixKitEcommerce.StockLimitsTest do
       assert StockTracking.item_uuid(loaded) == nil
       assert StockTracking.item_uuid(%CartItem{product_uuid: loaded.uuid, metadata: %{}}) == nil
     end
+
+    test "an unpersisted legacy product has no warehouse item" do
+      assert StockTracking.item_uuid(%Product{uuid: Ecto.UUID.generate()}) == nil
+    end
   end
 
   describe "update_cart_item/2" do
+    test "a stale larger quantity cannot bypass stock limits", %{item: item, product: product} do
+      {:ok, %{items: [line]}} = Shop.add_to_cart(new_cart(), product, 3)
+      assert {:ok, _} = Shop.update_cart_item(line, 1)
+      put_stock!(item.uuid, 1)
+
+      assert {:error, {:insufficient_stock, [%{requested: 2, available: 1}]}} =
+               Shop.update_cart_item(line, 2)
+
+      assert %{quantity: 1} = Repo.get!(CartItem, line.uuid)
+    end
+
+    test "an update uses the stored quantity even when the snapshot matches the target",
+         %{product: product} do
+      {:ok, %{items: [line]}} = Shop.add_to_cart(new_cart(), product, 3)
+      assert {:ok, _} = Shop.update_cart_item(line, 1)
+
+      assert {:ok, %{items: [%{quantity: 3}]}} = Shop.update_cart_item(line, 3)
+    end
+
+    test "a stock refusal leaves an enclosing transaction usable", %{product: product} do
+      {:ok, %{items: [line]}} = Shop.add_to_cart(new_cart(), product, 1)
+
+      assert {:ok, :still_usable} =
+               Repo.transaction(fn ->
+                 assert {:error, {:insufficient_stock, _}} = Shop.update_cart_item(line, 4)
+                 assert %{quantity: 1} = Repo.get!(CartItem, line.uuid)
+                 :still_usable
+               end)
+    end
+
     test "refuses to raise a line above the stock", %{product: product} do
       {:ok, %{items: [line]}} = Shop.add_to_cart(new_cart(), product, 2)
 

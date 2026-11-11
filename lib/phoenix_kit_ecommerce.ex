@@ -4068,8 +4068,7 @@ defmodule PhoenixKitEcommerce do
   def update_cart_item(%CartItem{} = item, 0), do: remove_from_cart(item)
 
   def update_cart_item(%CartItem{} = item, quantity) do
-    with :ok <- validate_quantity(quantity),
-         :ok <- validate_stock_for_update(item, quantity) do
+    with :ok <- validate_quantity(quantity) do
       do_update_cart_item(item, quantity)
     end
   end
@@ -4078,17 +4077,26 @@ defmodule PhoenixKitEcommerce do
     result =
       repo().transaction(fn ->
         cart = lock_active_cart!(item.cart_uuid)
+        item = repo().get!(CartItem, item.uuid)
 
-        updated_item =
-          item
-          |> CartItem.changeset(%{quantity: quantity})
-          |> repo().update!()
+        # Re-read under the cart lock: an older, larger quantity must not make
+        # an increase look like a decrease. Return a refusal without rolling
+        # back, so API callers can continue their enclosing transaction.
+        with :ok <- validate_stock_for_update(item, quantity) do
+          updated_item =
+            item
+            |> CartItem.changeset(%{quantity: quantity})
+            |> repo().update!()
 
-        updated_cart = recalculate_cart_totals!(cart)
-        {updated_cart, updated_item}
+          updated_cart = recalculate_cart_totals!(cart)
+          {updated_cart, updated_item}
+        end
       end)
 
     case result do
+      {:ok, {:error, reason}} ->
+        {:error, reason}
+
       {:ok, {updated_cart, updated_item}} ->
         Events.broadcast_quantity_updated(updated_cart, updated_item)
         {:ok, updated_cart}

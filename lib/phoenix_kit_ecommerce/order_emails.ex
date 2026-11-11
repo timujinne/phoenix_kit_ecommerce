@@ -11,9 +11,9 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   | placed, awaiting online payment | nothing | nothing |
   | paid | `shop_order_paid` | `shop_order_received`, unless already sent |
 
-  An online order is not confirmed until the money lands, the same rule
-  `PhoenixKitEcommerce.Notifications.order_placed/2` follows: both sides hear
-  when it is paid.
+  An online order's emails wait until the money lands. The in-app admin
+  notification still goes immediately through
+  `PhoenixKitEcommerce.Notifications.order_placed/2`.
 
   ## Delivery
 
@@ -24,7 +24,10 @@ defmodule PhoenixKitEcommerce.OrderEmails do
 
   Once per order: a job is unique per order and email, and a sent email is marked
   in `metadata["_shop_emails"]`, which outlives the job row and changes neither
-  the order's revision nor `updated_at`. The mark is written after the send, so
+  the order's revision nor `updated_at`. Each send checks the current marker and
+  status under the order's row lock, and holds it until the marker is written;
+  overlapping deliveries cannot both send. Cancelled and refunded orders send
+  nothing. The mark is written after the send, so
   a crash between the two can repeat an email; it cannot lose one. The copy of a
   buyer's email has a mark of its own (`"buyer_placed_copy"`), so a copy that
   fails is retried without mailing the buyer again.
@@ -138,11 +141,29 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   end
 
   defp once(order, mark, send) do
-    if get_in(order.metadata, [@sent_key, mark]) == true, do: :ok, else: send.()
+    repo().transaction(fn ->
+      current =
+        repo().one!(from(o in Billing.Order, where: o.uuid == ^order.uuid, lock: "FOR UPDATE"))
+
+      send_once(current, mark, send)
+    end)
+    |> case do
+      {:ok, result} -> result
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp send_once(order, mark, send) do
+    if order.status in ~w(cancelled refunded) or
+         get_in(order.metadata, [@sent_key, mark]) == true do
+      :ok
+    else
+      with :ok <- send.(), do: mark_sent(order, mark)
+    end
   end
 
   defp send_to_buyer(email, order, address, language, url) do
-    deliver_template(email, email, order, address, language, url, user_uuid: order.user_uuid)
+    deliver_template(email, order, address, language, url, user_uuid: order.user_uuid)
   end
 
   # The buyer's email as the buyer got it, for the shop to read: replies go to
@@ -154,9 +175,7 @@ defmodule PhoenixKitEcommerce.OrderEmails do
 
       recipients ->
         once(order, email <> "_copy", fn ->
-          deliver_template(email, email <> "_copy", order, recipients, language, url,
-            reply_to: buyer
-          )
+          deliver_template(email, order, recipients, language, url, reply_to: buyer)
         end)
     end
   end
@@ -164,12 +183,12 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   defp send_to_shop(order, recipients) do
     reply_to = get_in(order.billing_snapshot || %{}, ["email"])
 
-    deliver_template("shop", "shop", order, recipients, shop_email_language(), nil,
+    deliver_template("shop", order, recipients, shop_email_language(), nil,
       reply_to: if(is_binary(reply_to) and reply_to != "", do: reply_to)
     )
   end
 
-  defp deliver_template(email, mark, order, to, language, order_url, opts) do
+  defp deliver_template(email, order, to, language, order_url, opts) do
     template = Map.fetch!(@emails, email)
     locale = base_locale(language)
 
@@ -194,7 +213,7 @@ defmodule PhoenixKitEcommerce.OrderEmails do
       )
 
     case result do
-      {:ok, _delivered} -> mark_sent(order.uuid, mark)
+      {:ok, _delivered} -> :ok
       {:error, reason} -> {:error, reason}
     end
   end
@@ -202,18 +221,12 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   defp base_locale(language),
     do: language |> String.split(["-", "_"]) |> hd() |> String.downcase()
 
-  defp mark_sent(order_uuid, email) do
-    {:ok, _count} =
-      repo().transaction(fn ->
-        order =
-          repo().one!(from(o in Billing.Order, where: o.uuid == ^order_uuid, lock: "FOR UPDATE"))
+  defp mark_sent(order, email) do
+    sent = Map.put(order.metadata[@sent_key] || %{}, email, true)
 
-        sent = Map.put(order.metadata[@sent_key] || %{}, email, true)
-
-        repo().update_all(from(o in Billing.Order, where: o.uuid == ^order_uuid),
-          set: [metadata: Map.put(order.metadata, @sent_key, sent)]
-        )
-      end)
+    repo().update_all(from(o in Billing.Order, where: o.uuid == ^order.uuid),
+      set: [metadata: Map.put(order.metadata, @sent_key, sent)]
+    )
 
     :ok
   end

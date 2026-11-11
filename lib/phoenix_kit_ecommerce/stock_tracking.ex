@@ -106,8 +106,8 @@ defmodule PhoenixKitEcommerce.StockTracking do
   `"requires_shipping"` counts as shipping.
   """
   @spec item_uuid(term()) :: String.t() | nil
-  def item_uuid(%Product{__meta__: %{state: :built}, requires_shipping: false}), do: nil
-  def item_uuid(%Product{__meta__: %{state: :built}, uuid: uuid}), do: uuid
+  def item_uuid(%Product{requires_shipping: false}), do: nil
+  def item_uuid(%Product{origin: :catalogue, uuid: uuid}), do: uuid
   def item_uuid(%CartItem{metadata: %{"requires_shipping" => false}}), do: nil
 
   def item_uuid(%CartItem{metadata: %{"catalogue_item_uuid" => uuid}}) when is_binary(uuid),

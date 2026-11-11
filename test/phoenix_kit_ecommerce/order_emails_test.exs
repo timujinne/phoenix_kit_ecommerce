@@ -30,6 +30,18 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
     def adapter_to_provider_name(_adapter, _default), do: "test"
   end
 
+  defmodule RaisingCopyProvider do
+    @moduledoc false
+    def intercept_before_send(email, _opts) do
+      if email.to == [{"", "owner@example.com"}] and Process.get(:reject_order_copy, false),
+        do: raise("copy delivery failed"),
+        else: email
+    end
+
+    def adapter_to_provider_name(_adapter, _default), do: "test"
+    def handle_after_send(_email, _result), do: :ok
+  end
+
   @snapshot %{
     "first_name" => "Jane",
     "last_name" => "Doe",
@@ -407,6 +419,34 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
       {:ok, _} = OrderEmails.set_copy_recipients(addresses)
     end
 
+    test "a failed copy retries without rolling back the buyer's mark", %{user: user} do
+      previous = Application.get_env(:phoenix_kit, :email_provider)
+      Application.put_env(:phoenix_kit, :email_provider, RaisingCopyProvider)
+
+      on_exit(fn ->
+        if previous,
+          do: Application.put_env(:phoenix_kit, :email_provider, previous),
+          else: Application.delete_env(:phoenix_kit, :email_provider)
+      end)
+
+      copy_to!()
+      order = order(user)
+      Process.put(:reject_order_copy, true)
+
+      assert_raise RuntimeError, "copy delivery failed", fn ->
+        OrderEmails.deliver("buyer_placed", order)
+      end
+
+      assert_received {:email, %{to: [{"", "jane@example.com"}]}}
+      refute_received {:email, _}
+      assert Billing.get_order(order.uuid).metadata["_shop_emails"] == %{"buyer_placed" => true}
+
+      Process.put(:reject_order_copy, false)
+      assert :ok = OrderEmails.deliver("buyer_placed", order)
+      assert_received {:email, %{to: [{"", "owner@example.com"}]}}
+      refute_received {:email, _}
+    end
+
     test "go to every copy address, as the buyer got it", %{user: user} do
       SearchFixtures.enable_languages!(["en", "de"])
       copy_to!("owner@example.com, sales@example.com")
@@ -516,6 +556,29 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
   end
 
   describe "once per order" do
+    test "a stale order snapshot cannot send the buyer or copy twice", %{user: user} do
+      {:ok, _} = OrderEmails.set_copy_recipients("owner@example.com")
+      order = order(user)
+
+      assert :ok = OrderEmails.deliver("buyer_placed", order)
+      assert_received {:email, _buyer}
+      assert_received {:email, _copy}
+
+      assert :ok = OrderEmails.deliver("buyer_placed", order)
+      refute_received {:email, _}
+    end
+
+    test "a stale order snapshot cannot send the shop twice", %{user: user} do
+      mail_to_shop!()
+      order = order(user)
+
+      assert :ok = OrderEmails.deliver("shop", order)
+      assert_received {:email, _}
+
+      assert :ok = OrderEmails.deliver("shop", order)
+      refute_received {:email, _}
+    end
+
     test "a second delivery sends nothing", %{user: user} do
       order = order(user)
       delivered("buyer_paid", order)
@@ -566,6 +629,36 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
   end
 
   describe "the worker" do
+    test "a queued confirmation sends nothing after cancellation", %{user: user} do
+      order = order(user)
+      assert :ok = OrderEmails.order_placed(order)
+      {:ok, _} = Billing.cancel_order(order)
+      mail_to_shop!()
+
+      for email <- ["buyer_placed", "shop"] do
+        job = %Oban.Job{args: %{"order_uuid" => order.uuid, "email" => email}}
+        assert :ok = OrderEmailWorker.perform(job)
+        assert :ok = OrderEmails.deliver(email, order)
+      end
+
+      refute_received {:email, _}
+    end
+
+    test "a queued paid email sends nothing after a refund", %{user: user} do
+      {:ok, paid} = Billing.mark_order_paid(order(user))
+      assert :ok = OrderEmailHandler.handle_order_event(:paid, paid)
+      {:ok, _} = Billing.mark_order_refunded(paid)
+      mail_to_shop!()
+
+      for email <- ["buyer_paid", "shop"] do
+        job = %Oban.Job{args: %{"order_uuid" => paid.uuid, "email" => email}}
+        assert :ok = OrderEmailWorker.perform(job)
+        assert :ok = OrderEmails.deliver(email, paid)
+      end
+
+      refute_received {:email, _}
+    end
+
     test "sends what the job names", %{user: user} do
       order = order(user)
       job = %Oban.Job{args: %{"order_uuid" => order.uuid, "email" => "buyer_placed"}}
