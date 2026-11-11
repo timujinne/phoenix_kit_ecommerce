@@ -1,7 +1,8 @@
 defmodule PhoenixKitEcommerce.OrderEmailsRaceTest do
   @moduledoc """
-  Overlapping deliveries serialize on a committed order. Each caller uses a
-  real connection: a shared sandbox transaction cannot test row locking.
+  Overlapping deliveries of one email send it once, on a committed order. Each
+  caller uses a real connection: a shared sandbox transaction cannot test the
+  row lock a claim is taken under.
   """
 
   use ExUnit.Case, async: false
@@ -51,8 +52,21 @@ defmodule PhoenixKitEcommerce.OrderEmailsRaceTest do
     for _task <- tasks, do: assert_receive({:ready, _pid}, 5_000)
     Enum.each(tasks, &send(&1.pid, :go))
 
-    assert Task.await_many(tasks, 30_000) == List.duplicate(:ok, 4)
+    results = Task.await_many(tasks, 30_000)
+
+    # One caller sends. Another either finds the claim and is told to come back,
+    # or arrives after the mark and has nothing to do.
+    assert :ok in results
+
+    assert Enum.all?(
+             results,
+             &match?(result when result == :ok or elem(result, 0) == :snooze, &1)
+           )
+
     assert_received {:email, %{to: [{"", "email-race@example.com"}]}}
+    refute_received {:email, _}
+
+    assert :ok = unboxed(fn -> OrderEmails.deliver("buyer_placed", order) end)
     refute_received {:email, _}
 
     assert unboxed(fn -> Repo.get!(Order, order.uuid).metadata["_shop_emails"] end) ==

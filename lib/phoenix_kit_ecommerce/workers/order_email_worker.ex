@@ -5,6 +5,8 @@ defmodule PhoenixKitEcommerce.Workers.OrderEmailWorker do
   On `default`, a queue every host runs: a buyer's confirmation must not wait
   behind a long import on `shop_imports`, and a send is short. `{:error, _}` or a
   raise retries with Oban's backoff; an order that is gone will not come back.
+  `{:snooze, seconds}` is an email another delivery holds: the job comes back
+  when that claim has run out, and finds the email marked or sends it.
   """
 
   use Oban.Worker,

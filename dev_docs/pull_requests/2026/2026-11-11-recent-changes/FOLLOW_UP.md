@@ -1,6 +1,7 @@
 # Recent changes — resolutions and validation
 
-See [CODEX_REVIEW.md](CODEX_REVIEW.md) and the
+See [CODEX_REVIEW.md](CODEX_REVIEW.md), its recheck in
+[CLAUDE_REVIEW.md](CLAUDE_REVIEW.md), and the
 [PR #118 review](../118-fresh-core-3x-chain/CODEX_REVIEW.md).
 
 | Finding | Severity | Resolution |
@@ -10,6 +11,8 @@ See [CODEX_REVIEW.md](CODEX_REVIEW.md) and the
 | Queued emails confirm refunded or cancelled orders | BUG - MEDIUM | Check the stored terminal status under the same lock, including calls with stale snapshots |
 | Built Legacy products are mistaken for catalogue items | BUG - MEDIUM | Resolve Warehouse identity from `origin: :catalogue` |
 | Overview lists obsolete dependencies and table ownership | NITPICK | Align the engineering guide with `mix.exs` and core 2.x/3.x migration behavior |
+| The send runs inside the transaction that holds the order lock (Claude) | BUG - MEDIUM | Claim the email under the lock and commit, send outside any transaction, then mark; a second delivery snoozes; a failed send gives its claim back. Replaces the lock held through the send |
+| A stock read that fails in the database fails the quantity update (Claude) | NITPICK | Not changed: checkout and the cart API already behave this way |
 
 ## Validation
 
@@ -42,3 +45,18 @@ overrides.
 The suite emits existing cache-registry and test-helper warnings; they did not
 cause failures. No migrations, dependency versions, release version, CHANGELOG,
 tags, or Hex publication changed.
+
+## Validation of the recheck
+
+Same resolved dependencies, on a private database, 2026-11-11.
+
+- The regression (`an email log that fails in the database does not lose the
+  mark`) failed on `791e34b` with `25P02 in_failed_sql_transaction` raised from
+  the mark's write, after the email was sent. It passes with the claim.
+- `order_emails_test.exs` and `order_emails_race_test.exs`: **61 tests, 0
+  failures**. The race test, four callers on real connections, ran five more
+  times without a failure: one email, the others `:ok` or `{:snooze, _}`.
+- Full suite, `PGPOOL=10 mix test`: **5,163 tests, 0 failures, 6 excluded** (the
+  same five tags as above), 268.2 seconds.
+- `mix precommit`: **passed**. Credo reports no issues; Dialyzer reports the same
+  eight suppressed findings and no unnecessary suppressions.

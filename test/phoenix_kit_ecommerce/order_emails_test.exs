@@ -42,6 +42,27 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
     def handle_after_send(_email, _result), do: :ok
   end
 
+  defmodule FailingLogProvider do
+    @moduledoc false
+    # An email log whose write fails in the database and keeps that to itself,
+    # as `phoenix_kit_emails` does in `handle_after_send/2`.
+    def intercept_before_send(email, _opts), do: email
+    def adapter_to_provider_name(_adapter, _default), do: "test"
+
+    def handle_after_send(_email, _result) do
+      {:error, _} = Repo.query("SELECT 1/0")
+      :ok
+    end
+  end
+
+  defmodule DownAdapter do
+    @moduledoc false
+    use Swoosh.Adapter
+
+    @impl Swoosh.Adapter
+    def deliver(_email, _config), do: {:error, :mail_server_down}
+  end
+
   @snapshot %{
     "first_name" => "Jane",
     "last_name" => "Doe",
@@ -107,6 +128,29 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
   defp mail_to_shop!(addresses \\ "shop@example.com") do
     {:ok, _} = OrderEmails.set_shop_recipients(addresses)
   end
+
+  defp provider!(module) do
+    previous = Application.get_env(:phoenix_kit, :email_provider)
+    Application.put_env(:phoenix_kit, :email_provider, module)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:phoenix_kit, :email_provider, previous),
+        else: Application.delete_env(:phoenix_kit, :email_provider)
+    end)
+  end
+
+  # The claim another delivery of `mark` took at `claimed_at`.
+  defp claim!(order, mark, claimed_at) do
+    stored = Billing.get_order(order.uuid).metadata
+    marks = Map.put(stored["_shop_emails"] || %{}, mark, %{"claimed_at" => claimed_at})
+
+    Repo.update_all(from(o in Billing.Order, where: o.uuid == ^order.uuid),
+      set: [metadata: Map.put(stored, "_shop_emails", marks)]
+    )
+  end
+
+  defp marks(order), do: Billing.get_order(order.uuid).metadata["_shop_emails"]
 
   defp delivered(email, order) do
     assert :ok = OrderEmails.deliver(email, Billing.get_order(order.uuid))
@@ -420,14 +464,7 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
     end
 
     test "a failed copy retries without rolling back the buyer's mark", %{user: user} do
-      previous = Application.get_env(:phoenix_kit, :email_provider)
-      Application.put_env(:phoenix_kit, :email_provider, RaisingCopyProvider)
-
-      on_exit(fn ->
-        if previous,
-          do: Application.put_env(:phoenix_kit, :email_provider, previous),
-          else: Application.delete_env(:phoenix_kit, :email_provider)
-      end)
+      provider!(RaisingCopyProvider)
 
       copy_to!()
       order = order(user)
@@ -608,14 +645,7 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
     end
 
     test "a failed send is not marked, so the job retries it", %{user: user} do
-      previous = Application.get_env(:phoenix_kit, :email_provider)
-      Application.put_env(:phoenix_kit, :email_provider, RaisingProvider)
-
-      on_exit(fn ->
-        if previous,
-          do: Application.put_env(:phoenix_kit, :email_provider, previous),
-          else: Application.delete_env(:phoenix_kit, :email_provider)
-      end)
+      provider!(RaisingProvider)
 
       order = order(user)
       job = %Oban.Job{args: %{"order_uuid" => order.uuid, "email" => "buyer_placed"}}
@@ -625,6 +655,97 @@ defmodule PhoenixKitEcommerce.OrderEmailsTest do
       end)
 
       assert Billing.get_order(order.uuid).metadata["_shop_emails"] == nil
+    end
+
+    test "an email log that fails in the database does not lose the mark", %{user: user} do
+      provider!(FailingLogProvider)
+      order = order(user)
+
+      assert :ok = OrderEmails.deliver("buyer_placed", order)
+
+      assert_received {:email, _}
+      assert marks(order) == %{"buyer_placed" => true}
+    end
+
+    test "a send the mail server refuses gives its claim back", %{user: user} do
+      config = Application.get_env(:phoenix_kit, PhoenixKit.Mailer)
+      Application.put_env(:phoenix_kit, PhoenixKit.Mailer, adapter: DownAdapter)
+      on_exit(fn -> Application.put_env(:phoenix_kit, PhoenixKit.Mailer, config) end)
+
+      order = order(user)
+
+      capture_log(fn ->
+        assert {:error, :mail_server_down} = OrderEmails.deliver("buyer_placed", order)
+      end)
+
+      assert marks(order) == nil
+
+      Application.put_env(:phoenix_kit, PhoenixKit.Mailer, config)
+      assert :ok = OrderEmails.deliver("buyer_placed", order)
+      assert_received {:email, _}
+      assert marks(order) == %{"buyer_placed" => true}
+    end
+  end
+
+  describe "an email another delivery holds" do
+    test "is not sent, and the delivery snoozes for the rest of the claim", %{user: user} do
+      order = order(user)
+      claim!(order, "buyer_placed", System.os_time(:second) - 100)
+
+      assert {:snooze, seconds} = OrderEmails.deliver("buyer_placed", order)
+      assert seconds in 190..200
+      refute_received {:email, _}
+
+      job = %Oban.Job{args: %{"order_uuid" => order.uuid, "email" => "buyer_placed"}}
+      assert {:snooze, _seconds} = OrderEmailWorker.perform(job)
+      refute_received {:email, _}
+    end
+
+    test "holds the copy back with it", %{user: user} do
+      {:ok, _} = OrderEmails.set_copy_recipients("owner@example.com")
+      order = order(user)
+      claim!(order, "buyer_placed", System.os_time(:second))
+
+      assert {:snooze, _seconds} = OrderEmails.deliver("buyer_placed", order)
+      refute_received {:email, _}
+    end
+
+    test "a held copy does not mail the buyer again", %{user: user} do
+      order = order(user)
+      delivered("buyer_placed", order)
+      {:ok, _} = OrderEmails.set_copy_recipients("owner@example.com")
+      claim!(order, "buyer_placed_copy", System.os_time(:second))
+
+      assert {:snooze, _seconds} = OrderEmails.deliver("buyer_placed", order)
+      refute_received {:email, _}
+    end
+
+    test "is sent once the claim has run out", %{user: user} do
+      order = order(user)
+      claim!(order, "buyer_placed", System.os_time(:second) - 301)
+
+      assert :ok = OrderEmails.deliver("buyer_placed", order)
+      assert_received {:email, _}
+      assert marks(order) == %{"buyer_placed" => true}
+    end
+
+    test "a claim from a clock ahead is held no longer than a new one", %{user: user} do
+      order = order(user)
+      claim!(order, "shop", System.os_time(:second) + 3600)
+      mail_to_shop!()
+
+      assert {:snooze, 300} = OrderEmails.deliver("shop", order)
+      refute_received {:email, _}
+    end
+
+    test "leaves the other emails of the order alone", %{user: user} do
+      order = order(user)
+      claim!(order, "buyer_placed", System.os_time(:second))
+      mail_to_shop!()
+
+      assert :ok = OrderEmails.deliver("shop", order)
+      assert_received {:email, _}
+      assert %{"shop" => true, "buyer_placed" => %{"claimed_at" => _}} = marks(order)
     end
   end
 

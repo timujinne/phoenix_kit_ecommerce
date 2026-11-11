@@ -537,13 +537,24 @@ other (`email_templates/0`, layout group `shop`): `shop_order_confirmation` and
   waits for a mail server and a failure cannot reach it.
 - **Once.** A job is unique per order and email, and a sent email is marked in
   `metadata["_shop_emails"]`, which outlives the job row (Oban prunes those).
-  Each send re-reads the marker and status under the order's row lock and holds
-  it through sending and marking, so overlapping deliveries cannot both send.
-  Cancelled and refunded orders send nothing, even if a job or caller's snapshot
-  predates the transition. The mark changes neither the revision nor `updated_at`:
-  a crash after the mail server accepts a send but before the marker commits can
-  still repeat an email, never lose one. Buyer and copy sends commit separately,
-  so a failed copy preserves the buyer's marker.
+  A delivery claims the email first: under the order's row lock it reads the
+  stored mark and status, writes `%{"claimed_at" => unix_seconds}` in the mark's
+  place, and commits. Then it sends, and writes `true` over the claim. A second
+  delivery that finds a claim sends nothing and answers `{:snooze, seconds}`, so
+  overlapping deliveries cannot both send. A send that fails or raises gives its
+  claim back, and the retry sends at once. Cancelled and refunded orders send
+  nothing, even if a job or a caller's copy of the order predates the change.
+- **The send runs in no transaction of this module.** An email provider
+  (`phoenix_kit_emails`) writes its log on the same connection and rescues its
+  own errors. Inside a transaction a failed statement of its would abort the
+  transaction: the mail goes, the mark cannot be written, and each retry mails
+  again. Keep the send outside; `order_emails_test.exs` pins it with a provider
+  whose log write fails.
+- **A crash.** The mark changes neither the revision nor `updated_at`. A delivery
+  that dies between the send and the mark leaves its claim, which is good for
+  five minutes; the next delivery after that sends, so a crash can repeat an
+  email and never loses one. A buyer email and its copy are claimed and marked
+  separately, so a failed copy keeps the buyer's mark.
 - **Copies.** Each buyer email that goes is sent again, unchanged (same template,
   language and order link, replies to the buyer, no `user_uuid`), to the copy
   addresses. It is a second message, not a `Bcc:`: core's

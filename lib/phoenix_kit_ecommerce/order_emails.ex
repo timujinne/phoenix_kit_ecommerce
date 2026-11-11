@@ -24,13 +24,23 @@ defmodule PhoenixKitEcommerce.OrderEmails do
 
   Once per order: a job is unique per order and email, and a sent email is marked
   in `metadata["_shop_emails"]`, which outlives the job row and changes neither
-  the order's revision nor `updated_at`. Each send checks the current marker and
-  status under the order's row lock, and holds it until the marker is written;
-  overlapping deliveries cannot both send. Cancelled and refunded orders send
-  nothing. The mark is written after the send, so
-  a crash between the two can repeat an email; it cannot lose one. The copy of a
-  buyer's email has a mark of its own (`"buyer_placed_copy"`), so a copy that
-  fails is retried without mailing the buyer again.
+  the order's revision nor `updated_at`. A delivery first claims the email under
+  the order's row lock, reading the stored mark and status there, and commits
+  the claim before it sends. Cancelled and refunded orders send nothing. A second
+  delivery that finds a claim sends nothing and answers `{:snooze, seconds}`, so
+  overlapping deliveries cannot both send. A send that fails gives its claim
+  back.
+
+  The mail goes outside any transaction of this module, on purpose: an email
+  provider writes its log on the same connection and keeps its errors to itself,
+  and a failed statement inside a transaction would abort it, so the mail would
+  go and the mark could not be written.
+
+  The mark is written after the send, so a crash between the two can repeat an
+  email; it cannot lose one. The claim of a delivery that died is good for five
+  minutes, then the next delivery sends. The copy of a buyer's email has a mark
+  of its own (`"buyer_placed_copy"`), so a copy that fails is retried without
+  mailing the buyer again.
 
   ## Who
 
@@ -76,6 +86,8 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   }
 
   @sent_key "_shop_emails"
+  @claimed_key "claimed_at"
+  @claim_seconds 300
   @buyer_setting "shop_order_emails_to_buyer"
   @recipients_setting "shop_order_email_recipients"
   @copy_setting "shop_order_email_copy_recipients"
@@ -115,8 +127,10 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   Sends one email of `order` (`"buyer_placed"`, `"buyer_paid"` or `"shop"`), and
   a buyer email's copy, unless it was sent already or has nobody to go to.
   Returns `{:error, reason}` for the job to retry; an email that went is marked.
+  `{:snooze, seconds}` means another delivery holds the email: nothing was sent,
+  and that many seconds later its claim has run out.
   """
-  @spec deliver(String.t(), map()) :: :ok | {:error, term()}
+  @spec deliver(String.t(), map()) :: :ok | {:snooze, pos_integer()} | {:error, term()}
   def deliver("shop", order) do
     case shop_recipients() do
       [] -> :ok
@@ -141,25 +155,103 @@ defmodule PhoenixKitEcommerce.OrderEmails do
   end
 
   defp once(order, mark, send) do
-    repo().transaction(fn ->
-      current =
-        repo().one!(from(o in Billing.Order, where: o.uuid == ^order.uuid, lock: "FOR UPDATE"))
-
-      send_once(current, mark, send)
-    end)
-    |> case do
-      {:ok, result} -> result
-      {:error, reason} -> {:error, reason}
+    case claim(order.uuid, mark) do
+      {:claimed, claimed_at} -> send_claimed(order.uuid, mark, claimed_at, send)
+      :done -> :ok
+      {:busy, seconds} -> {:snooze, seconds}
     end
   end
 
-  defp send_once(order, mark, send) do
-    if order.status in ~w(cancelled refunded) or
-         get_in(order.metadata, [@sent_key, mark]) == true do
-      :ok
-    else
-      with :ok <- send.(), do: mark_sent(order, mark)
+  defp send_claimed(order_uuid, mark, claimed_at, send) do
+    result =
+      try do
+        send.()
+      catch
+        kind, reason ->
+          release(order_uuid, mark, claimed_at)
+          :erlang.raise(kind, reason, __STACKTRACE__)
+      end
+
+    case result do
+      :ok ->
+        mark_sent(order_uuid, mark)
+
+      {:error, reason} ->
+        release(order_uuid, mark, claimed_at)
+        {:error, reason}
     end
+  end
+
+  # The stored order decides, not the caller's copy of it: the mark may have
+  # been written, or the order cancelled, since that copy was read.
+  defp claim(order_uuid, mark) do
+    now = System.os_time(:second)
+
+    update_marks(order_uuid, fn order, marks ->
+      wait = seconds_left(marks[mark], now)
+
+      cond do
+        order.status in ~w(cancelled refunded) or marks[mark] == true -> :done
+        wait > 0 -> {:busy, wait}
+        true -> {:store, Map.put(marks, mark, %{@claimed_key => now}), {:claimed, now}}
+      end
+    end)
+  end
+
+  # A claim from a clock ahead of this one is held for no longer than a claim
+  # made now would be.
+  defp seconds_left(%{@claimed_key => claimed_at}, now) when is_integer(claimed_at),
+    do: (claimed_at + @claim_seconds - now) |> max(0) |> min(@claim_seconds)
+
+  defp seconds_left(_no_claim, _now), do: 0
+
+  # Only its own claim: one that outlived its time may belong to the delivery
+  # that took over.
+  defp release(order_uuid, mark, claimed_at) do
+    update_marks(order_uuid, fn _order, marks ->
+      case marks[mark] do
+        %{@claimed_key => ^claimed_at} -> {:store, Map.delete(marks, mark), :ok}
+        _not_ours -> :ok
+      end
+    end)
+  end
+
+  defp mark_sent(order_uuid, mark) do
+    update_marks(order_uuid, fn _order, marks -> {:store, Map.put(marks, mark, true), :ok} end)
+  end
+
+  # Reads the marks of the order under its row lock. `fun` answers
+  # `{:store, marks, result}` to write them, or its result alone.
+  defp update_marks(order_uuid, fun) do
+    {:ok, result} =
+      repo().transaction(fn ->
+        order =
+          repo().one!(from(o in Billing.Order, where: o.uuid == ^order_uuid, lock: "FOR UPDATE"))
+
+        metadata = order.metadata || %{}
+
+        case fun.(order, metadata[@sent_key] || %{}) do
+          {:store, marks, result} ->
+            store_marks(order_uuid, metadata, marks)
+            result
+
+          result ->
+            result
+        end
+      end)
+
+    result
+  end
+
+  defp store_marks(order_uuid, metadata, marks) do
+    metadata =
+      if marks == %{},
+        do: Map.delete(metadata, @sent_key),
+        else: Map.put(metadata, @sent_key, marks)
+
+    repo().update_all(from(o in Billing.Order, where: o.uuid == ^order_uuid),
+      set: [metadata: metadata]
+    )
   end
 
   defp send_to_buyer(email, order, address, language, url) do
@@ -220,16 +312,6 @@ defmodule PhoenixKitEcommerce.OrderEmails do
 
   defp base_locale(language),
     do: language |> String.split(["-", "_"]) |> hd() |> String.downcase()
-
-  defp mark_sent(order, email) do
-    sent = Map.put(order.metadata[@sent_key] || %{}, email, true)
-
-    repo().update_all(from(o in Billing.Order, where: o.uuid == ^order.uuid),
-      set: [metadata: Map.put(order.metadata, @sent_key, sent)]
-    )
-
-    :ok
-  end
 
   defp buyer_address(order) do
     case order.billing_snapshot do
